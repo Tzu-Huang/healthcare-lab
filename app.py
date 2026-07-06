@@ -229,6 +229,11 @@ def current_timestamp() -> str:
         "+00:00", "Z"
     )
 
+
+def hl7_message_timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d%H%M%S")
+
+
 def request_fhir_raw(
     url: str,
     token: str,
@@ -542,6 +547,227 @@ def parse_hl7_ack(payload: str) -> dict[str, str]:
             result["text"] = fields[3].strip() if len(fields) > 3 else ""
             break
     return result
+
+
+def _hl7_segments(payload: str) -> list[list[str]]:
+    return [
+        segment.split("|")
+        for segment in payload.replace("\n", "\r").split("\r")
+        if segment.strip()
+    ]
+
+
+def _first_component(value: str) -> str:
+    return str(value or "").split("^", 1)[0].strip()
+
+
+def parse_oru_summary(payload: str) -> dict[str, str]:
+    segments = _hl7_segments(payload)
+    if not segments or segments[0][0] != "MSH":
+        raise ValidationError("HL7 payload must start with an MSH segment.")
+    summary = {
+        "messageType": "",
+        "messageControlId": "",
+        "patientMrn": "",
+        "placerOrderNumber": "",
+        "fillerOrderNumber": "",
+    }
+    for fields in segments:
+        segment_id = fields[0]
+        if segment_id == "MSH":
+            summary["messageType"] = fields[8].strip() if len(fields) > 8 else ""
+            summary["messageControlId"] = fields[9].strip() if len(fields) > 9 else ""
+        elif segment_id == "PID":
+            summary["patientMrn"] = _first_component(fields[3] if len(fields) > 3 else "")
+        elif segment_id == "OBR":
+            summary["placerOrderNumber"] = _first_component(fields[2] if len(fields) > 2 else "")
+            summary["fillerOrderNumber"] = _first_component(fields[3] if len(fields) > 3 else "")
+    if not summary["messageType"]:
+        raise ValidationError("HL7 MSH-9 message type is required.")
+    return summary
+
+
+def build_hl7_ack(
+    inbound_payload: str,
+    *,
+    code: str,
+    text: str = "",
+    message_control_id: str = "",
+) -> str:
+    inbound_msh = next(
+        (fields for fields in _hl7_segments(inbound_payload) if fields and fields[0] == "MSH"),
+        [],
+    )
+    sending_app = inbound_msh[4] if len(inbound_msh) > 4 and inbound_msh[4] else "HEALTHCARE_LAB"
+    sending_facility = inbound_msh[5] if len(inbound_msh) > 5 and inbound_msh[5] else "LAB_APP"
+    receiving_app = inbound_msh[2] if len(inbound_msh) > 2 and inbound_msh[2] else "OIE"
+    receiving_facility = inbound_msh[3] if len(inbound_msh) > 3 and inbound_msh[3] else "HL7LAB"
+    control_id = message_control_id
+    if not control_id and len(inbound_msh) > 9:
+        control_id = inbound_msh[9].strip()
+    ack_time = hl7_message_timestamp()
+    ack_control_id = f"ACK{ack_time}"
+    return "\r".join(
+        [
+            (
+                "MSH|^~\\&|"
+                f"{sending_app}|{sending_facility}|{receiving_app}|{receiving_facility}|"
+                f"{ack_time}||ACK^R01|{ack_control_id}|P|2.3.1"
+            ),
+            f"MSA|{code}|{control_id}|{text}",
+        ]
+    )
+
+
+def accept_oie_result_payload(store: DemoStore, payload: str) -> tuple[str, dict[str, Any], int]:
+    try:
+        parsed = parse_oru_summary(payload)
+        if parsed["messageType"] not in {"ORU^R01", "ORU^W01"}:
+            item = store.record_oie_result_error(
+                payload,
+                parsed["messageType"],
+                f"Unsupported message type: {parsed['messageType'] or 'unknown'}.",
+            )
+            ack = build_hl7_ack(
+                payload,
+                code="AR",
+                text=item["error"],
+                message_control_id=parsed.get("messageControlId", ""),
+            )
+            return ack, item, 400
+        item = store.record_oie_result(payload, parsed)
+        text = "Duplicate result ignored." if item.get("duplicate") else "Result accepted."
+        ack = build_hl7_ack(
+            payload,
+            code="AA",
+            text=text,
+            message_control_id=parsed.get("messageControlId", ""),
+        )
+        return ack, item, 200
+    except ValidationError as exc:
+        item = store.record_oie_result_error(payload, "", str(exc))
+        return build_hl7_ack(payload, code="AE", text=str(exc)), item, 400
+
+
+class OieResultListener:
+    def __init__(self, store: DemoStore):
+        self.store = store
+        self.host = "127.0.0.1"
+        self.port = 6665
+        self.framing = True
+        self._thread: threading.Thread | None = None
+        self._socket: socket.socket | None = None
+        self._stop_event = threading.Event()
+        self._lock = threading.RLock()
+        self.last_error = ""
+        self.last_received_at = ""
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            running = bool(self._thread and self._thread.is_alive())
+            return {
+                "running": running,
+                "host": self.host,
+                "port": self.port,
+                "mllpFraming": self.framing,
+                "lastError": self.last_error,
+                "lastReceivedAt": self.last_received_at,
+            }
+
+    def start(self, *, host: str, port: int, framing: bool = True) -> dict[str, Any]:
+        if not host:
+            raise ValidationError("Listener host is required.")
+        if not 1 <= int(port) <= 65535:
+            raise ValidationError("Listener port must be between 1 and 65535.")
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                if self.host == host and self.port == int(port) and self.framing == framing:
+                    server.close()
+                    return self.status()
+                server.close()
+                raise ValidationError("Stop the current listener before changing configuration.")
+            try:
+                server.bind((host, int(port)))
+                server.listen(5)
+                server.settimeout(0.5)
+            except OSError as exc:
+                server.close()
+                self.last_error = str(exc)
+                raise ValidationError(f"Listener could not start: {exc}") from exc
+            self.host = host
+            self.port = int(port)
+            self.framing = bool(framing)
+            self.last_error = ""
+            self._stop_event.clear()
+            self._socket = server
+            self._thread = threading.Thread(target=self._serve, name="oie-result-listener", daemon=True)
+            self._thread.start()
+        return self.status()
+
+    def stop(self) -> dict[str, Any]:
+        with self._lock:
+            self._stop_event.set()
+            if self._socket:
+                try:
+                    self._socket.close()
+                except OSError:
+                    pass
+            thread = self._thread
+        if thread:
+            thread.join(timeout=2)
+        return self.status()
+
+    def _serve(self) -> None:
+        with self._lock:
+            server = self._socket
+        if server is None:
+            return
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    connection, _address = server.accept()
+                except socket.timeout:
+                    continue
+                except OSError:
+                    if not self._stop_event.is_set():
+                        with self._lock:
+                            self.last_error = "Listener socket closed unexpectedly."
+                    break
+                with connection:
+                    self._handle_connection(connection)
+        except OSError as exc:
+            with self._lock:
+                self.last_error = str(exc)
+        finally:
+            with self._lock:
+                self._socket = None
+            try:
+                server.close()
+            except OSError:
+                pass
+
+    def _handle_connection(self, connection: socket.socket) -> None:
+        received = bytearray()
+        connection.settimeout(5)
+        try:
+            while True:
+                chunk = connection.recv(4096)
+                if not chunk:
+                    break
+                received.extend(chunk)
+                if self.framing and b"\x1c\x0d" in received:
+                    break
+            payload = mllp_unframe(bytes(received)) if self.framing else bytes(received).decode("utf-8", errors="replace")
+            ack, _item, _status = accept_oie_result_payload(self.store, payload)
+            connection.sendall(mllp_frame(ack) if self.framing else ack.encode("utf-8"))
+            with self._lock:
+                self.last_received_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+                self.last_error = ""
+        except Exception as exc:  # pragma: no cover - defensive listener boundary
+            with self._lock:
+                self.last_error = str(exc)
 
 
 def send_hl7_mllp_message(
@@ -1119,6 +1345,8 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.config["OIE_MLLP_ORDER_HOST"] = os.environ.get("OIE_MLLP_ORDER_HOST", "localhost").strip() or "localhost"
     app.config["OIE_MLLP_ORDER_PORT"] = int(os.environ.get("OIE_MLLP_ORDER_PORT", "6663"))
+    app.config["OIE_MLLP_RESULT_HOST"] = os.environ.get("OIE_MLLP_RESULT_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    app.config["OIE_MLLP_RESULT_PORT"] = int(os.environ.get("OIE_MLLP_RESULT_PORT", "6665"))
     app.config["LAB_DEPLOY_SCRIPT"] = os.environ.get(
         "LAB_DEPLOY_SCRIPT",
         str(Path(__file__).parent / "deploy" / "lab.ps1"),
@@ -1136,6 +1364,7 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.extensions["demo_store"] = store
     app.extensions["openemr_procedure_order_source"] = openemr_source
+    app.extensions["oie_result_listener"] = OieResultListener(store)
 
     def get_auth_manager() -> MedplumAuthManager:
         return MedplumAuthManager(
@@ -1156,6 +1385,8 @@ def create_app(database_path: str | None = None) -> Flask:
             project_mode=app.config["PROJECT_MODE"],
             oie_order_host=app.config["OIE_MLLP_ORDER_HOST"],
             oie_order_port=app.config["OIE_MLLP_ORDER_PORT"],
+            oie_result_host=app.config["OIE_MLLP_RESULT_HOST"],
+            oie_result_port=app.config["OIE_MLLP_RESULT_PORT"],
         )
 
     @app.get("/api/patients")
@@ -1207,6 +1438,51 @@ def create_app(database_path: str | None = None) -> Flask:
                 "items": store.list_oie_local_order_inventory(),
             }
         )
+
+    @app.get("/api/oie/workbench")
+    def oie_workbench():
+        return jsonify({"success": True, **store.list_oie_workbench()})
+
+    @app.get("/api/oie/results")
+    def oie_results():
+        return jsonify({"success": True, "items": store.list_oie_results()})
+
+    @app.post("/api/oie/results")
+    def receive_oie_result():
+        payload = request.get_data(as_text=True)
+        if request.is_json:
+            body = request.get_json(silent=True) or {}
+            payload = str(body.get("payload") or "")
+        if not payload.strip():
+            return error_response("HL7 payload is required.", 400)
+        ack, item, status_code = accept_oie_result_payload(store, payload)
+        return jsonify({"success": status_code < 400, "item": item, "ack": ack}), status_code
+
+    @app.get("/api/oie/result-listener/status")
+    def oie_result_listener_status():
+        listener: OieResultListener = app.extensions["oie_result_listener"]
+        return jsonify({"success": True, "item": listener.status()})
+
+    @app.post("/api/oie/result-listener/start")
+    def start_oie_result_listener():
+        listener: OieResultListener = app.extensions["oie_result_listener"]
+        payload = request.get_json(silent=True) or {}
+        host = str(payload.get("host", app.config["OIE_MLLP_RESULT_HOST"]) or "").strip()
+        try:
+            port = int(payload.get("port", app.config["OIE_MLLP_RESULT_PORT"]))
+        except (TypeError, ValueError):
+            return error_response("Listener port must be numeric.", 400)
+        framing = bool(payload.get("mllpFraming", True))
+        try:
+            item = listener.start(host=host, port=port, framing=framing)
+        except ValidationError as exc:
+            return error_response(str(exc), 400)
+        return jsonify({"success": True, "item": item})
+
+    @app.post("/api/oie/result-listener/stop")
+    def stop_oie_result_listener():
+        listener: OieResultListener = app.extensions["oie_result_listener"]
+        return jsonify({"success": True, "item": listener.stop()})
 
     @app.post("/api/oie/local-orders/<int:order_id>/send")
     def send_oie_local_order(order_id: int):
