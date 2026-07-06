@@ -1428,6 +1428,21 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
 
+    @app.get("/api/gdt/orders")
+    def list_gdt_orders():
+        return jsonify({"success": True, "items": store.list_gdt_order_records()})
+
+    @app.post("/api/gdt/orders")
+    def create_gdt_order():
+        payload = request.get_json(silent=True) or {}
+        try:
+            item = store.create_gdt_order_record(payload)
+        except KeyError:
+            return error_response("Patient record was not found.", 404)
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        return jsonify({"success": True, "item": item}), 201
+
     @app.get("/api/oie/local-adt-patients")
     def list_oie_local_adt_patients():
         return jsonify(

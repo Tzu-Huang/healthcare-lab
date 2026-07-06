@@ -144,7 +144,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn("/api/integration-records", routes)
         self.assertNotIn("/api/workbench/orders", routes)
         self.assertNotIn("/api/fhir/submit", routes)
-        self.assertNotIn("/api/gdt/orders", routes)
+        self.assertIn("/api/gdt/orders", routes)
 
     def create_local_patient(self):
         response = self.client.post(
@@ -211,6 +211,44 @@ class HealthcareLabApiTests(unittest.TestCase):
         response = self.client.post("/api/orders", json={"patientRecordId": 404})
 
         self.assertEqual(response.status_code, 404)
+
+    def test_gdt_order_api_creates_and_lists_local_ecg_order_without_openemr(self):
+        self.client.application.config["OPENEMR_DB_HOST"] = ""
+        patient = self.create_local_patient()
+
+        created = self.client.post(
+            "/api/gdt/orders",
+            json={
+                "patientRecordId": patient["id"],
+                "requestedAt": "20260706110000",
+                "orderingProvider": "1001^WANG^AMY",
+                "clinicalIndication": "Resting ECG baseline",
+                "attachmentUrl": "http://localhost/reports/demo.pdf",
+            },
+        )
+
+        self.assertEqual(created.status_code, 201)
+        item = created.get_json()["item"]
+        self.assertEqual(item["status"], "Created")
+        self.assertEqual(item["messageType"], "6302")
+        self.assertEqual(item["gdtTestField"], "8402")
+        self.assertEqual(item["gdtTestCode"], "EKG01")
+        self.assertIn("8402EKG01", item["payload"])
+
+        listed = self.client.get("/api/gdt/orders")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.get_json()["items"][0]["localGdtOrderNumber"], item["localGdtOrderNumber"])
+
+    def test_gdt_order_api_rejects_non_mvp_test_codes(self):
+        patient = self.create_local_patient()
+
+        response = self.client.post(
+            "/api/gdt/orders",
+            json={"patientRecordId": patient["id"], "gdtTestCode": "EKG04"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("EKG01", response.get_json()["error"])
 
     def test_parse_hl7_ack_extracts_msa_fields(self):
         ack = parse_hl7_ack(
