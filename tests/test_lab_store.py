@@ -197,6 +197,62 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertIn("(0010,0010) PatientName", dicom["payload"])
         self.assertIn("Morgan^Avery^Lee", dicom["payload"])
 
+    def test_gdt_order_creation_persists_fixed_ekg01_order(self):
+        patient = self.store.create_patient_record(
+            {
+                "mode": "gdt",
+                "mrn": "MRN-GDT-001",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            }
+        )
+
+        order = self.store.create_gdt_order_record(
+            {
+                "patientRecordId": patient["id"],
+                "requestedAt": "20260706110000",
+                "orderingProvider": "1001^WANG^AMY",
+                "clinicalIndication": "Resting ECG baseline",
+                "attachmentUrl": "http://localhost/reports/demo.pdf",
+            }
+        )
+
+        self.assertEqual(order["localGdtOrderNumber"], "GDT-ORD-000001")
+        self.assertEqual(order["protocolVersion"], "GDT 2.1")
+        self.assertEqual(order["messageType"], "6302")
+        self.assertEqual(order["status"], "Created")
+        self.assertEqual(order["gdtTestField"], "8402")
+        self.assertEqual(order["gdtTestCode"], "EKG01")
+        self.assertEqual(order["attachmentUrl"], "http://localhost/reports/demo.pdf")
+        records = parse_gdt_records(order["payload"])
+        self.assertEqual(records["8000"], "6302")
+        self.assertEqual(records["8402"], "EKG01")
+        self.assertEqual(records["3000"], "MRN-GDT-001")
+        self.assertEqual(records["6200"], "GDT-ORD-000001")
+        self.assertEqual(records["6220"], "20260706110000")
+        self.assertEqual(records["8100"], f"{len(order['payload'].encode('cp1252')):05d}")
+        self.assertEqual(self.store.list_gdt_order_records()[0]["id"], order["id"])
+        self.assertEqual(self.store.list_gdt_orders()[0]["orderNumber"], "GDT-ORD-000001")
+
+    def test_gdt_order_creation_rejects_non_mvp_8402_codes(self):
+        patient = self.store.create_patient_record(
+            {
+                "mrn": "MRN-GDT-002",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            }
+        )
+
+        with self.assertRaises(SimulatorValidationError):
+            self.store.create_gdt_order_record({"patientRecordId": patient["id"], "gdtTestCode": "EKG04"})
+
+        with self.assertRaises(SimulatorValidationError):
+            self.store.create_gdt_order_record({"patientRecordId": patient["id"], "gdtTestCode": "ERGO01"})
+
     def test_order_send_result_persists_ack_and_transport_error(self):
         patient = self.store.create_patient_record(
             {
