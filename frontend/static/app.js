@@ -6,9 +6,9 @@ let dashboardResources = null;
 let patientRecords = [];
 let orderRecords = [];
 let oieInventory = [];
-let oieOrders = [];
+let oieUnmatchedResults = [];
+let selectedOiePatientId = null;
 let selectedOiePayload = "";
-const MODE_STORAGE_KEY = "healthcare-lab.protocol-mode";
 
 const VIEW_TITLES = {
   "lab-console-view": "Service Health",
@@ -387,6 +387,22 @@ function hl7Timestamp(date = new Date()) {
   ].join("");
 }
 
+function taipeiTimestamp(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date).replace(",", " TPE");
+}
+
 function buildPatientPreviewPayload(payload) {
   const timestamp = hl7Timestamp();
   const visitNumber = payload.visitNumber || "VISIT-GENERATED";
@@ -756,76 +772,203 @@ function renderOieInventory() {
   body.replaceChildren();
   if (!oieInventory.length) {
     const row = document.createElement("tr");
-    const cell = rowCell("No local ADT A04 records have been created.");
-    cell.colSpan = 6;
+    const cell = rowCell("No local ADT patients have been created.");
+    cell.colSpan = 5;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
-    byId("oie-payload-preview").textContent = "Create a local Patient A04 record to inspect its generated payload here.";
+    selectedOiePatientId = null;
+    byId("oie-selected-patient-title").textContent = "No patient selected";
+    byId("oie-payload-preview").textContent = "Create a local Patient A04 record to inspect it here.";
     return;
+  }
+  if (!selectedOiePatientId || !oieInventory.some((item) => Number(item.id) === Number(selectedOiePatientId))) {
+    selectedOiePatientId = oieInventory[0].id;
   }
   oieInventory.forEach((item) => {
     const row = document.createElement("tr");
+    row.classList.toggle("selected-row", Number(item.id) === Number(selectedOiePatientId));
     const summary = item.summary || {};
-    const inspectButton = createElement("button", "Inspect", "small-button");
-    inspectButton.type = "button";
     const selectPayload = () => {
+      selectedOiePatientId = item.id;
       selectedOiePayload = item.payload || "";
       byId("oie-payload-preview").textContent = selectedOiePayload;
+      renderOiePreviewSummary("ADT", [
+        ["MRN", summary.mrn],
+        ["Name", summary.name],
+        ["Created", taipeiTimestamp(item.createdAt)],
+      ]);
+      renderOieInventory();
+      renderSelectedOiePatient();
     };
-    inspectButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      selectPayload();
-    });
     row.append(
-      rowCell(item.localPatientNumber || item.id),
       rowCell(summary.mrn),
       rowCell(summary.name),
-      rowCell(item.messageType || "ADT^A04"),
-      rowCell(item.createdAt),
-      rowCell(inspectButton),
+      rowCell(taipeiTimestamp(item.createdAt)),
+      rowCell(item.orderCount ?? 0),
+      rowCell(item.resultCount ?? 0),
     );
     row.addEventListener("click", selectPayload);
     body.appendChild(row);
   });
 }
 
-function renderOieOrders() {
+function selectedOiePatient() {
+  return oieInventory.find((item) => Number(item.id) === Number(selectedOiePatientId)) || null;
+}
+
+function renderOiePreviewSummary(kind, rows) {
+  const container = byId("oie-preview-summary");
+  container.replaceChildren();
+  container.appendChild(createElement("span", kind, "status neutral"));
+  rows.forEach(([label, value]) => {
+    const item = document.createElement("p");
+    item.appendChild(createElement("strong", `${label}: `));
+    item.appendChild(document.createTextNode(value || "-"));
+    container.appendChild(item);
+  });
+}
+
+function renderSelectedOiePatient() {
+  const patient = selectedOiePatient();
+  byId("oie-selected-patient-title").textContent = patient
+    ? `${patient.summary?.mrn || patient.id} - ${patient.summary?.name || "Patient"}`
+    : "No patient selected";
+  renderOieOrders(patient?.orders || []);
+  renderOieResults(patient?.results || []);
+}
+
+function renderOieOrders(orders) {
   const body = byId("oie-order-list");
   body.replaceChildren();
-  if (!oieOrders.length) {
+  if (!orders.length) {
     const row = document.createElement("tr");
-    const cell = rowCell("No local ORM O01 orders have been created.");
+    const cell = rowCell("No local ORM O01 orders for this patient.");
+    cell.colSpan = 7;
+    cell.className = "muted";
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  orders.forEach((item) => {
+    const row = document.createElement("tr");
+    const summary = item.summary || {};
+    const previewButton = createElement("button", "Preview", "small-button");
+    previewButton.type = "button";
+    const sendButton = createElement("button", "Send", "small-button");
+    sendButton.type = "button";
+    previewButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectOieOrder(item);
+    });
+    sendButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      sendOieOrder(item.id, sendButton);
+    });
+    const actions = document.createElement("div");
+    actions.className = "button-row compact-actions";
+    actions.append(previewButton, sendButton);
+    row.append(
+      rowCell(item.localOrderNumber || item.id),
+      rowCell(summary.orderCode),
+      rowCell(item.priority),
+      rowCell(item.status || "Ready to send"),
+      rowCell(item.ack?.code || item.transportError || "-"),
+      rowCell(taipeiTimestamp(item.lastSentAt)),
+      rowCell(actions),
+    );
+    row.addEventListener("click", () => selectOieOrder(item));
+    body.appendChild(row);
+  });
+}
+
+function selectOieOrder(item) {
+  selectedOiePayload = item.payload || "";
+  byId("oie-payload-preview").textContent = selectedOiePayload;
+  byId("oie-ack-preview").textContent = ackPreviewText(item);
+  renderOiePreviewSummary("ORM", [
+    ["Order", item.localOrderNumber],
+    ["Code", item.summary?.orderCode],
+    ["Status", item.status],
+    ["ACK", item.ack?.code || item.transportError || "-"],
+  ]);
+}
+
+function renderOieResults(results) {
+  const body = byId("oie-result-list");
+  body.replaceChildren();
+  if (!results.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell("No ORU results for this patient.");
     cell.colSpan = 5;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
     return;
   }
-  oieOrders.forEach((item) => {
+  results.forEach((item) => {
     const row = document.createElement("tr");
-    const summary = item.summary || {};
-    const sendButton = createElement("button", "Send", "small-button");
-    sendButton.type = "button";
-    sendButton.addEventListener("click", (event) => {
+    const previewButton = createElement("button", "Preview", "small-button");
+    previewButton.type = "button";
+    previewButton.addEventListener("click", (event) => {
       event.stopPropagation();
-      sendOieOrder(item.id, sendButton);
+      selectOieResult(item);
     });
-    const selectOrder = () => {
-      selectedOiePayload = item.payload || "";
-      byId("oie-payload-preview").textContent = selectedOiePayload;
-      byId("oie-ack-preview").textContent = ackPreviewText(item);
-    };
     row.append(
-      rowCell(item.localOrderNumber || item.id),
-      rowCell(summary.mrn),
-      rowCell(item.status || "Ready to send"),
-      rowCell(item.ack?.code || item.transportError || "-"),
-      rowCell(sendButton),
+      rowCell(item.messageType || "ORU"),
+      rowCell(item.matchedOrderRecordId || "-"),
+      rowCell(item.matchStatus),
+      rowCell(taipeiTimestamp(item.receivedAt)),
+      rowCell(previewButton),
     );
-    row.addEventListener("click", selectOrder);
+    row.addEventListener("click", () => selectOieResult(item));
     body.appendChild(row);
   });
+}
+
+function renderOieUnmatchedResults() {
+  const body = byId("oie-unmatched-result-list");
+  body.replaceChildren();
+  if (!oieUnmatchedResults.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell("No unmatched ORU results.");
+    cell.colSpan = 5;
+    cell.className = "muted";
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  oieUnmatchedResults.forEach((item) => {
+    const row = document.createElement("tr");
+    const previewButton = createElement("button", "Preview", "small-button");
+    previewButton.type = "button";
+    previewButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectOieResult(item);
+    });
+    row.append(
+      rowCell(item.messageType || "ORU"),
+      rowCell(item.patientMrn || "-"),
+      rowCell(item.matchStatus || item.parseStatus),
+      rowCell(taipeiTimestamp(item.receivedAt)),
+      rowCell(previewButton),
+    );
+    row.addEventListener("click", () => selectOieResult(item));
+    body.appendChild(row);
+  });
+}
+
+function selectOieResult(item) {
+  selectedOiePayload = item.payload || "";
+  byId("oie-payload-preview").textContent = selectedOiePayload;
+  byId("oie-ack-preview").textContent = item.error || "Result accepted.";
+  renderOiePreviewSummary("ORU", [
+    ["Type", item.messageType],
+    ["MRN", item.patientMrn],
+    ["Placer", item.placerOrderNumber],
+    ["Filler", item.fillerOrderNumber],
+    ["Match", item.matchStatus],
+  ]);
 }
 
 function ackPreviewText(item) {
@@ -838,15 +981,16 @@ function ackPreviewText(item) {
 async function refreshOieInventory() {
   setStatus("oie-inventory-status", "Refreshing...", "pending");
   try {
-    const [patients, orders] = await Promise.all([
-      requestJson("/api/oie/local-adt-patients"),
-      requestJson("/api/oie/local-orders"),
+    const [workbench] = await Promise.all([
+      requestJson("/api/oie/workbench"),
+      refreshOieListenerStatus(),
     ]);
-    oieInventory = patients.items || [];
-    oieOrders = orders.items || [];
+    oieInventory = workbench.patients || [];
+    oieUnmatchedResults = workbench.unmatchedResults || [];
     renderOieInventory();
-    renderOieOrders();
-    setStatus("oie-inventory-status", "Local only", "neutral");
+    renderSelectedOiePatient();
+    renderOieUnmatchedResults();
+    setStatus("oie-inventory-status", "Updated", "success");
   } catch (error) {
     setStatus("oie-inventory-status", "Refresh failed", "error");
   }
@@ -887,34 +1031,53 @@ async function sendOieOrder(orderId, button) {
   }
 }
 
+function renderOieListenerStatus(item = {}) {
+  const label = item.running ? `Running ${item.host}:${item.port}` : "Stopped";
+  setStatus("oie-listener-status", item.lastError || label, item.lastError ? "error" : (item.running ? "success" : "neutral"));
+  if (item.host) byId("oie-listener-host").value = item.host;
+  if (item.port) byId("oie-listener-port").value = item.port;
+  byId("oie-listener-mllp").checked = item.mllpFraming !== false;
+}
+
+async function refreshOieListenerStatus() {
+  const result = await requestJson("/api/oie/result-listener/status");
+  renderOieListenerStatus(result.item || {});
+}
+
+async function startOieListener() {
+  setStatus("oie-listener-status", "Starting...", "pending");
+  try {
+    const result = await requestJson("/api/oie/result-listener/start", {
+      method: "POST",
+      body: JSON.stringify({
+        host: byId("oie-listener-host").value.trim(),
+        port: Number(byId("oie-listener-port").value || 6665),
+        mllpFraming: byId("oie-listener-mllp").checked,
+      }),
+    });
+    renderOieListenerStatus(result.item || {});
+  } catch (error) {
+    setStatus("oie-listener-status", error.message, "error");
+  }
+}
+
+async function stopOieListener() {
+  setStatus("oie-listener-status", "Stopping...", "pending");
+  try {
+    const result = await requestJson("/api/oie/result-listener/stop", { method: "POST", body: JSON.stringify({}) });
+    renderOieListenerStatus(result.item || {});
+  } catch (error) {
+    setStatus("oie-listener-status", error.message, "error");
+  }
+}
+
 async function copyTextFromElement(elementId) {
   const text = byId(elementId).textContent || "";
   if (!text.trim()) return;
   await navigator.clipboard.writeText(text);
 }
 
-function initializeProtocolModeSelector() {
-  const selector = byId("protocol-mode");
-  if (!selector) return;
-  try {
-    const savedMode = window.localStorage.getItem(MODE_STORAGE_KEY);
-    if (savedMode && [...selector.options].some((option) => option.value === savedMode)) {
-      selector.value = savedMode;
-    }
-  } catch (error) {
-    // Storage can be unavailable in hardened browser modes.
-  }
-  selector.addEventListener("change", () => {
-    try {
-      window.localStorage.setItem(MODE_STORAGE_KEY, selector.value);
-    } catch (error) {
-      // Ignore persistence failures; the selector still works for the session.
-    }
-  });
-}
-
 document.addEventListener("DOMContentLoaded", () => {
-  initializeProtocolModeSelector();
   document.querySelectorAll("[data-nav-target]").forEach((button) => {
     button.addEventListener("click", () => setActiveView(button.dataset.navTarget));
   });
@@ -947,5 +1110,7 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("copy-order-payload").addEventListener("click", () => copyTextFromElement("order-payload-preview"));
   byId("refresh-oie-inventory").addEventListener("click", refreshOieInventory);
   byId("copy-oie-payload").addEventListener("click", () => copyTextFromElement("oie-payload-preview"));
+  byId("start-oie-listener").addEventListener("click", startOieListener);
+  byId("stop-oie-listener").addEventListener("click", stopOieListener);
   setActiveView("lab-console-view");
 });
