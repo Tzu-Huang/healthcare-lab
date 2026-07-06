@@ -1663,6 +1663,25 @@ body {
   gap: 20px;
 }
 
+.oie-console-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.85fr) minmax(0, 1.6fr);
+  gap: 20px;
+}
+
+.oie-subsection-heading {
+  margin-top: 22px;
+}
+
+.selected-row td {
+  background: var(--ui-blue-soft);
+}
+
+.compact-actions {
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
 .panel-head {
   margin-bottom: 22px;
 }
@@ -1863,6 +1882,10 @@ button.primary:hover,
 
   .lab-summary-strip,
   .dashboard-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .oie-console-grid {
     grid-template-columns: 1fr;
   }
 

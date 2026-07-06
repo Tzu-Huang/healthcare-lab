@@ -15,6 +15,7 @@ from app import (
     dashboard_action_for_group,
     derive_lab_overall_status,
     parse_hl7_ack,
+    parse_oru_summary,
     run_lab_application_check,
     run_lab_smoke_check,
 )
@@ -106,17 +107,14 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b"<title>Healthcare Lab</title>", response.data)
         self.assertIn(b'data-project-mode="healthcare_lab"', response.data)
         self.assertIn(b"Server Health Dashboard", response.data)
-        self.assertIn(b'id="protocol-mode"', response.data)
-        self.assertIn(b"HL7 v2.3", response.data)
-        self.assertIn(b"HL7 v2.5", response.data)
-        self.assertIn(b"FHIR", response.data)
-        self.assertIn(b"GDT", response.data)
-        self.assertIn(b"DICOM", response.data)
+        self.assertNotIn(b'id="protocol-mode"', response.data)
         self.assertIn(b'id="lab-console-view"', response.data)
         self.assertIn(b'id="order-view"', response.data)
         self.assertIn(b'id="order-payload-preview"', response.data)
         self.assertIn(b'id="oie-order-list"', response.data)
         self.assertIn(b'id="oie-send-host" value="localhost"', response.data)
+        self.assertIn(b'id="oie-listener-port" value="6665"', response.data)
+        self.assertIn(b'id="oie-unmatched-result-list"', response.data)
         self.assertIn(b'id="dashboard-service-list"', response.data)
         self.assertNotIn(b'id="orders-workbench-view"', response.data)
         self.assertNotIn(b'id="hl7-v2-view"', response.data)
@@ -137,6 +135,9 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("/api/lab/servers", routes)
         self.assertIn("/api/orders", routes)
         self.assertIn("/api/oie/local-orders", routes)
+        self.assertIn("/api/oie/result-listener/start", routes)
+        self.assertIn("/api/oie/workbench", routes)
+        self.assertIn("/api/oie/results", routes)
         self.assertNotIn("/api/listener/start", routes)
         self.assertNotIn("/api/integration-records", routes)
         self.assertNotIn("/api/workbench/orders", routes)
@@ -199,6 +200,77 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(ack["code"], "AE")
         self.assertEqual(ack["controlId"], "ORM123")
         self.assertEqual(ack["text"], "Application error")
+
+    def test_parse_oru_summary_extracts_matching_fields(self):
+        parsed = parse_oru_summary(
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^R01|ORU1|P|2.3.1\r"
+            "PID|1||MRN-A04-001^^^HEALTHCARE_LAB^MR||Morgan^Avery\r"
+            "OBR|1|ORD-000001|FILL-1|ECG12^12 Lead ECG"
+        )
+
+        self.assertEqual(parsed["messageType"], "ORU^R01")
+        self.assertEqual(parsed["messageControlId"], "ORU1")
+        self.assertEqual(parsed["patientMrn"], "MRN-A04-001")
+        self.assertEqual(parsed["placerOrderNumber"], "ORD-000001")
+        self.assertEqual(parsed["fillerOrderNumber"], "FILL-1")
+
+    def test_oie_result_api_persists_and_matches_order_result(self):
+        patient = self.create_local_patient()
+        order = self.client.post("/api/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        payload = (
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^R01|ORU1|P|2.3.1\r"
+            "PID|1||MRN-A04-001^^^HEALTHCARE_LAB^MR||Morgan^Avery\r"
+            f"OBR|1|{order['localOrderNumber']}||ECG12^12 Lead ECG"
+        )
+
+        response = self.client.post("/api/oie/results", json={"payload": payload})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertIn("MSA|AA|ORU1", body["ack"])
+        self.assertEqual(body["item"]["matchStatus"], "order-matched")
+        self.assertEqual(body["item"]["matchedOrderRecordId"], order["id"])
+
+        workbench = self.client.get("/api/oie/workbench").get_json()
+        self.assertEqual(workbench["patients"][0]["orderCount"], 1)
+        self.assertEqual(workbench["patients"][0]["resultCount"], 1)
+        self.assertEqual(workbench["patients"][0]["results"][0]["messageControlId"], "ORU1")
+
+    def test_oie_result_api_keeps_unknown_patient_unmatched(self):
+        payload = (
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^W01|ORU2|P|2.3.1\r"
+            "PID|1||UNKNOWN^^^HEALTHCARE_LAB^MR||Patient^Unknown\r"
+            "OBR|1|ORD-404||ECG12^12 Lead ECG"
+        )
+
+        response = self.client.post("/api/oie/results", json={"payload": payload})
+
+        self.assertEqual(response.status_code, 200)
+        item = response.get_json()["item"]
+        self.assertEqual(item["matchStatus"], "unmatched-patient")
+        workbench = self.client.get("/api/oie/workbench").get_json()
+        self.assertEqual(workbench["unmatchedResults"][0]["messageControlId"], "ORU2")
+
+    def test_oie_result_api_rejects_unsupported_message_with_failure_ack(self):
+        payload = (
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ADT^A04|BAD1|P|2.3.1\r"
+            "PID|1||MRN-A04-001^^^HEALTHCARE_LAB^MR"
+        )
+
+        response = self.client.post("/api/oie/results", json={"payload": payload})
+
+        self.assertEqual(response.status_code, 400)
+        body = response.get_json()
+        self.assertFalse(body["success"])
+        self.assertIn("MSA|AR|BAD1", body["ack"])
+
+    def test_oie_result_listener_status_defaults_to_port_6665(self):
+        response = self.client.get("/api/oie/result-listener/status")
+
+        self.assertEqual(response.status_code, 200)
+        item = response.get_json()["item"]
+        self.assertFalse(item["running"])
+        self.assertEqual(item["port"], 6665)
 
     @patch("app.send_hl7_mllp_message")
     def test_oie_send_order_records_ack_acceptance(self, send_message):

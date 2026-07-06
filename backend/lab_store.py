@@ -624,6 +624,30 @@ class DemoStore:
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY(patient_record_id) REFERENCES local_patient_records(id) ON DELETE RESTRICT
                 );
+                CREATE TABLE IF NOT EXISTS oie_result_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message_control_id TEXT NOT NULL DEFAULT '',
+                    message_type TEXT NOT NULL,
+                    patient_mrn TEXT NOT NULL DEFAULT '',
+                    placer_order_number TEXT NOT NULL DEFAULT '',
+                    filler_order_number TEXT NOT NULL DEFAULT '',
+                    matched_patient_record_id INTEGER,
+                    matched_order_record_id INTEGER,
+                    match_status TEXT NOT NULL,
+                    duplicate_of_id INTEGER,
+                    parse_status TEXT NOT NULL,
+                    error_text TEXT NOT NULL DEFAULT '',
+                    payload_hl7 TEXT NOT NULL,
+                    received_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(matched_patient_record_id) REFERENCES local_patient_records(id) ON DELETE SET NULL,
+                    FOREIGN KEY(matched_order_record_id) REFERENCES local_order_records(id) ON DELETE SET NULL,
+                    FOREIGN KEY(duplicate_of_id) REFERENCES oie_result_records(id) ON DELETE SET NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_oie_result_control_id
+                ON oie_result_records(message_control_id)
+                WHERE message_control_id != '';
                 """
             )
             self._ensure_column(connection, "lab_servers", "control_type", "TEXT NOT NULL DEFAULT ''")
@@ -1109,6 +1133,166 @@ class DemoStore:
     def list_oie_local_order_inventory(self) -> list[dict[str, Any]]:
         return self.list_order_records()
 
+    def record_oie_result(self, payload_hl7: str, parsed: dict[str, str]) -> dict[str, Any]:
+        timestamp = now_iso()
+        message_control_id = str(parsed.get("messageControlId") or "").strip()
+        message_type = str(parsed.get("messageType") or "").strip()
+        patient_mrn = str(parsed.get("patientMrn") or "").strip()
+        placer_order_number = str(parsed.get("placerOrderNumber") or "").strip()
+        filler_order_number = str(parsed.get("fillerOrderNumber") or "").strip()
+        with self.lock, self.connect() as connection:
+            if message_control_id:
+                duplicate = connection.execute(
+                    """
+                    SELECT * FROM oie_result_records
+                    WHERE message_control_id = ?
+                    """,
+                    (message_control_id,),
+                ).fetchone()
+                if duplicate:
+                    item = self._result_record_dict(duplicate)
+                    item["duplicate"] = True
+                    item["duplicateOfId"] = duplicate["id"]
+                    return item
+            patient_row = None
+            if patient_mrn:
+                patient_row = connection.execute(
+                    """
+                    SELECT * FROM local_patient_records
+                    WHERE mrn = ?
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (patient_mrn,),
+                ).fetchone()
+            order_row = None
+            if patient_row and (placer_order_number or filler_order_number):
+                order_row = connection.execute(
+                    """
+                    SELECT * FROM local_order_records
+                    WHERE patient_record_id = ?
+                      AND (
+                        (? != '' AND placer_order_number = ?)
+                        OR (? != '' AND filler_order_number = ?)
+                        OR (? != '' AND local_order_number = ?)
+                      )
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (
+                        patient_row["id"],
+                        placer_order_number,
+                        placer_order_number,
+                        filler_order_number,
+                        filler_order_number,
+                        filler_order_number,
+                        filler_order_number,
+                    ),
+                ).fetchone()
+            if order_row:
+                match_status = "order-matched"
+            elif patient_row:
+                match_status = "patient-only"
+            else:
+                match_status = "unmatched-patient"
+            cursor = connection.execute(
+                """
+                INSERT INTO oie_result_records (
+                    message_control_id, message_type, patient_mrn, placer_order_number,
+                    filler_order_number, matched_patient_record_id, matched_order_record_id,
+                    match_status, duplicate_of_id, parse_status, error_text, payload_hl7,
+                    received_at, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'accepted', '', ?, ?, ?, ?)
+                """,
+                (
+                    message_control_id,
+                    message_type,
+                    patient_mrn,
+                    placer_order_number,
+                    filler_order_number,
+                    patient_row["id"] if patient_row else None,
+                    order_row["id"] if order_row else None,
+                    match_status,
+                    payload_hl7,
+                    timestamp,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            result_id = int(cursor.lastrowid)
+            row = connection.execute(
+                "SELECT * FROM oie_result_records WHERE id = ?",
+                (result_id,),
+            ).fetchone()
+        return self._result_record_dict(row)
+
+    def record_oie_result_error(self, payload_hl7: str, message_type: str, error_text: str) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self.lock, self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO oie_result_records (
+                    message_control_id, message_type, patient_mrn, placer_order_number,
+                    filler_order_number, matched_patient_record_id, matched_order_record_id,
+                    match_status, duplicate_of_id, parse_status, error_text, payload_hl7,
+                    received_at, created_at, updated_at
+                )
+                VALUES ('', ?, '', '', '', NULL, NULL, 'unmatched-patient', NULL, 'error', ?, ?, ?, ?, ?)
+                """,
+                (message_type, error_text, payload_hl7, timestamp, timestamp, timestamp),
+            )
+            row = connection.execute(
+                "SELECT * FROM oie_result_records WHERE id = ?",
+                (int(cursor.lastrowid),),
+            ).fetchone()
+        return self._result_record_dict(row)
+
+    def list_oie_results(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM oie_result_records
+                ORDER BY received_at DESC, id DESC
+                """
+            ).fetchall()
+        return [self._result_record_dict(row) for row in rows]
+
+    def list_oie_workbench(self) -> dict[str, Any]:
+        patients = self.list_patient_records()
+        orders = self.list_order_records()
+        results = self.list_oie_results()
+        orders_by_patient: dict[int, list[dict[str, Any]]] = {}
+        results_by_patient: dict[int, list[dict[str, Any]]] = {}
+        unmatched_results: list[dict[str, Any]] = []
+        for order in orders:
+            orders_by_patient.setdefault(int(order["patientRecordId"]), []).append(order)
+        for result in results:
+            patient_id = result.get("matchedPatientRecordId")
+            if patient_id:
+                results_by_patient.setdefault(int(patient_id), []).append(result)
+            else:
+                unmatched_results.append(result)
+        workbench_patients = []
+        for patient in patients:
+            patient_id = int(patient["id"])
+            patient_orders = orders_by_patient.get(patient_id, [])
+            patient_results = results_by_patient.get(patient_id, [])
+            item = {
+                **patient,
+                "orders": patient_orders,
+                "results": patient_results,
+                "orderCount": len(patient_orders),
+                "resultCount": len(patient_results),
+            }
+            item["summary"] = {
+                **item["summary"],
+                "orderCount": len(patient_orders),
+                "resultCount": len(patient_results),
+            }
+            workbench_patients.append(item)
+        return {"patients": workbench_patients, "unmatchedResults": unmatched_results}
+
     @staticmethod
     def _order_record_dict(row: sqlite3.Row) -> dict[str, Any]:
         validation_messages = json.loads(row["validation_messages_json"] or "[]")
@@ -1170,6 +1354,27 @@ class DemoStore:
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
             "localOnly": True,
+        }
+
+    @staticmethod
+    def _result_record_dict(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "messageControlId": row["message_control_id"],
+            "messageType": row["message_type"],
+            "patientMrn": row["patient_mrn"],
+            "placerOrderNumber": row["placer_order_number"],
+            "fillerOrderNumber": row["filler_order_number"],
+            "matchedPatientRecordId": row["matched_patient_record_id"],
+            "matchedOrderRecordId": row["matched_order_record_id"],
+            "matchStatus": row["match_status"],
+            "duplicateOfId": row["duplicate_of_id"],
+            "parseStatus": row["parse_status"],
+            "error": row["error_text"],
+            "payload": row["payload_hl7"],
+            "receivedAt": row["received_at"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
         }
 
     @staticmethod
