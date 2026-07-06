@@ -110,6 +110,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b"Server Health Dashboard", response.data)
         self.assertNotIn(b'id="protocol-mode"', response.data)
         self.assertIn(b'id="lab-console-view"', response.data)
+        self.assertIn(b'id="patient-mode"', response.data)
         self.assertIn(b'id="order-view"', response.data)
         self.assertIn(b'id="order-payload-preview"', response.data)
         self.assertIn(b'id="oie-order-list"', response.data)
@@ -186,6 +187,25 @@ class HealthcareLabApiTests(unittest.TestCase):
         listed = self.client.get("/api/oie/local-orders")
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.get_json()["items"][0]["localOrderNumber"], item["localOrderNumber"])
+
+    def test_patient_api_creates_fhir_local_patient(self):
+        response = self.client.post(
+            "/api/patients",
+            json={
+                "mode": "fhir",
+                "mrn": "MRN-FHIR-001",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item = response.get_json()["item"]
+        self.assertEqual(item["protocolVersion"], "FHIR R4")
+        self.assertEqual(item["messageType"], "Patient")
+        self.assertIn('"resourceType": "Patient"', item["payload"])
 
     def test_order_api_rejects_missing_patient(self):
         response = self.client.post("/api/orders", json={"patientRecordId": 404})

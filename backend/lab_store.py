@@ -18,7 +18,17 @@ except ImportError:  # pragma: no cover - optional OpenEMR integration dependenc
 OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES = ("1001",)
 PATIENT_PROTOCOL_VERSION = "2.3.1"
 PATIENT_MESSAGE_TYPE = "ADT^A04"
+PATIENT_MODES = {
+    "hl7-v2": {"protocol": "HL7 v2.3.1", "message_type": "ADT^A04"},
+    "fhir": {"protocol": "FHIR R4", "message_type": "Patient"},
+    "gdt": {"protocol": "GDT 2.1", "message_type": "6301"},
+    "dicom": {"protocol": "DICOM", "message_type": "Patient Module"},
+}
 PATIENT_CLASS_DEFAULT = "O"
+GDT_VERSION = "02.10"
+GDT_DEFAULT_CHARSET_MARKER = "3"
+GDT_DEFAULT_ENCODING = "cp1252"
+GDT_PATIENT_SEX_CODES = {"M": "1", "F": "2"}
 ORDER_PROTOCOL_VERSION = "2.3.1"
 ORDER_MESSAGE_TYPE = "ORM^O01"
 ORDER_STATUS_READY = "Ready to send"
@@ -197,6 +207,52 @@ def _hl7_escape_composite(value: Any) -> str:
         _hl7_escape(component)
         for component in str(value if value is not None else "").split("^")
     )
+
+
+def _gdt_clean_value(value: Any) -> str:
+    return str(value if value is not None else "").strip().replace("\r", " ").replace("\n", " ")
+
+
+def _encode_gdt_text(value: str) -> bytes:
+    try:
+        return value.encode(GDT_DEFAULT_ENCODING)
+    except UnicodeEncodeError as exc:
+        raise SimulatorValidationError(
+            "GDT 2.1 patient fields must use ANSI/ISO-8859-1 compatible characters."
+        ) from exc
+
+
+def render_gdt_record(code: str, value: Any) -> bytes:
+    field_code = str(code).strip()
+    if len(field_code) != 4 or not field_code.isdigit():
+        raise SimulatorValidationError(f"GDT field code must be four digits: {field_code}")
+    content = _encode_gdt_text(_gdt_clean_value(value))
+    record_length = 3 + 4 + len(content) + 2
+    if record_length > 999:
+        raise SimulatorValidationError(f"GDT field {field_code} exceeds the 999 byte record limit.")
+    return f"{record_length:03d}{field_code}".encode("ascii") + content + b"\r\n"
+
+
+def render_gdt_message(records: list[tuple[str, Any]], *, set_type: str) -> str:
+    normalized = [
+        (code, value)
+        for code, value in records
+        if code not in {"8000", "8100", "9218", "9206"}
+    ]
+    total_length = "00000"
+    for _ in range(8):
+        full_records = [
+            ("8000", set_type),
+            ("8100", total_length),
+            ("9218", GDT_VERSION),
+            ("9206", GDT_DEFAULT_CHARSET_MARKER),
+        ] + normalized
+        payload = b"".join(render_gdt_record(code, value) for code, value in full_records)
+        next_length = f"{len(payload):05d}"
+        if next_length == total_length:
+            return payload.decode(GDT_DEFAULT_ENCODING)
+        total_length = next_length
+    raise SimulatorValidationError("Could not stabilize GDT 8100 full message length.")
 
 
 def ensure_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
@@ -701,10 +757,28 @@ class DemoStore:
     def _patient_visit_number(record_id: int) -> str:
         return f"VISIT-{record_id:06d}"
 
+    @staticmethod
+    def _normalize_patient_mode(payload: dict[str, Any]) -> str:
+        mode = str(payload.get("mode", payload.get("protocolMode", "hl7-v2"))).strip().lower()
+        aliases = {
+            "hl7": "hl7-v2",
+            "hl7v2": "hl7-v2",
+            "hl7-v2.3.1": "hl7-v2",
+            "hl7-v231": "hl7-v2",
+            "fhir-r4": "fhir",
+            "gdt-2.1": "gdt",
+            "dicom-patient": "dicom",
+        }
+        normalized = aliases.get(mode, mode)
+        if normalized not in PATIENT_MODES:
+            raise SimulatorValidationError("Patient mode must be HL7 v2, FHIR, GDT, or DICOM.")
+        return normalized
+
     def _validate_patient_payload(self, payload: dict[str, Any]) -> dict[str, str]:
         if not isinstance(payload, dict):
             raise SimulatorValidationError("Patient payload must be a JSON object.")
         return {
+            "mode": self._normalize_patient_mode(payload),
             "mrn": self._clean_patient_text(payload.get("mrn"), "mrn", required=True),
             "first_name": self._clean_patient_text(payload.get("firstName"), "firstName", required=True),
             "last_name": self._clean_patient_text(payload.get("lastName"), "lastName", required=True),
@@ -753,6 +827,107 @@ class DemoStore:
         ]
         return "\r".join(segments), visit_number
 
+    @staticmethod
+    def _patient_fhir_gender(sex: str) -> str:
+        return {"M": "male", "F": "female", "O": "other", "U": "unknown"}[sex]
+
+    @staticmethod
+    def _patient_fhir_birth_date(dob: str) -> str:
+        return f"{dob[:4]}-{dob[4:6]}-{dob[6:]}"
+
+    @staticmethod
+    def _build_patient_fhir_payload(values: dict[str, str], *, record_id: int) -> tuple[str, str]:
+        visit_number = values["visit_number"] or DemoStore._patient_visit_number(record_id)
+        patient_name = " ".join(
+            part for part in (values["first_name"], values["middle_name"], values["last_name"]) if part
+        )
+        resource = {
+            "resourceType": "Patient",
+            "id": DemoStore._patient_record_number(record_id),
+            "meta": {
+                "profile": [
+                    "https://twcore.mohw.gov.tw/ig/twcore/StructureDefinition/Patient-twcore"
+                ],
+            },
+            "identifier": [
+                {
+                    "system": "urn:healthcare-lab:mrn",
+                    "value": values["mrn"],
+                }
+            ],
+            "name": [
+                {
+                    "use": "official",
+                    "text": patient_name,
+                    "family": values["last_name"],
+                    "given": [
+                        part for part in (values["first_name"], values["middle_name"]) if part
+                    ],
+                }
+            ],
+            "gender": DemoStore._patient_fhir_gender(values["sex"]),
+            "birthDate": DemoStore._patient_fhir_birth_date(values["dob"]),
+            "telecom": [{"system": "phone", "value": values["phone"]}] if values["phone"] else [],
+            "address": [{"text": values["address"]}] if values["address"] else [],
+            "extension": [
+                {
+                    "url": "urn:healthcare-lab:visit-number",
+                    "valueString": visit_number,
+                }
+            ],
+        }
+        return json.dumps(resource, indent=2), visit_number
+
+    @staticmethod
+    def _build_patient_gdt_payload(
+        values: dict[str, str], *, record_id: int, timestamp: str
+    ) -> tuple[str, str]:
+        visit_number = values["visit_number"] or DemoStore._patient_visit_number(record_id)
+        birth_date = f"{values['dob'][6:]}{values['dob'][4:6]}{values['dob'][:4]}"
+        records: list[tuple[str, Any]] = [
+            ("8315", "LABGDT"),
+            ("8316", "HCLAB"),
+            ("3000", values["mrn"]),
+            ("3101", values["last_name"]),
+            ("3102", values["first_name"]),
+            ("3103", birth_date),
+        ]
+        sex_code = GDT_PATIENT_SEX_CODES.get(values["sex"])
+        if sex_code:
+            records.append(("3110", sex_code))
+        return render_gdt_message(records, set_type="6301"), visit_number
+
+    @staticmethod
+    def _build_patient_dicom_payload(values: dict[str, str], *, record_id: int) -> tuple[str, str]:
+        visit_number = values["visit_number"] or DemoStore._patient_visit_number(record_id)
+        patient_name = "^".join(
+            part for part in (values["last_name"], values["first_name"], values["middle_name"]) if part
+        )
+        dataset = {
+            "(0010,0010) PatientName": patient_name,
+            "(0010,0020) PatientID": values["mrn"],
+            "(0010,0030) PatientBirthDate": values["dob"],
+            "(0010,0040) PatientSex": values["sex"],
+            "(0010,2154) PatientTelephoneNumbers": values["phone"],
+            "(0038,0010) AdmissionID": visit_number,
+            "(0038,0500) PatientState": values["patient_class"],
+        }
+        if values["address"]:
+            dataset["(0010,1040) PatientAddress"] = values["address"]
+        return json.dumps(dataset, indent=2), visit_number
+
+    @staticmethod
+    def _build_patient_payload(
+        values: dict[str, str], *, record_id: int, timestamp: str, hl7_time: str
+    ) -> tuple[str, str]:
+        if values["mode"] == "fhir":
+            return DemoStore._build_patient_fhir_payload(values, record_id=record_id)
+        if values["mode"] == "gdt":
+            return DemoStore._build_patient_gdt_payload(values, record_id=record_id, timestamp=timestamp)
+        if values["mode"] == "dicom":
+            return DemoStore._build_patient_dicom_payload(values, record_id=record_id)
+        return DemoStore._build_patient_a04_payload(values, record_id=record_id, timestamp=hl7_time)
+
     def create_patient_record(self, payload: dict[str, Any]) -> dict[str, Any]:
         values = self._validate_patient_payload(payload)
         timestamp = now_iso()
@@ -771,8 +946,8 @@ class DemoStore:
                 """,
                 (
                     "",
-                    PATIENT_PROTOCOL_VERSION,
-                    PATIENT_MESSAGE_TYPE,
+                    PATIENT_MODES[values["mode"]]["protocol"],
+                    PATIENT_MODES[values["mode"]]["message_type"],
                     values["mrn"],
                     values["first_name"],
                     values["last_name"],
@@ -795,10 +970,11 @@ class DemoStore:
             )
             record_id = int(cursor.lastrowid)
             local_patient_number = self._patient_record_number(record_id)
-            payload_hl7, visit_number = self._build_patient_a04_payload(
+            payload_hl7, visit_number = self._build_patient_payload(
                 values,
                 record_id=record_id,
-                timestamp=hl7_time,
+                timestamp=timestamp,
+                hl7_time=hl7_time,
             )
             connection.execute(
                 """

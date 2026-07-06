@@ -24,6 +24,29 @@ const DASHBOARD_RESOURCE_CONTAINERS = [
   { displayName: "dcm4chee-1", aliases: ["dcm4chee-1", "dcm4chee"] },
 ];
 
+const PATIENT_MODE_CONFIG = {
+  "hl7-v2": {
+    title: "HL7 v2.3.1 ADT A04",
+    payloadTitle: "MSH, EVN, PID, PV1",
+    emptyPreview: "Complete required Patient fields to preview an HL7 v2.3.1 ADT A04 payload.",
+  },
+  fhir: {
+    title: "FHIR R4 Patient",
+    payloadTitle: "Patient resource JSON",
+    emptyPreview: "Complete required Patient fields to preview a FHIR R4 Patient resource.",
+  },
+  gdt: {
+    title: "GDT 2.1 Patient Record",
+    payloadTitle: "GDT 6301 patient fields",
+    emptyPreview: "Complete required Patient fields to preview a GDT 2.1 patient record.",
+  },
+  dicom: {
+    title: "DICOM Patient Module",
+    payloadTitle: "Patient Module attributes",
+    emptyPreview: "Complete required Patient fields to preview DICOM Patient Module attributes.",
+  },
+};
+
 function setStatus(id, message, state = "neutral") {
   const element = byId(id);
   if (!element) return;
@@ -292,6 +315,42 @@ const patientDemoPreset = {
   address: "100 Main St^^Boston^MA^02110",
 };
 
+const patientDemoModeOverrides = {
+  "hl7-v2": {
+    assignedLocation: "CARDIOLOGY^ROOM1",
+    attendingProvider: "P123^Rivera^Elena",
+    accountNumber: "ACC-1001",
+    address: "100 Main St^^Boston^MA^02110",
+  },
+  fhir: {
+    assignedLocation: "",
+    attendingProvider: "",
+    accountNumber: "",
+    address: "100 Main St, Boston, MA 02110",
+  },
+  gdt: {
+    assignedLocation: "",
+    attendingProvider: "",
+    accountNumber: "",
+    address: "100 Main St, Boston, MA 02110",
+  },
+  dicom: {
+    assignedLocation: "",
+    attendingProvider: "",
+    accountNumber: "",
+    address: "100 Main St, Boston, MA 02110",
+  },
+};
+
+function patientDemoPresetForMode(mode) {
+  const normalizedMode = PATIENT_MODE_CONFIG[mode] ? mode : "hl7-v2";
+  return {
+    ...patientDemoPreset,
+    ...(patientDemoModeOverrides[normalizedMode] || {}),
+    mode: normalizedMode,
+  };
+}
+
 const orderDemoPreset = {
   priority: "R",
   orderingProvider: "1001^WANG^AMY",
@@ -305,6 +364,7 @@ const orderDemoPreset = {
 
 function patientFormPayload() {
   return {
+    mode: byId("patient-mode").value,
     mrn: byId("patient-mrn").value.trim(),
     firstName: byId("patient-first-name").value.trim(),
     middleName: byId("patient-middle-name").value.trim(),
@@ -322,6 +382,7 @@ function patientFormPayload() {
 }
 
 function setPatientForm(payload) {
+  byId("patient-mode").value = payload.mode || "hl7-v2";
   byId("patient-mrn").value = payload.mrn || "";
   byId("patient-first-name").value = payload.firstName || "";
   byId("patient-middle-name").value = payload.middleName || "";
@@ -335,6 +396,16 @@ function setPatientForm(payload) {
   byId("patient-account-number").value = payload.accountNumber || "";
   byId("patient-phone").value = payload.phone || "";
   byId("patient-address").value = payload.address || "";
+}
+
+function updatePatientModeFields(mode) {
+  const config = PATIENT_MODE_CONFIG[mode] || PATIENT_MODE_CONFIG["hl7-v2"];
+  byId("patient-mode-title").textContent = config.title;
+  byId("patient-payload-title").textContent = config.payloadTitle;
+  document.querySelectorAll("[data-patient-mode-field]").forEach((element) => {
+    const modes = String(element.dataset.patientModeField || "").split(/\s+/);
+    element.hidden = !modes.includes(mode);
+  });
 }
 
 function validatePatientPayload(payload) {
@@ -404,6 +475,9 @@ function taipeiTimestamp(value) {
 }
 
 function buildPatientPreviewPayload(payload) {
+  if (payload.mode === "fhir") return buildPatientFhirPreviewPayload(payload);
+  if (payload.mode === "gdt") return buildPatientGdtPreviewPayload(payload);
+  if (payload.mode === "dicom") return buildPatientDicomPreviewPayload(payload);
   const timestamp = hl7Timestamp();
   const visitNumber = payload.visitNumber || "VISIT-GENERATED";
   const patientName = [payload.lastName, payload.firstName, payload.middleName]
@@ -416,6 +490,105 @@ function buildPatientPreviewPayload(payload) {
     `PID|1||${hl7Escape(payload.mrn)}^^^HEALTHCARE_LAB^MR||${patientName}||${hl7Escape(payload.dob)}|${hl7Escape(payload.sex)}|||${hl7EscapeComposite(payload.address)}||${hl7Escape(payload.phone)}|||||${hl7Escape(payload.accountNumber)}`,
     `PV1|1|${hl7Escape(payload.patientClass || "O")}|${hl7EscapeComposite(payload.assignedLocation)}||||${hl7EscapeComposite(payload.attendingProvider)}||||||||||||${hl7Escape(visitNumber)}`,
   ].join("\r");
+}
+
+function fhirBirthDate(dob) {
+  return `${dob.slice(0, 4)}-${dob.slice(4, 6)}-${dob.slice(6)}`;
+}
+
+function fhirGender(sex) {
+  return { M: "male", F: "female", O: "other", U: "unknown" }[sex] || "unknown";
+}
+
+function buildPatientFhirPreviewPayload(payload) {
+  const patientName = [payload.firstName, payload.middleName, payload.lastName].filter(Boolean).join(" ");
+  return JSON.stringify({
+    resourceType: "Patient",
+    id: "PAT-GENERATED",
+    meta: {
+      profile: [
+        "https://twcore.mohw.gov.tw/ig/twcore/StructureDefinition/Patient-twcore",
+      ],
+    },
+    identifier: [
+      {
+        system: "urn:healthcare-lab:mrn",
+        value: payload.mrn,
+      },
+    ],
+    name: [
+      {
+        use: "official",
+        text: patientName,
+        family: payload.lastName,
+        given: [payload.firstName, payload.middleName].filter(Boolean),
+      },
+    ],
+    gender: fhirGender(payload.sex),
+    birthDate: fhirBirthDate(payload.dob),
+    telecom: payload.phone ? [{ system: "phone", value: payload.phone }] : [],
+    address: payload.address ? [{ text: payload.address }] : [],
+    extension: [
+      {
+        url: "urn:healthcare-lab:visit-number",
+        valueString: payload.visitNumber || "VISIT-GENERATED",
+      },
+    ],
+  }, null, 2);
+}
+
+function renderGdtRecord(code, value) {
+  const fieldCode = String(code || "").trim();
+  const content = String(value ?? "").trim().replace(/[\r\n]+/g, " ");
+  const length = 3 + 4 + content.length + 2;
+  return `${String(length).padStart(3, "0")}${fieldCode}${content}\r\n`;
+}
+
+function renderGdtMessage(records, setType) {
+  let totalLength = "00000";
+  for (let index = 0; index < 8; index += 1) {
+    const lines = [
+      ["8000", setType],
+      ["8100", totalLength],
+      ["9218", "02.10"],
+      ["9206", "3"],
+      ...records,
+    ];
+    const payload = lines.map(([code, value]) => renderGdtRecord(code, value)).join("");
+    const nextLength = String(payload.length).padStart(5, "0");
+    if (nextLength === totalLength) return payload;
+    totalLength = nextLength;
+  }
+  return "";
+}
+
+function buildPatientGdtPreviewPayload(payload) {
+  const gdtBirthDate = `${payload.dob.slice(6)}${payload.dob.slice(4, 6)}${payload.dob.slice(0, 4)}`;
+  const gdtSex = { M: "1", F: "2" }[payload.sex];
+  const records = [
+    ["8315", "LABGDT"],
+    ["8316", "HCLAB"],
+    ["3000", payload.mrn],
+    ["3101", payload.lastName],
+    ["3102", payload.firstName],
+    ["3103", gdtBirthDate],
+  ];
+  if (gdtSex) records.push(["3110", gdtSex]);
+  return renderGdtMessage(records, "6301");
+}
+
+function buildPatientDicomPreviewPayload(payload) {
+  const dataset = {
+    "(0010,0010) PatientName": [payload.lastName, payload.firstName, payload.middleName].filter(Boolean).join("^"),
+    "(0010,0020) PatientID": payload.mrn,
+    "(0010,0030) PatientBirthDate": payload.dob,
+    "(0010,0040) PatientSex": payload.sex,
+    "(0010,2154) PatientTelephoneNumbers": payload.phone,
+    "(0038,0010) AdmissionID": payload.visitNumber || "VISIT-GENERATED",
+    "(0038,0500) PatientState": payload.patientClass || "O",
+  };
+  if (payload.address) dataset["(0010,1040) PatientAddress"] = payload.address;
+  return JSON.stringify(dataset, null, 2);
 }
 
 function renderPatientValidation(messages) {
@@ -442,7 +615,7 @@ function renderPatientSummaryFromPayload(payload, createdAt = "") {
     ["Class", payload.patientClass || "O"],
     ["Visit", payload.visitNumber || "Generated on create"],
     ["Location", payload.assignedLocation],
-    ["Created", createdAt],
+    ["Created", taipeiTimestamp(createdAt)],
   ];
   rows.forEach(([label, value]) => {
     const item = document.createElement("p");
@@ -454,11 +627,13 @@ function renderPatientSummaryFromPayload(payload, createdAt = "") {
 
 function refreshPatientPreview() {
   const payload = patientFormPayload();
+  updatePatientModeFields(payload.mode);
   const messages = validatePatientPayload(payload);
   renderPatientValidation(messages);
   renderPatientSummaryFromPayload(payload);
+  const config = PATIENT_MODE_CONFIG[payload.mode] || PATIENT_MODE_CONFIG["hl7-v2"];
   byId("patient-payload-preview").textContent = messages.length
-    ? "Complete required Patient fields to preview an HL7 v2.3.1 ADT A04 payload."
+    ? config.emptyPreview
     : buildPatientPreviewPayload(payload);
 }
 
@@ -468,7 +643,7 @@ function renderPatientRecordList() {
   if (!patientRecords.length) {
     const row = document.createElement("tr");
     const cell = rowCell("No local patients created yet.");
-    cell.colSpan = 7;
+    cell.colSpan = 8;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
@@ -479,12 +654,13 @@ function renderPatientRecordList() {
     const summary = item.summary || {};
     row.append(
       rowCell(item.localPatientNumber || item.id),
+      rowCell(item.protocolVersion),
       rowCell(summary.mrn),
       rowCell(summary.name),
       rowCell(summary.dob),
       rowCell(summary.sex),
       rowCell(summary.visitNumber),
-      rowCell(item.createdAt),
+      rowCell(taipeiTimestamp(item.createdAt)),
     );
     row.addEventListener("click", () => {
       byId("patient-payload-preview").textContent = item.payload || "";
@@ -1085,7 +1261,7 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("run-all-lab-checks").addEventListener("click", runAllChecks);
   byId("dashboard-filter").addEventListener("input", renderServices);
   byId("load-patient-demo").addEventListener("click", () => {
-    setPatientForm(patientDemoPreset);
+    setPatientForm(patientDemoPresetForMode(byId("patient-mode").value));
     refreshPatientPreview();
   });
   byId("load-order-demo").addEventListener("click", () => {

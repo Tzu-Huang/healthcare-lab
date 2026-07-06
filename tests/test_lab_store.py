@@ -1,8 +1,26 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from backend.lab_store import DemoStore, SimulatorValidationError
+
+
+def parse_gdt_records(payload):
+    raw = payload.encode("cp1252")
+    records = {}
+    offset = 0
+    while offset < len(raw):
+        length = int(raw[offset : offset + 3].decode("ascii"))
+        record = raw[offset : offset + length]
+        assert record.endswith(b"\r\n")
+        assert len(record) == length
+        code = record[3:7].decode("ascii")
+        value = record[7:-2].decode("cp1252")
+        records[code] = value
+        offset += length
+    assert offset == len(raw)
+    return records
 
 
 class HealthcareLabStoreTests(unittest.TestCase):
@@ -134,6 +152,50 @@ class HealthcareLabStoreTests(unittest.TestCase):
             order["payload"],
         )
         self.assertEqual(self.store.list_order_records()[0]["id"], order["id"])
+
+    def test_local_patient_modes_generate_protocol_specific_payloads(self):
+        base_payload = {
+            "mrn": "MRN-MODE-001",
+            "firstName": "Avery",
+            "middleName": "Lee",
+            "lastName": "Morgan",
+            "dob": "19850412",
+            "sex": "F",
+            "phone": "555-0100",
+            "address": "100 Main St",
+        }
+
+        fhir = self.store.create_patient_record({**base_payload, "mode": "fhir"})
+        self.assertEqual(fhir["protocolVersion"], "FHIR R4")
+        self.assertEqual(fhir["messageType"], "Patient")
+        fhir_payload = json.loads(fhir["payload"])
+        self.assertEqual(fhir_payload["resourceType"], "Patient")
+        self.assertEqual(
+            fhir_payload["meta"]["profile"],
+            ["https://twcore.mohw.gov.tw/ig/twcore/StructureDefinition/Patient-twcore"],
+        )
+        self.assertEqual(fhir_payload["name"][0]["text"], "Avery Lee Morgan")
+        self.assertEqual(fhir_payload["gender"], "female")
+
+        gdt = self.store.create_patient_record({**base_payload, "mode": "gdt", "mrn": "MRN-MODE-002"})
+        self.assertEqual(gdt["protocolVersion"], "GDT 2.1")
+        self.assertEqual(gdt["messageType"], "6301")
+        records = parse_gdt_records(gdt["payload"])
+        self.assertEqual(records["8000"], "6301")
+        self.assertEqual(records["8100"], f"{len(gdt['payload'].encode('cp1252')):05d}")
+        self.assertEqual(records["9218"], "02.10")
+        self.assertEqual(records["9206"], "3")
+        self.assertEqual(records["3000"], "MRN-MODE-002")
+        self.assertEqual(records["3101"], "Morgan")
+        self.assertEqual(records["3102"], "Avery")
+        self.assertEqual(records["3103"], "12041985")
+        self.assertEqual(records["3110"], "2")
+
+        dicom = self.store.create_patient_record({**base_payload, "mode": "dicom", "mrn": "MRN-MODE-003"})
+        self.assertEqual(dicom["protocolVersion"], "DICOM")
+        self.assertEqual(dicom["messageType"], "Patient Module")
+        self.assertIn("(0010,0010) PatientName", dicom["payload"])
+        self.assertIn("Morgan^Avery^Lee", dicom["payload"])
 
     def test_order_send_result_persists_ack_and_transport_error(self):
         patient = self.store.create_patient_record(

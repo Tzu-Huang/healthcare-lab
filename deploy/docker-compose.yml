@@ -42,8 +42,12 @@ services:
       MEDPLUM_AUTH_GRACE_SECONDS: ${MEDPLUM_AUTH_GRACE_SECONDS:-300}
       OIE_MLLP_ORDER_HOST: ${OIE_MLLP_ORDER_HOST:-oie}
       OIE_MLLP_ORDER_PORT: ${OIE_MLLP_ORDER_PORT:-6663}
+      OIE_MLLP_RESULT_HOST: ${OIE_MLLP_RESULT_HOST:-0.0.0.0}
+      OIE_MLLP_RESULT_PORT: ${OIE_MLLP_RESULT_PORT:-6665}
     ports:
       - "${LAB_APP_PORT:-5000}:5000"
+    expose:
+      - "6665"
     volumes:
       - ..:/workspace
       - lab-app-instance:/workspace/instance
