@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Healthcare Lab</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v={{ asset_version('styles.css') }}">
 </head>
 <body data-project-mode="healthcare_lab">
   <div class="app-shell">
@@ -140,7 +140,7 @@
         <div class="lab-console-header">
           <div>
             <p class="eyebrow">Patient</p>
-            <h2>HL7 v2.3.1 ADT A04</h2>
+            <h2 id="patient-mode-title">HL7 v2.3.1 ADT A04</h2>
           </div>
           <div class="lab-console-actions">
             <button id="load-patient-demo" type="button">Demo Preset</button>
@@ -157,6 +157,14 @@
               </div>
             </div>
             <div class="form-grid patient-form-grid">
+              <label>Mode
+                <select id="patient-mode">
+                  <option value="hl7-v2">HL7 v2</option>
+                  <option value="fhir">FHIR</option>
+                  <option value="gdt">GDT</option>
+                  <option value="dicom">DICOM</option>
+                </select>
+              </label>
               <label>MRN<input id="patient-mrn" placeholder="MRN-A04-001"></label>
               <label>First Name<input id="patient-first-name" placeholder="Avery"></label>
               <label>Middle Name<input id="patient-middle-name" placeholder="Lee"></label>
@@ -170,13 +178,13 @@
                   <option value="U">U</option>
                 </select>
               </label>
-              <label>Visit Number<input id="patient-visit-number" placeholder="Generated if blank"></label>
-              <label>Patient Class<input id="patient-class" value="O"></label>
-              <label>Assigned Location<input id="patient-assigned-location" placeholder="CARDIOLOGY^ROOM1"></label>
-              <label>Attending Provider<input id="patient-attending-provider" placeholder="P123^Rivera^Elena"></label>
-              <label>Account Number<input id="patient-account-number" placeholder="ACC-1001"></label>
-              <label>Phone<input id="patient-phone" placeholder="555-0100"></label>
-              <label class="full-width-field">Address<input id="patient-address" placeholder="100 Main St^^Boston^MA^02110"></label>
+              <label data-patient-mode-field="hl7-v2 fhir gdt dicom">Visit Number<input id="patient-visit-number" placeholder="Generated if blank"></label>
+              <label data-patient-mode-field="hl7-v2 dicom">Patient Class<input id="patient-class" value="O"></label>
+              <label data-patient-mode-field="hl7-v2">Assigned Location<input id="patient-assigned-location" placeholder="CARDIOLOGY^ROOM1"></label>
+              <label data-patient-mode-field="hl7-v2">Attending Provider<input id="patient-attending-provider" placeholder="P123^Rivera^Elena"></label>
+              <label data-patient-mode-field="hl7-v2">Account Number<input id="patient-account-number" placeholder="ACC-1001"></label>
+              <label data-patient-mode-field="hl7-v2 fhir gdt dicom">Phone<input id="patient-phone" placeholder="555-0100"></label>
+              <label class="full-width-field" data-patient-mode-field="hl7-v2 fhir gdt dicom">Address<input id="patient-address" placeholder="100 Main St^^Boston^MA^02110"></label>
             </div>
             <div class="button-row patient-actions">
               <button id="refresh-patient-preview" type="button">Refresh Preview</button>
@@ -204,7 +212,7 @@
           <div class="section-heading compact-heading">
             <div>
               <p class="eyebrow">Payload Preview</p>
-              <h2>MSH, EVN, PID, PV1</h2>
+              <h2 id="patient-payload-title">MSH, EVN, PID, PV1</h2>
             </div>
             <button id="copy-patient-payload" type="button">Copy Payload</button>
           </div>
@@ -222,7 +230,7 @@
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>ID</th><th>MRN</th><th>Name</th><th>DOB</th><th>Sex</th><th>Visit</th><th>Created</th></tr>
+                <tr><th>ID</th><th>Mode</th><th>MRN</th><th>Name</th><th>DOB</th><th>Sex</th><th>Visit</th><th>Created</th></tr>
               </thead>
               <tbody id="patient-record-list"></tbody>
             </table>
@@ -450,6 +458,6 @@
       </section>
     </main>
   </div>
-  <script src="{{ url_for('static', filename='app.js') }}?v=zac20-patient-oie"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v={{ asset_version('app.js') }}"></script>
 </body>
 </html>
