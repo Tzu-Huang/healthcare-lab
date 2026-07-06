@@ -1,0 +1,184 @@
+name: interoperability-lab
+
+networks:
+  lab:
+    name: interoperability-lab
+
+volumes:
+  lab-app-instance:
+  lab-gdt-bridge:
+  oie-appdata:
+  medplum-postgres:
+  medplum-redis:
+  openemr-site:
+  openemr-db:
+  dcm4chee-archive:
+  dcm4chee-db:
+
+services:
+  lab-app:
+    image: ${LAB_APP_IMAGE:-python:3.11-slim}
+    working_dir: /workspace
+    command: >
+      sh -c "python -m pip install --no-cache-dir -r requirements.txt &&
+      python app.py"
+    environment:
+      LAB_APP_HOST: 0.0.0.0
+      LAB_APP_PORT: "5000"
+      ECG_FILE_BASE_URL: ${ECG_FILE_BASE_URL:-http://127.0.0.1:5000}
+      GDT_BRIDGE_PATH: /data/gdt-bridge
+      OPENEMR_DB_HOST: openemr-db
+      OPENEMR_DB_PORT: "3306"
+      OPENEMR_DB_USER: ${OPENEMR_DB_USER:-openemr}
+      OPENEMR_DB_PASSWORD: ${OPENEMR_DB_PASSWORD:-openemr}
+      OPENEMR_DB_NAME: ${OPENEMR_DB_NAME:-openemr}
+      OPENEMR_GDT_PROCEDURE_CODES: ${OPENEMR_GDT_PROCEDURE_CODES:-1001}
+      # Medplum OAuth client credentials are read from .env or the operator
+      # environment. Do not put real secrets directly in this tracked file.
+      MEDPLUM_CLIENT_ID: ${MEDPLUM_CLIENT_ID:-}
+      MEDPLUM_CLIENT_SECRET: ${MEDPLUM_CLIENT_SECRET:-}
+      MEDPLUM_SCOPE: ${MEDPLUM_SCOPE:-}
+      MEDPLUM_TOKEN_URL: ${MEDPLUM_TOKEN_URL:-}
+      MEDPLUM_AUTH_GRACE_SECONDS: ${MEDPLUM_AUTH_GRACE_SECONDS:-300}
+      OIE_MLLP_ORDER_HOST: ${OIE_MLLP_ORDER_HOST:-oie}
+      OIE_MLLP_ORDER_PORT: ${OIE_MLLP_ORDER_PORT:-6663}
+    ports:
+      - "${LAB_APP_PORT:-5000}:5000"
+    volumes:
+      - ..:/workspace
+      - lab-app-instance:/workspace/instance
+      - lab-gdt-bridge:/data/gdt-bridge
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - lab
+    depends_on:
+      - openemr-db
+
+  oie:
+    image: ${OIE_IMAGE:-nextgenhealthcare/connect:4.5.2}
+    environment:
+      DATABASE: ${OIE_DATABASE:-derby}
+    ports:
+      - "${OIE_HTTP_PORT:-18080}:8080"
+      - "${OIE_HTTPS_PORT:-10443}:8443"
+      - "0.0.0.0:${OIE_MLLP_RESULT_PORT:-6661}:6661"
+      - "${OIE_MLLP_ORDER_PORT:-6663}:6663"
+    expose:
+      - "6671"
+    volumes:
+      - oie-appdata:/opt/connect/appdata
+    networks:
+      - lab
+
+  medplum-postgres:
+    image: ${MEDPLUM_POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_DB: ${MEDPLUM_POSTGRES_DB:-medplum}
+      POSTGRES_USER: ${MEDPLUM_POSTGRES_USER:-medplum}
+      POSTGRES_PASSWORD: ${MEDPLUM_POSTGRES_PASSWORD:-medplum}
+    volumes:
+      - medplum-postgres:/var/lib/postgresql/data
+    networks:
+      - lab
+
+  medplum-redis:
+    image: ${MEDPLUM_REDIS_IMAGE:-redis:7-alpine}
+    volumes:
+      - medplum-redis:/data
+    networks:
+      - lab
+
+  medplum:
+    image: ${MEDPLUM_IMAGE:-medplum/medplum-server:latest}
+    command: "env:"
+    environment:
+      MEDPLUM_BASE_URL: ${MEDPLUM_BASE_URL:-http://127.0.0.1:8103/}
+      MEDPLUM_APP_BASE_URL: ${MEDPLUM_APP_BASE_URL:-http://127.0.0.1:3000/}
+      MEDPLUM_ALLOWED_ORIGINS: ${MEDPLUM_ALLOWED_ORIGINS:-http://127.0.0.1:3000,http://localhost:3000}
+      MEDPLUM_RECAPTCHA_SITE_KEY: ${MEDPLUM_RECAPTCHA_SITE_KEY:-6LfHdsYdAAAAAC0uLnnRrDrhcXnziiUwKd8VtLNq}
+      MEDPLUM_RECAPTCHA_SECRET_KEY: ${MEDPLUM_RECAPTCHA_SECRET_KEY:-}
+      MEDPLUM_DATABASE_HOST: medplum-postgres
+      MEDPLUM_DATABASE_PORT: "5432"
+      MEDPLUM_DATABASE_DBNAME: ${MEDPLUM_POSTGRES_DB:-medplum}
+      MEDPLUM_DATABASE_USERNAME: ${MEDPLUM_POSTGRES_USER:-medplum}
+      MEDPLUM_DATABASE_PASSWORD: ${MEDPLUM_POSTGRES_PASSWORD:-medplum}
+      MEDPLUM_REDIS_HOST: medplum-redis
+      MEDPLUM_REDIS_PORT: "6379"
+    ports:
+      - "${MEDPLUM_PORT:-8103}:8103"
+    depends_on:
+      - medplum-postgres
+      - medplum-redis
+    networks:
+      - lab
+
+  medplum-app:
+    image: ${MEDPLUM_APP_IMAGE:-medplum/medplum-app:latest}
+    environment:
+      MEDPLUM_BASE_URL: ${MEDPLUM_PUBLIC_BASE_URL:-http://127.0.0.1:8103/}
+      MEDPLUM_RECAPTCHA_SITE_KEY: ${MEDPLUM_RECAPTCHA_SITE_KEY:-6LfHdsYdAAAAAC0uLnnRrDrhcXnziiUwKd8VtLNq}
+    ports:
+      - "${MEDPLUM_APP_PORT:-3000}:3000"
+    depends_on:
+      - medplum
+    networks:
+      - lab
+
+  openemr-db:
+    image: ${OPENEMR_DB_IMAGE:-mariadb:10.11}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${OPENEMR_DB_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${OPENEMR_DB_NAME:-openemr}
+      MYSQL_USER: ${OPENEMR_DB_USER:-openemr}
+      MYSQL_PASSWORD: ${OPENEMR_DB_PASSWORD:-openemr}
+    volumes:
+      - openemr-db:/var/lib/mysql
+    networks:
+      - lab
+
+  openemr:
+    image: ${OPENEMR_IMAGE:-openemr/openemr:7.0.2}
+    environment:
+      MYSQL_HOST: openemr-db
+      MYSQL_ROOT_PASS: ${OPENEMR_DB_ROOT_PASSWORD:-root}
+      MYSQL_USER: ${OPENEMR_DB_USER:-openemr}
+      MYSQL_PASS: ${OPENEMR_DB_PASSWORD:-openemr}
+      MYSQL_DATABASE: ${OPENEMR_DB_NAME:-openemr}
+      OE_SITE: default
+    ports:
+      - "${OPENEMR_PORT:-8088}:80"
+    volumes:
+      - openemr-site:/var/www/localhost/htdocs/openemr/sites
+      - lab-gdt-bridge:/data/gdt-bridge
+    depends_on:
+      - openemr-db
+    networks:
+      - lab
+
+  dcm4chee-db:
+    image: ${DCM4CHEE_DB_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_DB: ${DCM4CHEE_DB_NAME:-pacsdb}
+      POSTGRES_USER: ${DCM4CHEE_DB_USER:-pacs}
+      POSTGRES_PASSWORD: ${DCM4CHEE_DB_PASSWORD:-pacs}
+    volumes:
+      - dcm4chee-db:/var/lib/postgresql/data
+    networks:
+      - lab
+
+  dcm4chee:
+    image: ${DCM4CHEE_IMAGE:-dcm4che/dcm4chee-arc-psql:5.35.0}
+    environment:
+      POSTGRES_DB: ${DCM4CHEE_DB_NAME:-pacsdb}
+      POSTGRES_USER: ${DCM4CHEE_DB_USER:-pacs}
+      POSTGRES_PASSWORD: ${DCM4CHEE_DB_PASSWORD:-pacs}
+      POSTGRES_HOST: dcm4chee-db
+    ports:
+      - "${DCM4CHEE_HTTP_PORT:-8082}:8080"
+      - "${DCM4CHEE_DICOM_PORT:-11112}:11112"
+    volumes:
+      - dcm4chee-archive:/storage
+    depends_on:
+      - dcm4chee-db
+    networks:
+      - lab

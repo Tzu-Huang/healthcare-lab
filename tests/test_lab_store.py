@@ -1,0 +1,183 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from backend.lab_store import DemoStore, SimulatorValidationError
+
+
+class HealthcareLabStoreTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.store = DemoStore(Path(self.directory.name) / "lab.db")
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def test_lab_server_operation_metadata_is_seeded_non_destructively(self):
+        oie = next(item for item in self.store.list_lab_servers() if item["name"] == "OIE")
+        self.assertEqual(oie["operation"]["controlType"], "docker-compose")
+        self.assertEqual(oie["operation"]["backingService"], "oie")
+        self.assertIn("restart", oie["operation"]["supportedActions"])
+        self.assertEqual(oie["operation"]["smokeProfile"], "oie")
+
+        self.store.update_lab_server(
+            oie["id"],
+            {"host": "10.10.10.10", "baseUrl": "http://10.10.10.10:18080"},
+        )
+        reopened = DemoStore(self.store.path)
+        updated = reopened.get_lab_server(oie["id"])
+
+        self.assertEqual(updated["host"], "10.10.10.10")
+        self.assertEqual(updated["baseUrl"], "http://10.10.10.10:18080")
+        self.assertEqual(updated["operation"]["backingService"], "oie")
+
+    def test_lab_server_custom_operation_metadata_can_be_persisted(self):
+        created = self.store.create_lab_server(
+            {
+                "name": "Custom Lab Tool",
+                "serverType": "Test Tool",
+                "protocol": "HTTP",
+                "baseUrl": "http://127.0.0.1:9000",
+                "operation": {
+                    "controlType": "external",
+                    "backingService": "custom-tool",
+                    "supportedActions": ["status", "smoke"],
+                    "timeoutSeconds": 30,
+                    "smokeProfile": "custom",
+                },
+            }
+        )
+
+        self.assertEqual(created["operation"]["controlType"], "external")
+        self.assertEqual(created["operation"]["backingService"], "custom-tool")
+        self.assertEqual(created["operation"]["supportedActions"], ["status", "smoke"])
+        self.assertEqual(created["operation"]["timeoutSeconds"], 30)
+        self.assertEqual(created["operation"]["smokeProfile"], "custom")
+
+        with self.assertRaisesRegex(SimulatorValidationError, "Unsupported lab operation action"):
+            self.store.update_lab_server(
+                created["id"],
+                {"operation": {"supportedActions": ["purge"]}},
+            )
+
+    def test_lab_operation_history_persists_progress_and_errors(self):
+        medplum = next(item for item in self.store.list_lab_servers() if item["name"] == "Medplum")
+
+        operation = self.store.record_lab_operation(
+            medplum["id"],
+            service_name="Medplum",
+            action="restart",
+            operator="tester",
+            result="failed",
+            duration_ms=1250,
+            progress=[
+                {"step": "stop", "status": "completed"},
+                {"step": "start", "status": "failed"},
+            ],
+            error_text="container failed",
+        )
+
+        self.assertEqual(operation["serviceName"], "Medplum")
+        self.assertEqual(operation["action"], "restart")
+        self.assertEqual(operation["operator"], "tester")
+        self.assertEqual(operation["durationMs"], 1250)
+        self.assertEqual(operation["progress"][1]["status"], "failed")
+        self.assertEqual(operation["error"], "container failed")
+        self.assertEqual(self.store.list_lab_operations(medplum["id"])[0]["id"], operation["id"])
+
+        with self.assertRaisesRegex(SimulatorValidationError, "Unsupported lab operation action"):
+            self.store.record_lab_operation(
+                medplum["id"],
+                service_name="Medplum",
+                action="purge",
+                operator="tester",
+                result="failed",
+            )
+
+    def test_local_order_record_persists_orm_payload(self):
+        patient = self.store.create_patient_record(
+            {
+                "mrn": "MRN-A04-001",
+                "firstName": "Avery",
+                "middleName": "Lee",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+                "patientClass": "O",
+                "assignedLocation": "CARDIOLOGY^ROOM1",
+                "attendingProvider": "P123^Rivera^Elena",
+                "accountNumber": "",
+            }
+        )
+
+        order = self.store.create_order_record(
+            {
+                "patientRecordId": patient["id"],
+                "priority": "R",
+                "requestedAt": "20260703103000",
+                "orderingProvider": "1001^WANG^AMY",
+                "clinicalIndication": "Chest pain evaluation",
+            }
+        )
+
+        self.assertEqual(order["status"], "Ready to send")
+        self.assertEqual(order["localOrderNumber"], "ORD-000001")
+        self.assertEqual(order["visitId"], patient["visitNumber"])
+        self.assertEqual(order["accountNumber"], "ACC-ORD-000001")
+        self.assertIn("MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|", order["payload"])
+        self.assertIn("ORM^O01", order["payload"])
+        self.assertIn("PID|1||MRN-A04-001^^^HEALTHCARE_LAB^MR", order["payload"])
+        self.assertIn("PV1|1|O|CARDIOLOGY^ROOM1", order["payload"])
+        self.assertIn("ORC|NW|ORD-000001", order["payload"])
+        self.assertIn(
+            "ECG12^12 Lead ECG^L^93000^Electrocardiogram, routine ECG with at least 12 leads^C4",
+            order["payload"],
+        )
+        self.assertEqual(self.store.list_order_records()[0]["id"], order["id"])
+
+    def test_order_send_result_persists_ack_and_transport_error(self):
+        patient = self.store.create_patient_record(
+            {
+                "mrn": "MRN-A04-002",
+                "firstName": "Jordan",
+                "lastName": "Case",
+                "dob": "19770102",
+                "sex": "M",
+            }
+        )
+        order = self.store.create_order_record({"patientRecordId": patient["id"]})
+
+        accepted = self.store.update_order_send_result(
+            order["id"],
+            order_status="Accepted",
+            ack_code="AA",
+            ack_control_id="ORM1",
+            ack_text="OK",
+            ack_payload="MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD||ACK^O01|ACK1|P|2.3.1\rMSA|AA|ORM1|OK",
+        )
+        self.assertEqual(accepted["ack"]["code"], "AA")
+        self.assertEqual(accepted["status"], "Accepted")
+
+        failed = self.store.update_order_send_result(
+            order["id"],
+            order_status="Transport error",
+            transport_error="connection refused",
+        )
+        self.assertEqual(failed["status"], "Transport error")
+        self.assertEqual(failed["transportError"], "connection refused")
+
+    def test_healthcare_lab_template_excludes_ap_simulator_views(self):
+        template = (
+            Path(__file__).parents[1] / "frontend" / "templates" / "index.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('id="lab-console-view"', template)
+        self.assertIn("Server Health Dashboard", template)
+        self.assertNotIn('data-category-target="gdt-hospital-view"', template)
+        self.assertNotIn('id="gdt-ap-view"', template)
+        self.assertNotIn("GDT AP Simulator", template)
+        self.assertNotIn('id="ap-gdt-order-list"', template)
+
+
+if __name__ == "__main__":
+    unittest.main()

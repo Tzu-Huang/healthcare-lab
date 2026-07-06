@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Healthcare Lab</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body data-project-mode="healthcare_lab">
+  <div class="app-shell">
+    <aside class="app-sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-mark">HL</span>
+        <div>
+          <p class="eyebrow">Healthcare Lab</p>
+          <h1>Server Health Dashboard</h1>
+        </div>
+      </div>
+      <nav class="sidebar-nav" aria-label="Primary">
+        <button class="sidebar-link active" type="button" data-nav-target="lab-console-view">
+          <span class="nav-icon">DB</span>Dashboard
+        </button>
+        <button class="sidebar-link" type="button" data-nav-target="patient-view">
+          <span class="nav-icon">PT</span>Patient
+        </button>
+        <button class="sidebar-link" type="button" data-nav-target="order-view">
+          <span class="nav-icon">OR</span>Order
+        </button>
+        <button class="sidebar-link" type="button" data-nav-target="oie-view">
+          <span class="nav-icon">OI</span>OIE
+        </button>
+        <button class="sidebar-link" type="button" disabled>
+          <span class="nav-icon">MP</span>Medplum
+        </button>
+        <button class="sidebar-link" type="button" disabled>
+          <span class="nav-icon">EM</span>openEMR
+        </button>
+        <button class="sidebar-link" type="button" disabled>
+          <span class="nav-icon">DC</span>dcm4chee
+        </button>
+      </nav>
+    </aside>
+
+    <main class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Operations</p>
+          <h2 id="view-title">Service Health</h2>
+        </div>
+        <label class="dashboard-search">
+          <span class="search-icon">/</span>
+          <input id="dashboard-filter" type="search" placeholder="Search services..." aria-label="Search services">
+        </label>
+        <label class="mode-selector">
+          <span>Mode</span>
+          <select id="protocol-mode" aria-label="Mode">
+            <option value="hl7-v23">HL7 v2.3</option>
+            <option value="hl7-v25">HL7 v2.5</option>
+            <option value="fhir">FHIR</option>
+            <option value="gdt">GDT</option>
+            <option value="dicom">DICOM</option>
+          </select>
+        </label>
+      </header>
+
+      <section id="lab-console-view" class="app-view lab-console" aria-label="Healthcare Interoperability Lab Console">
+        <div class="lab-console-header">
+          <div>
+            <p class="eyebrow">Local Runtime</p>
+            <h2>HL7 v2, FHIR, GDT, DICOM</h2>
+          </div>
+          <div class="lab-console-actions">
+            <span id="dashboard-refresh-status" class="status neutral">Loading services...</span>
+            <button id="refresh-dashboard" type="button">Refresh</button>
+            <button id="run-all-lab-checks" class="primary" type="button">Run Checks</button>
+          </div>
+        </div>
+
+        <section class="lab-summary-strip">
+          <div class="lab-summary-tile">
+            <strong id="dashboard-total-count" class="lab-summary-value">0</strong>
+            <span class="lab-summary-label">Total</span>
+          </div>
+          <div class="lab-summary-tile">
+            <strong id="dashboard-running-count" class="lab-summary-value">0</strong>
+            <span class="lab-summary-label">Running</span>
+          </div>
+          <div class="lab-summary-tile">
+            <strong id="dashboard-attention-count" class="lab-summary-value">0</strong>
+            <span class="lab-summary-label">Attention</span>
+          </div>
+          <div class="lab-summary-tile">
+            <strong id="dashboard-cpu-total" class="lab-summary-value">0%</strong>
+            <span class="lab-summary-label">CPU</span>
+          </div>
+          <div class="lab-summary-tile">
+            <strong id="dashboard-memory-total" class="lab-summary-value">0%</strong>
+            <span class="lab-summary-label">Memory</span>
+          </div>
+        </section>
+
+        <section class="dashboard-main-grid">
+          <div class="lab-panel dashboard-services-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Service Groups</p>
+                <h2>Lab Services</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Service</th><th>Status</th><th>Checks</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="dashboard-service-list"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="lab-panel dashboard-resource-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Runtime</p>
+                <h2>Resource Usage</h2>
+              </div>
+            </div>
+            <div id="dashboard-resource-usage" class="resource-usage-list"></div>
+          </div>
+        </section>
+
+        <section class="lab-panel dashboard-log-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Operations</p>
+              <h2>Recent Events</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Time</th><th>Level</th><th>Message</th></tr>
+              </thead>
+              <tbody id="dashboard-event-log"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="patient-view" class="app-view patient-workspace" aria-label="Patient Registration" hidden>
+        <div class="lab-console-header">
+          <div>
+            <p class="eyebrow">Patient</p>
+            <h2>HL7 v2.3.1 ADT A04</h2>
+          </div>
+          <div class="lab-console-actions">
+            <button id="load-patient-demo" type="button">Demo Preset</button>
+            <span id="patient-form-status" class="status neutral">No patient created</span>
+          </div>
+        </div>
+
+        <section class="patient-grid">
+          <div class="lab-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Local Registration</p>
+                <h2>Register Patient</h2>
+              </div>
+            </div>
+            <div class="form-grid patient-form-grid">
+              <label>MRN<input id="patient-mrn" placeholder="MRN-A04-001"></label>
+              <label>First Name<input id="patient-first-name" placeholder="Avery"></label>
+              <label>Middle Name<input id="patient-middle-name" placeholder="Lee"></label>
+              <label>Last Name<input id="patient-last-name" placeholder="Morgan"></label>
+              <label>Date of Birth<input id="patient-dob" placeholder="19850412"></label>
+              <label>Sex
+                <select id="patient-sex">
+                  <option value="F">F</option>
+                  <option value="M">M</option>
+                  <option value="O">O</option>
+                  <option value="U">U</option>
+                </select>
+              </label>
+              <label>Visit Number<input id="patient-visit-number" placeholder="Generated if blank"></label>
+              <label>Patient Class<input id="patient-class" value="O"></label>
+              <label>Assigned Location<input id="patient-assigned-location" placeholder="CARDIOLOGY^ROOM1"></label>
+              <label>Attending Provider<input id="patient-attending-provider" placeholder="P123^Rivera^Elena"></label>
+              <label>Account Number<input id="patient-account-number" placeholder="ACC-1001"></label>
+              <label>Phone<input id="patient-phone" placeholder="555-0100"></label>
+              <label class="full-width-field">Address<input id="patient-address" placeholder="100 Main St^^Boston^MA^02110"></label>
+            </div>
+            <div class="button-row patient-actions">
+              <button id="refresh-patient-preview" type="button">Refresh Preview</button>
+              <button id="create-patient" class="primary" type="button">Create Local Patient</button>
+            </div>
+          </div>
+
+          <div class="lab-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Validation</p>
+                <h2>Preview Status</h2>
+              </div>
+            </div>
+            <div id="patient-validation" class="validation-panel">
+              <span class="status neutral">Waiting for input</span>
+            </div>
+            <div id="patient-summary" class="record-detail compact-detail">
+              <p class="muted">Patient summary appears after preview or creation.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="lab-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Payload Preview</p>
+              <h2>MSH, EVN, PID, PV1</h2>
+            </div>
+            <button id="copy-patient-payload" type="button">Copy Payload</button>
+          </div>
+          <pre id="patient-payload-preview" class="compact-output">Fill the Patient form to preview an HL7 v2.3.1 ADT A04 payload.</pre>
+        </section>
+
+        <section class="lab-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Local</p>
+              <h2>Local Patients</h2>
+            </div>
+            <button id="refresh-patients" type="button">Refresh</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>ID</th><th>MRN</th><th>Name</th><th>DOB</th><th>Sex</th><th>Visit</th><th>Created</th></tr>
+              </thead>
+              <tbody id="patient-record-list"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="order-view" class="app-view order-workspace" aria-label="Order Entry" hidden>
+        <div class="lab-console-header">
+          <div>
+            <p class="eyebrow">Order</p>
+            <h2>HL7 v2.3.1 ORM O01</h2>
+          </div>
+          <div class="lab-console-actions">
+            <button id="load-order-demo" type="button">Demo Preset</button>
+            <span id="order-form-status" class="status neutral">No order created</span>
+          </div>
+        </div>
+
+        <section class="patient-grid">
+          <div class="lab-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Protocol</p>
+                <h2>Order Type</h2>
+              </div>
+            </div>
+            <div class="form-grid">
+              <label>Mode
+                <select id="order-protocol">
+                  <option value="hl7-v231">HL7 v2.3.1</option>
+                  <option value="hl7-v251" disabled>HL7 v2.5.1</option>
+                  <option value="fhir" disabled>FHIR</option>
+                  <option value="gdt" disabled>GDT</option>
+                  <option value="dicom" disabled>DICOM</option>
+                </select>
+              </label>
+              <label>Patient
+                <select id="order-patient"></select>
+              </label>
+              <label>Priority
+                <select id="order-priority">
+                  <option value="R">Routine</option>
+                  <option value="S">Stat</option>
+                  <option value="A">ASAP</option>
+                </select>
+              </label>
+              <label>Requested Time<input id="order-requested-at" placeholder="YYYYMMDDHHMMSS"></label>
+              <label>Ordering Provider<input id="order-provider" value="1001^WANG^AMY"></label>
+              <label>Order Code<input id="order-code" value="ECG12"></label>
+              <label>Alternate Code<input id="order-alternate-code" value="93000"></label>
+              <label class="full-width-field">Clinical Indication<input id="order-indication" placeholder="Chest pain evaluation"></label>
+            </div>
+            <div class="button-row patient-actions">
+              <button id="refresh-order-preview" type="button">Refresh Preview</button>
+              <button id="create-order" class="primary" type="button">Create Order</button>
+            </div>
+          </div>
+
+          <div class="lab-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Validation</p>
+                <h2>Preview Status</h2>
+              </div>
+            </div>
+            <div id="order-validation" class="validation-panel">
+              <span class="status neutral">Waiting for input</span>
+            </div>
+            <div id="order-summary" class="record-detail compact-detail">
+              <p class="muted">Order summary appears after preview or creation.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="lab-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Payload Preview</p>
+              <h2>MSH, PID, PV1, ORC, OBR</h2>
+            </div>
+            <button id="copy-order-payload" type="button">Copy Payload</button>
+          </div>
+          <pre id="order-payload-preview" class="compact-output">Select a local patient to preview an HL7 v2.3.1 ORM O01 payload.</pre>
+        </section>
+
+        <section class="lab-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Local</p>
+              <h2>Local Orders</h2>
+            </div>
+            <button id="refresh-orders" type="button">Refresh</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Order</th><th>MRN</th><th>Name</th><th>Code</th><th>Status</th><th>Requested</th><th>Created</th></tr>
+              </thead>
+              <tbody id="order-record-list"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="oie-view" class="app-view oie-workspace" aria-label="OIE Local ADT Inventory" hidden>
+        <div class="lab-console-header">
+          <div>
+            <p class="eyebrow">OIE</p>
+            <h2>Local HL7 Inventory</h2>
+          </div>
+          <div class="lab-console-actions">
+            <button id="refresh-oie-inventory" type="button">Refresh</button>
+            <span id="oie-inventory-status" class="status neutral">Local only</span>
+          </div>
+        </div>
+        <section class="dashboard-main-grid oie-inventory-grid">
+          <div class="lab-panel">
+            <p class="muted local-only-note">Stored locally in Healthcare Lab. These ADT A04 messages have not been transmitted to OIE.</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Local ID</th><th>MRN</th><th>Name</th><th>Message</th><th>Created</th><th>Payload</th></tr>
+                </thead>
+                <tbody id="oie-inventory-list"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="lab-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Orders</p>
+                <h2>Ready to Send</h2>
+              </div>
+            </div>
+            <div class="form-grid oie-connection-grid">
+              <label>Host<input id="oie-send-host" value="{{ oie_order_host }}"></label>
+              <label>Port<input id="oie-send-port" value="{{ oie_order_port }}"></label>
+              <label>Timeout<input id="oie-send-timeout" value="5"></label>
+              <label class="checkbox-row"><input id="oie-send-mllp" type="checkbox" checked>MLLP</label>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Order</th><th>MRN</th><th>Status</th><th>ACK</th><th>Action</th></tr>
+                </thead>
+                <tbody id="oie-order-list"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+        <section class="lab-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Selected</p>
+              <h2>Local Payload</h2>
+            </div>
+            <button id="copy-oie-payload" type="button">Copy Payload</button>
+          </div>
+          <pre id="oie-payload-preview" class="compact-output">Select a local ADT record to inspect its generated payload.</pre>
+          <pre id="oie-ack-preview" class="compact-output">Select or send an order to inspect ACK details.</pre>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script src="{{ url_for('static', filename='app.js') }}?v=zac19-oie-order-host"></script>
+</body>
+</html>

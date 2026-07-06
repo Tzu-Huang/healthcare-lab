@@ -1,0 +1,7 @@
+{
+  "name": "openemr/oe-module-gdt-ecg-poc",
+  "description": "Scaffold for an OpenEMR ECG order workflow backed by a GDT bridge sidecar",
+  "type": "openemr-module",
+  "license": "GPL-3.0-or-later",
+  "require": {}
+}
