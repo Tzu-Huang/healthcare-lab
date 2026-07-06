@@ -26,4 +26,4 @@
 - [x] 4.2 Add backend tests for fixed `8402=EKG01` and rejection/non-exposure of `EKG04` and `ERGO01`.
 - [x] 4.3 Add API tests for listing created GDT orders after refresh.
 - [x] 4.4 Add frontend tests or syntax checks for the dashboard action and GDT order mode.
-- [ ] 4.5 Run Python unit tests, Python compile checks, frontend syntax checks, and OpenSpec validation.
+- [x] 4.5 Run Python unit tests, Python compile checks, frontend syntax checks, and OpenSpec validation.
