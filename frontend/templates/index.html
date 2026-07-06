@@ -242,7 +242,7 @@
         <div class="lab-console-header">
           <div>
             <p class="eyebrow">Order</p>
-            <h2>HL7 v2.3.1 ORM O01</h2>
+            <h2 id="order-mode-title">HL7 v2.3.1 ORM O01</h2>
           </div>
           <div class="lab-console-actions">
             <button id="load-order-demo" type="button">Demo Preset</button>
@@ -264,14 +264,14 @@
                   <option value="hl7-v231">HL7 v2.3.1</option>
                   <option value="hl7-v251" disabled>HL7 v2.5.1</option>
                   <option value="fhir" disabled>FHIR</option>
-                  <option value="gdt" disabled>GDT</option>
+                  <option value="gdt">GDT ECG</option>
                   <option value="dicom" disabled>DICOM</option>
                 </select>
               </label>
               <label>Patient
                 <select id="order-patient"></select>
               </label>
-              <label>Priority
+              <label data-order-mode-field="hl7-v231">Priority
                 <select id="order-priority">
                   <option value="R">Routine</option>
                   <option value="S">Stat</option>
@@ -280,11 +280,26 @@
               </label>
               <label>Requested Time<input id="order-requested-at" placeholder="YYYYMMDDHHMMSS"></label>
               <label>Ordering Provider<input id="order-provider" value="1001^WANG^AMY"></label>
-              <label>Order Code<input id="order-code" value="ECG12"></label>
-              <label>Alternate Code<input id="order-alternate-code" value="93000"></label>
+              <label data-order-mode-field="hl7-v231">Order Code<input id="order-code" value="ECG12"></label>
+              <label data-order-mode-field="hl7-v231">Alternate Code<input id="order-alternate-code" value="93000"></label>
+              <label data-order-mode-field="gdt">GDT Test Type<input id="gdt-test-code" value="8402=EKG01" readonly></label>
+              <label data-order-mode-field="gdt">Attachment URL<input id="gdt-attachment-url" placeholder="http://localhost/reports/ecg.pdf"></label>
               <label class="full-width-field">Clinical Indication<input id="order-indication" placeholder="Chest pain evaluation"></label>
+              <label data-order-mode-field="gdt">New Patient MRN<input id="gdt-patient-mrn" placeholder="MRN-GDT-001"></label>
+              <label data-order-mode-field="gdt">First Name<input id="gdt-patient-first-name" placeholder="Avery"></label>
+              <label data-order-mode-field="gdt">Last Name<input id="gdt-patient-last-name" placeholder="Morgan"></label>
+              <label data-order-mode-field="gdt">DOB<input id="gdt-patient-dob" placeholder="19850412"></label>
+              <label data-order-mode-field="gdt">Sex
+                <select id="gdt-patient-sex">
+                  <option value="F">F</option>
+                  <option value="M">M</option>
+                  <option value="O">O</option>
+                  <option value="U">U</option>
+                </select>
+              </label>
             </div>
             <div class="button-row patient-actions">
+              <button id="create-gdt-patient" type="button" data-order-mode-field="gdt">Create Patient</button>
               <button id="refresh-order-preview" type="button">Refresh Preview</button>
               <button id="create-order" class="primary" type="button">Create Order</button>
             </div>
@@ -310,7 +325,7 @@
           <div class="section-heading compact-heading">
             <div>
               <p class="eyebrow">Payload Preview</p>
-              <h2>MSH, PID, PV1, ORC, OBR</h2>
+              <h2 id="order-payload-title">MSH, PID, PV1, ORC, OBR</h2>
             </div>
             <button id="copy-order-payload" type="button">Copy Payload</button>
           </div>

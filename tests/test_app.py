@@ -113,6 +113,9 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'id="patient-mode"', response.data)
         self.assertIn(b'id="order-view"', response.data)
         self.assertIn(b'id="order-payload-preview"', response.data)
+        self.assertIn(b'<option value="gdt">GDT ECG</option>', response.data)
+        self.assertIn(b'id="create-gdt-patient"', response.data)
+        self.assertIn(b'id="gdt-test-code" value="8402=EKG01"', response.data)
         self.assertIn(b'id="oie-order-list"', response.data)
         self.assertIn(b'id="oie-send-host" value="localhost"', response.data)
         self.assertIn(b'id="oie-listener-port" value="6665"', response.data)
@@ -124,6 +127,14 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn(b'id="gdt-ap-view"', response.data)
         self.assertNotIn(b"GDT AP Simulator", response.data)
         self.assertNotIn(b"Submit to Medplum", response.data)
+
+    def test_frontend_exposes_dashboard_gdt_order_action(self):
+        app_js = Path(__file__).resolve().parents[1] / "frontend" / "static" / "app.js"
+        script = app_js.read_text(encoding="utf-8")
+
+        self.assertIn('service.id === "openemr-gdt"', script)
+        self.assertIn("ECG Order", script)
+        self.assertIn('"/api/gdt/orders"', script)
 
     def test_sidebar_views_hide_inactive_pages(self):
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
