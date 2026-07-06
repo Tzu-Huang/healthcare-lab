@@ -14,16 +14,16 @@
 
 ## 3. Frontend Flow
 
-- [ ] 3.1 Add a dashboard OpenEMR/GDT action that opens the GDT ECG order flow.
-- [ ] 3.2 Enable a GDT ECG mode on the Order page without disrupting the HL7 ORM mode.
-- [ ] 3.3 Let users select an existing local patient or create a patient from the dashboard-started flow.
-- [ ] 3.4 Display fixed test type `8402=EKG01` and hide/disable non-MVP test types.
-- [ ] 3.5 Show raw GDT payload preview, created order status, and persisted GDT orders after refresh.
+- [x] 3.1 Add a dashboard OpenEMR/GDT action that opens the GDT ECG order flow.
+- [x] 3.2 Enable a GDT ECG mode on the Order page without disrupting the HL7 ORM mode.
+- [x] 3.3 Let users select an existing local patient or create a patient from the dashboard-started flow.
+- [x] 3.4 Display fixed test type `8402=EKG01` and hide/disable non-MVP test types.
+- [x] 3.5 Show raw GDT payload preview, created order status, and persisted GDT orders after refresh.
 
 ## 4. Verification
 
-- [ ] 4.1 Add backend tests for GDT order creation without OpenEMR configuration.
-- [ ] 4.2 Add backend tests for fixed `8402=EKG01` and rejection/non-exposure of `EKG04` and `ERGO01`.
-- [ ] 4.3 Add API tests for listing created GDT orders after refresh.
-- [ ] 4.4 Add frontend tests or syntax checks for the dashboard action and GDT order mode.
+- [x] 4.1 Add backend tests for GDT order creation without OpenEMR configuration.
+- [x] 4.2 Add backend tests for fixed `8402=EKG01` and rejection/non-exposure of `EKG04` and `ERGO01`.
+- [x] 4.3 Add API tests for listing created GDT orders after refresh.
+- [x] 4.4 Add frontend tests or syntax checks for the dashboard action and GDT order mode.
 - [ ] 4.5 Run Python unit tests, Python compile checks, frontend syntax checks, and OpenSpec validation.
