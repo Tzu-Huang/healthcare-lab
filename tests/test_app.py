@@ -1,4 +1,5 @@
 import json
+import socket
 import tempfile
 import unittest
 import urllib.error
@@ -271,6 +272,24 @@ class HealthcareLabApiTests(unittest.TestCase):
         item = response.get_json()["item"]
         self.assertFalse(item["running"])
         self.assertEqual(item["port"], 6665)
+
+    def test_oie_result_listener_start_reports_bind_failure(self):
+        occupied = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        occupied.bind(("127.0.0.1", 0))
+        occupied.listen(1)
+        port = occupied.getsockname()[1]
+        try:
+            response = self.client.post(
+                "/api/oie/result-listener/start",
+                json={"host": "127.0.0.1", "port": port, "mllpFraming": True},
+            )
+        finally:
+            occupied.close()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Listener could not start", response.get_json()["error"])
+        status = self.client.get("/api/oie/result-listener/status").get_json()["item"]
+        self.assertFalse(status["running"])
 
     @patch("app.send_hl7_mllp_message")
     def test_oie_send_order_records_ack_acceptance(self, send_message):

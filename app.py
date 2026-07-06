@@ -679,16 +679,29 @@ class OieResultListener:
             raise ValidationError("Listener host is required.")
         if not 1 <= int(port) <= 65535:
             raise ValidationError("Listener port must be between 1 and 65535.")
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         with self._lock:
             if self._thread and self._thread.is_alive():
                 if self.host == host and self.port == int(port) and self.framing == framing:
+                    server.close()
                     return self.status()
+                server.close()
                 raise ValidationError("Stop the current listener before changing configuration.")
+            try:
+                server.bind((host, int(port)))
+                server.listen(5)
+                server.settimeout(0.5)
+            except OSError as exc:
+                server.close()
+                self.last_error = str(exc)
+                raise ValidationError(f"Listener could not start: {exc}") from exc
             self.host = host
             self.port = int(port)
             self.framing = bool(framing)
             self.last_error = ""
             self._stop_event.clear()
+            self._socket = server
             self._thread = threading.Thread(target=self._serve, name="oie-result-listener", daemon=True)
             self._thread.start()
         return self.status()
@@ -707,14 +720,11 @@ class OieResultListener:
         return self.status()
 
     def _serve(self) -> None:
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        with self._lock:
+            server = self._socket
+        if server is None:
+            return
         try:
-            server.bind((self.host, self.port))
-            server.listen(5)
-            server.settimeout(0.5)
-            with self._lock:
-                self._socket = server
             while not self._stop_event.is_set():
                 try:
                     connection, _address = server.accept()
