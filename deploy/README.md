@@ -15,8 +15,18 @@ Interoperability Lab Console. It targets Docker Desktop on Windows.
   Hospital logical services.
 - `dcm4chee`: DICOM archive backed by Postgres.
 
-The GDT bridge volume is mounted at `/data/gdt-bridge` in both `lab-app` and
-`openemr`, so the default app configuration can use one shared folder contract.
+The GDT bridge shared folder is mounted at `/data/gdt-bridge` in both `lab-app`
+and `openemr`, so the default app configuration can use one shared folder
+contract. By default Docker Compose binds the repo-local `instance/gdt-bridge`
+folder from the developer machine into that container path. Set
+`GDT_BRIDGE_HOST_PATH` in the repo-root `.env` file to use another computer
+folder, then restart `lab-app` and `openemr`.
+
+Inside Healthcare Lab's GDT page, the **Shared Folder** setting controls the
+path the Flask app reads and writes. In Docker this should normally remain
+`/data/gdt-bridge`; the actual Windows folder is controlled by the Compose
+bind mount through `GDT_BRIDGE_HOST_PATH`.
+
 The lab app also points its OpenEMR database settings at `openemr-db` by
 default.
 

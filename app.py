@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import socket
 import threading
 import time
@@ -1473,6 +1474,44 @@ def create_app(database_path: str | None = None) -> Flask:
                 if path.is_file():
                     items.append(gdt_bridge_file_item(path, status))
         return items
+
+    def gdt_bridge_config_payload() -> dict[str, Any]:
+        bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
+        return {
+            "bridgePath": str(bridge_dirs["root"]),
+            "hostPath": os.environ.get("GDT_BRIDGE_HOST_PATH", ""),
+            "outboxPath": str(bridge_dirs["outbox"]),
+            "inboundPath": str(bridge_dirs["inbound"]),
+            "archivePath": str(bridge_dirs["archive"]),
+            "errorPath": str(bridge_dirs["error"]),
+            "dockerHint": (
+                "When running in Docker, set GDT_BRIDGE_HOST_PATH in .env and restart lab-app "
+                "to map a Windows folder to /data/gdt-bridge."
+            ),
+        }
+
+    @app.get("/api/gdt/bridge/config")
+    def get_gdt_bridge_config():
+        return jsonify({"success": True, "item": gdt_bridge_config_payload()})
+
+    @app.put("/api/gdt/bridge/config")
+    def update_gdt_bridge_config():
+        payload = request.get_json(silent=True) or {}
+        bridge_path = str(payload.get("bridgePath") or "").strip()
+        if not bridge_path:
+            return error_response("GDT shared folder path is required.", 400)
+        if os.name != "nt" and re.match(r"^[A-Za-z]:[\\/]", bridge_path):
+            return error_response(
+                "Windows paths must be mounted into Docker first. Set GDT_BRIDGE_HOST_PATH in .env, "
+                "restart lab-app, then use /data/gdt-bridge here.",
+                400,
+            )
+        try:
+            validate_gdt_bridge_dirs(bridge_path)
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        app.config["GDT_BRIDGE_PATH"] = bridge_path
+        return jsonify({"success": True, "item": gdt_bridge_config_payload()})
 
     @app.get("/api/gdt/workbench")
     def gdt_workbench():
