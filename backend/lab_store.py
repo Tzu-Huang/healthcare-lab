@@ -18,7 +18,17 @@ except ImportError:  # pragma: no cover - optional OpenEMR integration dependenc
 OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES = ("1001",)
 PATIENT_PROTOCOL_VERSION = "2.3.1"
 PATIENT_MESSAGE_TYPE = "ADT^A04"
+PATIENT_MODES = {
+    "hl7-v2": {"protocol": "HL7 v2.3.1", "message_type": "ADT^A04"},
+    "fhir": {"protocol": "FHIR R4", "message_type": "Patient"},
+    "gdt": {"protocol": "GDT 2.1", "message_type": "6301"},
+    "dicom": {"protocol": "DICOM", "message_type": "Patient Module"},
+}
 PATIENT_CLASS_DEFAULT = "O"
+GDT_VERSION = "02.10"
+GDT_DEFAULT_CHARSET_MARKER = "3"
+GDT_DEFAULT_ENCODING = "cp1252"
+GDT_PATIENT_SEX_CODES = {"M": "1", "F": "2"}
 ORDER_PROTOCOL_VERSION = "2.3.1"
 ORDER_MESSAGE_TYPE = "ORM^O01"
 ORDER_STATUS_READY = "Ready to send"
@@ -33,6 +43,13 @@ ORDER_DEFAULT_ALT_CODE = "93000"
 ORDER_DEFAULT_ALT_TEXT = "Electrocardiogram, routine ECG with at least 12 leads"
 ORDER_DEFAULT_ALT_SYSTEM = "C4"
 ORDER_DEFAULT_PROVIDER = "1001^WANG^AMY"
+GDT_ORDER_PROTOCOL_VERSION = "GDT 2.1"
+GDT_ORDER_MESSAGE_TYPE = "6302"
+GDT_ORDER_STATUS_CREATED = "Created"
+GDT_ORDER_STATUS_ERROR = "Error"
+GDT_ORDER_TEST_CODE_FIELD = "8402"
+GDT_ORDER_TEST_CODE = "EKG01"
+GDT_ORDER_TEST_LABEL = "12-lead resting ECG"
 LAB_SERVER_TYPES = (
     "HL7 Engine",
     "FHIR Server",
@@ -197,6 +214,52 @@ def _hl7_escape_composite(value: Any) -> str:
         _hl7_escape(component)
         for component in str(value if value is not None else "").split("^")
     )
+
+
+def _gdt_clean_value(value: Any) -> str:
+    return str(value if value is not None else "").strip().replace("\r", " ").replace("\n", " ")
+
+
+def _encode_gdt_text(value: str) -> bytes:
+    try:
+        return value.encode(GDT_DEFAULT_ENCODING)
+    except UnicodeEncodeError as exc:
+        raise SimulatorValidationError(
+            "GDT 2.1 patient fields must use ANSI/ISO-8859-1 compatible characters."
+        ) from exc
+
+
+def render_gdt_record(code: str, value: Any) -> bytes:
+    field_code = str(code).strip()
+    if len(field_code) != 4 or not field_code.isdigit():
+        raise SimulatorValidationError(f"GDT field code must be four digits: {field_code}")
+    content = _encode_gdt_text(_gdt_clean_value(value))
+    record_length = 3 + 4 + len(content) + 2
+    if record_length > 999:
+        raise SimulatorValidationError(f"GDT field {field_code} exceeds the 999 byte record limit.")
+    return f"{record_length:03d}{field_code}".encode("ascii") + content + b"\r\n"
+
+
+def render_gdt_message(records: list[tuple[str, Any]], *, set_type: str) -> str:
+    normalized = [
+        (code, value)
+        for code, value in records
+        if code not in {"8000", "8100", "9218", "9206"}
+    ]
+    total_length = "00000"
+    for _ in range(8):
+        full_records = [
+            ("8000", set_type),
+            ("8100", total_length),
+            ("9218", GDT_VERSION),
+            ("9206", GDT_DEFAULT_CHARSET_MARKER),
+        ] + normalized
+        payload = b"".join(render_gdt_record(code, value) for code, value in full_records)
+        next_length = f"{len(payload):05d}"
+        if next_length == total_length:
+            return payload.decode(GDT_DEFAULT_ENCODING)
+        total_length = next_length
+    raise SimulatorValidationError("Could not stabilize GDT 8100 full message length.")
 
 
 def ensure_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
@@ -645,6 +708,33 @@ class DemoStore:
                     FOREIGN KEY(matched_order_record_id) REFERENCES local_order_records(id) ON DELETE SET NULL,
                     FOREIGN KEY(duplicate_of_id) REFERENCES oie_result_records(id) ON DELETE SET NULL
                 );
+                CREATE TABLE IF NOT EXISTS local_gdt_order_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    local_gdt_order_number TEXT NOT NULL UNIQUE,
+                    patient_record_id INTEGER NOT NULL,
+                    protocol_version TEXT NOT NULL,
+                    message_type TEXT NOT NULL,
+                    order_status TEXT NOT NULL,
+                    mrn TEXT NOT NULL,
+                    first_name TEXT NOT NULL,
+                    last_name TEXT NOT NULL,
+                    middle_name TEXT NOT NULL DEFAULT '',
+                    dob TEXT NOT NULL,
+                    sex TEXT NOT NULL,
+                    visit_number TEXT NOT NULL DEFAULT '',
+                    gdt_test_code TEXT NOT NULL,
+                    gdt_test_label TEXT NOT NULL,
+                    requested_at TEXT NOT NULL,
+                    ordering_provider TEXT NOT NULL DEFAULT '',
+                    clinical_indication TEXT NOT NULL DEFAULT '',
+                    attachment_url TEXT NOT NULL DEFAULT '',
+                    payload_gdt TEXT NOT NULL,
+                    export_path TEXT NOT NULL DEFAULT '',
+                    error_text TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(patient_record_id) REFERENCES local_patient_records(id) ON DELETE RESTRICT
+                );
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_oie_result_control_id
                 ON oie_result_records(message_control_id)
                 WHERE message_control_id != '';
@@ -701,10 +791,28 @@ class DemoStore:
     def _patient_visit_number(record_id: int) -> str:
         return f"VISIT-{record_id:06d}"
 
+    @staticmethod
+    def _normalize_patient_mode(payload: dict[str, Any]) -> str:
+        mode = str(payload.get("mode", payload.get("protocolMode", "hl7-v2"))).strip().lower()
+        aliases = {
+            "hl7": "hl7-v2",
+            "hl7v2": "hl7-v2",
+            "hl7-v2.3.1": "hl7-v2",
+            "hl7-v231": "hl7-v2",
+            "fhir-r4": "fhir",
+            "gdt-2.1": "gdt",
+            "dicom-patient": "dicom",
+        }
+        normalized = aliases.get(mode, mode)
+        if normalized not in PATIENT_MODES:
+            raise SimulatorValidationError("Patient mode must be HL7 v2, FHIR, GDT, or DICOM.")
+        return normalized
+
     def _validate_patient_payload(self, payload: dict[str, Any]) -> dict[str, str]:
         if not isinstance(payload, dict):
             raise SimulatorValidationError("Patient payload must be a JSON object.")
         return {
+            "mode": self._normalize_patient_mode(payload),
             "mrn": self._clean_patient_text(payload.get("mrn"), "mrn", required=True),
             "first_name": self._clean_patient_text(payload.get("firstName"), "firstName", required=True),
             "last_name": self._clean_patient_text(payload.get("lastName"), "lastName", required=True),
@@ -753,6 +861,107 @@ class DemoStore:
         ]
         return "\r".join(segments), visit_number
 
+    @staticmethod
+    def _patient_fhir_gender(sex: str) -> str:
+        return {"M": "male", "F": "female", "O": "other", "U": "unknown"}[sex]
+
+    @staticmethod
+    def _patient_fhir_birth_date(dob: str) -> str:
+        return f"{dob[:4]}-{dob[4:6]}-{dob[6:]}"
+
+    @staticmethod
+    def _build_patient_fhir_payload(values: dict[str, str], *, record_id: int) -> tuple[str, str]:
+        visit_number = values["visit_number"] or DemoStore._patient_visit_number(record_id)
+        patient_name = " ".join(
+            part for part in (values["first_name"], values["middle_name"], values["last_name"]) if part
+        )
+        resource = {
+            "resourceType": "Patient",
+            "id": DemoStore._patient_record_number(record_id),
+            "meta": {
+                "profile": [
+                    "https://twcore.mohw.gov.tw/ig/twcore/StructureDefinition/Patient-twcore"
+                ],
+            },
+            "identifier": [
+                {
+                    "system": "urn:healthcare-lab:mrn",
+                    "value": values["mrn"],
+                }
+            ],
+            "name": [
+                {
+                    "use": "official",
+                    "text": patient_name,
+                    "family": values["last_name"],
+                    "given": [
+                        part for part in (values["first_name"], values["middle_name"]) if part
+                    ],
+                }
+            ],
+            "gender": DemoStore._patient_fhir_gender(values["sex"]),
+            "birthDate": DemoStore._patient_fhir_birth_date(values["dob"]),
+            "telecom": [{"system": "phone", "value": values["phone"]}] if values["phone"] else [],
+            "address": [{"text": values["address"]}] if values["address"] else [],
+            "extension": [
+                {
+                    "url": "urn:healthcare-lab:visit-number",
+                    "valueString": visit_number,
+                }
+            ],
+        }
+        return json.dumps(resource, indent=2), visit_number
+
+    @staticmethod
+    def _build_patient_gdt_payload(
+        values: dict[str, str], *, record_id: int, timestamp: str
+    ) -> tuple[str, str]:
+        visit_number = values["visit_number"] or DemoStore._patient_visit_number(record_id)
+        birth_date = f"{values['dob'][6:]}{values['dob'][4:6]}{values['dob'][:4]}"
+        records: list[tuple[str, Any]] = [
+            ("8315", "LABGDT"),
+            ("8316", "HCLAB"),
+            ("3000", values["mrn"]),
+            ("3101", values["last_name"]),
+            ("3102", values["first_name"]),
+            ("3103", birth_date),
+        ]
+        sex_code = GDT_PATIENT_SEX_CODES.get(values["sex"])
+        if sex_code:
+            records.append(("3110", sex_code))
+        return render_gdt_message(records, set_type="6301"), visit_number
+
+    @staticmethod
+    def _build_patient_dicom_payload(values: dict[str, str], *, record_id: int) -> tuple[str, str]:
+        visit_number = values["visit_number"] or DemoStore._patient_visit_number(record_id)
+        patient_name = "^".join(
+            part for part in (values["last_name"], values["first_name"], values["middle_name"]) if part
+        )
+        dataset = {
+            "(0010,0010) PatientName": patient_name,
+            "(0010,0020) PatientID": values["mrn"],
+            "(0010,0030) PatientBirthDate": values["dob"],
+            "(0010,0040) PatientSex": values["sex"],
+            "(0010,2154) PatientTelephoneNumbers": values["phone"],
+            "(0038,0010) AdmissionID": visit_number,
+            "(0038,0500) PatientState": values["patient_class"],
+        }
+        if values["address"]:
+            dataset["(0010,1040) PatientAddress"] = values["address"]
+        return json.dumps(dataset, indent=2), visit_number
+
+    @staticmethod
+    def _build_patient_payload(
+        values: dict[str, str], *, record_id: int, timestamp: str, hl7_time: str
+    ) -> tuple[str, str]:
+        if values["mode"] == "fhir":
+            return DemoStore._build_patient_fhir_payload(values, record_id=record_id)
+        if values["mode"] == "gdt":
+            return DemoStore._build_patient_gdt_payload(values, record_id=record_id, timestamp=timestamp)
+        if values["mode"] == "dicom":
+            return DemoStore._build_patient_dicom_payload(values, record_id=record_id)
+        return DemoStore._build_patient_a04_payload(values, record_id=record_id, timestamp=hl7_time)
+
     def create_patient_record(self, payload: dict[str, Any]) -> dict[str, Any]:
         values = self._validate_patient_payload(payload)
         timestamp = now_iso()
@@ -771,8 +980,8 @@ class DemoStore:
                 """,
                 (
                     "",
-                    PATIENT_PROTOCOL_VERSION,
-                    PATIENT_MESSAGE_TYPE,
+                    PATIENT_MODES[values["mode"]]["protocol"],
+                    PATIENT_MODES[values["mode"]]["message_type"],
                     values["mrn"],
                     values["first_name"],
                     values["last_name"],
@@ -795,10 +1004,11 @@ class DemoStore:
             )
             record_id = int(cursor.lastrowid)
             local_patient_number = self._patient_record_number(record_id)
-            payload_hl7, visit_number = self._build_patient_a04_payload(
+            payload_hl7, visit_number = self._build_patient_payload(
                 values,
                 record_id=record_id,
-                timestamp=hl7_time,
+                timestamp=timestamp,
+                hl7_time=hl7_time,
             )
             connection.execute(
                 """
@@ -1133,6 +1343,165 @@ class DemoStore:
     def list_oie_local_order_inventory(self) -> list[dict[str, Any]]:
         return self.list_order_records()
 
+    @staticmethod
+    def _gdt_order_record_number(record_id: int) -> str:
+        return f"GDT-ORD-{record_id:06d}"
+
+    @staticmethod
+    def _validate_gdt_8402_code(value: Any) -> str:
+        normalized = str(value or GDT_ORDER_TEST_CODE).strip().upper()
+        if normalized != GDT_ORDER_TEST_CODE:
+            raise SimulatorValidationError(
+                f"GDT ECG order MVP only supports {GDT_ORDER_TEST_CODE_FIELD}={GDT_ORDER_TEST_CODE}."
+            )
+        prefix = normalized[:-2]
+        suffix = normalized[-2:]
+        if (
+            not 1 <= len(normalized) <= 6
+            or not prefix.isalpha()
+            or not prefix.isupper()
+            or len(prefix) > 4
+            or not suffix.isdigit()
+        ):
+            raise SimulatorValidationError(
+                "GDT 8402 test code must use up to four uppercase letters followed by two digits."
+            )
+        return normalized
+
+    def _validate_gdt_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise SimulatorValidationError("GDT order payload must be a JSON object.")
+        try:
+            patient_record_id = int(payload.get("patientRecordId"))
+        except (TypeError, ValueError) as exc:
+            raise SimulatorValidationError("GDT order patientRecordId is required.") from exc
+        return {
+            "patient_record_id": patient_record_id,
+            "requested_at": self._normalize_requested_at(payload.get("requestedAt")),
+            "ordering_provider": self._clean_order_text(payload.get("orderingProvider"), "orderingProvider"),
+            "clinical_indication": self._clean_order_text(payload.get("clinicalIndication"), "clinicalIndication"),
+            "attachment_url": self._clean_order_text(payload.get("attachmentUrl"), "attachmentUrl"),
+            "gdt_test_code": self._validate_gdt_8402_code(
+                payload.get("gdtTestCode", payload.get("testCode", payload.get("examCode", GDT_ORDER_TEST_CODE)))
+            ),
+        }
+
+    @staticmethod
+    def _gdt_birth_date(dob: str) -> str:
+        return f"{dob[6:]}{dob[4:6]}{dob[:4]}"
+
+    @staticmethod
+    def _build_gdt_order_payload(
+        values: dict[str, Any],
+        patient_row: sqlite3.Row,
+        *,
+        record_id: int,
+    ) -> str:
+        order_number = values.get("local_gdt_order_number") or DemoStore._gdt_order_record_number(record_id)
+        records: list[tuple[str, Any]] = [
+            ("8315", "LABGDT"),
+            ("8316", "HCLAB"),
+            ("3000", patient_row["mrn"]),
+            ("3101", patient_row["last_name"]),
+            ("3102", patient_row["first_name"]),
+            ("3103", DemoStore._gdt_birth_date(patient_row["dob"])),
+            ("6200", order_number),
+            (GDT_ORDER_TEST_CODE_FIELD, GDT_ORDER_TEST_CODE),
+        ]
+        sex_code = GDT_PATIENT_SEX_CODES.get(patient_row["sex"])
+        if sex_code:
+            records.append(("3110", sex_code))
+        if values.get("requested_at"):
+            records.append(("6220", values["requested_at"]))
+        if values.get("ordering_provider"):
+            records.append(("6227", values["ordering_provider"]))
+        if values.get("clinical_indication"):
+            records.append(("6228", values["clinical_indication"]))
+        return render_gdt_message(records, set_type=GDT_ORDER_MESSAGE_TYPE)
+
+    def create_gdt_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
+        values = self._validate_gdt_order_payload(payload)
+        timestamp = now_iso()
+        with self.lock, self.connect() as connection:
+            patient_row = connection.execute(
+                "SELECT * FROM local_patient_records WHERE id = ?",
+                (values["patient_record_id"],),
+            ).fetchone()
+            if not patient_row:
+                raise KeyError(values["patient_record_id"])
+            cursor = connection.execute(
+                """
+                INSERT INTO local_gdt_order_records (
+                    local_gdt_order_number, patient_record_id, protocol_version,
+                    message_type, order_status, mrn, first_name, last_name,
+                    middle_name, dob, sex, visit_number, gdt_test_code,
+                    gdt_test_label, requested_at, ordering_provider,
+                    clinical_indication, attachment_url, payload_gdt,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "",
+                    values["patient_record_id"],
+                    GDT_ORDER_PROTOCOL_VERSION,
+                    GDT_ORDER_MESSAGE_TYPE,
+                    GDT_ORDER_STATUS_CREATED,
+                    patient_row["mrn"],
+                    patient_row["first_name"],
+                    patient_row["last_name"],
+                    patient_row["middle_name"],
+                    patient_row["dob"],
+                    patient_row["sex"],
+                    patient_row["visit_number"],
+                    values["gdt_test_code"],
+                    GDT_ORDER_TEST_LABEL,
+                    values["requested_at"],
+                    values["ordering_provider"],
+                    values["clinical_indication"],
+                    values["attachment_url"],
+                    "",
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            record_id = int(cursor.lastrowid)
+            local_gdt_order_number = self._gdt_order_record_number(record_id)
+            payload_gdt = self._build_gdt_order_payload(
+                {**values, "local_gdt_order_number": local_gdt_order_number},
+                patient_row,
+                record_id=record_id,
+            )
+            connection.execute(
+                """
+                UPDATE local_gdt_order_records
+                SET local_gdt_order_number = ?, payload_gdt = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (local_gdt_order_number, payload_gdt, timestamp, record_id),
+            )
+        return self.get_gdt_order_record(record_id)
+
+    def list_gdt_order_records(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM local_gdt_order_records
+                ORDER BY created_at DESC, id DESC
+                """
+            ).fetchall()
+        return [self._gdt_order_record_dict(row) for row in rows]
+
+    def get_gdt_order_record(self, record_id: int) -> dict[str, Any]:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM local_gdt_order_records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(record_id)
+        return self._gdt_order_record_dict(row)
+
     def record_oie_result(self, payload_hl7: str, parsed: dict[str, str]) -> dict[str, Any]:
         timestamp = now_iso()
         message_control_id = str(parsed.get("messageControlId") or "").strip()
@@ -1351,6 +1720,42 @@ class DemoStore:
             },
             "transportError": row["transport_error"],
             "lastSentAt": row["last_sent_at"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+            "localOnly": True,
+        }
+
+    @staticmethod
+    def _gdt_order_record_dict(row: sqlite3.Row) -> dict[str, Any]:
+        summary_name = " ".join(
+            part for part in (row["first_name"], row["middle_name"], row["last_name"]) if part
+        )
+        return {
+            "id": row["id"],
+            "localGdtOrderNumber": row["local_gdt_order_number"],
+            "patientRecordId": row["patient_record_id"],
+            "protocolVersion": row["protocol_version"],
+            "messageType": row["message_type"],
+            "status": row["order_status"],
+            "gdtTestField": GDT_ORDER_TEST_CODE_FIELD,
+            "gdtTestCode": row["gdt_test_code"],
+            "gdtTestLabel": row["gdt_test_label"],
+            "requestedAt": row["requested_at"],
+            "orderingProvider": row["ordering_provider"],
+            "clinicalIndication": row["clinical_indication"],
+            "attachmentUrl": row["attachment_url"],
+            "payload": row["payload_gdt"],
+            "exportPath": row["export_path"],
+            "error": row["error_text"],
+            "summary": {
+                "mrn": row["mrn"],
+                "name": summary_name,
+                "dob": row["dob"],
+                "sex": row["sex"],
+                "visitNumber": row["visit_number"],
+                "testCode": row["gdt_test_code"],
+                "testLabel": row["gdt_test_label"],
+            },
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
             "localOnly": True,
@@ -1878,25 +2283,12 @@ class DemoStore:
         }
 
     def list_gdt_orders(self) -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            table = connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'gdt_orders'"
-            ).fetchone()
-            if not table:
-                return []
-            rows = connection.execute(
-                """
-                SELECT id, order_number, status, updated_at
-                FROM gdt_orders
-                ORDER BY updated_at DESC, id DESC
-                """
-            ).fetchall()
         return [
             {
-                "id": row["id"],
-                "orderNumber": row["order_number"],
-                "status": row["status"],
-                "updatedAt": row["updated_at"],
+                "id": item["id"],
+                "orderNumber": item["localGdtOrderNumber"],
+                "status": item["status"],
+                "updatedAt": item["updatedAt"],
             }
-            for row in rows
+            for item in self.list_gdt_order_records()
         ]

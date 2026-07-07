@@ -5,6 +5,7 @@ let dashboardEvents = [];
 let dashboardResources = null;
 let patientRecords = [];
 let orderRecords = [];
+let gdtOrderRecords = [];
 let oieInventory = [];
 let oieUnmatchedResults = [];
 let selectedOiePatientId = null;
@@ -23,6 +24,44 @@ const DASHBOARD_RESOURCE_CONTAINERS = [
   { displayName: "openEMR", aliases: ["openemr-1", "openemr"] },
   { displayName: "dcm4chee-1", aliases: ["dcm4chee-1", "dcm4chee"] },
 ];
+
+const PATIENT_MODE_CONFIG = {
+  "hl7-v2": {
+    title: "HL7 v2.3.1 ADT A04",
+    payloadTitle: "MSH, EVN, PID, PV1",
+    emptyPreview: "Complete required Patient fields to preview an HL7 v2.3.1 ADT A04 payload.",
+  },
+  fhir: {
+    title: "FHIR R4 Patient",
+    payloadTitle: "Patient resource JSON",
+    emptyPreview: "Complete required Patient fields to preview a FHIR R4 Patient resource.",
+  },
+  gdt: {
+    title: "GDT 2.1 Patient Record",
+    payloadTitle: "GDT 6301 patient fields",
+    emptyPreview: "Complete required Patient fields to preview a GDT 2.1 patient record.",
+  },
+  dicom: {
+    title: "DICOM Patient Module",
+    payloadTitle: "Patient Module attributes",
+    emptyPreview: "Complete required Patient fields to preview DICOM Patient Module attributes.",
+  },
+};
+
+const ORDER_MODE_CONFIG = {
+  "hl7-v231": {
+    title: "HL7 v2.3.1 ORM O01",
+    payloadTitle: "MSH, PID, PV1, ORC, OBR",
+    emptyPreview: "Select a local patient to preview an HL7 v2.3.1 ORM O01 payload.",
+    createLabel: "Create Order",
+  },
+  gdt: {
+    title: "GDT ECG Order",
+    payloadTitle: "GDT 6302 with 8402=EKG01",
+    emptyPreview: "Select or create a local patient to preview a GDT ECG order payload.",
+    createLabel: "Create GDT Order",
+  },
+};
 
 function setStatus(id, message, state = "neutral") {
   const element = byId(id);
@@ -76,6 +115,31 @@ function setActiveView(viewId) {
   }
   if (viewId === "order-view") refreshOrderWorkspace();
   if (viewId === "oie-view") refreshOieInventory();
+}
+
+function currentOrderMode() {
+  const selector = byId("order-protocol");
+  return ORDER_MODE_CONFIG[selector?.value] ? selector.value : "hl7-v231";
+}
+
+function updateOrderModeFields() {
+  const mode = currentOrderMode();
+  const config = ORDER_MODE_CONFIG[mode];
+  byId("order-mode-title").textContent = config.title;
+  const payloadTitle = byId("order-payload-title");
+  if (payloadTitle) payloadTitle.textContent = config.payloadTitle;
+  byId("create-order").textContent = config.createLabel;
+  document.querySelectorAll("[data-order-mode-field]").forEach((element) => {
+    const modes = String(element.dataset.orderModeField || "").split(/\s+/);
+    element.hidden = !modes.includes(mode);
+  });
+}
+
+function openGdtOrderFlow() {
+  const selector = byId("order-protocol");
+  if (selector) selector.value = "gdt";
+  setActiveView("order-view");
+  setStatus("order-form-status", "GDT ECG order flow ready", "neutral");
 }
 
 function statusClass(status) {
@@ -164,6 +228,13 @@ function renderServices() {
     actions.appendChild(actionButton(service, "enable", "Start"));
     actions.appendChild(actionButton(service, "disable", "Stop"));
     actions.appendChild(actionButton(service, "restart", "Restart"));
+    if (service.id === "openemr-gdt") {
+      const orderButton = document.createElement("button");
+      orderButton.type = "button";
+      orderButton.textContent = "ECG Order";
+      orderButton.addEventListener("click", openGdtOrderFlow);
+      actions.appendChild(orderButton);
+    }
     row.appendChild(rowCell(actions));
     body.appendChild(row);
   });
@@ -292,6 +363,42 @@ const patientDemoPreset = {
   address: "100 Main St^^Boston^MA^02110",
 };
 
+const patientDemoModeOverrides = {
+  "hl7-v2": {
+    assignedLocation: "CARDIOLOGY^ROOM1",
+    attendingProvider: "P123^Rivera^Elena",
+    accountNumber: "ACC-1001",
+    address: "100 Main St^^Boston^MA^02110",
+  },
+  fhir: {
+    assignedLocation: "",
+    attendingProvider: "",
+    accountNumber: "",
+    address: "100 Main St, Boston, MA 02110",
+  },
+  gdt: {
+    assignedLocation: "",
+    attendingProvider: "",
+    accountNumber: "",
+    address: "100 Main St, Boston, MA 02110",
+  },
+  dicom: {
+    assignedLocation: "",
+    attendingProvider: "",
+    accountNumber: "",
+    address: "100 Main St, Boston, MA 02110",
+  },
+};
+
+function patientDemoPresetForMode(mode) {
+  const normalizedMode = PATIENT_MODE_CONFIG[mode] ? mode : "hl7-v2";
+  return {
+    ...patientDemoPreset,
+    ...(patientDemoModeOverrides[normalizedMode] || {}),
+    mode: normalizedMode,
+  };
+}
+
 const orderDemoPreset = {
   priority: "R",
   orderingProvider: "1001^WANG^AMY",
@@ -305,6 +412,7 @@ const orderDemoPreset = {
 
 function patientFormPayload() {
   return {
+    mode: byId("patient-mode").value,
     mrn: byId("patient-mrn").value.trim(),
     firstName: byId("patient-first-name").value.trim(),
     middleName: byId("patient-middle-name").value.trim(),
@@ -322,6 +430,7 @@ function patientFormPayload() {
 }
 
 function setPatientForm(payload) {
+  byId("patient-mode").value = payload.mode || "hl7-v2";
   byId("patient-mrn").value = payload.mrn || "";
   byId("patient-first-name").value = payload.firstName || "";
   byId("patient-middle-name").value = payload.middleName || "";
@@ -335,6 +444,16 @@ function setPatientForm(payload) {
   byId("patient-account-number").value = payload.accountNumber || "";
   byId("patient-phone").value = payload.phone || "";
   byId("patient-address").value = payload.address || "";
+}
+
+function updatePatientModeFields(mode) {
+  const config = PATIENT_MODE_CONFIG[mode] || PATIENT_MODE_CONFIG["hl7-v2"];
+  byId("patient-mode-title").textContent = config.title;
+  byId("patient-payload-title").textContent = config.payloadTitle;
+  document.querySelectorAll("[data-patient-mode-field]").forEach((element) => {
+    const modes = String(element.dataset.patientModeField || "").split(/\s+/);
+    element.hidden = !modes.includes(mode);
+  });
 }
 
 function validatePatientPayload(payload) {
@@ -404,6 +523,9 @@ function taipeiTimestamp(value) {
 }
 
 function buildPatientPreviewPayload(payload) {
+  if (payload.mode === "fhir") return buildPatientFhirPreviewPayload(payload);
+  if (payload.mode === "gdt") return buildPatientGdtPreviewPayload(payload);
+  if (payload.mode === "dicom") return buildPatientDicomPreviewPayload(payload);
   const timestamp = hl7Timestamp();
   const visitNumber = payload.visitNumber || "VISIT-GENERATED";
   const patientName = [payload.lastName, payload.firstName, payload.middleName]
@@ -416,6 +538,105 @@ function buildPatientPreviewPayload(payload) {
     `PID|1||${hl7Escape(payload.mrn)}^^^HEALTHCARE_LAB^MR||${patientName}||${hl7Escape(payload.dob)}|${hl7Escape(payload.sex)}|||${hl7EscapeComposite(payload.address)}||${hl7Escape(payload.phone)}|||||${hl7Escape(payload.accountNumber)}`,
     `PV1|1|${hl7Escape(payload.patientClass || "O")}|${hl7EscapeComposite(payload.assignedLocation)}||||${hl7EscapeComposite(payload.attendingProvider)}||||||||||||${hl7Escape(visitNumber)}`,
   ].join("\r");
+}
+
+function fhirBirthDate(dob) {
+  return `${dob.slice(0, 4)}-${dob.slice(4, 6)}-${dob.slice(6)}`;
+}
+
+function fhirGender(sex) {
+  return { M: "male", F: "female", O: "other", U: "unknown" }[sex] || "unknown";
+}
+
+function buildPatientFhirPreviewPayload(payload) {
+  const patientName = [payload.firstName, payload.middleName, payload.lastName].filter(Boolean).join(" ");
+  return JSON.stringify({
+    resourceType: "Patient",
+    id: "PAT-GENERATED",
+    meta: {
+      profile: [
+        "https://twcore.mohw.gov.tw/ig/twcore/StructureDefinition/Patient-twcore",
+      ],
+    },
+    identifier: [
+      {
+        system: "urn:healthcare-lab:mrn",
+        value: payload.mrn,
+      },
+    ],
+    name: [
+      {
+        use: "official",
+        text: patientName,
+        family: payload.lastName,
+        given: [payload.firstName, payload.middleName].filter(Boolean),
+      },
+    ],
+    gender: fhirGender(payload.sex),
+    birthDate: fhirBirthDate(payload.dob),
+    telecom: payload.phone ? [{ system: "phone", value: payload.phone }] : [],
+    address: payload.address ? [{ text: payload.address }] : [],
+    extension: [
+      {
+        url: "urn:healthcare-lab:visit-number",
+        valueString: payload.visitNumber || "VISIT-GENERATED",
+      },
+    ],
+  }, null, 2);
+}
+
+function renderGdtRecord(code, value) {
+  const fieldCode = String(code || "").trim();
+  const content = String(value ?? "").trim().replace(/[\r\n]+/g, " ");
+  const length = 3 + 4 + content.length + 2;
+  return `${String(length).padStart(3, "0")}${fieldCode}${content}\r\n`;
+}
+
+function renderGdtMessage(records, setType) {
+  let totalLength = "00000";
+  for (let index = 0; index < 8; index += 1) {
+    const lines = [
+      ["8000", setType],
+      ["8100", totalLength],
+      ["9218", "02.10"],
+      ["9206", "3"],
+      ...records,
+    ];
+    const payload = lines.map(([code, value]) => renderGdtRecord(code, value)).join("");
+    const nextLength = String(payload.length).padStart(5, "0");
+    if (nextLength === totalLength) return payload;
+    totalLength = nextLength;
+  }
+  return "";
+}
+
+function buildPatientGdtPreviewPayload(payload) {
+  const gdtBirthDate = `${payload.dob.slice(6)}${payload.dob.slice(4, 6)}${payload.dob.slice(0, 4)}`;
+  const gdtSex = { M: "1", F: "2" }[payload.sex];
+  const records = [
+    ["8315", "LABGDT"],
+    ["8316", "HCLAB"],
+    ["3000", payload.mrn],
+    ["3101", payload.lastName],
+    ["3102", payload.firstName],
+    ["3103", gdtBirthDate],
+  ];
+  if (gdtSex) records.push(["3110", gdtSex]);
+  return renderGdtMessage(records, "6301");
+}
+
+function buildPatientDicomPreviewPayload(payload) {
+  const dataset = {
+    "(0010,0010) PatientName": [payload.lastName, payload.firstName, payload.middleName].filter(Boolean).join("^"),
+    "(0010,0020) PatientID": payload.mrn,
+    "(0010,0030) PatientBirthDate": payload.dob,
+    "(0010,0040) PatientSex": payload.sex,
+    "(0010,2154) PatientTelephoneNumbers": payload.phone,
+    "(0038,0010) AdmissionID": payload.visitNumber || "VISIT-GENERATED",
+    "(0038,0500) PatientState": payload.patientClass || "O",
+  };
+  if (payload.address) dataset["(0010,1040) PatientAddress"] = payload.address;
+  return JSON.stringify(dataset, null, 2);
 }
 
 function renderPatientValidation(messages) {
@@ -442,7 +663,7 @@ function renderPatientSummaryFromPayload(payload, createdAt = "") {
     ["Class", payload.patientClass || "O"],
     ["Visit", payload.visitNumber || "Generated on create"],
     ["Location", payload.assignedLocation],
-    ["Created", createdAt],
+    ["Created", taipeiTimestamp(createdAt)],
   ];
   rows.forEach(([label, value]) => {
     const item = document.createElement("p");
@@ -454,11 +675,13 @@ function renderPatientSummaryFromPayload(payload, createdAt = "") {
 
 function refreshPatientPreview() {
   const payload = patientFormPayload();
+  updatePatientModeFields(payload.mode);
   const messages = validatePatientPayload(payload);
   renderPatientValidation(messages);
   renderPatientSummaryFromPayload(payload);
+  const config = PATIENT_MODE_CONFIG[payload.mode] || PATIENT_MODE_CONFIG["hl7-v2"];
   byId("patient-payload-preview").textContent = messages.length
-    ? "Complete required Patient fields to preview an HL7 v2.3.1 ADT A04 payload."
+    ? config.emptyPreview
     : buildPatientPreviewPayload(payload);
 }
 
@@ -468,7 +691,7 @@ function renderPatientRecordList() {
   if (!patientRecords.length) {
     const row = document.createElement("tr");
     const cell = rowCell("No local patients created yet.");
-    cell.colSpan = 7;
+    cell.colSpan = 8;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
@@ -479,12 +702,13 @@ function renderPatientRecordList() {
     const summary = item.summary || {};
     row.append(
       rowCell(item.localPatientNumber || item.id),
+      rowCell(item.protocolVersion),
       rowCell(summary.mrn),
       rowCell(summary.name),
       rowCell(summary.dob),
       rowCell(summary.sex),
       rowCell(summary.visitNumber),
-      rowCell(item.createdAt),
+      rowCell(taipeiTimestamp(item.createdAt)),
     );
     row.addEventListener("click", () => {
       byId("patient-payload-preview").textContent = item.payload || "";
@@ -543,7 +767,20 @@ function selectedOrderPatient() {
 }
 
 function orderFormPayload() {
+  const mode = currentOrderMode();
+  if (mode === "gdt") {
+    return {
+      mode,
+      patientRecordId: Number(byId("order-patient").value || 0),
+      requestedAt: byId("order-requested-at").value.trim(),
+      orderingProvider: byId("order-provider").value.trim(),
+      clinicalIndication: byId("order-indication").value.trim(),
+      attachmentUrl: byId("gdt-attachment-url").value.trim(),
+      gdtTestCode: "EKG01",
+    };
+  }
   return {
+    mode,
     patientRecordId: Number(byId("order-patient").value || 0),
     priority: byId("order-priority").value,
     requestedAt: byId("order-requested-at").value.trim(),
@@ -596,9 +833,11 @@ function renderOrderPatientOptions() {
 function validateOrderPayload(payload) {
   const messages = [];
   if (!payload.patientRecordId) messages.push("Patient is required.");
-  if (!payload.orderingProvider) messages.push("Ordering provider is required.");
-  if (!payload.orderCode) messages.push("Order code is required.");
-  if (!payload.alternateCode) messages.push("Alternate code is required.");
+  if (payload.mode !== "gdt") {
+    if (!payload.orderingProvider) messages.push("Ordering provider is required.");
+    if (!payload.orderCode) messages.push("Order code is required.");
+    if (!payload.alternateCode) messages.push("Alternate code is required.");
+  }
   if (payload.requestedAt && !/^\d{8}(\d{4})?(\d{2})?$/.test(payload.requestedAt)) {
     messages.push("Requested time must be YYYYMMDD, YYYYMMDDHHMM, or YYYYMMDDHHMMSS.");
   }
@@ -626,7 +865,31 @@ function orderAccountNumber(patient) {
   return patient?.accountNumber || "ACC-ORD-GENERATED";
 }
 
+function buildGdtOrderPreviewPayload(payload, patient) {
+  const patientData = patient?.patient || {};
+  const summary = patient?.summary || {};
+  const dob = summary.dob || "";
+  const birthDate = dob.length === 8 ? `${dob.slice(6)}${dob.slice(4, 6)}${dob.slice(0, 4)}` : dob;
+  const records = [
+    ["8315", "LABGDT"],
+    ["8316", "HCLAB"],
+    ["3000", summary.mrn || ""],
+    ["3101", patientData.lastName || ""],
+    ["3102", patientData.firstName || ""],
+    ["3103", birthDate],
+    ["6200", "GDT-ORD-GENERATED"],
+    ["8402", "EKG01"],
+  ];
+  const sexCode = { M: "1", F: "2" }[summary.sex];
+  if (sexCode) records.push(["3110", sexCode]);
+  if (payload.requestedAt) records.push(["6220", payload.requestedAt]);
+  if (payload.orderingProvider) records.push(["6227", payload.orderingProvider]);
+  if (payload.clinicalIndication) records.push(["6228", payload.clinicalIndication]);
+  return renderGdtMessage(records, "6302");
+}
+
 function buildOrderPreviewPayload(payload, patient) {
+  if (payload.mode === "gdt") return buildGdtOrderPreviewPayload(payload, patient);
   const timestamp = hl7Timestamp();
   const requestedAt = payload.requestedAt || timestamp;
   const orderNumber = "ORD-GENERATED";
@@ -657,6 +920,23 @@ function buildOrderPreviewPayload(payload, patient) {
 function renderOrderSummary(payload, patient, createdAt = "") {
   const container = byId("order-summary");
   container.replaceChildren();
+  if (payload.mode === "gdt") {
+    [
+      ["Patient", patient?.summary?.name],
+      ["MRN", patient?.summary?.mrn],
+      ["GDT Field", "8402"],
+      ["Test Type", "EKG01 / 12-lead resting ECG"],
+      ["Provider", payload.orderingProvider],
+      ["Requested", payload.requestedAt || "Generated on create"],
+      ["Created", createdAt],
+    ].forEach(([label, value]) => {
+      const item = document.createElement("p");
+      item.appendChild(createElement("strong", `${label}: `));
+      item.appendChild(document.createTextNode(value || "-"));
+      container.appendChild(item);
+    });
+    return;
+  }
   const rows = [
     ["Patient", patient?.summary?.name],
     ["MRN", patient?.summary?.mrn],
@@ -676,36 +956,41 @@ function renderOrderSummary(payload, patient, createdAt = "") {
 }
 
 function refreshOrderPreview() {
+  updateOrderModeFields();
   const payload = orderFormPayload();
   const patient = selectedOrderPatient();
   const messages = validateOrderPayload(payload);
   renderOrderValidation(messages);
   renderOrderSummary(payload, patient);
   byId("order-payload-preview").textContent = messages.length
-    ? "Complete required Order fields to preview an HL7 v2.3.1 ORM O01 payload."
+    ? ORDER_MODE_CONFIG[currentOrderMode()].emptyPreview
     : buildOrderPreviewPayload(payload, patient);
 }
 
 function renderOrderRecordList() {
   const body = byId("order-record-list");
+  const mode = currentOrderMode();
+  const records = mode === "gdt" ? gdtOrderRecords : orderRecords;
   body.replaceChildren();
-  if (!orderRecords.length) {
+  if (!records.length) {
     const row = document.createElement("tr");
-    const cell = rowCell("No local orders created yet.");
+    const cell = rowCell(mode === "gdt" ? "No local GDT ECG orders created yet." : "No local orders created yet.");
     cell.colSpan = 7;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
     return;
   }
-  orderRecords.forEach((item) => {
+  records.forEach((item) => {
     const row = document.createElement("tr");
     const summary = item.summary || {};
+    const orderNumber = mode === "gdt" ? item.localGdtOrderNumber : item.localOrderNumber;
+    const orderCode = mode === "gdt" ? summary.testCode : summary.orderCode;
     row.append(
-      rowCell(item.localOrderNumber || item.id),
+      rowCell(orderNumber || item.id),
       rowCell(summary.mrn),
       rowCell(summary.name),
-      rowCell(summary.orderCode),
+      rowCell(orderCode),
       rowCell(item.status),
       rowCell(item.requestedAt),
       rowCell(item.createdAt),
@@ -713,6 +998,7 @@ function renderOrderRecordList() {
     row.addEventListener("click", () => {
       byId("order-payload-preview").textContent = item.payload || "";
       renderOrderSummary({
+        mode,
         priority: item.priority,
         requestedAt: item.requestedAt,
         orderingProvider: item.orderingProvider,
@@ -732,8 +1018,13 @@ function renderOrderRecordList() {
 
 async function refreshOrders() {
   try {
-    const result = await requestJson("/api/orders");
-    orderRecords = result.items || [];
+    if (currentOrderMode() === "gdt") {
+      const result = await requestJson("/api/gdt/orders");
+      gdtOrderRecords = result.items || [];
+    } else {
+      const result = await requestJson("/api/orders");
+      orderRecords = result.items || [];
+    }
     renderOrderRecordList();
   } catch (error) {
     setStatus("order-form-status", "Refresh failed", "error");
@@ -741,6 +1032,7 @@ async function refreshOrders() {
 }
 
 async function refreshOrderWorkspace() {
+  updateOrderModeFields();
   await refreshPatients();
   await refreshOrders();
   refreshOrderPreview();
@@ -751,16 +1043,49 @@ async function createOrderRecord() {
   button.disabled = true;
   setStatus("order-form-status", "Creating...", "pending");
   try {
-    const result = await requestJson("/api/orders", {
+    const mode = currentOrderMode();
+    const result = await requestJson(mode === "gdt" ? "/api/gdt/orders" : "/api/orders", {
       method: "POST",
       body: JSON.stringify(orderFormPayload()),
     });
     const item = result.item;
-    setStatus("order-form-status", "Local order created", "success");
+    setStatus("order-form-status", mode === "gdt" ? "GDT ECG order created" : "Local order created", "success");
     byId("order-payload-preview").textContent = item.payload || "";
     await refreshOrders();
   } catch (error) {
     setStatus("order-form-status", "Create failed", "error");
+    byId("order-payload-preview").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function gdtPatientFormPayload() {
+  return {
+    mode: "gdt",
+    mrn: byId("gdt-patient-mrn").value.trim(),
+    firstName: byId("gdt-patient-first-name").value.trim(),
+    lastName: byId("gdt-patient-last-name").value.trim(),
+    dob: byId("gdt-patient-dob").value.trim(),
+    sex: byId("gdt-patient-sex").value,
+  };
+}
+
+async function createGdtPatientFromOrderFlow() {
+  const button = byId("create-gdt-patient");
+  button.disabled = true;
+  setStatus("order-form-status", "Creating patient...", "pending");
+  try {
+    const result = await requestJson("/api/patients", {
+      method: "POST",
+      body: JSON.stringify(gdtPatientFormPayload()),
+    });
+    await refreshPatients();
+    byId("order-patient").value = String(result.item.id);
+    setStatus("order-form-status", "Patient ready for GDT order", "success");
+    refreshOrderPreview();
+  } catch (error) {
+    setStatus("order-form-status", "Patient create failed", "error");
     byId("order-payload-preview").textContent = error.message;
   } finally {
     button.disabled = false;
@@ -1085,7 +1410,7 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("run-all-lab-checks").addEventListener("click", runAllChecks);
   byId("dashboard-filter").addEventListener("input", renderServices);
   byId("load-patient-demo").addEventListener("click", () => {
-    setPatientForm(patientDemoPreset);
+    setPatientForm(patientDemoPresetForMode(byId("patient-mode").value));
     refreshPatientPreview();
   });
   byId("load-order-demo").addEventListener("click", () => {
@@ -1105,6 +1430,7 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("refresh-patients").addEventListener("click", refreshPatients);
   byId("copy-patient-payload").addEventListener("click", () => copyTextFromElement("patient-payload-preview"));
   byId("refresh-order-preview").addEventListener("click", refreshOrderPreview);
+  byId("create-gdt-patient").addEventListener("click", createGdtPatientFromOrderFlow);
   byId("create-order").addEventListener("click", createOrderRecord);
   byId("refresh-orders").addEventListener("click", refreshOrders);
   byId("copy-order-payload").addEventListener("click", () => copyTextFromElement("order-payload-preview"));
