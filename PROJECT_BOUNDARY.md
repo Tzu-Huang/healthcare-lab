@@ -9,6 +9,7 @@ This project owns the local interoperability lab control plane.
 - Docker Compose runtime and service operation controls
 - dashboard resource usage and event summaries
 - lab service registry and operation history
+- local dashboard-created GDT ECG order creation and status display
 
 ## Source Areas To Keep Here
 
@@ -25,6 +26,8 @@ This project owns the local interoperability lab control plane.
 - frontend assets in `frontend/`
 - Docker operation adapters in `backend/lab_operations.py`
 - runtime smoke checks
+- local GDT ECG order APIs:
+  - `/api/gdt/orders`
 
 ## Out Of Scope
 
@@ -36,6 +39,10 @@ Move protocol workflow features to the ECG AP Simulator project:
 - HL7 ORU result generation
 - FHIR selected-order result submission
 - GDT Hospital/AP workflow UI
+
+Healthcare Lab may still create local dashboard-originated GDT ECG orders for
+the lab control-plane workflow. Full GDT hospital/device simulation and result
+packaging remain in the ECG AP Simulator boundary.
 
 ## Current Migration State
 

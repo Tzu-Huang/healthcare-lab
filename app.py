@@ -652,7 +652,7 @@ def accept_oie_result_payload(store: DemoStore, payload: str) -> tuple[str, dict
 class OieResultListener:
     def __init__(self, store: DemoStore):
         self.store = store
-        self.host = "127.0.0.1"
+        self.host = "0.0.0.0"
         self.port = 6665
         self.framing = True
         self._thread: threading.Thread | None = None
@@ -1345,7 +1345,7 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.config["OIE_MLLP_ORDER_HOST"] = os.environ.get("OIE_MLLP_ORDER_HOST", "localhost").strip() or "localhost"
     app.config["OIE_MLLP_ORDER_PORT"] = int(os.environ.get("OIE_MLLP_ORDER_PORT", "6663"))
-    app.config["OIE_MLLP_RESULT_HOST"] = os.environ.get("OIE_MLLP_RESULT_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    app.config["OIE_MLLP_RESULT_HOST"] = os.environ.get("OIE_MLLP_RESULT_HOST", "0.0.0.0").strip() or "0.0.0.0"
     app.config["OIE_MLLP_RESULT_PORT"] = int(os.environ.get("OIE_MLLP_RESULT_PORT", "6665"))
     app.config["LAB_DEPLOY_SCRIPT"] = os.environ.get(
         "LAB_DEPLOY_SCRIPT",
@@ -1377,6 +1377,17 @@ def create_app(database_path: str | None = None) -> Flask:
 
     def get_openemr_source() -> OpenEMRProcedureOrderSource:
         return app.extensions["openemr_procedure_order_source"]
+
+    def static_asset_version(filename: str) -> str:
+        asset_path = Path(app.static_folder or "") / filename
+        try:
+            return str(asset_path.stat().st_mtime_ns)
+        except OSError:
+            return "0"
+
+    @app.context_processor
+    def inject_asset_helpers():
+        return {"asset_version": static_asset_version}
 
     @app.get("/")
     def index():
@@ -1411,6 +1422,21 @@ def create_app(database_path: str | None = None) -> Flask:
         payload = request.get_json(silent=True) or {}
         try:
             item = store.create_order_record(payload)
+        except KeyError:
+            return error_response("Patient record was not found.", 404)
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        return jsonify({"success": True, "item": item}), 201
+
+    @app.get("/api/gdt/orders")
+    def list_gdt_orders():
+        return jsonify({"success": True, "items": store.list_gdt_order_records()})
+
+    @app.post("/api/gdt/orders")
+    def create_gdt_order():
+        payload = request.get_json(silent=True) or {}
+        try:
+            item = store.create_gdt_order_record(payload)
         except KeyError:
             return error_response("Patient record was not found.", 404)
         except SimulatorValidationError as exc:

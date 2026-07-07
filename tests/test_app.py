@@ -110,8 +110,12 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b"Server Health Dashboard", response.data)
         self.assertNotIn(b'id="protocol-mode"', response.data)
         self.assertIn(b'id="lab-console-view"', response.data)
+        self.assertIn(b'id="patient-mode"', response.data)
         self.assertIn(b'id="order-view"', response.data)
         self.assertIn(b'id="order-payload-preview"', response.data)
+        self.assertIn(b'<option value="gdt">GDT ECG</option>', response.data)
+        self.assertIn(b'id="create-gdt-patient"', response.data)
+        self.assertIn(b'id="gdt-test-code" value="8402=EKG01"', response.data)
         self.assertIn(b'id="oie-order-list"', response.data)
         self.assertIn(b'id="oie-send-host" value="localhost"', response.data)
         self.assertIn(b'id="oie-listener-port" value="6665"', response.data)
@@ -123,6 +127,14 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn(b'id="gdt-ap-view"', response.data)
         self.assertNotIn(b"GDT AP Simulator", response.data)
         self.assertNotIn(b"Submit to Medplum", response.data)
+
+    def test_frontend_exposes_dashboard_gdt_order_action(self):
+        app_js = Path(__file__).resolve().parents[1] / "frontend" / "static" / "app.js"
+        script = app_js.read_text(encoding="utf-8")
+
+        self.assertIn('service.id === "openemr-gdt"', script)
+        self.assertIn("ECG Order", script)
+        self.assertIn('"/api/gdt/orders"', script)
 
     def test_sidebar_views_hide_inactive_pages(self):
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
@@ -143,7 +155,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn("/api/integration-records", routes)
         self.assertNotIn("/api/workbench/orders", routes)
         self.assertNotIn("/api/fhir/submit", routes)
-        self.assertNotIn("/api/gdt/orders", routes)
+        self.assertIn("/api/gdt/orders", routes)
 
     def create_local_patient(self):
         response = self.client.post(
@@ -187,10 +199,67 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.get_json()["items"][0]["localOrderNumber"], item["localOrderNumber"])
 
+    def test_patient_api_creates_fhir_local_patient(self):
+        response = self.client.post(
+            "/api/patients",
+            json={
+                "mode": "fhir",
+                "mrn": "MRN-FHIR-001",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item = response.get_json()["item"]
+        self.assertEqual(item["protocolVersion"], "FHIR R4")
+        self.assertEqual(item["messageType"], "Patient")
+        self.assertIn('"resourceType": "Patient"', item["payload"])
+
     def test_order_api_rejects_missing_patient(self):
         response = self.client.post("/api/orders", json={"patientRecordId": 404})
 
         self.assertEqual(response.status_code, 404)
+
+    def test_gdt_order_api_creates_and_lists_local_ecg_order_without_openemr(self):
+        self.client.application.config["OPENEMR_DB_HOST"] = ""
+        patient = self.create_local_patient()
+
+        created = self.client.post(
+            "/api/gdt/orders",
+            json={
+                "patientRecordId": patient["id"],
+                "requestedAt": "20260706110000",
+                "orderingProvider": "1001^WANG^AMY",
+                "clinicalIndication": "Resting ECG baseline",
+                "attachmentUrl": "http://localhost/reports/demo.pdf",
+            },
+        )
+
+        self.assertEqual(created.status_code, 201)
+        item = created.get_json()["item"]
+        self.assertEqual(item["status"], "Created")
+        self.assertEqual(item["messageType"], "6302")
+        self.assertEqual(item["gdtTestField"], "8402")
+        self.assertEqual(item["gdtTestCode"], "EKG01")
+        self.assertIn("8402EKG01", item["payload"])
+
+        listed = self.client.get("/api/gdt/orders")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.get_json()["items"][0]["localGdtOrderNumber"], item["localGdtOrderNumber"])
+
+    def test_gdt_order_api_rejects_non_mvp_test_codes(self):
+        patient = self.create_local_patient()
+
+        response = self.client.post(
+            "/api/gdt/orders",
+            json={"patientRecordId": patient["id"], "gdtTestCode": "EKG04"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("EKG01", response.get_json()["error"])
 
     def test_parse_hl7_ack_extracts_msa_fields(self):
         ack = parse_hl7_ack(
