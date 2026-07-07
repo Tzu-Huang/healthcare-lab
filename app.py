@@ -1432,6 +1432,14 @@ def create_app(database_path: str | None = None) -> Flask:
     def list_gdt_orders():
         return jsonify({"success": True, "items": store.list_gdt_order_records()})
 
+    @app.get("/api/gdt/orders/<int:order_id>")
+    def get_gdt_order(order_id: int):
+        try:
+            item = store.get_gdt_order_record(order_id)
+        except KeyError:
+            return error_response("GDT order was not found.", 404)
+        return jsonify({"success": True, "item": item})
+
     @app.post("/api/gdt/orders")
     def create_gdt_order():
         payload = request.get_json(silent=True) or {}
@@ -1439,6 +1447,27 @@ def create_app(database_path: str | None = None) -> Flask:
             item = store.create_gdt_order_record(payload)
         except KeyError:
             return error_response("Patient record was not found.", 404)
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        return jsonify({"success": True, "item": item}), 201
+
+    @app.get("/api/gdt/messages")
+    def list_gdt_messages():
+        return jsonify({"success": True, "items": store.list_gdt_messages()})
+
+    @app.get("/api/gdt/orders/<int:order_id>/events")
+    def list_gdt_order_events(order_id: int):
+        try:
+            store.get_gdt_order_record(order_id)
+        except KeyError:
+            return error_response("GDT order was not found.", 404)
+        return jsonify({"success": True, "items": store.list_gdt_events(order_id)})
+
+    @app.post("/api/gdt/results")
+    def import_gdt_result():
+        payload = request.get_json(silent=True) or {}
+        try:
+            item = store.record_gdt_result(payload)
         except SimulatorValidationError as exc:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
