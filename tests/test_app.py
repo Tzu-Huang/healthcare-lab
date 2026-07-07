@@ -20,6 +20,7 @@ from app import (
     run_lab_application_check,
     run_lab_smoke_check,
 )
+from backend.lab_store import render_gdt_message
 
 
 class FakeHttpResponse:
@@ -156,6 +157,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn("/api/workbench/orders", routes)
         self.assertNotIn("/api/fhir/submit", routes)
         self.assertIn("/api/gdt/orders", routes)
+        self.assertIn("/api/gdt/orders/<int:order_id>", routes)
+        self.assertIn("/api/gdt/messages", routes)
+        self.assertIn("/api/gdt/orders/<int:order_id>/events", routes)
+        self.assertIn("/api/gdt/results", routes)
 
     def create_local_patient(self):
         response = self.client.post(
@@ -244,11 +249,48 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(item["messageType"], "6302")
         self.assertEqual(item["gdtTestField"], "8402")
         self.assertEqual(item["gdtTestCode"], "EKG01")
+        self.assertEqual(item["gdtPatientNumber"], f"GDT-PAT-{patient['id']:06d}")
+        self.assertEqual(item["messages"][0]["parsedFields"]["8402"], ["EKG01"])
+        self.assertEqual(item["attachments"][0]["url"], "http://localhost/reports/demo.pdf")
         self.assertIn("8402EKG01", item["payload"])
 
         listed = self.client.get("/api/gdt/orders")
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.get_json()["items"][0]["localGdtOrderNumber"], item["localGdtOrderNumber"])
+
+        detail = self.client.get(f"/api/gdt/orders/{item['id']}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.get_json()["item"]["gdtPatientNumber"], item["gdtPatientNumber"])
+
+    def test_gdt_result_api_imports_and_matches_local_order(self):
+        patient = self.create_local_patient()
+        order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        result_payload = render_gdt_message(
+            [
+                ("3000", order["gdtPatientNumber"]),
+                ("6200", order["localGdtOrderNumber"]),
+                ("8410", order["localGdtOrderNumber"]),
+                ("6220", "Normal sinus rhythm"),
+                ("6302", "reports/ecg-result.pdf"),
+                ("6303", "application/pdf"),
+                ("6304", "reports/ecg-waveform.xml"),
+                ("6305", "application/xml"),
+            ],
+            set_type="6310",
+        )
+
+        imported = self.client.post("/api/gdt/results", json={"rawGdtText": result_payload})
+
+        self.assertEqual(imported.status_code, 201)
+        item = imported.get_json()["item"]
+        self.assertEqual(item["messageType"], "6310")
+        self.assertEqual(item["matchStatus"], "order-matched")
+        messages = self.client.get("/api/gdt/messages")
+        self.assertEqual(messages.status_code, 200)
+        self.assertTrue(any(message["messageType"] == "6310" for message in messages.get_json()["items"]))
+        events = self.client.get(f"/api/gdt/orders/{order['id']}/events")
+        self.assertEqual(events.status_code, 200)
+        self.assertIn("result-matched", {event["eventType"] for event in events.get_json()["items"]})
 
     def test_gdt_order_api_rejects_non_mvp_test_codes(self):
         patient = self.create_local_patient()
