@@ -120,7 +120,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'id="oie-order-list"', response.data)
         self.assertIn(b'id="gdt-view"', response.data)
         self.assertIn(b'id="gdt-inbox-list"', response.data)
-        self.assertIn(b'id="gdt-order-list"', response.data)
+        self.assertIn(b'id="gdt-patient-list"', response.data)
+        self.assertIn(b"raw GDT-OUT or GDT-IN content", response.data)
         self.assertIn(b'id="oie-send-host" value="localhost"', response.data)
         self.assertIn(b'id="oie-listener-port" value="6665"', response.data)
         self.assertIn(b'id="oie-unmatched-result-list"', response.data)
@@ -140,6 +141,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("ECG Order", script)
         self.assertIn('"/api/gdt/orders"', script)
         self.assertIn('"/api/gdt/workbench"', script)
+        self.assertIn("Preview GDT-OUT", script)
+        self.assertIn("Import GDT-IN", script)
         self.assertIn("write-6302", script)
         self.assertIn('selector.value = "gdt"', script)
         self.assertIn('setActiveView("order-view")', script)
@@ -169,10 +172,24 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("/api/gdt/orders/<int:order_id>/events", routes)
         self.assertIn("/api/gdt/results", routes)
         self.assertIn("/api/gdt/workbench", routes)
+        self.assertIn("/api/gdt/bridge/config", routes)
         self.assertIn("/api/gdt/orders/<int:order_id>/write-6302", routes)
         self.assertIn("/api/gdt/orders/<int:order_id>/demo-result", routes)
         self.assertIn("/api/gdt/bridge/inbox", routes)
         self.assertIn("/api/gdt/bridge/import", routes)
+
+    def test_gdt_bridge_config_api_updates_shared_folder_path(self):
+        target = Path(self.temp_dir.name) / "custom-gdt-bridge"
+
+        response = self.client.put("/api/gdt/bridge/config", json={"bridgePath": str(target)})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["item"]["bridgePath"], str(target))
+        self.assertTrue((target / "outbox").is_dir())
+        self.assertTrue((target / "inbound").is_dir())
+        current = self.client.get("/api/gdt/bridge/config").get_json()["item"]
+        self.assertEqual(current["outboxPath"], str(target / "outbox"))
 
     def create_local_patient(self):
         response = self.client.post(
