@@ -29,6 +29,7 @@ from backend.lab_store import (
     LAB_HEALTH_STATUSES,
     LAB_SERVER_PROTOCOLS,
     LAB_SERVER_TYPES,
+    FHIR_SYNC_STATUS_SYNCED,
     OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES,
     ORDER_STATUS_ACCEPTED,
     ORDER_STATUS_ERROR,
@@ -377,6 +378,137 @@ def fetch_fhir_service_requests(
         "body": parsed_body,
         "requestUrl": url,
     }
+
+
+def operation_outcome_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(payload, dict) and payload.get("resourceType") == "OperationOutcome":
+        return payload
+    return {}
+
+
+def operation_outcome_from_error(message: str) -> dict[str, Any]:
+    _, _, body = message.partition(": ")
+    if not body:
+        return {}
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return {}
+    return operation_outcome_from_payload(parsed)
+
+
+def http_status_from_upstream_error(message: str) -> int | None:
+    match = re.search(r"HTTP\s+(\d+)", message)
+    return int(match.group(1)) if match else None
+
+
+def medplum_identifier_search_url(base_url: str, record: dict[str, Any]) -> str:
+    identifier = record["identifier"]
+    token = f"{identifier['system']}|{identifier['value']}"
+    query = urllib.parse.urlencode({"identifier": token})
+    return f"{base_url}/{record['resourceType']}?{query}"
+
+
+def medplum_create_resource_url(base_url: str, record: dict[str, Any]) -> str:
+    return f"{base_url}/{record['resourceType']}"
+
+
+def first_fhir_bundle_resource(bundle: dict[str, Any], resource_type: str) -> dict[str, Any] | None:
+    if bundle.get("resourceType") != "Bundle":
+        return None
+    for entry in bundle.get("entry") or []:
+        if not isinstance(entry, dict):
+            continue
+        resource = entry.get("resource")
+        if isinstance(resource, dict) and resource.get("resourceType") == resource_type:
+            return resource
+    return None
+
+
+def medplum_resource_reference(resource: dict[str, Any], resource_type: str) -> tuple[str, str]:
+    resource_id = str(resource.get("id") or "").strip()
+    if not resource_id:
+        raise UpstreamFhirError(f"Medplum {resource_type} response did not include an id.")
+    return resource_id, f"{resource_type}/{resource_id}"
+
+
+def sync_fhir_workflow_record_to_medplum(
+    store: DemoStore,
+    record_id: int,
+    *,
+    base_url: str,
+    auth_manager: MedplumAuthManager,
+) -> dict[str, Any]:
+    base = normalize_fhir_base_url(base_url)
+    record = store.mark_fhir_syncing(record_id)
+    search_url = medplum_identifier_search_url(base, record)
+    try:
+        status_code, search_body = request_fhir_json(
+            search_url,
+            "",
+            auth_manager=auth_manager,
+            base_url=base,
+        )
+        store.record_fhir_sync_attempt(
+            record_id,
+            method="GET",
+            request_url=search_url,
+            http_status=status_code,
+            response_payload=search_body,
+            operation_outcome=operation_outcome_from_payload(search_body),
+        )
+        existing = first_fhir_bundle_resource(search_body, record["resourceType"])
+        if existing:
+            medplum_id, reference = medplum_resource_reference(existing, record["resourceType"])
+            return store.mark_fhir_sync_success(
+                record_id,
+                medplum_resource_id=medplum_id,
+                medplum_resource_reference=reference,
+            )
+
+        create_url = medplum_create_resource_url(base, record)
+        request_payload = record["resource"]
+        create_status, create_body = request_fhir_json(
+            create_url,
+            "",
+            method="POST",
+            body=json.dumps(request_payload).encode("utf-8"),
+            content_type="application/fhir+json",
+            auth_manager=auth_manager,
+            base_url=base,
+        )
+        store.record_fhir_sync_attempt(
+            record_id,
+            method="POST",
+            request_url=create_url,
+            request_payload=request_payload,
+            http_status=create_status,
+            response_payload=create_body,
+            operation_outcome=operation_outcome_from_payload(create_body),
+        )
+        medplum_id, reference = medplum_resource_reference(create_body, record["resourceType"])
+        return store.mark_fhir_sync_success(
+            record_id,
+            medplum_resource_id=medplum_id,
+            medplum_resource_reference=reference,
+        )
+    except UpstreamFhirError as exc:
+        message = str(exc)
+        outcome = operation_outcome_from_error(message)
+        store.record_fhir_sync_attempt(
+            record_id,
+            method="SYNC",
+            request_url=search_url,
+            request_payload=record.get("resource") or {},
+            http_status=http_status_from_upstream_error(message),
+            operation_outcome=outcome,
+            error_text=message,
+        )
+        return store.mark_fhir_sync_failure(
+            record_id,
+            error_text=message,
+            operation_outcome=outcome,
+        )
 
 
 def derive_lab_overall_status(checks: dict[str, str]) -> str:
@@ -1812,6 +1944,13 @@ def create_app(database_path: str | None = None) -> Flask:
     def get_openemr_source() -> OpenEMRProcedureOrderSource:
         return app.extensions["openemr_procedure_order_source"]
 
+    def configured_medplum_base_url() -> str:
+        medplum = next(
+            (item for item in store.list_lab_servers() if item["name"] == "Medplum"),
+            None,
+        )
+        return str((medplum or {}).get("baseUrl") or "").strip()
+
     def static_asset_version(filename: str) -> str:
         asset_path = Path(app.static_folder or "") / filename
         try:
@@ -1861,6 +2000,59 @@ def create_app(database_path: str | None = None) -> Flask:
         except SimulatorValidationError as exc:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
+
+    @app.get("/api/fhir/mappings")
+    def list_fhir_mappings():
+        return jsonify({"success": True, "items": store.list_fhir_resource_mappings()})
+
+    @app.get("/api/fhir/records")
+    def list_fhir_records():
+        sync_status = str(request.args.get("syncStatus") or "").strip()
+        return jsonify({"success": True, "items": store.list_fhir_workflow_records(sync_status)})
+
+    @app.post("/api/fhir/records")
+    def create_fhir_record():
+        payload = request.get_json(silent=True) or {}
+        try:
+            item = store.create_fhir_workflow_record(payload)
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        return jsonify({"success": True, "item": item}), 201
+
+    @app.get("/api/fhir/records/<int:record_id>")
+    def get_fhir_record(record_id: int):
+        try:
+            item = store.get_fhir_workflow_record(record_id)
+        except KeyError:
+            return error_response("FHIR workflow record was not found.", 404)
+        return jsonify({"success": True, "item": item})
+
+    @app.get("/api/fhir/records/<int:record_id>/attempts")
+    def list_fhir_record_attempts(record_id: int):
+        try:
+            store.get_fhir_workflow_record(record_id)
+        except KeyError:
+            return error_response("FHIR workflow record was not found.", 404)
+        return jsonify({"success": True, "items": store.list_fhir_sync_attempts(record_id)})
+
+    @app.post("/api/fhir/records/<int:record_id>/sync")
+    def sync_fhir_record(record_id: int):
+        payload = request.get_json(silent=True) or {}
+        base_url = str(payload.get("baseUrl") or configured_medplum_base_url()).strip()
+        if not base_url:
+            return error_response("Medplum FHIR base URL is required.", 400)
+        try:
+            item = sync_fhir_workflow_record_to_medplum(
+                store,
+                record_id,
+                base_url=base_url,
+                auth_manager=get_auth_manager(),
+            )
+        except KeyError:
+            return error_response("FHIR workflow record was not found.", 404)
+        except (ValidationError, SimulatorValidationError) as exc:
+            return error_response(str(exc), 400)
+        return jsonify({"success": item["sync"]["status"] == FHIR_SYNC_STATUS_SYNCED, "item": item})
 
     @app.get("/api/gdt/orders")
     def list_gdt_orders():

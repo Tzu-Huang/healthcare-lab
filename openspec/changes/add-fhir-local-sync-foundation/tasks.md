@@ -14,15 +14,15 @@
 
 ## 3. Sync Helper/API
 
-- [ ] 3.1 Implement Medplum search-by-identifier before create/update.
-- [ ] 3.2 Implement resource sync status transitions for `Pending sync`, `Syncing`, `Synced`, and `Sync failed`.
-- [ ] 3.3 Preserve Medplum resource id/reference and last successful sync time after success.
-- [ ] 3.4 Preserve sync error and OperationOutcome body after failure.
-- [ ] 3.5 Add minimal API endpoints or response fields needed for later workflows to inspect FHIR sync status.
+- [x] 3.1 Implement Medplum search-by-identifier before create/update.
+- [x] 3.2 Implement resource sync status transitions for `Pending sync`, `Syncing`, `Synced`, and `Sync failed`.
+- [x] 3.3 Preserve Medplum resource id/reference and last successful sync time after success.
+- [x] 3.4 Preserve sync error and OperationOutcome body after failure.
+- [x] 3.5 Add minimal API endpoints or response fields needed for later workflows to inspect FHIR sync status.
 
 ## 4. Verification
 
 - [x] 4.1 Add unit tests for local FHIR workflow record persistence and status display fields.
 - [x] 4.2 Add unit tests for failure capture, including raw OperationOutcome preservation.
-- [ ] 4.3 Add unit tests proving retry does not create duplicate resources when a Medplum identifier match exists.
+- [x] 4.3 Add unit tests proving retry does not create duplicate resources when a Medplum identifier match exists.
 - [ ] 4.4 Run the Healthcare Lab Python test suite and syntax checks.
