@@ -1673,6 +1673,42 @@ body {
   gap: 20px;
 }
 
+.gdt-console {
+  display: grid;
+  gap: 20px;
+}
+
+.gdt-console-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.85fr) minmax(0, 1.6fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.gdt-console-grid.lower-grid {
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+}
+
+.artifact-reference-list {
+  display: grid;
+  gap: 12px;
+}
+
+.artifact-reference {
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  background: #ffffff;
+}
+
+.artifact-reference code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
 .oie-subsection-heading {
   margin-top: 22px;
 }
@@ -1889,7 +1925,9 @@ button.primary:hover,
     grid-template-columns: 1fr;
   }
 
-  .oie-console-grid {
+  .oie-console-grid,
+  .gdt-console-grid,
+  .gdt-console-grid.lower-grid {
     grid-template-columns: 1fr;
   }
 
