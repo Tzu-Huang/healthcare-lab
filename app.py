@@ -73,7 +73,17 @@ class ValidationError(ValueError):
 
 
 class UpstreamFhirError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int | None = None,
+        response_payload: dict[str, Any] | None = None,
+    ):
+        super().__init__(message)
+        self.http_status = http_status
+        self.response_payload = response_payload or {}
+        self.attempt_recorded = False
 
 
 @dataclass(frozen=True)
@@ -324,8 +334,14 @@ def request_fhir_json(
                 status_code = response.status
         except urllib.error.HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace")
+            try:
+                error_payload = json.loads(error_body) if error_body else {}
+            except json.JSONDecodeError:
+                error_payload = {"raw": error_body}
             raise UpstreamFhirError(
-                f"Medplum returned HTTP {exc.code}: {error_body}"
+                f"Medplum returned HTTP {exc.code}: {error_body}",
+                http_status=exc.code,
+                response_payload=error_payload,
             ) from exc
         except urllib.error.URLError as exc:
             raise UpstreamFhirError(f"Medplum request failed: {exc.reason}") from exc
@@ -442,12 +458,59 @@ def sync_fhir_workflow_record_to_medplum(
     base = normalize_fhir_base_url(base_url)
     record = store.mark_fhir_syncing(record_id)
     search_url = medplum_identifier_search_url(base, record)
+
+    def sync_request(
+        request_url: str,
+        *,
+        method: str,
+        request_payload: dict[str, Any] | None = None,
+        body: bytes | None = None,
+        content_type: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        try:
+            return request_fhir_json(
+                request_url,
+                "",
+                method=method,
+                body=body,
+                content_type=content_type,
+                auth_manager=auth_manager,
+                base_url=base,
+            )
+        except (UpstreamFhirError, ValidationError, SimulatorValidationError) as exc:
+            message = str(exc)
+            response_payload = (
+                exc.response_payload if isinstance(exc, UpstreamFhirError) else {}
+            )
+            http_status = (
+                exc.http_status
+                if isinstance(exc, UpstreamFhirError)
+                else http_status_from_upstream_error(message)
+            )
+            outcome = (
+                operation_outcome_from_payload(response_payload)
+                or operation_outcome_from_error(message)
+            )
+            store.record_fhir_sync_attempt(
+                record_id,
+                method=method,
+                request_url=request_url,
+                request_payload=request_payload or {},
+                http_status=http_status,
+                response_payload=response_payload,
+                operation_outcome=outcome,
+                error_text=message,
+            )
+            if isinstance(exc, UpstreamFhirError):
+                exc.attempt_recorded = True
+            else:
+                setattr(exc, "attempt_recorded", True)
+            raise
+
     try:
-        status_code, search_body = request_fhir_json(
+        status_code, search_body = sync_request(
             search_url,
-            "",
-            auth_manager=auth_manager,
-            base_url=base,
+            method="GET",
         )
         store.record_fhir_sync_attempt(
             record_id,
@@ -468,14 +531,12 @@ def sync_fhir_workflow_record_to_medplum(
 
         create_url = medplum_create_resource_url(base, record)
         request_payload = record["resource"]
-        create_status, create_body = request_fhir_json(
+        create_status, create_body = sync_request(
             create_url,
-            "",
             method="POST",
+            request_payload=request_payload,
             body=json.dumps(request_payload).encode("utf-8"),
             content_type="application/fhir+json",
-            auth_manager=auth_manager,
-            base_url=base,
         )
         store.record_fhir_sync_attempt(
             record_id,
@@ -495,15 +556,16 @@ def sync_fhir_workflow_record_to_medplum(
     except (UpstreamFhirError, ValidationError, SimulatorValidationError) as exc:
         message = str(exc)
         outcome = operation_outcome_from_error(message)
-        store.record_fhir_sync_attempt(
-            record_id,
-            method="SYNC",
-            request_url=search_url,
-            request_payload=record.get("resource") or {},
-            http_status=http_status_from_upstream_error(message),
-            operation_outcome=outcome,
-            error_text=message,
-        )
+        if not getattr(exc, "attempt_recorded", False):
+            store.record_fhir_sync_attempt(
+                record_id,
+                method="SYNC",
+                request_url=search_url,
+                request_payload=record.get("resource") or {},
+                http_status=http_status_from_upstream_error(message),
+                operation_outcome=outcome,
+                error_text=message,
+            )
         return store.mark_fhir_sync_failure(
             record_id,
             error_text=message,
