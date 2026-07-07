@@ -1439,6 +1439,8 @@ function renderGdtBridgeConfig() {
     ["Inbound", item.inboundPath],
     ["Archive", item.archivePath],
     ["Error", item.errorPath],
+    ["Import mode", item.successMode],
+    ["Filename binding", item.filenameProfile],
   ].forEach(([label, value]) => {
     const row = document.createElement("p");
     row.appendChild(createElement("strong", `${label}: `));
@@ -1448,6 +1450,30 @@ function renderGdtBridgeConfig() {
   if (item.dockerHint) {
     summary.appendChild(createElement("p", item.dockerHint, "muted"));
   }
+  renderGdtWatcherStatus(item.watcher || {});
+}
+
+function renderGdtWatcherStatus(watcher) {
+  const running = Boolean(watcher.running);
+  setStatus("gdt-watcher-status", running ? `On (${watcher.pollSeconds || "-"}s)` : "Off", running ? "success" : "neutral");
+  const summary = byId("gdt-watcher-summary");
+  summary.replaceChildren();
+  const lastResult = watcher.lastResult || {};
+  [
+    ["Bridge root", watcher.bridgeRoot],
+    ["Success mode", watcher.successMode],
+    ["Filename binding", watcher.filenameProfile],
+    ["Last run", watcher.lastRunAt ? gdtTaipeiTimestamp(watcher.lastRunAt) : "-"],
+    ["Imported", (lastResult.imported || []).length],
+    ["Skipped", (lastResult.skipped || []).length],
+    ["Failures", (lastResult.failures || []).length],
+    ["Last error", watcher.lastError || "-"],
+  ].forEach(([label, value]) => {
+    const row = document.createElement("p");
+    row.appendChild(createElement("strong", `${label}: `));
+    row.appendChild(document.createTextNode(String(value ?? "-")));
+    summary.appendChild(row);
+  });
 }
 
 async function refreshGdtBridgeConfig() {
@@ -1475,6 +1501,36 @@ async function saveGdtBridgeConfig() {
     setStatus("gdt-bridge-config-status", "Saved", "success");
   } catch (error) {
     setStatus("gdt-bridge-config-status", error.message, "error");
+  }
+}
+
+async function startGdtWatcher() {
+  setStatus("gdt-watcher-status", "Starting...", "pending");
+  try {
+    const result = await requestJson("/api/gdt/bridge/watcher/start", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    gdtBridgeConfig = { ...(gdtBridgeConfig || {}), watcher: result.item || {} };
+    renderGdtWatcherStatus(result.item || {});
+    await refreshGdtConsole();
+  } catch (error) {
+    setStatus("gdt-watcher-status", error.message, "error");
+  }
+}
+
+async function stopGdtWatcher() {
+  setStatus("gdt-watcher-status", "Stopping...", "pending");
+  try {
+    const result = await requestJson("/api/gdt/bridge/watcher/stop", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    gdtBridgeConfig = { ...(gdtBridgeConfig || {}), watcher: result.item || {} };
+    renderGdtWatcherStatus(result.item || {});
+    await refreshGdtConsole();
+  } catch (error) {
+    setStatus("gdt-watcher-status", error.message, "error");
   }
 }
 
@@ -1933,6 +1989,8 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("refresh-gdt-console").addEventListener("click", refreshGdtConsole);
   byId("refresh-gdt-bridge-config").addEventListener("click", refreshGdtBridgeConfig);
   byId("save-gdt-bridge-config").addEventListener("click", saveGdtBridgeConfig);
+  byId("start-gdt-watcher").addEventListener("click", startGdtWatcher);
+  byId("stop-gdt-watcher").addEventListener("click", stopGdtWatcher);
   byId("copy-gdt-payload").addEventListener("click", () => copyTextFromElement("gdt-payload-preview"));
   setActiveView("lab-console-view");
 });

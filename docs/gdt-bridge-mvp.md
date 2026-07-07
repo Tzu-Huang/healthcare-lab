@@ -39,6 +39,34 @@ Bridge root defaults to `instance/gdt-bridge/` and contains:
 - `inbound/`: AP simulator GDT 2.1 `6310` result files waiting for bridge import
 - `reports/`: PDF and XML/waveform artifacts referenced by `6310`
 - `archive/`: imported `6310` files after successful processing
+- `processing/`: files claimed by Healthcare Lab while import is in progress
+
+The GDT standards describe successful receiver processing as read-and-delete
+behavior for the exchange file. Healthcare Lab defaults to archive mode for PoC
+debuggability, keeping successfully imported `6310` files under `archive/` after
+the raw payload is persisted. Set `GDT_BRIDGE_IMPORT_SUCCESS_MODE=delete` to use
+standards-oriented exchange-folder cleanup after a successful import.
+
+Automatic inbound import can be enabled from the GDT console. The watcher polls
+the configured `inbound/` folder, skips `.tmp`/`.temp`/internal files, waits for
+stable files, claims eligible files with a same-volume rename, and processes
+them in FIFO order by creation time where available. On Docker bind mounts or
+network shares where creation time is unreliable, Healthcare Lab falls back to a
+deterministic timestamp and filename order.
+
+Filename binding is configurable:
+
+- `permissive`: accept otherwise eligible `.gdt` files for lab demos.
+- `gdt21`: accept configured legacy recipient/sender filenames and numeric
+  sequence-extension variants.
+- `gdt35`: accept `<receiver>_<sender>_<sequence>.GDT` using configured
+  receiver and sender abbreviations.
+
+Results that only identify a patient by `3000` are preserved but not
+automatically attached to the latest order. Healthcare Lab requires an
+unambiguous order identifier such as the current local `6200`/`8410` values;
+future GDT 3.5 work should prefer `8314` Request-UID and `8408` Study-UID when
+available.
 
 ## Payload Contract
 

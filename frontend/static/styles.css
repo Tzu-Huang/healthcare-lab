@@ -1714,6 +1714,24 @@ body {
   overflow-wrap: anywhere;
 }
 
+.gdt-watcher-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
+.gdt-watcher-bar .button-row {
+  margin: 0;
+  white-space: nowrap;
+}
+
+#gdt-watcher-summary p {
+  overflow-wrap: anywhere;
+}
+
 .gdt-patient-table th:first-child,
 .gdt-patient-table td:first-child {
   width: 38px;
