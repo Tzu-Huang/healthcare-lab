@@ -273,6 +273,7 @@ def ensure_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
         "root": root,
         "outbox": root / "outbox",
         "processed": root / "processed",
+        "processing": root / "processing",
         "error": root / "error",
         "outbound": root / "outbound",
         "inbound": root / "inbound",
@@ -287,7 +288,7 @@ def ensure_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
 def validate_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
     directories = ensure_gdt_bridge_dirs(base_path)
     probe_name = f".write-test-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-    for name in ("outbox", "processed", "error"):
+    for name in ("outbox", "processed", "processing", "error", "inbound", "archive", "reports"):
         probe_path = directories[name] / probe_name
         try:
             probe_path.write_text("ok", encoding="utf-8")

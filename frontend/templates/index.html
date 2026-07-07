@@ -487,24 +487,62 @@
           </div>
         </div>
 
-        <section class="gdt-console-grid">
+        <section class="lab-panel gdt-shared-folder-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Shared Folder</p>
+              <h2>Bridge Folder</h2>
+            </div>
+            <span id="gdt-bridge-config-status" class="status neutral">Loading</span>
+          </div>
+          <div class="form-grid gdt-bridge-config-grid">
+            <label>Healthcare Lab Path
+              <input id="gdt-bridge-path" placeholder="/data/gdt-bridge">
+            </label>
+            <label>Computer Folder
+              <input id="gdt-bridge-host-path" readonly placeholder="Set GDT_BRIDGE_HOST_PATH in .env for Docker">
+            </label>
+            <div class="button-row">
+              <button id="save-gdt-bridge-config" class="primary" type="button">Save</button>
+              <button id="refresh-gdt-bridge-config" type="button">Refresh</button>
+            </div>
+          </div>
+          <div id="gdt-bridge-config-summary" class="record-detail compact-detail">
+            <p class="muted">Shared folder details load with the GDT console.</p>
+          </div>
+          <div class="gdt-watcher-bar">
+            <div>
+              <p class="eyebrow">Automatic Import</p>
+              <span id="gdt-watcher-status" class="status neutral">Off</span>
+            </div>
+            <div class="button-row">
+              <button id="start-gdt-watcher" type="button">Start</button>
+              <button id="stop-gdt-watcher" type="button">Stop</button>
+            </div>
+          </div>
+          <div id="gdt-watcher-summary" class="record-detail compact-detail">
+            <p class="muted">Automatic import status loads with the GDT console.</p>
+          </div>
+        </section>
+
+        <section class="gdt-console-grid patient-focused-grid">
           <div class="lab-panel">
             <div class="section-heading compact-heading">
               <div>
-                <p class="eyebrow">GDT Patients</p>
+                <p class="eyebrow">Patients</p>
                 <h2>Patients</h2>
               </div>
             </div>
-            <div class="table-wrap">
-              <table>
+            <div class="table-wrap gdt-patient-table-wrap">
+              <table class="gdt-patient-table">
                 <thead>
-                  <tr><th>MRN</th><th>GDT Patient</th><th>Name</th><th>Orders</th><th>Results</th></tr>
+                  <tr><th></th><th>ID</th><th>Name</th><th>Created</th><th>Order</th><th>Result</th><th>Preview</th></tr>
                 </thead>
                 <tbody id="gdt-patient-list"></tbody>
               </table>
             </div>
           </div>
-          <div class="lab-panel">
+          <div class="lab-panel gdt-selected-patient-panel">
             <div class="section-heading compact-heading">
               <div>
                 <p class="eyebrow">Selected Patient</p>
@@ -513,34 +551,6 @@
             </div>
             <div id="gdt-selected-patient-summary" class="record-detail compact-detail">
               <p class="muted">Select a GDT patient.</p>
-            </div>
-            <div class="section-heading compact-heading oie-subsection-heading">
-              <div>
-                <p class="eyebrow">6302</p>
-                <h2>Orders</h2>
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr><th>Order</th><th>8402</th><th>Status</th><th>Requested</th><th>Result</th><th>Actions</th></tr>
-                </thead>
-                <tbody id="gdt-order-list"></tbody>
-              </table>
-            </div>
-            <div class="section-heading compact-heading oie-subsection-heading">
-              <div>
-                <p class="eyebrow">6310</p>
-                <h2>Results</h2>
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr><th>Result</th><th>Match</th><th>Measurements</th><th>Artifacts</th><th>Received</th></tr>
-                </thead>
-                <tbody id="gdt-result-list"></tbody>
-              </table>
             </div>
           </div>
         </section>
@@ -584,7 +594,7 @@
           <div id="gdt-detail-summary" class="record-detail compact-detail">
             <p class="muted">Select an order, result, or artifact.</p>
           </div>
-          <pre id="gdt-payload-preview" class="compact-output">Select a GDT row to inspect raw 6302 or 6310 content.</pre>
+          <pre id="gdt-payload-preview" class="compact-output">Select a GDT row to inspect raw GDT-OUT or GDT-IN content.</pre>
         </section>
       </section>
     </main>
