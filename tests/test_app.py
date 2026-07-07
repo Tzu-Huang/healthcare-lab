@@ -467,6 +467,11 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertFalse(body["success"])
         self.assertEqual(body["item"]["sync"]["status"], "Sync failed")
         self.assertEqual(body["item"]["sync"]["operationOutcome"], outcome)
+        attempts = self.client.get(f"/api/fhir/records/{created['id']}/attempts").get_json()["items"]
+        self.assertEqual(attempts[0]["method"], "GET")
+        self.assertEqual(attempts[0]["httpStatus"], 400)
+        self.assertEqual(attempts[0]["responsePayload"], outcome)
+        self.assertEqual(attempts[0]["operationOutcome"], outcome)
 
     def test_fhir_sync_validation_failure_marks_record_failed(self):
         self.client.application.config["MEDPLUM_CLIENT_ID"] = ""
@@ -488,7 +493,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(body["item"]["sync"]["status"], "Sync failed")
         self.assertIn("client credentials", body["item"]["sync"]["error"])
         attempts = self.client.get(f"/api/fhir/records/{created['id']}/attempts").get_json()["items"]
-        self.assertEqual(attempts[0]["method"], "SYNC")
+        self.assertEqual(attempts[0]["method"], "GET")
         self.assertIn("client credentials", attempts[0]["error"])
 
     def test_order_api_rejects_missing_patient(self):
