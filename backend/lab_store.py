@@ -2922,15 +2922,23 @@ class DemoStore:
                 ),
             ).fetchone()
             if existing:
+                payload_changed = (
+                    existing["resource_json"] != values["resource_json"]
+                    or existing["dependency_json"] != values["dependency_json"]
+                )
+                next_status = (
+                    FHIR_SYNC_STATUS_PENDING
+                    if payload_changed
+                    else existing["sync_status"]
+                )
                 connection.execute(
                     """
                     UPDATE local_fhir_workflow_records
                     SET local_source_type = ?, local_source_id = ?, resource_json = ?,
-                        dependency_json = ?, updated_at = ?,
-                        sync_status = CASE
-                            WHEN sync_status = ? THEN sync_status
-                            ELSE ?
-                        END
+                        dependency_json = ?, sync_status = ?, updated_at = ?,
+                        sync_error = CASE WHEN ? THEN '' ELSE sync_error END,
+                        operation_outcome_json = CASE WHEN ? THEN '{}' ELSE operation_outcome_json END,
+                        sync_started_at = CASE WHEN ? THEN '' ELSE sync_started_at END
                     WHERE id = ?
                     """,
                     (
@@ -2938,9 +2946,11 @@ class DemoStore:
                         values["local_source_id"],
                         values["resource_json"],
                         values["dependency_json"],
+                        next_status,
                         timestamp,
-                        FHIR_SYNC_STATUS_SYNCED,
-                        FHIR_SYNC_STATUS_PENDING,
+                        int(payload_changed),
+                        int(payload_changed),
+                        int(payload_changed),
                         existing["id"],
                     ),
                 )

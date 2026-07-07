@@ -333,6 +333,40 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(synced["medplum"]["reference"], "Patient/patient-medplum-id")
         self.assertEqual([item["resourceType"] for item in ordered], ["Patient", "DiagnosticReport"])
 
+    def test_fhir_synced_record_update_marks_changed_payload_pending(self):
+        item = self.store.create_fhir_workflow_record(
+            {
+                "localSourceType": "local_patient_records",
+                "localSourceId": "1",
+                "resource": {"resourceType": "Patient", "active": True},
+            }
+        )
+        synced = self.store.mark_fhir_sync_success(
+            item["id"],
+            medplum_resource_id="patient-medplum-id",
+        )
+
+        unchanged = self.store.create_fhir_workflow_record(
+            {
+                "localSourceType": "local_patient_records",
+                "localSourceId": "1",
+                "resource": {"resourceType": "Patient", "active": True},
+            }
+        )
+        changed = self.store.create_fhir_workflow_record(
+            {
+                "localSourceType": "local_patient_records",
+                "localSourceId": "1",
+                "resource": {"resourceType": "Patient", "active": False},
+            }
+        )
+
+        self.assertEqual(synced["sync"]["status"], "Synced")
+        self.assertEqual(unchanged["sync"]["status"], "Synced")
+        self.assertEqual(changed["sync"]["status"], "Pending sync")
+        self.assertFalse(changed["resource"]["active"])
+        self.assertEqual(changed["medplum"]["reference"], "Patient/patient-medplum-id")
+
     def test_gdt_order_creation_persists_fixed_ekg01_order(self):
         patient = self.store.create_patient_record(
             {

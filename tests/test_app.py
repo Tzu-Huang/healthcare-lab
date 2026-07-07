@@ -468,6 +468,29 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(body["item"]["sync"]["status"], "Sync failed")
         self.assertEqual(body["item"]["sync"]["operationOutcome"], outcome)
 
+    def test_fhir_sync_validation_failure_marks_record_failed(self):
+        self.client.application.config["MEDPLUM_CLIENT_ID"] = ""
+        self.client.application.config["MEDPLUM_CLIENT_SECRET"] = ""
+        created = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_patient_records",
+                "localSourceId": "3",
+                "resource": {"resourceType": "Patient", "active": True},
+            },
+        ).get_json()["item"]
+
+        synced = self.client.post(f"/api/fhir/records/{created['id']}/sync", json={})
+
+        self.assertEqual(synced.status_code, 200)
+        body = synced.get_json()
+        self.assertFalse(body["success"])
+        self.assertEqual(body["item"]["sync"]["status"], "Sync failed")
+        self.assertIn("client credentials", body["item"]["sync"]["error"])
+        attempts = self.client.get(f"/api/fhir/records/{created['id']}/attempts").get_json()["items"]
+        self.assertEqual(attempts[0]["method"], "SYNC")
+        self.assertIn("client credentials", attempts[0]["error"])
+
     def test_order_api_rejects_missing_patient(self):
         response = self.client.post("/api/orders", json={"patientRecordId": 404})
 
