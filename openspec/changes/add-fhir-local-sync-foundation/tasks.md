@@ -25,4 +25,4 @@
 - [x] 4.1 Add unit tests for local FHIR workflow record persistence and status display fields.
 - [x] 4.2 Add unit tests for failure capture, including raw OperationOutcome preservation.
 - [x] 4.3 Add unit tests proving retry does not create duplicate resources when a Medplum identifier match exists.
-- [ ] 4.4 Run the Healthcare Lab Python test suite and syntax checks.
+- [x] 4.4 Run the Healthcare Lab Python test suite and syntax checks.
