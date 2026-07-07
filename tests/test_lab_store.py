@@ -285,24 +285,24 @@ class HealthcareLabStoreTests(unittest.TestCase):
         result_payload = render_gdt_message(
             [
                 ("3000", order["gdtPatientNumber"]),
+                ("8402", "EKG01"),
                 ("3101", "Morgan"),
                 ("3102", "Avery"),
                 ("6200", order["localGdtOrderNumber"]),
-                ("8410", order["localGdtOrderNumber"]),
+                ("8418", "B"),
+                ("8410", "HR"),
+                ("8420", "75"),
+                ("8421", "/min"),
+                ("8410", "PR"),
+                ("8420", "160"),
+                ("8421", "ms"),
                 ("6220", "Normal sinus rhythm"),
-                ("8401", "72 bpm"),
-                ("8402", "160 ms"),
-                ("8403", "92 ms"),
-                ("8404", "390 ms"),
-                ("8405", "427 ms"),
-                ("6302", "report"),
-                ("6303", "PDF"),
-                ("6304", "ECG report"),
-                ("6305", "reports/ecg-result.pdf"),
-                ("6302", "dicom"),
-                ("6303", "DICOM"),
-                ("6304", "DICOM ECG object"),
-                ("6305", "reports/ecg-waveform.dcm"),
+                ("6227", "Reviewed by device"),
+                ("6228", "Automated ECG summary"),
+                ("6302", "reports/ecg-result.pdf"),
+                ("6303", "application/pdf"),
+                ("6304", "reports/ecg-waveform.xml"),
+                ("6305", "application/xml"),
             ],
             set_type="6310",
         )
@@ -313,8 +313,12 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(result["matchStatus"], "order-matched")
         self.assertEqual(result["parsedFields"]["6220"], ["Normal sinus rhythm"])
         self.assertEqual(result["canonical"]["order"]["localGdtOrderNumber"], order["localGdtOrderNumber"])
-        self.assertEqual(result["canonical"]["result"]["measurements"]["HR"], "72 bpm")
-        self.assertEqual(result["canonical"]["attachments"][0]["reference"], "reports/ecg-result.pdf")
+        self.assertEqual(result["canonical"]["result"]["status"], "B")
+        self.assertEqual(result["canonical"]["result"]["measurements"]["HR"]["value"], 75)
+        self.assertEqual(result["canonical"]["result"]["measurements"]["PR"]["unit"], "ms")
+        self.assertEqual(result["canonical"]["result"]["comments"], ["Reviewed by device"])
+        self.assertEqual(result["canonical"]["result"]["formattedText"], ["Automated ECG summary"])
+        self.assertEqual(result["canonical"]["validation"], {"errors": [], "warnings": []})
         updated_order = self.store.get_gdt_order_record(order["id"])
         self.assertEqual(updated_order["status"], "Result received")
         by_role = {attachment["role"]: attachment for attachment in updated_order["attachments"]}
@@ -329,6 +333,7 @@ class HealthcareLabStoreTests(unittest.TestCase):
         result_payload = render_gdt_message(
             [
                 ("3000", "UNKNOWN-GDT-PAT"),
+                ("8402", "EKG01"),
                 ("8410", "UNKNOWN-ORDER"),
                 ("6220", "Unmatched result"),
             ],
@@ -361,6 +366,7 @@ class HealthcareLabStoreTests(unittest.TestCase):
         result_payload = render_gdt_message(
             [
                 ("3000", first_order["gdtPatientNumber"]),
+                ("8402", "EKG01"),
                 ("6220", "Result has no usable order identifier"),
             ],
             set_type="6310",

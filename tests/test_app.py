@@ -280,8 +280,11 @@ class HealthcareLabApiTests(unittest.TestCase):
         result_payload = render_gdt_message(
             [
                 ("3000", order["gdtPatientNumber"]),
+                ("8402", "EKG01"),
                 ("6200", order["localGdtOrderNumber"]),
-                ("8410", order["localGdtOrderNumber"]),
+                ("8410", "HR"),
+                ("8420", "75"),
+                ("8421", "/min"),
                 ("6220", "Normal sinus rhythm"),
                 ("8401", "72 bpm"),
                 ("8402", "160 ms"),
@@ -302,8 +305,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         item = imported.get_json()["item"]
         self.assertEqual(item["messageType"], "6310")
         self.assertEqual(item["matchStatus"], "order-matched")
-        self.assertEqual(item["canonical"]["result"]["measurements"]["HR"], "72 bpm")
-        self.assertEqual(item["canonical"]["attachments"][0]["reference"], "reports/ecg-result.pdf")
+        self.assertEqual(item["canonical"]["result"]["measurements"]["HR"]["value"], 75)
+        self.assertEqual(item["canonical"]["validation"], {"errors": [], "warnings": []})
         messages = self.client.get("/api/gdt/messages")
         self.assertEqual(messages.status_code, 200)
         self.assertTrue(any(message["messageType"] == "6310" for message in messages.get_json()["items"]))

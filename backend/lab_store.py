@@ -15,6 +15,24 @@ try:
 except ImportError:  # pragma: no cover - optional OpenEMR integration dependency
     pymysql = None
 
+from backend.gdt_adapter import (
+    GDT_DEFAULT_CHARSET_MARKER,
+    GDT_DEFAULT_ENCODING,
+    GDT_ORDER_MESSAGE_TYPE,
+    GDT_ORDER_TEST_CODE,
+    GDT_ORDER_TEST_CODE_FIELD,
+    GDT_RESULT_MESSAGE_TYPE,
+    GDT_VERSION,
+    GdtValidationError,
+    attachment_payloads_from_result_fields,
+    build_gdt_6302_request,
+    first_gdt_field as adapter_first_gdt_field,
+    parse_gdt_6310_result,
+    parse_gdt_message as adapter_parse_gdt_message,
+    render_gdt_message as adapter_render_gdt_message,
+    render_gdt_record as adapter_render_gdt_record,
+)
+
 OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES = ("1001",)
 PATIENT_PROTOCOL_VERSION = "2.3.1"
 PATIENT_MESSAGE_TYPE = "ADT^A04"
@@ -25,9 +43,6 @@ PATIENT_MODES = {
     "dicom": {"protocol": "DICOM", "message_type": "Patient Module"},
 }
 PATIENT_CLASS_DEFAULT = "O"
-GDT_VERSION = "02.10"
-GDT_DEFAULT_CHARSET_MARKER = "3"
-GDT_DEFAULT_ENCODING = "cp1252"
 GDT_PATIENT_SEX_CODES = {"M": "1", "F": "2"}
 ORDER_PROTOCOL_VERSION = "2.3.1"
 ORDER_MESSAGE_TYPE = "ORM^O01"
@@ -44,13 +59,9 @@ ORDER_DEFAULT_ALT_TEXT = "Electrocardiogram, routine ECG with at least 12 leads"
 ORDER_DEFAULT_ALT_SYSTEM = "C4"
 ORDER_DEFAULT_PROVIDER = "1001^WANG^AMY"
 GDT_ORDER_PROTOCOL_VERSION = "GDT 2.1"
-GDT_ORDER_MESSAGE_TYPE = "6302"
-GDT_RESULT_MESSAGE_TYPE = "6310"
 GDT_ORDER_STATUS_CREATED = "Created"
 GDT_ORDER_STATUS_ERROR = "Error"
 GDT_ORDER_STATUS_RESULT_RECEIVED = "Result received"
-GDT_ORDER_TEST_CODE_FIELD = "8402"
-GDT_ORDER_TEST_CODE = "EKG01"
 GDT_ORDER_TEST_LABEL = "12-lead resting ECG"
 LAB_SERVER_TYPES = (
     "HL7 Engine",
@@ -232,68 +243,28 @@ def _encode_gdt_text(value: str) -> bytes:
 
 
 def render_gdt_record(code: str, value: Any) -> bytes:
-    field_code = str(code).strip()
-    if len(field_code) != 4 or not field_code.isdigit():
-        raise SimulatorValidationError(f"GDT field code must be four digits: {field_code}")
-    content = _encode_gdt_text(_gdt_clean_value(value))
-    record_length = 3 + 4 + len(content) + 2
-    if record_length > 999:
-        raise SimulatorValidationError(f"GDT field {field_code} exceeds the 999 byte record limit.")
-    return f"{record_length:03d}{field_code}".encode("ascii") + content + b"\r\n"
+    try:
+        return adapter_render_gdt_record(code, value)
+    except GdtValidationError as exc:
+        raise SimulatorValidationError(str(exc)) from exc
 
 
 def render_gdt_message(records: list[tuple[str, Any]], *, set_type: str) -> str:
-    normalized = [
-        (code, value)
-        for code, value in records
-        if code not in {"8000", "8100", "9218", "9206"}
-    ]
-    total_length = "00000"
-    for _ in range(8):
-        full_records = [
-            ("8000", set_type),
-            ("8100", total_length),
-            ("9218", GDT_VERSION),
-            ("9206", GDT_DEFAULT_CHARSET_MARKER),
-        ] + normalized
-        payload = b"".join(render_gdt_record(code, value) for code, value in full_records)
-        next_length = f"{len(payload):05d}"
-        if next_length == total_length:
-            return payload.decode(GDT_DEFAULT_ENCODING)
-        total_length = next_length
-    raise SimulatorValidationError("Could not stabilize GDT 8100 full message length.")
+    try:
+        return adapter_render_gdt_message(records, set_type=set_type)
+    except GdtValidationError as exc:
+        raise SimulatorValidationError(str(exc)) from exc
 
 
 def parse_gdt_message(payload: str) -> dict[str, list[str]]:
-    raw = str(payload or "").encode(GDT_DEFAULT_ENCODING)
-    fields: dict[str, list[str]] = {}
-    offset = 0
-    while offset < len(raw):
-        if offset + 7 > len(raw):
-            raise SimulatorValidationError("GDT record is truncated.")
-        try:
-            record_length = int(raw[offset : offset + 3].decode("ascii"))
-        except ValueError as exc:
-            raise SimulatorValidationError("GDT record length must be three digits.") from exc
-        if record_length < 9:
-            raise SimulatorValidationError("GDT record length is invalid.")
-        record = raw[offset : offset + record_length]
-        if len(record) != record_length or not record.endswith(b"\r\n"):
-            raise SimulatorValidationError("GDT record byte length does not match its envelope.")
-        code = record[3:7].decode("ascii")
-        if len(code) != 4 or not code.isdigit():
-            raise SimulatorValidationError(f"GDT field code must be four digits: {code}")
-        value = record[7:-2].decode(GDT_DEFAULT_ENCODING)
-        fields.setdefault(code, []).append(value)
-        offset += record_length
-    if not fields:
-        raise SimulatorValidationError("GDT payload is empty.")
-    return fields
+    try:
+        return adapter_parse_gdt_message(payload)
+    except GdtValidationError as exc:
+        raise SimulatorValidationError(str(exc)) from exc
 
 
 def first_gdt_field(fields: dict[str, list[str]], code: str) -> str:
-    values = fields.get(code) or []
-    return values[0] if values else ""
+    return adapter_first_gdt_field(fields, code)
 
 
 def ensure_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
@@ -1871,26 +1842,25 @@ class DemoStore:
         record_id: int,
     ) -> str:
         order_number = values.get("local_gdt_order_number") or DemoStore._gdt_order_record_number(record_id)
-        records: list[tuple[str, Any]] = [
-            ("8315", "LABGDT"),
-            ("8316", "HCLAB"),
-            ("3000", values["gdt_patient_number"]),
-            ("3101", patient_row["last_name"]),
-            ("3102", patient_row["first_name"]),
-            ("3103", DemoStore._gdt_birth_date(patient_row["dob"])),
-            ("6200", order_number),
-            (GDT_ORDER_TEST_CODE_FIELD, GDT_ORDER_TEST_CODE),
-        ]
-        sex_code = GDT_PATIENT_SEX_CODES.get(patient_row["sex"])
-        if sex_code:
-            records.append(("3110", sex_code))
-        if values.get("requested_at"):
-            records.append(("6220", values["requested_at"]))
-        if values.get("ordering_provider"):
-            records.append(("6227", values["ordering_provider"]))
-        if values.get("clinical_indication"):
-            records.append(("6228", values["clinical_indication"]))
-        return render_gdt_message(records, set_type=GDT_ORDER_MESSAGE_TYPE)
+        try:
+            return build_gdt_6302_request(
+                {
+                    "gdtPatientNumber": values["gdt_patient_number"],
+                    "lastName": patient_row["last_name"],
+                    "firstName": patient_row["first_name"],
+                    "birthDate": DemoStore._gdt_birth_date(patient_row["dob"]),
+                    "localGdtOrderNumber": order_number,
+                    "sex": GDT_PATIENT_SEX_CODES.get(patient_row["sex"], ""),
+                    "requestedAt": values.get("requested_at", ""),
+                    "orderingProvider": values.get("ordering_provider", ""),
+                    "clinicalIndication": values.get("clinical_indication", ""),
+                    "patient": DemoStore._gdt_patient_snapshot(patient_row, values["gdt_patient_number"]),
+                    "order": {"localGdtOrderNumber": order_number},
+                    "testLabel": GDT_ORDER_TEST_LABEL,
+                }
+            ).raw_gdt_text
+        except GdtValidationError as exc:
+            raise SimulatorValidationError(str(exc)) from exc
 
     def create_gdt_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
         values = self._validate_gdt_order_payload(payload)
@@ -1962,26 +1932,28 @@ class DemoStore:
             )
             record_id = int(cursor.lastrowid)
             local_gdt_order_number = self._gdt_order_record_number(record_id)
-            payload_gdt = self._build_gdt_order_payload(
-                {
-                    **values,
-                    "local_gdt_order_number": local_gdt_order_number,
-                    "gdt_patient_number": gdt_patient_number,
-                },
-                patient_row,
-                record_id=record_id,
-            )
             order_snapshot = {**order_snapshot, "localGdtOrderNumber": local_gdt_order_number}
-            canonical = {
-                "patient": patient_snapshot,
-                "order": order_snapshot,
-                "test": {
-                    "field": GDT_ORDER_TEST_CODE_FIELD,
-                    "code": values["gdt_test_code"],
-                    "label": GDT_ORDER_TEST_LABEL,
-                },
-                "correlation": {"localGdtOrderNumber": local_gdt_order_number},
-            }
+            try:
+                adapter_result = build_gdt_6302_request(
+                    {
+                        "gdtPatientNumber": gdt_patient_number,
+                        "lastName": patient_row["last_name"],
+                        "firstName": patient_row["first_name"],
+                        "birthDate": self._gdt_birth_date(patient_row["dob"]),
+                        "localGdtOrderNumber": local_gdt_order_number,
+                        "sex": GDT_PATIENT_SEX_CODES.get(patient_row["sex"], ""),
+                        "requestedAt": values["requested_at"],
+                        "orderingProvider": values["ordering_provider"],
+                        "clinicalIndication": values["clinical_indication"],
+                        "patient": patient_snapshot,
+                        "order": order_snapshot,
+                        "testLabel": GDT_ORDER_TEST_LABEL,
+                    }
+                )
+            except GdtValidationError as exc:
+                raise SimulatorValidationError(str(exc)) from exc
+            payload_gdt = adapter_result.raw_gdt_text
+            canonical = adapter_result.canonical
             message_record_id = self._create_gdt_message_record(
                 connection,
                 order_record_id=record_id,
@@ -2262,42 +2234,8 @@ class DemoStore:
         }
 
     @staticmethod
-    def _attachment_payloads_from_result_fields(
-        fields: dict[str, list[str]],
-        *,
-        bridge_root: str = "",
-        source_file: str = "",
-    ) -> list[dict[str, Any]]:
-        attachments: list[dict[str, str]] = []
-        identifiers = fields.get("6302", [])
-        formats = fields.get("6303", [])
-        descriptions = fields.get("6304", [])
-        references = fields.get("6305", [])
-        group_count = max(len(identifiers), len(formats), len(descriptions), len(references))
-        for index in range(group_count):
-            reference = references[index] if index < len(references) else ""
-            if not reference:
-                continue
-            artifact_format = formats[index] if index < len(formats) else ""
-            identifier = identifiers[index] if index < len(identifiers) else ""
-            description = descriptions[index] if index < len(descriptions) else ""
-            role = identifier or artifact_format.lower() or "result-artifact"
-            status, details = DemoStore._gdt_artifact_status(reference, bridge_root)
-            is_url = DemoStore._is_url_reference(reference)
-            attachments.append(
-                {
-                    "role": role,
-                    "url": reference if is_url else "",
-                    "path": "" if is_url else reference,
-                    "reference": reference,
-                    "contentType": artifact_format,
-                    "description": description,
-                    "sourceFile": source_file,
-                    "status": status,
-                    "details": details,
-                }
-            )
-        return attachments
+    def _attachment_payloads_from_result_fields(fields: dict[str, list[str]]) -> list[dict[str, str]]:
+        return attachment_payloads_from_result_fields(fields)
 
     @staticmethod
     def _gdt_result_measurements(fields: dict[str, list[str]]) -> dict[str, str]:
@@ -2319,12 +2257,11 @@ class DemoStore:
         raw_gdt_text = str(
             payload.get("rawGdtText", payload.get("payload", payload.get("raw", ""))) or ""
         )
-        bridge_root = str(payload.get("bridgeRoot") or "").strip()
-        source_file = str(payload.get("sourceFile") or payload.get("sourcePath") or "").strip()
-        fields = parse_gdt_message(raw_gdt_text)
-        message_type = first_gdt_field(fields, "8000")
-        if message_type != GDT_RESULT_MESSAGE_TYPE:
-            raise SimulatorValidationError(f"GDT result import only supports {GDT_RESULT_MESSAGE_TYPE}.")
+        try:
+            adapter_result = parse_gdt_6310_result(raw_gdt_text)
+        except GdtValidationError as exc:
+            raise SimulatorValidationError(str(exc)) from exc
+        fields = adapter_result.parsed_fields
         timestamp = now_iso()
         order_identifiers = [
             value
@@ -2359,34 +2296,16 @@ class DemoStore:
                 ).fetchone()
                 patient_context_id = context_row["id"] if context_row else None
             match_status = "order-matched" if order_row else "unmatched"
-            canonical = {
-                "patient": {
-                    "gdtPatientNumber": gdt_patient_number,
-                    "lastName": first_gdt_field(fields, "3101"),
-                    "firstName": first_gdt_field(fields, "3102"),
-                    "dob": first_gdt_field(fields, "3103"),
-                    "sex": first_gdt_field(fields, "3110"),
-                },
-                "order": {
-                    "localGdtOrderNumber": order_row["local_gdt_order_number"] if order_row else "",
-                    "identifiers": order_identifiers,
-                },
-                "result": {
-                    "status": first_gdt_field(fields, "8418"),
-                    "text": fields.get("6220", []),
-                    "interpretation": fields.get("6220", []),
-                    "comments": fields.get("6227", []) + fields.get("6228", []),
-                    "measurements": self._gdt_result_measurements(fields),
-                },
-                "attachments": self._attachment_payloads_from_result_fields(
-                    fields,
-                    bridge_root=bridge_root,
-                    source_file=source_file,
-                ),
-                "correlation": {
-                    "matchStatus": match_status,
-                    "identifiers": order_identifiers,
-                },
+            canonical = adapter_result.canonical
+            canonical["order"] = {
+                **canonical.get("order", {}),
+                "localGdtOrderNumber": order_row["local_gdt_order_number"] if order_row else "",
+                "identifiers": order_identifiers,
+            }
+            canonical["correlation"] = {
+                **canonical.get("correlation", {}),
+                "matchStatus": match_status,
+                "identifiers": order_identifiers,
             }
             message_record_id = self._create_gdt_message_record(
                 connection,
