@@ -141,6 +141,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('"/api/gdt/orders"', script)
         self.assertIn('"/api/gdt/workbench"', script)
         self.assertIn("write-6302", script)
+        self.assertIn('selector.value = "gdt"', script)
+        self.assertIn('setActiveView("order-view")', script)
 
     def test_sidebar_views_hide_inactive_pages(self):
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
