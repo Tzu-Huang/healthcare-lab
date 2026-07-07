@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import socket
 import threading
 import time
@@ -649,6 +650,291 @@ def accept_oie_result_payload(store: DemoStore, payload: str) -> tuple[str, dict
         return build_hl7_ack(payload, code="AE", text=str(exc)), item, 400
 
 
+GDT_BRIDGE_SUCCESS_MODES = {"archive", "delete"}
+GDT_FILENAME_PROFILES = {"permissive", "gdt21", "gdt35"}
+
+
+def normalize_gdt_bridge_success_mode(value: Any) -> str:
+    mode = str(value or "archive").strip().lower()
+    if mode not in GDT_BRIDGE_SUCCESS_MODES:
+        raise ValidationError("GDT bridge success mode must be archive or delete.")
+    return mode
+
+
+def normalize_gdt_filename_profile(value: Any) -> str:
+    profile = str(value or "permissive").strip().lower()
+    if profile not in GDT_FILENAME_PROFILES:
+        raise ValidationError("GDT filename profile must be permissive, gdt21, or gdt35.")
+    return profile
+
+
+def gdt_path_status(path: Path, status: str, reason: str = "") -> dict[str, Any]:
+    item: dict[str, Any] = {"name": path.name, "path": str(path), "status": status}
+    try:
+        stat = path.stat()
+        item.update(
+            {
+                "size": stat.st_size,
+                "updatedAt": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+                "createdAt": datetime.fromtimestamp(stat.st_ctime, timezone.utc).isoformat(),
+            }
+        )
+    except OSError:
+        item.update({"size": 0, "updatedAt": "", "createdAt": ""})
+    if reason:
+        item["reason"] = reason
+    return item
+
+
+def gdt_is_internal_or_temp_file(path: Path) -> bool:
+    name = path.name
+    lowered = name.lower()
+    return (
+        name.startswith(".")
+        or lowered.endswith(".tmp")
+        or lowered.endswith(".temp")
+        or lowered.endswith(".processing")
+        or ".processing." in lowered
+    )
+
+
+def gdt_has_supported_exchange_extension(path: Path, *, profile: str = "permissive") -> bool:
+    if path.suffix.lower() == ".gdt":
+        return True
+    return normalize_gdt_filename_profile(profile) == "gdt21" and bool(re.fullmatch(r"\.\d{3}", path.suffix))
+
+
+def gdt_filename_binding_matches(
+    path: Path,
+    *,
+    profile: str = "permissive",
+    receiver_id: str = "",
+    sender_id: str = "",
+) -> bool:
+    profile = normalize_gdt_filename_profile(profile)
+    name = path.name
+    upper_name = name.upper()
+    receiver = str(receiver_id or "").strip().upper()
+    sender = str(sender_id or "").strip().upper()
+    if profile == "permissive":
+        return path.suffix.lower() == ".gdt"
+    if profile == "gdt35":
+        if path.suffix.lower() != ".gdt":
+            return False
+        pattern = r"^([A-Z0-9]+)_([A-Z0-9]+)_([A-Z0-9]+)\.GDT$"
+        match = re.match(pattern, upper_name)
+        if not match:
+            return False
+        matched_receiver, matched_sender, _sequence = match.groups()
+        if receiver and matched_receiver != receiver:
+            return False
+        if sender and matched_sender != sender:
+            return False
+        return True
+    stem_upper = path.stem.upper()
+    suffix_upper = path.suffix.upper()
+    if suffix_upper == ".GDT":
+        return (not receiver or stem_upper.startswith(receiver)) and (
+            not sender or stem_upper.endswith(sender)
+        )
+    if re.fullmatch(r"\.\d{3}", suffix_upper):
+        return (not receiver or stem_upper.startswith(receiver)) and (
+            not sender or stem_upper.endswith(sender)
+        )
+    return False
+
+
+def gdt_collision_safe_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    for index in range(1, 1000):
+        candidate = path.with_name(f"{path.stem}-{index}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    return path.with_name(f"{path.stem}-{timestamp}{path.suffix}")
+
+
+def gdt_inbound_sort_key(path: Path) -> tuple[float, float, str]:
+    try:
+        stat = path.stat()
+        return (float(stat.st_ctime), float(stat.st_mtime), path.name.lower())
+    except OSError:
+        return (float("inf"), float("inf"), path.name.lower())
+
+
+def gdt_file_is_stable(
+    path: Path,
+    *,
+    stable_seconds: float = 1.0,
+    observations: dict[str, tuple[int, float]] | None = None,
+) -> tuple[bool, str]:
+    try:
+        stat = path.stat()
+    except OSError as exc:
+        return False, f"stat failed: {exc}"
+    if observations is not None:
+        key = str(path)
+        current = (int(stat.st_size), float(stat.st_mtime))
+        previous = observations.get(key)
+        observations[key] = current
+        if previous != current:
+            return False, "waiting for stable size and timestamp"
+    age_seconds = max(0.0, time.time() - float(stat.st_mtime))
+    if age_seconds < max(0.0, float(stable_seconds)):
+        return False, "waiting for file age threshold"
+    return True, ""
+
+
+def discover_gdt_inbound_candidates(
+    bridge_root: str | Path,
+    *,
+    filename: str = "",
+    filename_profile: str = "permissive",
+    receiver_id: str = "",
+    sender_id: str = "",
+    require_stable: bool = False,
+    stable_seconds: float = 1.0,
+    observations: dict[str, tuple[int, float]] | None = None,
+) -> tuple[list[Path], list[dict[str, Any]], dict[str, Path]]:
+    directories = ensure_gdt_bridge_dirs(bridge_root)
+    inbound = directories["inbound"]
+    skipped: list[dict[str, Any]] = []
+    if filename:
+        paths = [inbound / Path(filename).name]
+    else:
+        paths = [path for path in inbound.iterdir() if path.is_file()]
+    candidates: list[Path] = []
+    for path in paths:
+        if not path.exists() or not path.is_file():
+            skipped.append(gdt_path_status(path, "skipped", "not found"))
+            continue
+        if gdt_is_internal_or_temp_file(path):
+            skipped.append(gdt_path_status(path, "skipped", "temporary or internal file"))
+            continue
+        if not gdt_has_supported_exchange_extension(path, profile=filename_profile):
+            skipped.append(gdt_path_status(path, "skipped", "unsupported extension"))
+            continue
+        if not gdt_filename_binding_matches(
+            path,
+            profile=filename_profile,
+            receiver_id=receiver_id,
+            sender_id=sender_id,
+        ):
+            skipped.append(gdt_path_status(path, "skipped", "filename binding mismatch"))
+            continue
+        if require_stable:
+            stable, reason = gdt_file_is_stable(
+                path,
+                stable_seconds=stable_seconds,
+                observations=observations,
+            )
+            if not stable:
+                skipped.append(gdt_path_status(path, "skipped", reason))
+                continue
+        candidates.append(path)
+    return sorted(candidates, key=gdt_inbound_sort_key), skipped, directories
+
+
+def import_gdt_bridge_files(
+    store: DemoStore,
+    bridge_root: str | Path,
+    *,
+    filename: str = "",
+    success_mode: str = "archive",
+    filename_profile: str = "permissive",
+    receiver_id: str = "",
+    sender_id: str = "",
+    require_stable: bool = False,
+    stable_seconds: float = 1.0,
+    observations: dict[str, tuple[int, float]] | None = None,
+) -> dict[str, Any]:
+    success_mode = normalize_gdt_bridge_success_mode(success_mode)
+    filename_profile = normalize_gdt_filename_profile(filename_profile)
+    candidates, skipped, directories = discover_gdt_inbound_candidates(
+        bridge_root,
+        filename=filename,
+        filename_profile=filename_profile,
+        receiver_id=receiver_id,
+        sender_id=sender_id,
+        require_stable=require_stable,
+        stable_seconds=stable_seconds,
+        observations=observations,
+    )
+    processing_dir = directories["processing"]
+    imported: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for source_path in candidates:
+        processing_path = gdt_collision_safe_path(processing_dir / source_path.name)
+        try:
+            source_path.replace(processing_path)
+        except OSError as exc:
+            skipped.append(gdt_path_status(source_path, "skipped", f"claim failed: {exc}"))
+            continue
+        try:
+            raw_gdt_text = processing_path.read_bytes().decode("cp1252")
+            item = store.record_gdt_result(
+                {
+                    "rawGdtText": raw_gdt_text,
+                    "bridgeRoot": str(directories["root"]),
+                    "sourceFile": source_path.name,
+                    "sourcePath": str(source_path),
+                }
+            )
+        except (SimulatorValidationError, UnicodeDecodeError, OSError) as exc:
+            error_target = gdt_collision_safe_path(directories["error"] / source_path.name)
+            try:
+                if processing_path.exists():
+                    processing_path.replace(error_target)
+            except OSError:
+                pass
+            failures.append(
+                {
+                    "name": source_path.name,
+                    "sourcePath": str(source_path),
+                    "path": str(error_target),
+                    "error": str(exc),
+                }
+            )
+            continue
+        disposition_error = ""
+        target_path: Path | None = None
+        try:
+            if success_mode == "delete":
+                processing_path.unlink()
+                target_path = processing_path
+                final_status = "deleted"
+            else:
+                target_path = gdt_collision_safe_path(directories["archive"] / source_path.name)
+                processing_path.replace(target_path)
+                final_status = "imported"
+        except OSError as exc:
+            final_status = "imported-warning"
+            target_path = processing_path
+            disposition_error = str(exc)
+        imported_item = {
+            "item": item,
+            "name": source_path.name,
+            "sourcePath": str(source_path),
+            "path": "" if success_mode == "delete" and not disposition_error else str(target_path),
+            "status": final_status,
+            "successMode": success_mode,
+        }
+        if disposition_error:
+            imported_item["dispositionError"] = disposition_error
+        imported.append(imported_item)
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "failures": failures,
+        "processedCount": len(imported) + len(failures),
+        "successMode": success_mode,
+        "filenameProfile": filename_profile,
+        "receiverId": receiver_id,
+        "senderId": sender_id,
+    }
+
+
 class OieResultListener:
     def __init__(self, store: DemoStore):
         self.store = store
@@ -768,6 +1054,133 @@ class OieResultListener:
         except Exception as exc:  # pragma: no cover - defensive listener boundary
             with self._lock:
                 self.last_error = str(exc)
+
+
+class GdtBridgeInboundWatcher:
+    def __init__(
+        self,
+        store: DemoStore,
+        bridge_root: str | Path,
+        *,
+        poll_seconds: float = 2.0,
+        success_mode: str = "archive",
+        filename_profile: str = "permissive",
+        receiver_id: str = "",
+        sender_id: str = "",
+        stable_seconds: float = 1.0,
+    ) -> None:
+        self.store = store
+        self.bridge_root = str(bridge_root)
+        self.poll_seconds = max(0.25, float(poll_seconds))
+        self.success_mode = normalize_gdt_bridge_success_mode(success_mode)
+        self.filename_profile = normalize_gdt_filename_profile(filename_profile)
+        self.receiver_id = str(receiver_id or "").strip()
+        self.sender_id = str(sender_id or "").strip()
+        self.stable_seconds = max(0.0, float(stable_seconds))
+        self._lock = threading.RLock()
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._observations: dict[str, tuple[int, float]] = {}
+        self._last_result: dict[str, Any] = {"imported": [], "skipped": [], "failures": [], "processedCount": 0}
+        self._last_error = ""
+        self._last_run_at = ""
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            running = bool(self._thread and self._thread.is_alive())
+            return {
+                "running": running,
+                "bridgeRoot": self.bridge_root,
+                "pollSeconds": self.poll_seconds,
+                "successMode": self.success_mode,
+                "filenameProfile": self.filename_profile,
+                "receiverId": self.receiver_id,
+                "senderId": self.sender_id,
+                "stableSeconds": self.stable_seconds,
+                "lastResult": self._last_result,
+                "lastError": self._last_error,
+                "lastRunAt": self._last_run_at,
+            }
+
+    def configure(
+        self,
+        *,
+        bridge_root: str | Path | None = None,
+        success_mode: str | None = None,
+        filename_profile: str | None = None,
+        receiver_id: str | None = None,
+        sender_id: str | None = None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                raise ValidationError("Stop automatic GDT import before changing bridge watcher configuration.")
+            if bridge_root is not None:
+                self.bridge_root = str(bridge_root)
+            if success_mode is not None:
+                self.success_mode = normalize_gdt_bridge_success_mode(success_mode)
+            if filename_profile is not None:
+                self.filename_profile = normalize_gdt_filename_profile(filename_profile)
+            if receiver_id is not None:
+                self.receiver_id = str(receiver_id or "").strip()
+            if sender_id is not None:
+                self.sender_id = str(sender_id or "").strip()
+            self._observations = {}
+            self._last_error = ""
+            return self.status()
+
+    def start(self) -> dict[str, Any]:
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                return self.status()
+            ensure_gdt_bridge_dirs(self.bridge_root)
+            self._stop_event.clear()
+            self._last_error = ""
+            self._thread = threading.Thread(target=self._serve, name="gdt-bridge-inbound-watcher", daemon=True)
+            self._thread.start()
+            return self.status()
+
+    def stop(self) -> dict[str, Any]:
+        with self._lock:
+            self._stop_event.set()
+            thread = self._thread
+        if thread:
+            thread.join(timeout=max(1.0, self.poll_seconds + 0.5))
+        with self._lock:
+            if self._thread is thread:
+                self._thread = None
+        return self.status()
+
+    def _serve(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                with self._lock:
+                    bridge_root = self.bridge_root
+                    success_mode = self.success_mode
+                    filename_profile = self.filename_profile
+                    receiver_id = self.receiver_id
+                    sender_id = self.sender_id
+                    stable_seconds = self.stable_seconds
+                    observations = self._observations
+                result = import_gdt_bridge_files(
+                    self.store,
+                    bridge_root,
+                    success_mode=success_mode,
+                    filename_profile=filename_profile,
+                    receiver_id=receiver_id,
+                    sender_id=sender_id,
+                    require_stable=True,
+                    stable_seconds=stable_seconds,
+                    observations=observations,
+                )
+                with self._lock:
+                    self._last_result = result
+                    self._last_error = ""
+                    self._last_run_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+            except Exception as exc:  # pragma: no cover - defensive watcher boundary
+                with self._lock:
+                    self._last_error = str(exc)
+                    self._last_run_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+            self._stop_event.wait(self.poll_seconds)
 
 
 def send_hl7_mllp_message(
@@ -1322,6 +1735,16 @@ def create_app(database_path: str | None = None) -> Flask:
         "GDT_BRIDGE_PATH",
         str(Path(app.instance_path) / "gdt-bridge"),
     )
+    app.config["GDT_BRIDGE_IMPORT_SUCCESS_MODE"] = normalize_gdt_bridge_success_mode(
+        os.environ.get("GDT_BRIDGE_IMPORT_SUCCESS_MODE", "archive")
+    )
+    app.config["GDT_BRIDGE_FILENAME_PROFILE"] = normalize_gdt_filename_profile(
+        os.environ.get("GDT_BRIDGE_FILENAME_PROFILE", "permissive")
+    )
+    app.config["GDT_BRIDGE_RECEIVER_ID"] = os.environ.get("GDT_BRIDGE_RECEIVER_ID", "").strip()
+    app.config["GDT_BRIDGE_SENDER_ID"] = os.environ.get("GDT_BRIDGE_SENDER_ID", "").strip()
+    app.config["GDT_BRIDGE_WATCH_POLL_SECONDS"] = float(os.environ.get("GDT_BRIDGE_WATCH_POLL_SECONDS", "2"))
+    app.config["GDT_BRIDGE_STABLE_SECONDS"] = float(os.environ.get("GDT_BRIDGE_STABLE_SECONDS", "1"))
     app.config["OPENEMR_DB_HOST"] = os.environ.get("OPENEMR_DB_HOST", "")
     app.config["OPENEMR_DB_PORT"] = int(os.environ.get("OPENEMR_DB_PORT", "3306"))
     app.config["OPENEMR_DB_USER"] = os.environ.get("OPENEMR_DB_USER", "")
@@ -1354,6 +1777,16 @@ def create_app(database_path: str | None = None) -> Flask:
     Path(app.config["DATABASE_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     validate_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
     store = DemoStore(app.config["DATABASE_PATH"])
+    gdt_bridge_watcher = GdtBridgeInboundWatcher(
+        store,
+        app.config["GDT_BRIDGE_PATH"],
+        poll_seconds=app.config["GDT_BRIDGE_WATCH_POLL_SECONDS"],
+        success_mode=app.config["GDT_BRIDGE_IMPORT_SUCCESS_MODE"],
+        filename_profile=app.config["GDT_BRIDGE_FILENAME_PROFILE"],
+        receiver_id=app.config["GDT_BRIDGE_RECEIVER_ID"],
+        sender_id=app.config["GDT_BRIDGE_SENDER_ID"],
+        stable_seconds=app.config["GDT_BRIDGE_STABLE_SECONDS"],
+    )
     openemr_source = OpenEMRProcedureOrderSource(
         host=app.config["OPENEMR_DB_HOST"],
         port=app.config["OPENEMR_DB_PORT"],
@@ -1365,6 +1798,7 @@ def create_app(database_path: str | None = None) -> Flask:
     app.extensions["demo_store"] = store
     app.extensions["openemr_procedure_order_source"] = openemr_source
     app.extensions["oie_result_listener"] = OieResultListener(store)
+    app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
 
     def get_auth_manager() -> MedplumAuthManager:
         return MedplumAuthManager(
@@ -1463,16 +1897,80 @@ def create_app(database_path: str | None = None) -> Flask:
 
     def list_gdt_bridge_inbox_items() -> list[dict[str, Any]]:
         bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
+        filename_profile = app.config["GDT_BRIDGE_FILENAME_PROFILE"]
         items = [
             gdt_bridge_file_item(path, "pending")
-            for path in sorted(bridge_dirs["inbound"].glob("*.gdt"))
-            if path.is_file()
+            for path in sorted(bridge_dirs["inbound"].iterdir())
+            if (
+                path.is_file()
+                and not gdt_is_internal_or_temp_file(path)
+                and gdt_has_supported_exchange_extension(path, profile=filename_profile)
+                and gdt_filename_binding_matches(
+                    path,
+                    profile=filename_profile,
+                    receiver_id=app.config["GDT_BRIDGE_RECEIVER_ID"],
+                    sender_id=app.config["GDT_BRIDGE_SENDER_ID"],
+                )
+            )
         ]
         for status, folder_name in (("imported", "archive"), ("error", "error")):
-            for path in sorted(bridge_dirs[folder_name].glob("*.gdt")):
-                if path.is_file():
+            for path in sorted(bridge_dirs[folder_name].iterdir()):
+                if (
+                    path.is_file()
+                    and not gdt_is_internal_or_temp_file(path)
+                    and gdt_has_supported_exchange_extension(path, profile=filename_profile)
+                ):
                     items.append(gdt_bridge_file_item(path, status))
         return items
+
+    def gdt_bridge_config_payload() -> dict[str, Any]:
+        bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
+        watcher = app.extensions["gdt_bridge_watcher"]
+        return {
+            "bridgePath": str(bridge_dirs["root"]),
+            "hostPath": os.environ.get("GDT_BRIDGE_HOST_PATH", ""),
+            "outboxPath": str(bridge_dirs["outbox"]),
+            "inboundPath": str(bridge_dirs["inbound"]),
+            "archivePath": str(bridge_dirs["archive"]),
+            "errorPath": str(bridge_dirs["error"]),
+            "processingPath": str(bridge_dirs["processing"]),
+            "successMode": app.config["GDT_BRIDGE_IMPORT_SUCCESS_MODE"],
+            "filenameProfile": app.config["GDT_BRIDGE_FILENAME_PROFILE"],
+            "receiverId": app.config["GDT_BRIDGE_RECEIVER_ID"],
+            "senderId": app.config["GDT_BRIDGE_SENDER_ID"],
+            "watcher": watcher.status(),
+            "dockerHint": (
+                "When running in Docker, set GDT_BRIDGE_HOST_PATH in .env and restart lab-app "
+                "to map a Windows folder to /data/gdt-bridge."
+            ),
+        }
+
+    @app.get("/api/gdt/bridge/config")
+    def get_gdt_bridge_config():
+        return jsonify({"success": True, "item": gdt_bridge_config_payload()})
+
+    @app.put("/api/gdt/bridge/config")
+    def update_gdt_bridge_config():
+        payload = request.get_json(silent=True) or {}
+        bridge_path = str(payload.get("bridgePath") or "").strip()
+        if not bridge_path:
+            return error_response("GDT shared folder path is required.", 400)
+        watcher = app.extensions["gdt_bridge_watcher"]
+        if watcher.status()["running"]:
+            return error_response("Stop automatic GDT import before changing the shared folder path.", 409)
+        if os.name != "nt" and re.match(r"^[A-Za-z]:[\\/]", bridge_path):
+            return error_response(
+                "Windows paths must be mounted into Docker first. Set GDT_BRIDGE_HOST_PATH in .env, "
+                "restart lab-app, then use /data/gdt-bridge here.",
+                400,
+            )
+        try:
+            validate_gdt_bridge_dirs(bridge_path)
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        app.config["GDT_BRIDGE_PATH"] = bridge_path
+        watcher.configure(bridge_root=bridge_path)
+        return jsonify({"success": True, "item": gdt_bridge_config_payload()})
 
     @app.get("/api/gdt/workbench")
     def gdt_workbench():
@@ -1519,32 +2017,41 @@ def create_app(database_path: str | None = None) -> Flask:
     def import_gdt_bridge_file():
         payload = request.get_json(silent=True) or {}
         filename = Path(str(payload.get("filename") or payload.get("name") or "")).name
-        if not filename.lower().endswith(".gdt"):
-            return error_response("A .gdt inbox filename is required.", 400)
-        bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
-        source_path = bridge_dirs["inbound"] / filename
-        if not source_path.exists() or not source_path.is_file():
-            return error_response("GDT inbox file was not found.", 404)
-        raw_gdt_text = source_path.read_bytes().decode("cp1252")
+        if not gdt_has_supported_exchange_extension(Path(filename), profile=app.config["GDT_BRIDGE_FILENAME_PROFILE"]):
+            return error_response("A supported GDT inbox filename is required.", 400)
+        result = import_gdt_bridge_files(
+            store,
+            app.config["GDT_BRIDGE_PATH"],
+            filename=filename,
+            success_mode=app.config["GDT_BRIDGE_IMPORT_SUCCESS_MODE"],
+            filename_profile=app.config["GDT_BRIDGE_FILENAME_PROFILE"],
+            receiver_id=app.config["GDT_BRIDGE_RECEIVER_ID"],
+            sender_id=app.config["GDT_BRIDGE_SENDER_ID"],
+        )
+        if result["imported"]:
+            first = result["imported"][0]
+            return jsonify({"success": True, "item": first["item"], "path": first["path"], "result": result}), 201
+        if result["failures"]:
+            first = result["failures"][0]
+            return jsonify({"success": False, "error": first["error"], "path": first["path"], "result": result}), 400
+        return error_response(result["skipped"][0].get("reason", "GDT inbox file was not found.") if result["skipped"] else "GDT inbox file was not found.", 404)
+
+    @app.get("/api/gdt/bridge/watcher/status")
+    def gdt_bridge_watcher_status():
+        return jsonify({"success": True, "item": app.extensions["gdt_bridge_watcher"].status()})
+
+    @app.post("/api/gdt/bridge/watcher/start")
+    def start_gdt_bridge_watcher():
         try:
-            item = store.record_gdt_result(
-                {
-                    "rawGdtText": raw_gdt_text,
-                    "bridgeRoot": str(bridge_dirs["root"]),
-                    "sourceFile": filename,
-                    "sourcePath": str(source_path),
-                }
-            )
-            target_path = bridge_dirs["archive"] / filename
-            source_path.replace(target_path)
-        except SimulatorValidationError as exc:
-            target_path = bridge_dirs["error"] / filename
-            try:
-                source_path.replace(target_path)
-            except OSError:
-                pass
-            return jsonify({"success": False, "error": str(exc), "path": str(target_path)}), 400
-        return jsonify({"success": True, "item": item, "path": str(target_path)}), 201
+            item = app.extensions["gdt_bridge_watcher"].start()
+        except (ValidationError, SimulatorValidationError) as exc:
+            return error_response(str(exc), 400)
+        return jsonify({"success": True, "item": item})
+
+    @app.post("/api/gdt/bridge/watcher/stop")
+    def stop_gdt_bridge_watcher():
+        item = app.extensions["gdt_bridge_watcher"].stop()
+        return jsonify({"success": True, "item": item})
 
     @app.post("/api/gdt/orders/<int:order_id>/demo-result")
     def create_gdt_demo_result(order_id: int):

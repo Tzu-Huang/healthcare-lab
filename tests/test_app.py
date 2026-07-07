@@ -1,6 +1,8 @@
 import json
+import os
 import socket
 import tempfile
+import time
 import unittest
 import urllib.error
 from pathlib import Path
@@ -15,6 +17,7 @@ from app import (
     create_app,
     dashboard_action_for_group,
     derive_lab_overall_status,
+    import_gdt_bridge_files,
     parse_hl7_ack,
     parse_oru_summary,
     run_lab_application_check,
@@ -120,7 +123,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'id="oie-order-list"', response.data)
         self.assertIn(b'id="gdt-view"', response.data)
         self.assertIn(b'id="gdt-inbox-list"', response.data)
-        self.assertIn(b'id="gdt-order-list"', response.data)
+        self.assertIn(b'id="gdt-patient-list"', response.data)
+        self.assertIn(b'id="gdt-watcher-status"', response.data)
+        self.assertIn(b'id="start-gdt-watcher"', response.data)
+        self.assertIn(b"raw GDT-OUT or GDT-IN content", response.data)
         self.assertIn(b'id="oie-send-host" value="localhost"', response.data)
         self.assertIn(b'id="oie-listener-port" value="6665"', response.data)
         self.assertIn(b'id="oie-unmatched-result-list"', response.data)
@@ -140,6 +146,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("ECG Order", script)
         self.assertIn('"/api/gdt/orders"', script)
         self.assertIn('"/api/gdt/workbench"', script)
+        self.assertIn("Preview GDT-OUT", script)
+        self.assertIn("Import GDT-IN", script)
+        self.assertIn('"/api/gdt/bridge/watcher/start"', script)
+        self.assertIn('"/api/gdt/bridge/watcher/stop"', script)
         self.assertIn("write-6302", script)
         self.assertIn('selector.value = "gdt"', script)
         self.assertIn('setActiveView("order-view")', script)
@@ -169,10 +179,50 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("/api/gdt/orders/<int:order_id>/events", routes)
         self.assertIn("/api/gdt/results", routes)
         self.assertIn("/api/gdt/workbench", routes)
+        self.assertIn("/api/gdt/bridge/config", routes)
+        self.assertIn("/api/gdt/bridge/watcher/status", routes)
+        self.assertIn("/api/gdt/bridge/watcher/start", routes)
+        self.assertIn("/api/gdt/bridge/watcher/stop", routes)
         self.assertIn("/api/gdt/orders/<int:order_id>/write-6302", routes)
         self.assertIn("/api/gdt/orders/<int:order_id>/demo-result", routes)
         self.assertIn("/api/gdt/bridge/inbox", routes)
         self.assertIn("/api/gdt/bridge/import", routes)
+
+    def test_gdt_bridge_config_api_updates_shared_folder_path(self):
+        target = Path(self.temp_dir.name) / "custom-gdt-bridge"
+
+        response = self.client.put("/api/gdt/bridge/config", json={"bridgePath": str(target)})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["item"]["bridgePath"], str(target))
+        self.assertTrue((target / "outbox").is_dir())
+        self.assertTrue((target / "inbound").is_dir())
+        current = self.client.get("/api/gdt/bridge/config").get_json()["item"]
+        self.assertEqual(current["outboxPath"], str(target / "outbox"))
+        self.assertIn("watcher", current)
+
+    def gdt_result_payload_for_order(self, order, text="Imported from bridge file"):
+        return render_gdt_message(
+            [
+                ("3000", order["gdtPatientNumber"]),
+                ("6200", order["localGdtOrderNumber"]),
+                ("8410", order["localGdtOrderNumber"]),
+                ("6220", text),
+                ("6302", "report"),
+                ("6303", "PDF"),
+                ("6304", "Bridge PDF"),
+                ("6305", "reports/missing.pdf"),
+            ],
+            set_type="6310",
+        )
+
+    def write_gdt_result_file(self, order, filename="device-result.gdt", text="Imported from bridge file"):
+        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
+        inbound = bridge_root / "inbound" / filename
+        inbound.parent.mkdir(parents=True, exist_ok=True)
+        inbound.write_bytes(self.gdt_result_payload_for_order(order, text=text).encode("cp1252"))
+        return inbound
 
     def create_local_patient(self):
         response = self.client.post(
@@ -329,23 +379,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(demo.get_json()["item"]["canonical"]["result"]["measurements"]["QTC"], "427 ms")
 
         bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
-        inbound = bridge_root / "inbound" / "device-result.gdt"
-        inbound.parent.mkdir(parents=True, exist_ok=True)
-        inbound.write_bytes(
-            render_gdt_message(
-                [
-                    ("3000", order["gdtPatientNumber"]),
-                    ("6200", order["localGdtOrderNumber"]),
-                    ("8410", order["localGdtOrderNumber"]),
-                    ("6220", "Imported from bridge file"),
-                    ("6302", "report"),
-                    ("6303", "PDF"),
-                    ("6304", "Bridge PDF"),
-                    ("6305", "reports/missing.pdf"),
-                ],
-                set_type="6310",
-            ).encode("cp1252"),
-        )
+        inbound = self.write_gdt_result_file(order)
 
         inbox = self.client.get("/api/gdt/bridge/inbox")
         self.assertEqual(inbox.status_code, 200)
@@ -366,6 +400,160 @@ class HealthcareLabApiTests(unittest.TestCase):
             if item["reference"] == "reports/missing.pdf"
         ]
         self.assertEqual(warning_artifacts[0]["status"], "warning")
+
+    def test_gdt_bridge_batch_import_delete_mode_removes_successful_exchange_file(self):
+        patient = self.create_local_patient()
+        order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        inbound = self.write_gdt_result_file(order, "delete-result.gdt")
+        self.client.application.config["GDT_BRIDGE_IMPORT_SUCCESS_MODE"] = "delete"
+
+        imported = self.client.post("/api/gdt/bridge/import", json={"filename": inbound.name})
+
+        self.assertEqual(imported.status_code, 201)
+        self.assertFalse(inbound.exists())
+        self.assertFalse((inbound.parents[1] / "archive" / inbound.name).exists())
+        self.assertEqual(imported.get_json()["result"]["imported"][0]["status"], "deleted")
+
+    def test_gdt_bridge_batch_import_reports_disposition_warning_after_successful_persistence(self):
+        patient = self.create_local_patient()
+        order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        inbound = self.write_gdt_result_file(order, "cleanup-warning.gdt")
+        original_replace = Path.replace
+
+        def replace_with_archive_failure(path, target):
+            if Path(target).parent.name == "archive" and Path(target).name == inbound.name:
+                raise OSError("archive unavailable")
+            return original_replace(path, target)
+
+        with patch.object(Path, "replace", replace_with_archive_failure):
+            result = import_gdt_bridge_files(
+                self.client.application.extensions["demo_store"],
+                self.client.application.config["GDT_BRIDGE_PATH"],
+                stable_seconds=0,
+            )
+
+        self.assertEqual(result["failures"], [])
+        self.assertEqual(result["imported"][0]["status"], "imported-warning")
+        self.assertIn("archive unavailable", result["imported"][0]["dispositionError"])
+        self.assertTrue(Path(result["imported"][0]["path"]).exists())
+        messages = self.client.get("/api/gdt/messages").get_json()["items"]
+        self.assertTrue(any(message["messageType"] == "6310" for message in messages))
+
+    def test_gdt_bridge_batch_import_skips_temp_files_and_moves_parse_failures_to_error(self):
+        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
+        inbound_dir = bridge_root / "inbound"
+        inbound_dir.mkdir(parents=True, exist_ok=True)
+        (inbound_dir / "partial.gdt.tmp").write_text("not ready", encoding="utf-8")
+        bad_file = inbound_dir / "bad-result.gdt"
+        bad_file.write_text("8000|NOT-GDT\n", encoding="utf-8")
+
+        result = import_gdt_bridge_files(
+            self.client.application.extensions["demo_store"],
+            bridge_root,
+            stable_seconds=0,
+        )
+
+        self.assertEqual(len(result["failures"]), 1)
+        self.assertEqual(result["failures"][0]["name"], "bad-result.gdt")
+        self.assertTrue((bridge_root / "error" / "bad-result.gdt").exists())
+        self.assertTrue((inbound_dir / "partial.gdt.tmp").exists())
+        self.assertTrue(any(item["name"] == "partial.gdt.tmp" for item in result["skipped"]))
+
+    def test_gdt_bridge_batch_import_applies_gdt35_filename_binding(self):
+        patient = self.create_local_patient()
+        order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        rejected = self.write_gdt_result_file(order, "OTHER_GER_0001.GDT", text="Wrong receiver")
+        accepted = self.write_gdt_result_file(order, "AIS_GER_0002.GDT", text="Right receiver")
+
+        result = import_gdt_bridge_files(
+            self.client.application.extensions["demo_store"],
+            self.client.application.config["GDT_BRIDGE_PATH"],
+            filename_profile="gdt35",
+            receiver_id="AIS",
+            sender_id="GER",
+            stable_seconds=0,
+        )
+
+        self.assertEqual([item["name"] for item in result["imported"]], [accepted.name])
+        self.assertTrue(rejected.exists())
+        self.assertTrue(any(item["name"] == rejected.name for item in result["skipped"]))
+
+    def test_gdt_bridge_inbox_lists_gdt21_sequence_extension_files(self):
+        patient = self.create_local_patient()
+        order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        inbound = self.write_gdt_result_file(order, "EDV1EKG1.001")
+        self.client.application.config["GDT_BRIDGE_FILENAME_PROFILE"] = "gdt21"
+        self.client.application.config["GDT_BRIDGE_RECEIVER_ID"] = "EDV1"
+        self.client.application.config["GDT_BRIDGE_SENDER_ID"] = "EKG1"
+
+        inbox = self.client.get("/api/gdt/bridge/inbox")
+
+        self.assertEqual(inbox.status_code, 200)
+        self.assertIn(inbound.name, [item["name"] for item in inbox.get_json()["items"]])
+
+    def test_gdt_bridge_batch_import_requires_stable_observation_before_processing(self):
+        patient = self.create_local_patient()
+        order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        inbound = self.write_gdt_result_file(order, "stable-result.gdt")
+        observations = {}
+
+        first = import_gdt_bridge_files(
+            self.client.application.extensions["demo_store"],
+            self.client.application.config["GDT_BRIDGE_PATH"],
+            require_stable=True,
+            stable_seconds=0,
+            observations=observations,
+        )
+        self.assertEqual(first["imported"], [])
+        self.assertTrue(inbound.exists())
+
+        second = import_gdt_bridge_files(
+            self.client.application.extensions["demo_store"],
+            self.client.application.config["GDT_BRIDGE_PATH"],
+            require_stable=True,
+            stable_seconds=0,
+            observations=observations,
+        )
+
+        self.assertEqual([item["name"] for item in second["imported"]], [inbound.name])
+
+    def test_gdt_bridge_batch_import_uses_fifo_candidate_order(self):
+        patient = self.create_local_patient()
+        first_order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        second_order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        first = self.write_gdt_result_file(first_order, "a-first.gdt", text="First")
+        time.sleep(0.02)
+        second = self.write_gdt_result_file(second_order, "b-second.gdt", text="Second")
+        old = time.time() - 10
+        os.utime(first, (old, old))
+        os.utime(second, (old + 5, old + 5))
+
+        result = import_gdt_bridge_files(
+            self.client.application.extensions["demo_store"],
+            self.client.application.config["GDT_BRIDGE_PATH"],
+            stable_seconds=0,
+        )
+
+        self.assertEqual([item["name"] for item in result["imported"]], [first.name, second.name])
+
+    def test_gdt_bridge_watcher_api_lifecycle_and_path_change_guard(self):
+        started = self.client.post("/api/gdt/bridge/watcher/start", json={})
+        self.assertEqual(started.status_code, 200)
+        self.assertTrue(started.get_json()["item"]["running"])
+
+        blocked = self.client.put(
+            "/api/gdt/bridge/config",
+            json={"bridgePath": str(Path(self.temp_dir.name) / "blocked-gdt-bridge")},
+        )
+        self.assertEqual(blocked.status_code, 409)
+
+        status = self.client.get("/api/gdt/bridge/watcher/status")
+        self.assertEqual(status.status_code, 200)
+        self.assertTrue(status.get_json()["item"]["running"])
+
+        stopped = self.client.post("/api/gdt/bridge/watcher/stop", json={})
+        self.assertEqual(stopped.status_code, 200)
+        self.assertFalse(stopped.get_json()["item"]["running"])
 
     def test_gdt_order_api_rejects_non_mvp_test_codes(self):
         patient = self.create_local_patient()
