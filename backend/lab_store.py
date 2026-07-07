@@ -2022,7 +2022,11 @@ class DemoStore:
                     """
                     SELECT * FROM local_gdt_workflow_events
                     WHERE order_record_id = ?
-                       OR (? IS NOT NULL AND patient_context_id = ?)
+                       OR (
+                         ? IS NOT NULL
+                         AND patient_context_id = ?
+                         AND order_record_id IS NULL
+                       )
                     ORDER BY created_at ASC, id ASC
                     """,
                     (order_record_id, patient_context_id, patient_context_id),
@@ -2102,16 +2106,6 @@ class DemoStore:
                     LIMIT 1
                     """,
                     order_identifiers,
-                ).fetchone()
-            if not order_row and gdt_patient_number:
-                order_row = connection.execute(
-                    """
-                    SELECT * FROM local_gdt_order_records
-                    WHERE gdt_patient_number = ?
-                    ORDER BY id DESC
-                    LIMIT 1
-                    """,
-                    (gdt_patient_number,),
                 ).fetchone()
             patient_context_id = order_row["gdt_patient_context_id"] if order_row else None
             if not patient_context_id and gdt_patient_number:
