@@ -75,6 +75,88 @@ LAB_SERVER_TYPES = (
 LAB_SERVER_PROTOCOLS = ("HTTP", "TCP", "MLLP", "FHIR", "GDT", "DICOM", "None")
 LAB_HEALTH_STATUSES = ("Healthy", "Degraded", "Down", "Unknown")
 LAB_OPERATION_ACTIONS = ("status", "start", "stop", "restart", "smoke", "logs")
+FHIR_SYNC_STATUS_PENDING = "Pending sync"
+FHIR_SYNC_STATUS_SYNCING = "Syncing"
+FHIR_SYNC_STATUS_SYNCED = "Synced"
+FHIR_SYNC_STATUS_FAILED = "Sync failed"
+FHIR_SYNC_STATUSES = (
+    FHIR_SYNC_STATUS_PENDING,
+    FHIR_SYNC_STATUS_SYNCING,
+    FHIR_SYNC_STATUS_SYNCED,
+    FHIR_SYNC_STATUS_FAILED,
+)
+FHIR_SUPPORTED_RESOURCE_TYPES = (
+    "Patient",
+    "ServiceRequest",
+    "Task",
+    "Binary",
+    "Observation",
+    "DocumentReference",
+    "DiagnosticReport",
+    "Provenance",
+)
+FHIR_RESOURCE_DEPENDENCY_ORDER = {
+    "Patient": 10,
+    "ServiceRequest": 20,
+    "Task": 30,
+    "Binary": 40,
+    "Observation": 50,
+    "DocumentReference": 60,
+    "DiagnosticReport": 70,
+    "Provenance": 80,
+}
+FHIR_IDENTIFIER_SYSTEMS = {
+    "Patient": "https://healthcare-lab.local/fhir/identifier/patient",
+    "ServiceRequest": "https://healthcare-lab.local/fhir/identifier/service-request",
+    "Task": "https://healthcare-lab.local/fhir/identifier/task",
+    "Binary": "https://healthcare-lab.local/fhir/identifier/binary",
+    "Observation": "https://healthcare-lab.local/fhir/identifier/observation",
+    "DocumentReference": "https://healthcare-lab.local/fhir/identifier/document-reference",
+    "DiagnosticReport": "https://healthcare-lab.local/fhir/identifier/diagnostic-report",
+    "Provenance": "https://healthcare-lab.local/fhir/identifier/provenance",
+}
+FHIR_RESOURCE_MAPPINGS = {
+    "Patient": {
+        "local_source_type": "local_patient_records",
+        "depends_on": (),
+    },
+    "ServiceRequest": {
+        "local_source_type": "local_order_records",
+        "depends_on": ("Patient",),
+    },
+    "Task": {
+        "local_source_type": "local_order_records",
+        "depends_on": ("Patient", "ServiceRequest"),
+    },
+    "Binary": {
+        "local_source_type": "local_fhir_artifacts",
+        "depends_on": (),
+    },
+    "Observation": {
+        "local_source_type": "local_fhir_results",
+        "depends_on": ("Patient", "ServiceRequest"),
+    },
+    "DocumentReference": {
+        "local_source_type": "local_fhir_artifacts",
+        "depends_on": ("Patient", "ServiceRequest", "Binary"),
+    },
+    "DiagnosticReport": {
+        "local_source_type": "local_fhir_results",
+        "depends_on": ("Patient", "ServiceRequest", "Observation", "DocumentReference"),
+    },
+    "Provenance": {
+        "local_source_type": "local_fhir_provenance",
+        "depends_on": (
+            "Patient",
+            "ServiceRequest",
+            "Task",
+            "Binary",
+            "Observation",
+            "DocumentReference",
+            "DiagnosticReport",
+        ),
+    },
+}
 
 DEFAULT_LAB_SERVERS = (
     {
@@ -811,9 +893,50 @@ class DemoStore:
                     FOREIGN KEY(message_record_id) REFERENCES local_gdt_message_records(id) ON DELETE SET NULL,
                     FOREIGN KEY(attachment_record_id) REFERENCES local_gdt_attachment_records(id) ON DELETE SET NULL
                 );
+                CREATE TABLE IF NOT EXISTS local_fhir_workflow_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    local_fhir_record_number TEXT NOT NULL UNIQUE,
+                    local_source_type TEXT NOT NULL,
+                    local_source_id TEXT NOT NULL,
+                    resource_type TEXT NOT NULL,
+                    identifier_system TEXT NOT NULL,
+                    identifier_value TEXT NOT NULL,
+                    resource_json TEXT NOT NULL,
+                    dependency_json TEXT NOT NULL DEFAULT '[]',
+                    medplum_resource_id TEXT NOT NULL DEFAULT '',
+                    medplum_resource_reference TEXT NOT NULL DEFAULT '',
+                    sync_status TEXT NOT NULL,
+                    sync_error TEXT NOT NULL DEFAULT '',
+                    operation_outcome_json TEXT NOT NULL DEFAULT '{}',
+                    last_sync_at TEXT NOT NULL DEFAULT '',
+                    sync_started_at TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS local_fhir_sync_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    fhir_record_id INTEGER NOT NULL,
+                    method TEXT NOT NULL,
+                    request_url TEXT NOT NULL,
+                    request_payload_json TEXT NOT NULL DEFAULT '{}',
+                    http_status INTEGER,
+                    response_payload_json TEXT NOT NULL DEFAULT '{}',
+                    operation_outcome_json TEXT NOT NULL DEFAULT '{}',
+                    error_text TEXT NOT NULL DEFAULT '',
+                    attempted_at TEXT NOT NULL,
+                    FOREIGN KEY(fhir_record_id) REFERENCES local_fhir_workflow_records(id) ON DELETE CASCADE
+                );
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_oie_result_control_id
                 ON oie_result_records(message_control_id)
                 WHERE message_control_id != '';
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_fhir_record_identifier
+                ON local_fhir_workflow_records(resource_type, identifier_system, identifier_value);
+                CREATE INDEX IF NOT EXISTS idx_fhir_record_source
+                ON local_fhir_workflow_records(local_source_type, local_source_id);
+                CREATE INDEX IF NOT EXISTS idx_fhir_record_sync_status
+                ON local_fhir_workflow_records(sync_status);
+                CREATE INDEX IF NOT EXISTS idx_fhir_attempt_record
+                ON local_fhir_sync_attempts(fhir_record_id, attempted_at);
                 """
             )
             self._ensure_column(connection, "lab_servers", "control_type", "TEXT NOT NULL DEFAULT ''")
@@ -879,6 +1002,18 @@ class DemoStore:
                 "local_gdt_attachment_records",
                 "details_json",
                 "TEXT NOT NULL DEFAULT '{}'",
+            )
+            self._ensure_column(
+                connection,
+                "local_fhir_workflow_records",
+                "dependency_json",
+                "TEXT NOT NULL DEFAULT '[]'",
+            )
+            self._ensure_column(
+                connection,
+                "local_fhir_workflow_records",
+                "sync_started_at",
+                "TEXT NOT NULL DEFAULT ''",
             )
             self._seed_lab_servers(connection)
 
@@ -2258,6 +2393,7 @@ class DemoStore:
         raw_gdt_text = str(
             payload.get("rawGdtText", payload.get("payload", payload.get("raw", ""))) or ""
         )
+        source_file = str(payload.get("sourceFile") or payload.get("source_file") or "").strip()
         try:
             adapter_result = parse_gdt_6310_result(raw_gdt_text)
         except GdtValidationError as exc:
@@ -2606,6 +2742,480 @@ class DemoStore:
             return json.loads(value or "")
         except (TypeError, ValueError):
             return fallback
+
+    @staticmethod
+    def _fhir_record_number(record_id: int) -> str:
+        return f"FHIR-{record_id:06d}"
+
+    @staticmethod
+    def _fhir_clean_text(value: Any, field_name: str, required: bool = False) -> str:
+        text = str(value or "").strip()
+        if required and not text:
+            raise SimulatorValidationError(f"FHIR {field_name} is required.")
+        return text
+
+    @staticmethod
+    def _fhir_identifier_token(value: Any) -> str:
+        text = str(value if value is not None else "").strip().lower()
+        cleaned = []
+        previous_dash = False
+        for character in text:
+            if character.isalnum():
+                cleaned.append(character)
+                previous_dash = False
+            elif not previous_dash:
+                cleaned.append("-")
+                previous_dash = True
+        return "".join(cleaned).strip("-") or "record"
+
+    @classmethod
+    def fhir_mapping_for_resource_type(cls, resource_type: str) -> dict[str, Any]:
+        normalized = cls._fhir_clean_text(resource_type, "resourceType", required=True)
+        if normalized not in FHIR_SUPPORTED_RESOURCE_TYPES:
+            raise SimulatorValidationError(
+                f"FHIR resourceType must be one of: {', '.join(FHIR_SUPPORTED_RESOURCE_TYPES)}."
+            )
+        mapping = FHIR_RESOURCE_MAPPINGS[normalized]
+        return {
+            "resourceType": normalized,
+            "localSourceType": mapping["local_source_type"],
+            "identifierSystem": FHIR_IDENTIFIER_SYSTEMS[normalized],
+            "identifierPath": "identifier",
+            "dependsOn": list(mapping["depends_on"]),
+            "dependencyOrder": FHIR_RESOURCE_DEPENDENCY_ORDER[normalized],
+        }
+
+    @classmethod
+    def list_fhir_resource_mappings(cls) -> list[dict[str, Any]]:
+        return [
+            cls.fhir_mapping_for_resource_type(resource_type)
+            for resource_type in FHIR_SUPPORTED_RESOURCE_TYPES
+        ]
+
+    @classmethod
+    def fhir_identifier_value(
+        cls,
+        resource_type: str,
+        local_source_type: str,
+        local_source_id: Any,
+    ) -> str:
+        mapping = cls.fhir_mapping_for_resource_type(resource_type)
+        source_type = cls._fhir_identifier_token(local_source_type or mapping["localSourceType"])
+        source_id = cls._fhir_identifier_token(local_source_id)
+        return f"{source_type}-{source_id}"
+
+    @classmethod
+    def _fhir_resource_with_identifier(
+        cls,
+        resource: dict[str, Any],
+        *,
+        resource_type: str,
+        identifier_system: str,
+        identifier_value: str,
+    ) -> dict[str, Any]:
+        if not isinstance(resource, dict):
+            raise SimulatorValidationError("FHIR resource must be a JSON object.")
+        normalized = dict(resource)
+        normalized["resourceType"] = resource_type
+        identifiers = normalized.get("identifier")
+        if not isinstance(identifiers, list):
+            identifiers = []
+        else:
+            identifiers = [item for item in identifiers if isinstance(item, dict)]
+        if not any(
+            item.get("system") == identifier_system and item.get("value") == identifier_value
+            for item in identifiers
+        ):
+            identifiers.insert(0, {"system": identifier_system, "value": identifier_value})
+        normalized["identifier"] = identifiers
+        return normalized
+
+    def _validate_fhir_record_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise SimulatorValidationError("FHIR workflow payload must be a JSON object.")
+        raw_resource = payload.get("resource") or payload.get("resourceJson") or {}
+        if isinstance(raw_resource, str):
+            try:
+                raw_resource = json.loads(raw_resource)
+            except json.JSONDecodeError as exc:
+                raise SimulatorValidationError("FHIR resource JSON is invalid.") from exc
+        if not isinstance(raw_resource, dict):
+            raise SimulatorValidationError("FHIR resource must be a JSON object.")
+        resource_type = self._fhir_clean_text(
+            payload.get("resourceType") or raw_resource.get("resourceType"),
+            "resourceType",
+            required=True,
+        )
+        mapping = self.fhir_mapping_for_resource_type(resource_type)
+        local_source_type = self._fhir_clean_text(
+            payload.get("localSourceType") or mapping["localSourceType"],
+            "localSourceType",
+            required=True,
+        )
+        local_source_id = self._fhir_clean_text(
+            payload.get("localSourceId"),
+            "localSourceId",
+            required=True,
+        )
+        identifier_system = self._fhir_clean_text(
+            payload.get("identifierSystem") or mapping["identifierSystem"],
+            "identifierSystem",
+            required=True,
+        )
+        identifier_value = self._fhir_clean_text(
+            payload.get("identifierValue")
+            or self.fhir_identifier_value(resource_type, local_source_type, local_source_id),
+            "identifierValue",
+            required=True,
+        )
+        dependencies = payload.get("dependencies", payload.get("dependsOn", mapping["dependsOn"]))
+        if not isinstance(dependencies, list | tuple):
+            raise SimulatorValidationError("FHIR dependencies must be a list.")
+        resource = self._fhir_resource_with_identifier(
+            raw_resource,
+            resource_type=resource_type,
+            identifier_system=identifier_system,
+            identifier_value=identifier_value,
+        )
+        return {
+            "local_source_type": local_source_type,
+            "local_source_id": local_source_id,
+            "resource_type": resource_type,
+            "identifier_system": identifier_system,
+            "identifier_value": identifier_value,
+            "resource_json": json.dumps(resource, sort_keys=True),
+            "dependency_json": json.dumps(list(dependencies)),
+        }
+
+    def create_fhir_workflow_record(self, payload: dict[str, Any]) -> dict[str, Any]:
+        values = self._validate_fhir_record_payload(payload)
+        timestamp = now_iso()
+        with self.lock, self.connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT * FROM local_fhir_workflow_records
+                WHERE resource_type = ? AND identifier_system = ? AND identifier_value = ?
+                """,
+                (
+                    values["resource_type"],
+                    values["identifier_system"],
+                    values["identifier_value"],
+                ),
+            ).fetchone()
+            if existing:
+                connection.execute(
+                    """
+                    UPDATE local_fhir_workflow_records
+                    SET local_source_type = ?, local_source_id = ?, resource_json = ?,
+                        dependency_json = ?, updated_at = ?,
+                        sync_status = CASE
+                            WHEN sync_status = ? THEN sync_status
+                            ELSE ?
+                        END
+                    WHERE id = ?
+                    """,
+                    (
+                        values["local_source_type"],
+                        values["local_source_id"],
+                        values["resource_json"],
+                        values["dependency_json"],
+                        timestamp,
+                        FHIR_SYNC_STATUS_SYNCED,
+                        FHIR_SYNC_STATUS_PENDING,
+                        existing["id"],
+                    ),
+                )
+                record_id = int(existing["id"])
+            else:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO local_fhir_workflow_records (
+                        local_fhir_record_number, local_source_type, local_source_id,
+                        resource_type, identifier_system, identifier_value, resource_json,
+                        dependency_json, sync_status, created_at, updated_at
+                    )
+                    VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        values["local_source_type"],
+                        values["local_source_id"],
+                        values["resource_type"],
+                        values["identifier_system"],
+                        values["identifier_value"],
+                        values["resource_json"],
+                        values["dependency_json"],
+                        FHIR_SYNC_STATUS_PENDING,
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+                record_id = int(cursor.lastrowid)
+                connection.execute(
+                    """
+                    UPDATE local_fhir_workflow_records
+                    SET local_fhir_record_number = ?
+                    WHERE id = ?
+                    """,
+                    (self._fhir_record_number(record_id), record_id),
+                )
+        return self.get_fhir_workflow_record(record_id)
+
+    def list_fhir_workflow_records(self, sync_status: str = "") -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            if sync_status:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_fhir_workflow_records
+                    WHERE sync_status = ?
+                    ORDER BY id DESC
+                    """,
+                    (sync_status,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_fhir_workflow_records
+                    ORDER BY id DESC
+                    """
+                ).fetchall()
+        return [self._fhir_workflow_record_dict(row) for row in rows]
+
+    def get_fhir_workflow_record(self, record_id: int) -> dict[str, Any]:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM local_fhir_workflow_records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(record_id)
+        return self._fhir_workflow_record_dict(row)
+
+    def get_fhir_workflow_record_by_identifier(
+        self,
+        *,
+        resource_type: str,
+        identifier_system: str,
+        identifier_value: str,
+    ) -> dict[str, Any]:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM local_fhir_workflow_records
+                WHERE resource_type = ? AND identifier_system = ? AND identifier_value = ?
+                """,
+                (resource_type, identifier_system, identifier_value),
+            ).fetchone()
+            if not row:
+                raise KeyError(identifier_value)
+        return self._fhir_workflow_record_dict(row)
+
+    def mark_fhir_syncing(self, record_id: int) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self.lock, self.connect() as connection:
+            row = connection.execute(
+                "SELECT id FROM local_fhir_workflow_records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(record_id)
+            connection.execute(
+                """
+                UPDATE local_fhir_workflow_records
+                SET sync_status = ?, sync_started_at = ?, sync_error = '',
+                    operation_outcome_json = '{}', updated_at = ?
+                WHERE id = ?
+                """,
+                (FHIR_SYNC_STATUS_SYNCING, timestamp, timestamp, record_id),
+            )
+        return self.get_fhir_workflow_record(record_id)
+
+    def mark_fhir_sync_success(
+        self,
+        record_id: int,
+        *,
+        medplum_resource_id: str,
+        medplum_resource_reference: str = "",
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        resource_id = self._fhir_clean_text(medplum_resource_id, "medplumResourceId", required=True)
+        with self.lock, self.connect() as connection:
+            row = connection.execute(
+                "SELECT resource_type FROM local_fhir_workflow_records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(record_id)
+            reference = (
+                medplum_resource_reference.strip()
+                if medplum_resource_reference
+                else f"{row['resource_type']}/{resource_id}"
+            )
+            connection.execute(
+                """
+                UPDATE local_fhir_workflow_records
+                SET medplum_resource_id = ?, medplum_resource_reference = ?,
+                    sync_status = ?, sync_error = '', operation_outcome_json = '{}',
+                    last_sync_at = ?, sync_started_at = '', updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    resource_id,
+                    reference,
+                    FHIR_SYNC_STATUS_SYNCED,
+                    timestamp,
+                    timestamp,
+                    record_id,
+                ),
+            )
+        return self.get_fhir_workflow_record(record_id)
+
+    def mark_fhir_sync_failure(
+        self,
+        record_id: int,
+        *,
+        error_text: str,
+        operation_outcome: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self.lock, self.connect() as connection:
+            row = connection.execute(
+                "SELECT id FROM local_fhir_workflow_records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(record_id)
+            connection.execute(
+                """
+                UPDATE local_fhir_workflow_records
+                SET sync_status = ?, sync_error = ?, operation_outcome_json = ?,
+                    sync_started_at = '', updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    FHIR_SYNC_STATUS_FAILED,
+                    str(error_text or "").strip(),
+                    json.dumps(operation_outcome or {}, sort_keys=True),
+                    timestamp,
+                    record_id,
+                ),
+            )
+        return self.get_fhir_workflow_record(record_id)
+
+    def record_fhir_sync_attempt(
+        self,
+        record_id: int,
+        *,
+        method: str,
+        request_url: str,
+        request_payload: dict[str, Any] | None = None,
+        http_status: int | None = None,
+        response_payload: dict[str, Any] | None = None,
+        operation_outcome: dict[str, Any] | None = None,
+        error_text: str = "",
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self.lock, self.connect() as connection:
+            row = connection.execute(
+                "SELECT id FROM local_fhir_workflow_records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(record_id)
+            cursor = connection.execute(
+                """
+                INSERT INTO local_fhir_sync_attempts (
+                    fhir_record_id, method, request_url, request_payload_json,
+                    http_status, response_payload_json, operation_outcome_json,
+                    error_text, attempted_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record_id,
+                    method.strip().upper(),
+                    request_url.strip(),
+                    json.dumps(request_payload or {}, sort_keys=True),
+                    http_status,
+                    json.dumps(response_payload or {}, sort_keys=True),
+                    json.dumps(operation_outcome or {}, sort_keys=True),
+                    str(error_text or "").strip(),
+                    timestamp,
+                ),
+            )
+            attempt_id = int(cursor.lastrowid)
+            attempt_row = connection.execute(
+                "SELECT * FROM local_fhir_sync_attempts WHERE id = ?",
+                (attempt_id,),
+            ).fetchone()
+        return self._fhir_sync_attempt_dict(attempt_row)
+
+    def list_fhir_sync_attempts(self, record_id: int) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM local_fhir_sync_attempts
+                WHERE fhir_record_id = ?
+                ORDER BY id DESC
+                """,
+                (record_id,),
+            ).fetchall()
+        return [self._fhir_sync_attempt_dict(row) for row in rows]
+
+    def ordered_fhir_workflow_records(self, record_ids: list[int]) -> list[dict[str, Any]]:
+        records = [self.get_fhir_workflow_record(record_id) for record_id in record_ids]
+        return sorted(
+            records,
+            key=lambda item: (
+                FHIR_RESOURCE_DEPENDENCY_ORDER.get(item["resourceType"], 999),
+                int(item["id"]),
+            ),
+        )
+
+    def _fhir_workflow_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        resource = self._json_value(row["resource_json"], {})
+        operation_outcome = self._json_value(row["operation_outcome_json"], {})
+        return {
+            "id": row["id"],
+            "localFhirRecordNumber": row["local_fhir_record_number"],
+            "localSourceType": row["local_source_type"],
+            "localSourceId": row["local_source_id"],
+            "resourceType": row["resource_type"],
+            "identifier": {
+                "system": row["identifier_system"],
+                "value": row["identifier_value"],
+            },
+            "resource": resource,
+            "dependencies": self._json_value(row["dependency_json"], []),
+            "mapping": self.fhir_mapping_for_resource_type(row["resource_type"]),
+            "medplum": {
+                "id": row["medplum_resource_id"],
+                "reference": row["medplum_resource_reference"],
+            },
+            "sync": {
+                "status": row["sync_status"],
+                "error": row["sync_error"],
+                "operationOutcome": operation_outcome,
+                "lastSyncAt": row["last_sync_at"],
+                "syncStartedAt": row["sync_started_at"],
+            },
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+            "localOnly": row["sync_status"] != FHIR_SYNC_STATUS_SYNCED,
+        }
+
+    def _fhir_sync_attempt_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "fhirRecordId": row["fhir_record_id"],
+            "method": row["method"],
+            "requestUrl": row["request_url"],
+            "requestPayload": self._json_value(row["request_payload_json"], {}),
+            "httpStatus": row["http_status"],
+            "responsePayload": self._json_value(row["response_payload_json"], {}),
+            "operationOutcome": self._json_value(row["operation_outcome_json"], {}),
+            "error": row["error_text"],
+            "attemptedAt": row["attempted_at"],
+        }
 
     def _gdt_order_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         summary_name = " ".join(

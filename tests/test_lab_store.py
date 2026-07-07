@@ -197,6 +197,142 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertIn("(0010,0010) PatientName", dicom["payload"])
         self.assertIn("Morgan^Avery^Lee", dicom["payload"])
 
+    def test_fhir_workflow_record_persists_status_identifier_and_resource(self):
+        item = self.store.create_fhir_workflow_record(
+            {
+                "localSourceType": "local_patient_records",
+                "localSourceId": "1",
+                "resource": {
+                    "resourceType": "Patient",
+                    "name": [{"text": "Avery Morgan"}],
+                },
+            }
+        )
+
+        self.assertEqual(item["localFhirRecordNumber"], "FHIR-000001")
+        self.assertEqual(item["resourceType"], "Patient")
+        self.assertEqual(item["sync"]["status"], "Pending sync")
+        self.assertEqual(
+            item["identifier"]["system"],
+            "https://healthcare-lab.local/fhir/identifier/patient",
+        )
+        self.assertEqual(item["identifier"]["value"], "local-patient-records-1")
+        self.assertEqual(
+            item["resource"]["identifier"][0],
+            {
+                "system": "https://healthcare-lab.local/fhir/identifier/patient",
+                "value": "local-patient-records-1",
+            },
+        )
+        self.assertEqual(self.store.list_fhir_workflow_records()[0]["id"], item["id"])
+
+        duplicate = self.store.create_fhir_workflow_record(
+            {
+                "localSourceType": "local_patient_records",
+                "localSourceId": "1",
+                "resource": {
+                    "resourceType": "Patient",
+                    "active": True,
+                },
+            }
+        )
+        self.assertEqual(duplicate["id"], item["id"])
+        self.assertTrue(duplicate["resource"]["active"])
+        self.assertEqual(len(self.store.list_fhir_workflow_records()), 1)
+
+    def test_fhir_workflow_mapping_metadata_covers_supported_resources(self):
+        mappings = {
+            item["resourceType"]: item
+            for item in self.store.list_fhir_resource_mappings()
+        }
+
+        self.assertEqual(
+            set(mappings),
+            {
+                "Patient",
+                "ServiceRequest",
+                "Task",
+                "Binary",
+                "Observation",
+                "DocumentReference",
+                "DiagnosticReport",
+                "Provenance",
+            },
+        )
+        self.assertEqual(mappings["Patient"]["dependsOn"], [])
+        self.assertIn("Patient", mappings["ServiceRequest"]["dependsOn"])
+        self.assertIn("DocumentReference", mappings["DiagnosticReport"]["dependsOn"])
+        self.assertIn("DiagnosticReport", mappings["Provenance"]["dependsOn"])
+
+    def test_fhir_sync_attempts_and_failure_details_are_preserved(self):
+        item = self.store.create_fhir_workflow_record(
+            {
+                "localSourceType": "local_order_records",
+                "localSourceId": "42",
+                "resource": {
+                    "resourceType": "ServiceRequest",
+                    "status": "active",
+                    "intent": "order",
+                },
+            }
+        )
+        outcome = {
+            "resourceType": "OperationOutcome",
+            "issue": [{"severity": "error", "diagnostics": "subject missing"}],
+        }
+
+        syncing = self.store.mark_fhir_syncing(item["id"])
+        self.assertEqual(syncing["sync"]["status"], "Syncing")
+        attempt = self.store.record_fhir_sync_attempt(
+            item["id"],
+            method="POST",
+            request_url="http://medplum/fhir/R4/ServiceRequest",
+            request_payload=item["resource"],
+            http_status=400,
+            response_payload=outcome,
+            operation_outcome=outcome,
+            error_text="Medplum returned HTTP 400",
+        )
+        failed = self.store.mark_fhir_sync_failure(
+            item["id"],
+            error_text="Medplum returned HTTP 400",
+            operation_outcome=outcome,
+        )
+
+        self.assertEqual(attempt["httpStatus"], 400)
+        self.assertEqual(attempt["operationOutcome"], outcome)
+        self.assertEqual(failed["sync"]["status"], "Sync failed")
+        self.assertEqual(failed["sync"]["operationOutcome"], outcome)
+        self.assertIn("HTTP 400", failed["sync"]["error"])
+        self.assertEqual(self.store.list_fhir_sync_attempts(item["id"])[0]["id"], attempt["id"])
+
+    def test_fhir_sync_success_preserves_medplum_reference_and_ordering(self):
+        patient = self.store.create_fhir_workflow_record(
+            {
+                "localSourceType": "local_patient_records",
+                "localSourceId": "1",
+                "resource": {"resourceType": "Patient"},
+            }
+        )
+        report = self.store.create_fhir_workflow_record(
+            {
+                "localSourceType": "local_fhir_results",
+                "localSourceId": "99",
+                "resource": {"resourceType": "DiagnosticReport", "status": "final"},
+            }
+        )
+
+        synced = self.store.mark_fhir_sync_success(
+            patient["id"],
+            medplum_resource_id="patient-medplum-id",
+        )
+        ordered = self.store.ordered_fhir_workflow_records([report["id"], patient["id"]])
+
+        self.assertEqual(synced["sync"]["status"], "Synced")
+        self.assertEqual(synced["medplum"]["id"], "patient-medplum-id")
+        self.assertEqual(synced["medplum"]["reference"], "Patient/patient-medplum-id")
+        self.assertEqual([item["resourceType"] for item in ordered], ["Patient", "DiagnosticReport"])
+
     def test_gdt_order_creation_persists_fixed_ekg01_order(self):
         patient = self.store.create_patient_record(
             {
@@ -307,7 +443,9 @@ class HealthcareLabStoreTests(unittest.TestCase):
             set_type="6310",
         )
 
-        result = self.store.record_gdt_result({"rawGdtText": result_payload})
+        result = self.store.record_gdt_result(
+            {"rawGdtText": result_payload, "sourceFile": "device-result.gdt"}
+        )
 
         self.assertEqual(result["messageType"], "6310")
         self.assertEqual(result["matchStatus"], "order-matched")
@@ -323,8 +461,9 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(updated_order["status"], "Result received")
         by_role = {attachment["role"]: attachment for attachment in updated_order["attachments"]}
         self.assertEqual(by_role["report"]["reference"], "reports/ecg-result.pdf")
-        self.assertEqual(by_role["dicom"]["contentType"], "DICOM")
-        self.assertEqual(by_role["dicom"]["status"], "warning")
+        self.assertEqual(by_role["report"]["sourceFile"], "device-result.gdt")
+        self.assertEqual(by_role["waveform"]["contentType"], "application/xml")
+        self.assertEqual(by_role["waveform"]["path"], "reports/ecg-waveform.xml")
         event_types = {event["eventType"] for event in updated_order["events"]}
         self.assertIn("result-imported", event_types)
         self.assertIn("result-matched", event_types)
