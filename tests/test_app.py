@@ -411,6 +411,31 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertFalse((inbound.parents[1] / "archive" / inbound.name).exists())
         self.assertEqual(imported.get_json()["result"]["imported"][0]["status"], "deleted")
 
+    def test_gdt_bridge_batch_import_reports_disposition_warning_after_successful_persistence(self):
+        patient = self.create_local_patient()
+        order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        inbound = self.write_gdt_result_file(order, "cleanup-warning.gdt")
+        original_replace = Path.replace
+
+        def replace_with_archive_failure(path, target):
+            if Path(target).parent.name == "archive" and Path(target).name == inbound.name:
+                raise OSError("archive unavailable")
+            return original_replace(path, target)
+
+        with patch.object(Path, "replace", replace_with_archive_failure):
+            result = import_gdt_bridge_files(
+                self.client.application.extensions["demo_store"],
+                self.client.application.config["GDT_BRIDGE_PATH"],
+                stable_seconds=0,
+            )
+
+        self.assertEqual(result["failures"], [])
+        self.assertEqual(result["imported"][0]["status"], "imported-warning")
+        self.assertIn("archive unavailable", result["imported"][0]["dispositionError"])
+        self.assertTrue(Path(result["imported"][0]["path"]).exists())
+        messages = self.client.get("/api/gdt/messages").get_json()["items"]
+        self.assertTrue(any(message["messageType"] == "6310" for message in messages))
+
     def test_gdt_bridge_batch_import_skips_temp_files_and_moves_parse_failures_to_error(self):
         bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
         inbound_dir = bridge_root / "inbound"
@@ -449,6 +474,19 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in result["imported"]], [accepted.name])
         self.assertTrue(rejected.exists())
         self.assertTrue(any(item["name"] == rejected.name for item in result["skipped"]))
+
+    def test_gdt_bridge_inbox_lists_gdt21_sequence_extension_files(self):
+        patient = self.create_local_patient()
+        order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        inbound = self.write_gdt_result_file(order, "EDV1EKG1.001")
+        self.client.application.config["GDT_BRIDGE_FILENAME_PROFILE"] = "gdt21"
+        self.client.application.config["GDT_BRIDGE_RECEIVER_ID"] = "EDV1"
+        self.client.application.config["GDT_BRIDGE_SENDER_ID"] = "EKG1"
+
+        inbox = self.client.get("/api/gdt/bridge/inbox")
+
+        self.assertEqual(inbox.status_code, 200)
+        self.assertIn(inbound.name, [item["name"] for item in inbox.get_json()["items"]])
 
     def test_gdt_bridge_batch_import_requires_stable_observation_before_processing(self):
         patient = self.create_local_patient()

@@ -871,7 +871,6 @@ def import_gdt_bridge_files(
         except OSError as exc:
             skipped.append(gdt_path_status(source_path, "skipped", f"claim failed: {exc}"))
             continue
-        target_path: Path | None = None
         try:
             raw_gdt_text = processing_path.read_bytes().decode("cp1252")
             item = store.record_gdt_result(
@@ -880,24 +879,6 @@ def import_gdt_bridge_files(
                     "bridgeRoot": str(directories["root"]),
                     "sourceFile": source_path.name,
                     "sourcePath": str(source_path),
-                }
-            )
-            if success_mode == "delete":
-                processing_path.unlink()
-                target_path = processing_path
-                final_status = "deleted"
-            else:
-                target_path = gdt_collision_safe_path(directories["archive"] / source_path.name)
-                processing_path.replace(target_path)
-                final_status = "imported"
-            imported.append(
-                {
-                    "item": item,
-                    "name": source_path.name,
-                    "sourcePath": str(source_path),
-                    "path": "" if success_mode == "delete" else str(target_path),
-                    "status": final_status,
-                    "successMode": success_mode,
                 }
             )
         except (SimulatorValidationError, UnicodeDecodeError, OSError) as exc:
@@ -915,6 +896,33 @@ def import_gdt_bridge_files(
                     "error": str(exc),
                 }
             )
+            continue
+        disposition_error = ""
+        target_path: Path | None = None
+        try:
+            if success_mode == "delete":
+                processing_path.unlink()
+                target_path = processing_path
+                final_status = "deleted"
+            else:
+                target_path = gdt_collision_safe_path(directories["archive"] / source_path.name)
+                processing_path.replace(target_path)
+                final_status = "imported"
+        except OSError as exc:
+            final_status = "imported-warning"
+            target_path = processing_path
+            disposition_error = str(exc)
+        imported_item = {
+            "item": item,
+            "name": source_path.name,
+            "sourcePath": str(source_path),
+            "path": "" if success_mode == "delete" and not disposition_error else str(target_path),
+            "status": final_status,
+            "successMode": success_mode,
+        }
+        if disposition_error:
+            imported_item["dispositionError"] = disposition_error
+        imported.append(imported_item)
     return {
         "imported": imported,
         "skipped": skipped,
@@ -1889,14 +1897,29 @@ def create_app(database_path: str | None = None) -> Flask:
 
     def list_gdt_bridge_inbox_items() -> list[dict[str, Any]]:
         bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
+        filename_profile = app.config["GDT_BRIDGE_FILENAME_PROFILE"]
         items = [
             gdt_bridge_file_item(path, "pending")
-            for path in sorted(bridge_dirs["inbound"].glob("*.gdt"))
-            if path.is_file()
+            for path in sorted(bridge_dirs["inbound"].iterdir())
+            if (
+                path.is_file()
+                and not gdt_is_internal_or_temp_file(path)
+                and gdt_has_supported_exchange_extension(path, profile=filename_profile)
+                and gdt_filename_binding_matches(
+                    path,
+                    profile=filename_profile,
+                    receiver_id=app.config["GDT_BRIDGE_RECEIVER_ID"],
+                    sender_id=app.config["GDT_BRIDGE_SENDER_ID"],
+                )
+            )
         ]
         for status, folder_name in (("imported", "archive"), ("error", "error")):
-            for path in sorted(bridge_dirs[folder_name].glob("*.gdt")):
-                if path.is_file():
+            for path in sorted(bridge_dirs[folder_name].iterdir()):
+                if (
+                    path.is_file()
+                    and not gdt_is_internal_or_temp_file(path)
+                    and gdt_has_supported_exchange_extension(path, profile=filename_profile)
+                ):
                     items.append(gdt_bridge_file_item(path, status))
         return items
 
