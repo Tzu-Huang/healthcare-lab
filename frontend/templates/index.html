@@ -29,6 +29,9 @@
         <button class="sidebar-link" type="button" data-nav-target="oie-view">
           <span class="nav-icon">OI</span>OIE
         </button>
+        <button class="sidebar-link" type="button" data-nav-target="gdt-view">
+          <span class="nav-icon">GD</span>GDT
+        </button>
         <button class="sidebar-link" type="button" disabled>
           <span class="nav-icon">MP</span>Medplum
         </button>
@@ -469,6 +472,119 @@
               <tbody id="oie-unmatched-result-list"></tbody>
             </table>
           </div>
+        </section>
+      </section>
+
+      <section id="gdt-view" class="app-view gdt-console" aria-label="GDT Console" hidden>
+        <div class="lab-console-header">
+          <div>
+            <p class="eyebrow">GDT</p>
+            <h2>Patient-Centered Console</h2>
+          </div>
+          <div class="lab-console-actions">
+            <button id="refresh-gdt-console" type="button">Refresh</button>
+            <span id="gdt-console-status" class="status neutral">Ready</span>
+          </div>
+        </div>
+
+        <section class="gdt-console-grid">
+          <div class="lab-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">GDT Patients</p>
+                <h2>Patients</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>MRN</th><th>GDT Patient</th><th>Name</th><th>Orders</th><th>Results</th></tr>
+                </thead>
+                <tbody id="gdt-patient-list"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="lab-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Selected Patient</p>
+                <h2 id="gdt-selected-patient-title">No patient selected</h2>
+              </div>
+            </div>
+            <div id="gdt-selected-patient-summary" class="record-detail compact-detail">
+              <p class="muted">Select a GDT patient.</p>
+            </div>
+            <div class="section-heading compact-heading oie-subsection-heading">
+              <div>
+                <p class="eyebrow">6302</p>
+                <h2>Orders</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Order</th><th>8402</th><th>Status</th><th>Requested</th><th>Result</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="gdt-order-list"></tbody>
+              </table>
+            </div>
+            <div class="section-heading compact-heading oie-subsection-heading">
+              <div>
+                <p class="eyebrow">6310</p>
+                <h2>Results</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Result</th><th>Match</th><th>Measurements</th><th>Artifacts</th><th>Received</th></tr>
+                </thead>
+                <tbody id="gdt-result-list"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="gdt-console-grid lower-grid">
+          <div class="lab-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Bridge Inbox</p>
+                <h2>Inbound .gdt Files</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>File</th><th>Status</th><th>Size</th><th>Updated</th><th>Action</th></tr>
+                </thead>
+                <tbody id="gdt-inbox-list"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="lab-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Artifacts</p>
+                <h2>References</h2>
+              </div>
+            </div>
+            <div id="gdt-artifact-list" class="artifact-reference-list"></div>
+          </div>
+        </section>
+
+        <section class="lab-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Preview / Detail</p>
+              <h2 id="gdt-detail-title">Raw Payload</h2>
+            </div>
+            <button id="copy-gdt-payload" type="button">Copy Payload</button>
+          </div>
+          <div id="gdt-detail-summary" class="record-detail compact-detail">
+            <p class="muted">Select an order, result, or artifact.</p>
+          </div>
+          <pre id="gdt-payload-preview" class="compact-output">Select a GDT row to inspect raw 6302 or 6310 content.</pre>
         </section>
       </section>
     </main>

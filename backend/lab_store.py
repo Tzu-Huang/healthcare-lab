@@ -782,7 +782,12 @@ class DemoStore:
                     role TEXT NOT NULL,
                     url TEXT NOT NULL DEFAULT '',
                     path TEXT NOT NULL DEFAULT '',
+                    reference TEXT NOT NULL DEFAULT '',
                     content_type TEXT NOT NULL DEFAULT '',
+                    description TEXT NOT NULL DEFAULT '',
+                    source_file TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT '',
+                    details_json TEXT NOT NULL DEFAULT '{}',
                     filename TEXT NOT NULL DEFAULT '',
                     checksum TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
@@ -842,6 +847,36 @@ class DemoStore:
                 connection,
                 "local_gdt_order_records",
                 "order_snapshot_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
+            self._ensure_column(
+                connection,
+                "local_gdt_attachment_records",
+                "reference",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "local_gdt_attachment_records",
+                "description",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "local_gdt_attachment_records",
+                "source_file",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "local_gdt_attachment_records",
+                "status",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "local_gdt_attachment_records",
+                "details_json",
                 "TEXT NOT NULL DEFAULT '{}'",
             )
             self._seed_lab_servers(connection)
@@ -1469,7 +1504,27 @@ class DemoStore:
     @staticmethod
     def _gdt_attachment_filename(url: str, path: str = "") -> str:
         source = path or url
-        return source.rstrip("/").split("/")[-1] if source else ""
+        return source.rstrip("/").replace("\\", "/").split("/")[-1] if source else ""
+
+    @staticmethod
+    def _is_url_reference(value: str) -> bool:
+        return value.lower().startswith(("http://", "https://"))
+
+    @staticmethod
+    def _gdt_artifact_status(reference: str, bridge_root: str = "") -> tuple[str, dict[str, Any]]:
+        normalized = str(reference or "").strip()
+        if not normalized:
+            return "missing-reference", {"warning": "Artifact reference is empty."}
+        if DemoStore._is_url_reference(normalized):
+            return "reference-only", {"kind": "url"}
+        reference_path = Path(normalized)
+        candidates = [reference_path]
+        if bridge_root and not reference_path.is_absolute():
+            root = Path(bridge_root)
+            candidates.extend([root / normalized, root / "reports" / normalized])
+        if any(candidate.exists() for candidate in candidates):
+            return "available", {"kind": "path"}
+        return "warning", {"warning": "Referenced artifact target was not found.", "reference": normalized}
 
     def _record_gdt_event(
         self,
@@ -1669,24 +1724,31 @@ class DemoStore:
         timestamp: str,
         url: str = "",
         path: str = "",
+        reference: str = "",
         content_type: str = "",
+        description: str = "",
+        source_file: str = "",
+        status: str = "",
+        details: dict[str, Any] | None = None,
         filename: str = "",
         checksum: str = "",
     ) -> int:
         normalized_role = self._clean_order_text(role, "attachment role") or "other"
         normalized_url = self._clean_order_text(url, "attachment url")
         normalized_path = self._clean_order_text(path, "attachment path")
+        normalized_reference = self._clean_order_text(reference, "attachment reference") or normalized_url or normalized_path
         normalized_filename = self._clean_order_text(filename, "attachment filename") or self._gdt_attachment_filename(
             normalized_url,
-            normalized_path,
+            normalized_path or normalized_reference,
         )
         cursor = connection.execute(
             """
             INSERT INTO local_gdt_attachment_records (
-                order_record_id, message_record_id, role, url, path,
-                content_type, filename, checksum, created_at, updated_at
+                order_record_id, message_record_id, role, url, path, reference,
+                content_type, description, source_file, status, details_json,
+                filename, checksum, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 order_record_id,
@@ -1694,7 +1756,12 @@ class DemoStore:
                 normalized_role,
                 normalized_url,
                 normalized_path,
+                normalized_reference,
                 self._clean_order_text(content_type, "attachment contentType"),
+                self._clean_order_text(description, "attachment description"),
+                self._clean_order_text(source_file, "attachment sourceFile"),
+                self._clean_order_text(status, "attachment status"),
+                json.dumps(details or {}, sort_keys=True),
                 normalized_filename,
                 self._clean_order_text(checksum, "attachment checksum"),
                 timestamp,
@@ -1709,7 +1776,11 @@ class DemoStore:
             message_record_id=message_record_id,
             attachment_record_id=attachment_id,
             timestamp=timestamp,
-            details={"role": normalized_role, "filename": normalized_filename},
+            details={
+                "role": normalized_role,
+                "filename": normalized_filename,
+                "status": self._clean_order_text(status, "attachment status"),
+            },
         )
         return attachment_id
 
@@ -2025,9 +2096,160 @@ class DemoStore:
                 ).fetchall()
         return [self._gdt_attachment_record_dict(row) for row in rows]
 
+    def record_gdt_order_export(
+        self,
+        order_record_id: int,
+        *,
+        export_path: str,
+        status: str,
+        error_text: str = "",
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self.lock, self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM local_gdt_order_records WHERE id = ?",
+                (order_record_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(order_record_id)
+            connection.execute(
+                """
+                UPDATE local_gdt_order_records
+                SET export_path = ?, error_text = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (export_path, error_text, timestamp, order_record_id),
+            )
+            self._record_gdt_event(
+                connection,
+                event_type="order-exported" if status == "exported" else "order-export-failed",
+                order_record_id=order_record_id,
+                patient_context_id=row["gdt_patient_context_id"],
+                timestamp=timestamp,
+                details={"status": status, "path": export_path, "error": error_text},
+            )
+        return self.get_gdt_order_record(order_record_id)
+
+    def create_gdt_demo_result(self, order_record_id: int) -> dict[str, Any]:
+        order = self.get_gdt_order_record(order_record_id)
+        order_number = order["localGdtOrderNumber"]
+        artifact_prefix = order_number.lower()
+        raw_gdt_text = render_gdt_message(
+            [
+                ("8315", "HCLAB"),
+                ("8316", "DEMOECG"),
+                ("3000", order["gdtPatientNumber"]),
+                ("3101", order["patientSnapshot"].get("lastName", "")),
+                ("3102", order["patientSnapshot"].get("firstName", "")),
+                ("6200", order_number),
+                ("8410", order_number),
+                ("8401", "72 bpm"),
+                ("8402", "160 ms"),
+                ("8403", "92 ms"),
+                ("8404", "390 ms"),
+                ("8405", "427 ms"),
+                ("8418", "final"),
+                ("6220", "Normal sinus rhythm. No acute ST-T changes."),
+                ("6227", "Demo ECG generated by Healthcare Lab."),
+                ("6228", "Measurements are deterministic for bridge validation."),
+                ("6302", "report"),
+                ("6303", "PDF"),
+                ("6304", "ECG PDF report"),
+                ("6305", f"reports/{artifact_prefix}-report.pdf"),
+                ("6302", "dicom"),
+                ("6303", "DICOM"),
+                ("6304", "DICOM ECG object reference"),
+                ("6305", f"reports/{artifact_prefix}.dcm"),
+            ],
+            set_type=GDT_RESULT_MESSAGE_TYPE,
+        )
+        return self.record_gdt_result({"rawGdtText": raw_gdt_text, "sourceFile": "demo-result"})
+
+    def list_gdt_workbench(self, *, bridge_inbox: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        patients = self.list_patient_records()
+        orders = self.list_gdt_order_records()
+        messages = self.list_gdt_messages()
+        inbound_results = [
+            item for item in messages
+            if item.get("direction") == "inbound" and item.get("messageType") == GDT_RESULT_MESSAGE_TYPE
+        ]
+        attachments = self.list_gdt_attachments()
+        orders_by_patient: dict[int, list[dict[str, Any]]] = {}
+        results_by_order: dict[int, list[dict[str, Any]]] = {}
+        results_by_patient_context: dict[int, list[dict[str, Any]]] = {}
+        attachments_by_message: dict[int, list[dict[str, Any]]] = {}
+        for order in orders:
+            orders_by_patient.setdefault(int(order["patientRecordId"]), []).append(order)
+        for result in inbound_results:
+            if result.get("orderRecordId"):
+                results_by_order.setdefault(int(result["orderRecordId"]), []).append(result)
+            if result.get("patientContextId"):
+                results_by_patient_context.setdefault(int(result["patientContextId"]), []).append(result)
+        for attachment in attachments:
+            if attachment.get("messageRecordId"):
+                attachments_by_message.setdefault(int(attachment["messageRecordId"]), []).append(attachment)
+        for result in inbound_results:
+            result["attachments"] = attachments_by_message.get(int(result["id"]), [])
+        workbench_patients = []
+        for patient in patients:
+            patient_id = int(patient["id"])
+            patient_orders = orders_by_patient.get(patient_id, [])
+            if not patient_orders and patient.get("protocolVersion") != GDT_ORDER_PROTOCOL_VERSION:
+                continue
+            patient_context_ids = {
+                int(order["gdtPatientContextId"])
+                for order in patient_orders
+                if order.get("gdtPatientContextId")
+            }
+            patient_results = [
+                result
+                for context_id in patient_context_ids
+                for result in results_by_patient_context.get(context_id, [])
+            ]
+            item = {
+                **patient,
+                "orders": patient_orders,
+                "results": patient_results,
+                "orderCount": len(patient_orders),
+                "resultCount": len(patient_results),
+            }
+            item["summary"] = {
+                **item["summary"],
+                "orderCount": len(patient_orders),
+                "resultCount": len(patient_results),
+            }
+            workbench_patients.append(item)
+        unmatched_results = [
+            result for result in inbound_results
+            if not result.get("orderRecordId") and not result.get("patientContextId")
+        ]
+        return {
+            "patients": workbench_patients,
+            "orders": orders,
+            "results": inbound_results,
+            "unmatchedResults": unmatched_results,
+            "attachments": attachments,
+            "bridgeInbox": bridge_inbox or [],
+            "resultsByOrder": results_by_order,
+        }
+
     @staticmethod
     def _attachment_payloads_from_result_fields(fields: dict[str, list[str]]) -> list[dict[str, str]]:
         return attachment_payloads_from_result_fields(fields)
+
+    @staticmethod
+    def _gdt_result_measurements(fields: dict[str, list[str]]) -> dict[str, str]:
+        return {
+            label: first_gdt_field(fields, code)
+            for label, code in (
+                ("HR", "8401"),
+                ("PR", "8402"),
+                ("QRS", "8403"),
+                ("QT", "8404"),
+                ("QTC", "8405"),
+            )
+            if first_gdt_field(fields, code)
+        }
 
     def record_gdt_result(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict):
@@ -2106,7 +2328,12 @@ class DemoStore:
                     role=str(attachment.get("role") or "result-artifact"),
                     url=str(attachment.get("url") or ""),
                     path=str(attachment.get("path") or ""),
+                    reference=str(attachment.get("reference") or ""),
                     content_type=str(attachment.get("contentType") or attachment.get("content_type") or ""),
+                    description=str(attachment.get("description") or ""),
+                    source_file=str(attachment.get("sourceFile") or attachment.get("source_file") or source_file),
+                    status=str(attachment.get("status") or ""),
+                    details=attachment.get("details") if isinstance(attachment.get("details"), dict) else None,
                     filename=str(attachment.get("filename") or ""),
                     checksum=str(attachment.get("checksum") or ""),
                     timestamp=timestamp,
@@ -2467,7 +2694,12 @@ class DemoStore:
             "role": row["role"],
             "url": row["url"],
             "path": row["path"],
+            "reference": row["reference"],
             "contentType": row["content_type"],
+            "description": row["description"],
+            "sourceFile": row["source_file"],
+            "status": row["status"],
+            "details": self._json_value(row["details_json"], {}),
             "filename": row["filename"],
             "checksum": row["checksum"],
             "createdAt": row["created_at"],

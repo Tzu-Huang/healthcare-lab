@@ -321,9 +321,10 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(result["canonical"]["validation"], {"errors": [], "warnings": []})
         updated_order = self.store.get_gdt_order_record(order["id"])
         self.assertEqual(updated_order["status"], "Result received")
-        roles = {attachment["role"] for attachment in updated_order["attachments"]}
-        self.assertIn("report", roles)
-        self.assertIn("waveform", roles)
+        by_role = {attachment["role"]: attachment for attachment in updated_order["attachments"]}
+        self.assertEqual(by_role["report"]["reference"], "reports/ecg-result.pdf")
+        self.assertEqual(by_role["dicom"]["contentType"], "DICOM")
+        self.assertEqual(by_role["dicom"]["status"], "warning")
         event_types = {event["eventType"] for event in updated_order["events"]}
         self.assertIn("result-imported", event_types)
         self.assertIn("result-matched", event_types)
