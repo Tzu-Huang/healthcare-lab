@@ -45,8 +45,10 @@ ORDER_DEFAULT_ALT_SYSTEM = "C4"
 ORDER_DEFAULT_PROVIDER = "1001^WANG^AMY"
 GDT_ORDER_PROTOCOL_VERSION = "GDT 2.1"
 GDT_ORDER_MESSAGE_TYPE = "6302"
+GDT_RESULT_MESSAGE_TYPE = "6310"
 GDT_ORDER_STATUS_CREATED = "Created"
 GDT_ORDER_STATUS_ERROR = "Error"
+GDT_ORDER_STATUS_RESULT_RECEIVED = "Result received"
 GDT_ORDER_TEST_CODE_FIELD = "8402"
 GDT_ORDER_TEST_CODE = "EKG01"
 GDT_ORDER_TEST_LABEL = "12-lead resting ECG"
@@ -260,6 +262,38 @@ def render_gdt_message(records: list[tuple[str, Any]], *, set_type: str) -> str:
             return payload.decode(GDT_DEFAULT_ENCODING)
         total_length = next_length
     raise SimulatorValidationError("Could not stabilize GDT 8100 full message length.")
+
+
+def parse_gdt_message(payload: str) -> dict[str, list[str]]:
+    raw = str(payload or "").encode(GDT_DEFAULT_ENCODING)
+    fields: dict[str, list[str]] = {}
+    offset = 0
+    while offset < len(raw):
+        if offset + 7 > len(raw):
+            raise SimulatorValidationError("GDT record is truncated.")
+        try:
+            record_length = int(raw[offset : offset + 3].decode("ascii"))
+        except ValueError as exc:
+            raise SimulatorValidationError("GDT record length must be three digits.") from exc
+        if record_length < 9:
+            raise SimulatorValidationError("GDT record length is invalid.")
+        record = raw[offset : offset + record_length]
+        if len(record) != record_length or not record.endswith(b"\r\n"):
+            raise SimulatorValidationError("GDT record byte length does not match its envelope.")
+        code = record[3:7].decode("ascii")
+        if len(code) != 4 or not code.isdigit():
+            raise SimulatorValidationError(f"GDT field code must be four digits: {code}")
+        value = record[7:-2].decode(GDT_DEFAULT_ENCODING)
+        fields.setdefault(code, []).append(value)
+        offset += record_length
+    if not fields:
+        raise SimulatorValidationError("GDT payload is empty.")
+    return fields
+
+
+def first_gdt_field(fields: dict[str, list[str]], code: str) -> str:
+    values = fields.get(code) or []
+    return values[0] if values else ""
 
 
 def ensure_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
@@ -712,10 +746,12 @@ class DemoStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     local_gdt_order_number TEXT NOT NULL UNIQUE,
                     patient_record_id INTEGER NOT NULL,
+                    gdt_patient_context_id INTEGER,
                     protocol_version TEXT NOT NULL,
                     message_type TEXT NOT NULL,
                     order_status TEXT NOT NULL,
                     mrn TEXT NOT NULL,
+                    gdt_patient_number TEXT NOT NULL DEFAULT '',
                     first_name TEXT NOT NULL,
                     last_name TEXT NOT NULL,
                     middle_name TEXT NOT NULL DEFAULT '',
@@ -729,11 +765,74 @@ class DemoStore:
                     clinical_indication TEXT NOT NULL DEFAULT '',
                     attachment_url TEXT NOT NULL DEFAULT '',
                     payload_gdt TEXT NOT NULL,
+                    patient_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    order_snapshot_json TEXT NOT NULL DEFAULT '{}',
                     export_path TEXT NOT NULL DEFAULT '',
                     error_text TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
+                    FOREIGN KEY(gdt_patient_context_id) REFERENCES local_gdt_patient_contexts(id) ON DELETE SET NULL,
                     FOREIGN KEY(patient_record_id) REFERENCES local_patient_records(id) ON DELETE RESTRICT
+                );
+                CREATE TABLE IF NOT EXISTS local_gdt_patient_contexts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    patient_record_id INTEGER NOT NULL UNIQUE,
+                    generated_gdt_patient_number TEXT NOT NULL UNIQUE,
+                    gdt_patient_number_override TEXT NOT NULL DEFAULT '',
+                    effective_gdt_patient_number TEXT NOT NULL UNIQUE,
+                    patient_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(patient_record_id) REFERENCES local_patient_records(id) ON DELETE RESTRICT
+                );
+                CREATE TABLE IF NOT EXISTS local_gdt_message_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_record_id INTEGER,
+                    patient_context_id INTEGER,
+                    direction TEXT NOT NULL,
+                    message_type TEXT NOT NULL,
+                    raw_gdt_text TEXT NOT NULL,
+                    parsed_fields_json TEXT NOT NULL DEFAULT '{}',
+                    canonical_json TEXT NOT NULL DEFAULT '{}',
+                    parse_status TEXT NOT NULL,
+                    match_status TEXT NOT NULL DEFAULT '',
+                    error_text TEXT NOT NULL DEFAULT '',
+                    generated_at TEXT NOT NULL DEFAULT '',
+                    received_at TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(order_record_id) REFERENCES local_gdt_order_records(id) ON DELETE SET NULL,
+                    FOREIGN KEY(patient_context_id) REFERENCES local_gdt_patient_contexts(id) ON DELETE SET NULL
+                );
+                CREATE TABLE IF NOT EXISTS local_gdt_attachment_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_record_id INTEGER,
+                    message_record_id INTEGER,
+                    role TEXT NOT NULL,
+                    url TEXT NOT NULL DEFAULT '',
+                    path TEXT NOT NULL DEFAULT '',
+                    content_type TEXT NOT NULL DEFAULT '',
+                    filename TEXT NOT NULL DEFAULT '',
+                    checksum TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(order_record_id) REFERENCES local_gdt_order_records(id) ON DELETE SET NULL,
+                    FOREIGN KEY(message_record_id) REFERENCES local_gdt_message_records(id) ON DELETE SET NULL
+                );
+                CREATE TABLE IF NOT EXISTS local_gdt_workflow_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_record_id INTEGER,
+                    patient_context_id INTEGER,
+                    message_record_id INTEGER,
+                    attachment_record_id INTEGER,
+                    event_type TEXT NOT NULL,
+                    actor TEXT NOT NULL DEFAULT '',
+                    details_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(order_record_id) REFERENCES local_gdt_order_records(id) ON DELETE SET NULL,
+                    FOREIGN KEY(patient_context_id) REFERENCES local_gdt_patient_contexts(id) ON DELETE SET NULL,
+                    FOREIGN KEY(message_record_id) REFERENCES local_gdt_message_records(id) ON DELETE SET NULL,
+                    FOREIGN KEY(attachment_record_id) REFERENCES local_gdt_attachment_records(id) ON DELETE SET NULL
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_oie_result_control_id
                 ON oie_result_records(message_control_id)
@@ -755,6 +854,25 @@ class DemoStore:
                 "INTEGER NOT NULL DEFAULT 60",
             )
             self._ensure_column(connection, "lab_servers", "smoke_profile", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "local_gdt_order_records", "gdt_patient_context_id", "INTEGER")
+            self._ensure_column(
+                connection,
+                "local_gdt_order_records",
+                "gdt_patient_number",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "local_gdt_order_records",
+                "patient_snapshot_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
+            self._ensure_column(
+                connection,
+                "local_gdt_order_records",
+                "order_snapshot_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
             self._seed_lab_servers(connection)
 
     @staticmethod
@@ -1348,6 +1466,283 @@ class DemoStore:
         return f"GDT-ORD-{record_id:06d}"
 
     @staticmethod
+    def _gdt_patient_context_number(patient_record_id: int) -> str:
+        return f"GDT-PAT-{patient_record_id:06d}"
+
+    @staticmethod
+    def _validate_gdt_patient_number(value: Any, field_name: str = "gdtPatientNumber") -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        if len(text) > 64:
+            raise SimulatorValidationError(f"{field_name} must be 64 characters or fewer.")
+        if any(character in text for character in "\r\n"):
+            raise SimulatorValidationError(f"{field_name} cannot contain line breaks.")
+        _encode_gdt_text(text)
+        return text
+
+    @staticmethod
+    def _gdt_patient_snapshot(patient_row: sqlite3.Row, gdt_patient_number: str) -> dict[str, Any]:
+        return {
+            "patientRecordId": patient_row["id"],
+            "mrn": patient_row["mrn"],
+            "gdtPatientNumber": gdt_patient_number,
+            "firstName": patient_row["first_name"],
+            "middleName": patient_row["middle_name"],
+            "lastName": patient_row["last_name"],
+            "dob": patient_row["dob"],
+            "sex": patient_row["sex"],
+            "visitNumber": patient_row["visit_number"],
+        }
+
+    @staticmethod
+    def _gdt_attachment_filename(url: str, path: str = "") -> str:
+        source = path or url
+        return source.rstrip("/").split("/")[-1] if source else ""
+
+    def _record_gdt_event(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        event_type: str,
+        timestamp: str,
+        order_record_id: int | None = None,
+        patient_context_id: int | None = None,
+        message_record_id: int | None = None,
+        attachment_record_id: int | None = None,
+        actor: str = "",
+        details: dict[str, Any] | None = None,
+    ) -> int:
+        cursor = connection.execute(
+            """
+            INSERT INTO local_gdt_workflow_events (
+                order_record_id, patient_context_id, message_record_id,
+                attachment_record_id, event_type, actor, details_json, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                order_record_id,
+                patient_context_id,
+                message_record_id,
+                attachment_record_id,
+                event_type,
+                actor,
+                json.dumps(details or {}, sort_keys=True),
+                timestamp,
+            ),
+        )
+        return int(cursor.lastrowid)
+
+    def _ensure_gdt_patient_context(
+        self,
+        connection: sqlite3.Connection,
+        patient_row: sqlite3.Row,
+        *,
+        override: str = "",
+        timestamp: str,
+    ) -> sqlite3.Row:
+        context = connection.execute(
+            """
+            SELECT * FROM local_gdt_patient_contexts
+            WHERE patient_record_id = ?
+            """,
+            (patient_row["id"],),
+        ).fetchone()
+        generated = self._gdt_patient_context_number(int(patient_row["id"]))
+        override = self._validate_gdt_patient_number(override, "gdtPatientNumberOverride")
+        effective = override or generated
+        patient_snapshot_json = json.dumps(
+            self._gdt_patient_snapshot(patient_row, effective),
+            sort_keys=True,
+        )
+        if not context:
+            try:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO local_gdt_patient_contexts (
+                        patient_record_id, generated_gdt_patient_number,
+                        gdt_patient_number_override, effective_gdt_patient_number,
+                        patient_snapshot_json, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        patient_row["id"],
+                        generated,
+                        override,
+                        effective,
+                        patient_snapshot_json,
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise SimulatorValidationError("GDT patient number must be unique.") from exc
+            context_id = int(cursor.lastrowid)
+            self._record_gdt_event(
+                connection,
+                event_type="patient-number-generated",
+                patient_context_id=context_id,
+                timestamp=timestamp,
+                details={"generatedGdtPatientNumber": generated},
+            )
+            if override:
+                self._record_gdt_event(
+                    connection,
+                    event_type="patient-number-overridden",
+                    patient_context_id=context_id,
+                    timestamp=timestamp,
+                    details={
+                        "generatedGdtPatientNumber": generated,
+                        "effectiveGdtPatientNumber": effective,
+                    },
+                )
+        elif override and override != context["gdt_patient_number_override"]:
+            try:
+                connection.execute(
+                    """
+                    UPDATE local_gdt_patient_contexts
+                    SET gdt_patient_number_override = ?,
+                        effective_gdt_patient_number = ?,
+                        patient_snapshot_json = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (override, effective, patient_snapshot_json, timestamp, context["id"]),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise SimulatorValidationError("GDT patient number must be unique.") from exc
+            self._record_gdt_event(
+                connection,
+                event_type="patient-number-overridden",
+                patient_context_id=context["id"],
+                timestamp=timestamp,
+                details={
+                    "previousGdtPatientNumber": context["effective_gdt_patient_number"],
+                    "effectiveGdtPatientNumber": effective,
+                },
+            )
+        else:
+            effective = context["effective_gdt_patient_number"]
+            patient_snapshot_json = json.dumps(
+                self._gdt_patient_snapshot(patient_row, effective),
+                sort_keys=True,
+            )
+            connection.execute(
+                """
+                UPDATE local_gdt_patient_contexts
+                SET patient_snapshot_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (patient_snapshot_json, timestamp, context["id"]),
+            )
+        return connection.execute(
+            """
+            SELECT * FROM local_gdt_patient_contexts
+            WHERE patient_record_id = ?
+            """,
+            (patient_row["id"],),
+        ).fetchone()
+
+    def _create_gdt_message_record(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        order_record_id: int | None,
+        patient_context_id: int | None,
+        direction: str,
+        raw_gdt_text: str,
+        canonical: dict[str, Any],
+        timestamp: str,
+        match_status: str = "",
+        error_text: str = "",
+    ) -> int:
+        parsed_fields = parse_gdt_message(raw_gdt_text)
+        message_type = first_gdt_field(parsed_fields, "8000")
+        cursor = connection.execute(
+            """
+            INSERT INTO local_gdt_message_records (
+                order_record_id, patient_context_id, direction, message_type,
+                raw_gdt_text, parsed_fields_json, canonical_json, parse_status,
+                match_status, error_text, generated_at, received_at,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'accepted', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                order_record_id,
+                patient_context_id,
+                direction,
+                message_type,
+                raw_gdt_text,
+                json.dumps(parsed_fields, sort_keys=True),
+                json.dumps(canonical, sort_keys=True),
+                match_status,
+                error_text,
+                timestamp if direction == "outbound" else "",
+                timestamp if direction == "inbound" else "",
+                timestamp,
+                timestamp,
+            ),
+        )
+        return int(cursor.lastrowid)
+
+    def _create_gdt_attachment_record(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        order_record_id: int | None,
+        message_record_id: int | None,
+        role: str,
+        timestamp: str,
+        url: str = "",
+        path: str = "",
+        content_type: str = "",
+        filename: str = "",
+        checksum: str = "",
+    ) -> int:
+        normalized_role = self._clean_order_text(role, "attachment role") or "other"
+        normalized_url = self._clean_order_text(url, "attachment url")
+        normalized_path = self._clean_order_text(path, "attachment path")
+        normalized_filename = self._clean_order_text(filename, "attachment filename") or self._gdt_attachment_filename(
+            normalized_url,
+            normalized_path,
+        )
+        cursor = connection.execute(
+            """
+            INSERT INTO local_gdt_attachment_records (
+                order_record_id, message_record_id, role, url, path,
+                content_type, filename, checksum, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                order_record_id,
+                message_record_id,
+                normalized_role,
+                normalized_url,
+                normalized_path,
+                self._clean_order_text(content_type, "attachment contentType"),
+                normalized_filename,
+                self._clean_order_text(checksum, "attachment checksum"),
+                timestamp,
+                timestamp,
+            ),
+        )
+        attachment_id = int(cursor.lastrowid)
+        self._record_gdt_event(
+            connection,
+            event_type="attachment-registered",
+            order_record_id=order_record_id,
+            message_record_id=message_record_id,
+            attachment_record_id=attachment_id,
+            timestamp=timestamp,
+            details={"role": normalized_role, "filename": normalized_filename},
+        )
+        return attachment_id
+
+    @staticmethod
     def _validate_gdt_8402_code(value: Any) -> str:
         normalized = str(value or GDT_ORDER_TEST_CODE).strip().upper()
         if normalized != GDT_ORDER_TEST_CODE:
@@ -1381,6 +1776,13 @@ class DemoStore:
             "ordering_provider": self._clean_order_text(payload.get("orderingProvider"), "orderingProvider"),
             "clinical_indication": self._clean_order_text(payload.get("clinicalIndication"), "clinicalIndication"),
             "attachment_url": self._clean_order_text(payload.get("attachmentUrl"), "attachmentUrl"),
+            "gdt_patient_number_override": self._validate_gdt_patient_number(
+                payload.get(
+                    "gdtPatientNumberOverride",
+                    payload.get("gdtPatientNumber", payload.get("patientNumberOverride", "")),
+                ),
+                "gdtPatientNumberOverride",
+            ),
             "gdt_test_code": self._validate_gdt_8402_code(
                 payload.get("gdtTestCode", payload.get("testCode", payload.get("examCode", GDT_ORDER_TEST_CODE)))
             ),
@@ -1401,7 +1803,7 @@ class DemoStore:
         records: list[tuple[str, Any]] = [
             ("8315", "LABGDT"),
             ("8316", "HCLAB"),
-            ("3000", patient_row["mrn"]),
+            ("3000", values["gdt_patient_number"]),
             ("3101", patient_row["last_name"]),
             ("3102", patient_row["first_name"]),
             ("3103", DemoStore._gdt_birth_date(patient_row["dob"])),
@@ -1429,25 +1831,45 @@ class DemoStore:
             ).fetchone()
             if not patient_row:
                 raise KeyError(values["patient_record_id"])
+            patient_context = self._ensure_gdt_patient_context(
+                connection,
+                patient_row,
+                override=values["gdt_patient_number_override"],
+                timestamp=timestamp,
+            )
+            gdt_patient_number = patient_context["effective_gdt_patient_number"]
+            patient_snapshot = self._gdt_patient_snapshot(patient_row, gdt_patient_number)
+            order_snapshot = {
+                "requestedAt": values["requested_at"],
+                "orderingProvider": values["ordering_provider"],
+                "clinicalIndication": values["clinical_indication"],
+                "gdtTestField": GDT_ORDER_TEST_CODE_FIELD,
+                "gdtTestCode": values["gdt_test_code"],
+                "gdtTestLabel": GDT_ORDER_TEST_LABEL,
+            }
             cursor = connection.execute(
                 """
                 INSERT INTO local_gdt_order_records (
-                    local_gdt_order_number, patient_record_id, protocol_version,
-                    message_type, order_status, mrn, first_name, last_name,
-                    middle_name, dob, sex, visit_number, gdt_test_code,
+                    local_gdt_order_number, patient_record_id, gdt_patient_context_id,
+                    protocol_version, message_type, order_status, mrn,
+                    gdt_patient_number, first_name, last_name, middle_name, dob,
+                    sex, visit_number, gdt_test_code,
                     gdt_test_label, requested_at, ordering_provider,
                     clinical_indication, attachment_url, payload_gdt,
+                    patient_snapshot_json, order_snapshot_json,
                     created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     "",
                     values["patient_record_id"],
+                    patient_context["id"],
                     GDT_ORDER_PROTOCOL_VERSION,
                     GDT_ORDER_MESSAGE_TYPE,
                     GDT_ORDER_STATUS_CREATED,
                     patient_row["mrn"],
+                    gdt_patient_number,
                     patient_row["first_name"],
                     patient_row["last_name"],
                     patient_row["middle_name"],
@@ -1461,6 +1883,8 @@ class DemoStore:
                     values["clinical_indication"],
                     values["attachment_url"],
                     "",
+                    json.dumps(patient_snapshot, sort_keys=True),
+                    json.dumps(order_snapshot, sort_keys=True),
                     timestamp,
                     timestamp,
                 ),
@@ -1468,18 +1892,75 @@ class DemoStore:
             record_id = int(cursor.lastrowid)
             local_gdt_order_number = self._gdt_order_record_number(record_id)
             payload_gdt = self._build_gdt_order_payload(
-                {**values, "local_gdt_order_number": local_gdt_order_number},
+                {
+                    **values,
+                    "local_gdt_order_number": local_gdt_order_number,
+                    "gdt_patient_number": gdt_patient_number,
+                },
                 patient_row,
                 record_id=record_id,
+            )
+            order_snapshot = {**order_snapshot, "localGdtOrderNumber": local_gdt_order_number}
+            canonical = {
+                "patient": patient_snapshot,
+                "order": order_snapshot,
+                "test": {
+                    "field": GDT_ORDER_TEST_CODE_FIELD,
+                    "code": values["gdt_test_code"],
+                    "label": GDT_ORDER_TEST_LABEL,
+                },
+                "correlation": {"localGdtOrderNumber": local_gdt_order_number},
+            }
+            message_record_id = self._create_gdt_message_record(
+                connection,
+                order_record_id=record_id,
+                patient_context_id=patient_context["id"],
+                direction="outbound",
+                raw_gdt_text=payload_gdt,
+                canonical=canonical,
+                timestamp=timestamp,
             )
             connection.execute(
                 """
                 UPDATE local_gdt_order_records
-                SET local_gdt_order_number = ?, payload_gdt = ?, updated_at = ?
+                SET local_gdt_order_number = ?, payload_gdt = ?,
+                    order_snapshot_json = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (local_gdt_order_number, payload_gdt, timestamp, record_id),
+                (
+                    local_gdt_order_number,
+                    payload_gdt,
+                    json.dumps(order_snapshot, sort_keys=True),
+                    timestamp,
+                    record_id,
+                ),
             )
+            self._record_gdt_event(
+                connection,
+                event_type="order-created",
+                order_record_id=record_id,
+                patient_context_id=patient_context["id"],
+                timestamp=timestamp,
+                details={"localGdtOrderNumber": local_gdt_order_number},
+            )
+            self._record_gdt_event(
+                connection,
+                event_type="message-generated",
+                order_record_id=record_id,
+                patient_context_id=patient_context["id"],
+                message_record_id=message_record_id,
+                timestamp=timestamp,
+                details={"messageType": GDT_ORDER_MESSAGE_TYPE},
+            )
+            if values["attachment_url"]:
+                self._create_gdt_attachment_record(
+                    connection,
+                    order_record_id=record_id,
+                    message_record_id=message_record_id,
+                    role="order-attachment",
+                    url=values["attachment_url"],
+                    timestamp=timestamp,
+                )
         return self.get_gdt_order_record(record_id)
 
     def list_gdt_order_records(self) -> list[dict[str, Any]]:
@@ -1501,6 +1982,239 @@ class DemoStore:
             if not row:
                 raise KeyError(record_id)
         return self._gdt_order_record_dict(row)
+
+    def list_gdt_messages(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            if order_record_id is None:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_gdt_message_records
+                    ORDER BY created_at DESC, id DESC
+                    """
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_gdt_message_records
+                    WHERE order_record_id = ?
+                    ORDER BY created_at DESC, id DESC
+                    """,
+                    (order_record_id,),
+                ).fetchall()
+        return [self._gdt_message_record_dict(row) for row in rows]
+
+    def list_gdt_events(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            if order_record_id is None:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_gdt_workflow_events
+                    ORDER BY created_at DESC, id DESC
+                    """
+                ).fetchall()
+            else:
+                order_row = connection.execute(
+                    "SELECT gdt_patient_context_id FROM local_gdt_order_records WHERE id = ?",
+                    (order_record_id,),
+                ).fetchone()
+                patient_context_id = order_row["gdt_patient_context_id"] if order_row else None
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_gdt_workflow_events
+                    WHERE order_record_id = ?
+                       OR (? IS NOT NULL AND patient_context_id = ?)
+                    ORDER BY created_at ASC, id ASC
+                    """,
+                    (order_record_id, patient_context_id, patient_context_id),
+                ).fetchall()
+        return [self._gdt_event_record_dict(row) for row in rows]
+
+    def list_gdt_attachments(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            if order_record_id is None:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_gdt_attachment_records
+                    ORDER BY created_at DESC, id DESC
+                    """
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_gdt_attachment_records
+                    WHERE order_record_id = ?
+                    ORDER BY created_at ASC, id ASC
+                    """,
+                    (order_record_id,),
+                ).fetchall()
+        return [self._gdt_attachment_record_dict(row) for row in rows]
+
+    @staticmethod
+    def _attachment_payloads_from_result_fields(fields: dict[str, list[str]]) -> list[dict[str, str]]:
+        attachments: list[dict[str, str]] = []
+        pdf_path = first_gdt_field(fields, "6302")
+        if pdf_path:
+            attachments.append(
+                {
+                    "role": "report",
+                    "path": pdf_path,
+                    "contentType": first_gdt_field(fields, "6303") or "application/pdf",
+                }
+            )
+        xml_path = first_gdt_field(fields, "6304")
+        if xml_path:
+            attachments.append(
+                {
+                    "role": "waveform",
+                    "path": xml_path,
+                    "contentType": first_gdt_field(fields, "6305") or "application/xml",
+                }
+            )
+        return attachments
+
+    def record_gdt_result(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise SimulatorValidationError("GDT result payload must be a JSON object.")
+        raw_gdt_text = str(
+            payload.get("rawGdtText", payload.get("payload", payload.get("raw", ""))) or ""
+        )
+        fields = parse_gdt_message(raw_gdt_text)
+        message_type = first_gdt_field(fields, "8000")
+        if message_type != GDT_RESULT_MESSAGE_TYPE:
+            raise SimulatorValidationError(f"GDT result import only supports {GDT_RESULT_MESSAGE_TYPE}.")
+        timestamp = now_iso()
+        order_identifiers = [
+            value
+            for code in ("6200", "8410")
+            for value in fields.get(code, [])
+            if value
+        ]
+        gdt_patient_number = first_gdt_field(fields, "3000")
+        with self.lock, self.connect() as connection:
+            order_row = None
+            if order_identifiers:
+                placeholders = ", ".join("?" for _ in order_identifiers)
+                order_row = connection.execute(
+                    f"""
+                    SELECT * FROM local_gdt_order_records
+                    WHERE local_gdt_order_number IN ({placeholders})
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    order_identifiers,
+                ).fetchone()
+            if not order_row and gdt_patient_number:
+                order_row = connection.execute(
+                    """
+                    SELECT * FROM local_gdt_order_records
+                    WHERE gdt_patient_number = ?
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (gdt_patient_number,),
+                ).fetchone()
+            patient_context_id = order_row["gdt_patient_context_id"] if order_row else None
+            if not patient_context_id and gdt_patient_number:
+                context_row = connection.execute(
+                    """
+                    SELECT * FROM local_gdt_patient_contexts
+                    WHERE effective_gdt_patient_number = ?
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (gdt_patient_number,),
+                ).fetchone()
+                patient_context_id = context_row["id"] if context_row else None
+            match_status = "order-matched" if order_row else "unmatched"
+            canonical = {
+                "patient": {
+                    "gdtPatientNumber": gdt_patient_number,
+                    "lastName": first_gdt_field(fields, "3101"),
+                    "firstName": first_gdt_field(fields, "3102"),
+                    "dob": first_gdt_field(fields, "3103"),
+                    "sex": first_gdt_field(fields, "3110"),
+                },
+                "order": {
+                    "localGdtOrderNumber": order_row["local_gdt_order_number"] if order_row else "",
+                    "identifiers": order_identifiers,
+                },
+                "result": {
+                    "interpretation": fields.get("6220", []),
+                    "summary": {
+                        code: fields.get(code, [])
+                        for code in ("8401", "8402", "8403", "8404", "8405")
+                        if code in fields
+                    },
+                },
+                "attachments": self._attachment_payloads_from_result_fields(fields),
+                "correlation": {
+                    "matchStatus": match_status,
+                    "identifiers": order_identifiers,
+                },
+            }
+            message_record_id = self._create_gdt_message_record(
+                connection,
+                order_record_id=order_row["id"] if order_row else None,
+                patient_context_id=patient_context_id,
+                direction="inbound",
+                raw_gdt_text=raw_gdt_text,
+                canonical=canonical,
+                timestamp=timestamp,
+                match_status=match_status,
+            )
+            attachment_payloads = canonical["attachments"] + list(payload.get("attachments") or [])
+            for attachment in attachment_payloads:
+                if not isinstance(attachment, dict):
+                    continue
+                self._create_gdt_attachment_record(
+                    connection,
+                    order_record_id=order_row["id"] if order_row else None,
+                    message_record_id=message_record_id,
+                    role=str(attachment.get("role") or "result-artifact"),
+                    url=str(attachment.get("url") or ""),
+                    path=str(attachment.get("path") or ""),
+                    content_type=str(attachment.get("contentType") or attachment.get("content_type") or ""),
+                    filename=str(attachment.get("filename") or ""),
+                    checksum=str(attachment.get("checksum") or ""),
+                    timestamp=timestamp,
+                )
+            self._record_gdt_event(
+                connection,
+                event_type="result-imported",
+                order_record_id=order_row["id"] if order_row else None,
+                patient_context_id=patient_context_id,
+                message_record_id=message_record_id,
+                timestamp=timestamp,
+                details={"messageType": GDT_RESULT_MESSAGE_TYPE, "matchStatus": match_status},
+            )
+            self._record_gdt_event(
+                connection,
+                event_type="result-matched" if order_row else "result-unmatched",
+                order_record_id=order_row["id"] if order_row else None,
+                patient_context_id=patient_context_id,
+                message_record_id=message_record_id,
+                timestamp=timestamp,
+                details={"identifiers": order_identifiers},
+            )
+            if order_row:
+                connection.execute(
+                    """
+                    UPDATE local_gdt_order_records
+                    SET order_status = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (GDT_ORDER_STATUS_RESULT_RECEIVED, timestamp, order_row["id"]),
+                )
+                self._record_gdt_event(
+                    connection,
+                    event_type="status-changed",
+                    order_record_id=order_row["id"],
+                    patient_context_id=patient_context_id,
+                    message_record_id=message_record_id,
+                    timestamp=timestamp,
+                    details={"status": GDT_ORDER_STATUS_RESULT_RECEIVED},
+                )
+        return self._gdt_message_record_dict_by_id(message_record_id)
 
     def record_oie_result(self, payload_hl7: str, parsed: dict[str, str]) -> dict[str, Any]:
         timestamp = now_iso()
@@ -1726,29 +2440,51 @@ class DemoStore:
         }
 
     @staticmethod
-    def _gdt_order_record_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _json_value(value: str, fallback: Any) -> Any:
+        try:
+            return json.loads(value or "")
+        except (TypeError, ValueError):
+            return fallback
+
+    def _gdt_order_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         summary_name = " ".join(
             part for part in (row["first_name"], row["middle_name"], row["last_name"]) if part
+        )
+        attachments = self.list_gdt_attachments(row["id"])
+        messages = self.list_gdt_messages(row["id"])
+        events = self.list_gdt_events(row["id"])
+        primary_attachment_url = row["attachment_url"] or next(
+            (item["url"] for item in attachments if item["url"]),
+            "",
         )
         return {
             "id": row["id"],
             "localGdtOrderNumber": row["local_gdt_order_number"],
             "patientRecordId": row["patient_record_id"],
+            "gdtPatientContextId": row["gdt_patient_context_id"],
             "protocolVersion": row["protocol_version"],
             "messageType": row["message_type"],
             "status": row["order_status"],
             "gdtTestField": GDT_ORDER_TEST_CODE_FIELD,
             "gdtTestCode": row["gdt_test_code"],
             "gdtTestLabel": row["gdt_test_label"],
+            "gdtPatientNumber": row["gdt_patient_number"],
             "requestedAt": row["requested_at"],
             "orderingProvider": row["ordering_provider"],
             "clinicalIndication": row["clinical_indication"],
-            "attachmentUrl": row["attachment_url"],
+            "attachmentUrl": primary_attachment_url,
+            "attachments": attachments,
             "payload": row["payload_gdt"],
+            "rawGdtText": row["payload_gdt"],
+            "patientSnapshot": self._json_value(row["patient_snapshot_json"], {}),
+            "orderSnapshot": self._json_value(row["order_snapshot_json"], {}),
+            "messages": messages,
+            "events": events,
             "exportPath": row["export_path"],
             "error": row["error_text"],
             "summary": {
                 "mrn": row["mrn"],
+                "gdtPatientNumber": row["gdt_patient_number"],
                 "name": summary_name,
                 "dob": row["dob"],
                 "sex": row["sex"],
@@ -1759,6 +2495,63 @@ class DemoStore:
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
             "localOnly": True,
+        }
+
+    def _gdt_message_record_dict_by_id(self, record_id: int) -> dict[str, Any]:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM local_gdt_message_records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(record_id)
+        return self._gdt_message_record_dict(row)
+
+    def _gdt_message_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "orderRecordId": row["order_record_id"],
+            "patientContextId": row["patient_context_id"],
+            "direction": row["direction"],
+            "messageType": row["message_type"],
+            "rawGdtText": row["raw_gdt_text"],
+            "parsedFields": self._json_value(row["parsed_fields_json"], {}),
+            "canonical": self._json_value(row["canonical_json"], {}),
+            "parseStatus": row["parse_status"],
+            "matchStatus": row["match_status"],
+            "error": row["error_text"],
+            "generatedAt": row["generated_at"],
+            "receivedAt": row["received_at"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+
+    def _gdt_attachment_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "orderRecordId": row["order_record_id"],
+            "messageRecordId": row["message_record_id"],
+            "role": row["role"],
+            "url": row["url"],
+            "path": row["path"],
+            "contentType": row["content_type"],
+            "filename": row["filename"],
+            "checksum": row["checksum"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+
+    def _gdt_event_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "orderRecordId": row["order_record_id"],
+            "patientContextId": row["patient_context_id"],
+            "messageRecordId": row["message_record_id"],
+            "attachmentRecordId": row["attachment_record_id"],
+            "eventType": row["event_type"],
+            "actor": row["actor"],
+            "details": self._json_value(row["details_json"], {}),
+            "createdAt": row["created_at"],
         }
 
     @staticmethod
