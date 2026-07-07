@@ -111,6 +111,40 @@ class GdtAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(GdtValidationError, "8100"):
             parse_gdt_message(missing)
 
+    def test_6310_missing_required_3000_is_rejected(self):
+        payload = render_gdt_message(
+            [
+                ("8402", "EKG01"),
+                ("8410", "HR"),
+                ("8420", "75"),
+                ("8421", "/min"),
+            ],
+            set_type="6310",
+        )
+
+        with self.assertRaisesRegex(GdtValidationError, "3000") as context:
+            parse_gdt_6310_result(payload)
+
+        self.assertEqual(context.exception.notices[0]["code"], "201")
+        self.assertEqual(context.exception.notices[0]["field"], "3000")
+
+    def test_6310_missing_required_8402_is_rejected(self):
+        payload = render_gdt_message(
+            [
+                ("3000", "GDT-PAT-000001"),
+                ("8410", "HR"),
+                ("8420", "75"),
+                ("8421", "/min"),
+            ],
+            set_type="6310",
+        )
+
+        with self.assertRaisesRegex(GdtValidationError, "8402") as context:
+            parse_gdt_6310_result(payload)
+
+        self.assertEqual(context.exception.notices[0]["code"], "201")
+        self.assertEqual(context.exception.notices[0]["field"], "8402")
+
     def test_unknown_measurement_id_is_preserved_as_warning(self):
         payload = render_gdt_message(
             [

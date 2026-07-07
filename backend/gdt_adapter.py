@@ -213,6 +213,7 @@ def parse_gdt_6310_result(raw_gdt_text: str) -> GdtAdapterResult:
             code="201",
             field="8000",
         )
+    _validate_6310_required_fields(parsed)
     warnings: list[dict[str, str]] = []
     measurements, measurement_warnings = _measurement_payloads(parsed)
     warnings.extend(measurement_warnings)
@@ -323,6 +324,15 @@ def _validate_common_required_fields(fields: dict[str, list[str]], *, raw_length
             code="020",
             field="8100",
         )
+
+
+def _validate_6310_required_fields(fields: dict[str, list[str]]) -> None:
+    notices = []
+    for code in ("3000", "8402"):
+        if not first_gdt_field(fields, code):
+            notices.append(validation_notice("201", "error", f"GDT 6310 field {code} is required.", field=code))
+    if notices:
+        raise GdtValidationError(notices[0]["message"], notices=notices)
 
 
 def _measurement_payloads(

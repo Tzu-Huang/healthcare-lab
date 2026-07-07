@@ -332,6 +332,7 @@ class HealthcareLabStoreTests(unittest.TestCase):
         result_payload = render_gdt_message(
             [
                 ("3000", "UNKNOWN-GDT-PAT"),
+                ("8402", "EKG01"),
                 ("8410", "UNKNOWN-ORDER"),
                 ("6220", "Unmatched result"),
             ],
@@ -364,6 +365,7 @@ class HealthcareLabStoreTests(unittest.TestCase):
         result_payload = render_gdt_message(
             [
                 ("3000", first_order["gdtPatientNumber"]),
+                ("8402", "EKG01"),
                 ("6220", "Result has no usable order identifier"),
             ],
             set_type="6310",
