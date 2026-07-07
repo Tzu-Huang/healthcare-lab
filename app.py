@@ -492,7 +492,7 @@ def sync_fhir_workflow_record_to_medplum(
             medplum_resource_id=medplum_id,
             medplum_resource_reference=reference,
         )
-    except UpstreamFhirError as exc:
+    except (UpstreamFhirError, ValidationError, SimulatorValidationError) as exc:
         message = str(exc)
         outcome = operation_outcome_from_error(message)
         store.record_fhir_sync_attempt(
