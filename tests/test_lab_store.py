@@ -329,6 +329,74 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(result["matchStatus"], "unmatched")
         self.assertEqual(result["rawGdtText"], result_payload)
 
+    def test_gdt_result_without_order_identifier_does_not_guess_latest_patient_order(self):
+        patient = self.store.create_patient_record(
+            {
+                "mode": "gdt",
+                "mrn": "MRN-GDT-MULTI",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            }
+        )
+        first_order = self.store.create_gdt_order_record(
+            {"patientRecordId": patient["id"], "clinicalIndication": "First order"}
+        )
+        second_order = self.store.create_gdt_order_record(
+            {"patientRecordId": patient["id"], "clinicalIndication": "Second order"}
+        )
+        result_payload = render_gdt_message(
+            [
+                ("3000", first_order["gdtPatientNumber"]),
+                ("6220", "Result has no usable order identifier"),
+            ],
+            set_type="6310",
+        )
+
+        result = self.store.record_gdt_result({"rawGdtText": result_payload})
+
+        self.assertEqual(result["matchStatus"], "unmatched")
+        self.assertIsNone(result["orderRecordId"])
+        self.assertEqual(self.store.get_gdt_order_record(first_order["id"])["status"], "Created")
+        self.assertEqual(self.store.get_gdt_order_record(second_order["id"])["status"], "Created")
+
+    def test_gdt_order_events_do_not_include_other_order_lifecycle_events(self):
+        patient = self.store.create_patient_record(
+            {
+                "mode": "gdt",
+                "mrn": "MRN-GDT-EVENTS",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            }
+        )
+        first_order = self.store.create_gdt_order_record(
+            {"patientRecordId": patient["id"], "clinicalIndication": "First order"}
+        )
+        second_order = self.store.create_gdt_order_record(
+            {"patientRecordId": patient["id"], "clinicalIndication": "Second order"}
+        )
+
+        first_events = self.store.list_gdt_events(first_order["id"])
+        first_order_created = [
+            event
+            for event in first_events
+            if event["eventType"] == "order-created"
+        ]
+
+        self.assertEqual([event["orderRecordId"] for event in first_order_created], [first_order["id"]])
+        self.assertNotIn(
+            second_order["id"],
+            {
+                event["orderRecordId"]
+                for event in first_events
+                if event["orderRecordId"] is not None
+            },
+        )
+        self.assertIn("patient-number-generated", {event["eventType"] for event in first_events})
+
     def test_gdt_order_creation_rejects_non_mvp_8402_codes(self):
         patient = self.store.create_patient_record(
             {
