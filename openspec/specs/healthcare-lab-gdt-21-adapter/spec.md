@@ -70,6 +70,9 @@ Healthcare Lab SHALL generate GDT 2.1 `6302` New Test Request messages from Heal
 - **AND** the message contains `9218=02.10`
 - **AND** the message contains patient fields `3000` `3101` `3102` and `3103`
 - **AND** the message contains `8402=EKG01`
+- **AND** the message contains `6200` as an 8 digit `DDMMYYYY` request date when a request timestamp is available
+- **AND** the message contains the local order identifier in open correlation field `6330`
+- **AND** the message does not use result text fields `6220` or `6228` for request metadata
 
 #### Scenario: Generated request remains compatible with existing order API
 

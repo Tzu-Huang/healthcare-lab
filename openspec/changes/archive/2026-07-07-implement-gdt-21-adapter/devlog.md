@@ -62,3 +62,12 @@ ZAC-23 implements the Healthcare Lab GDT 2.1 adapter for outbound `6302` exam re
 ## Follow-ups
 
 - Add real vendor GDT `6310` fixtures when available to harden vendor-specific `8410` mapping behavior.
+
+## Post-Completion Corrections
+
+### 2026-07-07
+
+- Corrected outbound `6302` field semantics after manual GDT review.
+- `6200` now carries the request date in `DDMMYYYY` format instead of the local order number.
+- Local order correlation now uses open field `6330`.
+- `6302` generation no longer emits result text fields `6220` or `6228` for request metadata.
