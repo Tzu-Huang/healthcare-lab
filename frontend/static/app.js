@@ -141,7 +141,10 @@ function updateOrderModeFields() {
 }
 
 function openGdtOrderFlow() {
-  setActiveView("gdt-view");
+  const selector = byId("order-protocol");
+  if (selector) selector.value = "gdt";
+  setActiveView("order-view");
+  setStatus("order-form-status", "GDT ECG order flow ready", "neutral");
 }
 
 function statusClass(status) {
