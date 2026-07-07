@@ -6,6 +6,9 @@ let dashboardResources = null;
 let patientRecords = [];
 let orderRecords = [];
 let gdtOrderRecords = [];
+let gdtWorkbench = { patients: [], bridgeInbox: [] };
+let selectedGdtPatientId = null;
+let selectedGdtPayload = "";
 let oieInventory = [];
 let oieUnmatchedResults = [];
 let selectedOiePatientId = null;
@@ -16,6 +19,7 @@ const VIEW_TITLES = {
   "patient-view": "Patient",
   "order-view": "Order",
   "oie-view": "OIE",
+  "gdt-view": "GDT",
 };
 
 const DASHBOARD_RESOURCE_CONTAINERS = [
@@ -115,6 +119,7 @@ function setActiveView(viewId) {
   }
   if (viewId === "order-view") refreshOrderWorkspace();
   if (viewId === "oie-view") refreshOieInventory();
+  if (viewId === "gdt-view") refreshGdtConsole();
 }
 
 function currentOrderMode() {
@@ -1396,6 +1401,308 @@ async function stopOieListener() {
   }
 }
 
+function selectedGdtPatient() {
+  return (gdtWorkbench.patients || []).find((item) => Number(item.id) === Number(selectedGdtPatientId)) || null;
+}
+
+function measurementSummary(result) {
+  const measurements = result?.canonical?.result?.measurements || {};
+  return ["HR", "PR", "QRS", "QT", "QTC"]
+    .filter((key) => measurements[key])
+    .map((key) => `${key} ${measurements[key]}`)
+    .join(" / ");
+}
+
+function renderGdtPatients() {
+  const body = byId("gdt-patient-list");
+  body.replaceChildren();
+  const patients = gdtWorkbench.patients || [];
+  if (!patients.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell("No local GDT patients or orders yet.");
+    cell.colSpan = 5;
+    cell.className = "muted";
+    row.appendChild(cell);
+    body.appendChild(row);
+    selectedGdtPatientId = null;
+    return;
+  }
+  if (!selectedGdtPatientId || !patients.some((item) => Number(item.id) === Number(selectedGdtPatientId))) {
+    selectedGdtPatientId = patients[0].id;
+  }
+  patients.forEach((item) => {
+    const summary = item.summary || {};
+    const row = document.createElement("tr");
+    row.classList.toggle("selected-row", Number(item.id) === Number(selectedGdtPatientId));
+    row.append(
+      rowCell(summary.mrn),
+      rowCell(summary.gdtPatientNumber || item.gdtPatientNumber || "-"),
+      rowCell(summary.name),
+      rowCell(item.orderCount ?? 0),
+      rowCell(item.resultCount ?? 0),
+    );
+    row.addEventListener("click", () => {
+      selectedGdtPatientId = item.id;
+      renderGdtConsole();
+    });
+    body.appendChild(row);
+  });
+}
+
+function renderGdtSelectedPatient() {
+  const patient = selectedGdtPatient();
+  const summary = patient?.summary || {};
+  byId("gdt-selected-patient-title").textContent = patient
+    ? `${summary.mrn || patient.id} - ${summary.name || "Patient"}`
+    : "No patient selected";
+  const container = byId("gdt-selected-patient-summary");
+  container.replaceChildren();
+  if (!patient) {
+    container.appendChild(createElement("p", "Select a GDT patient.", "muted"));
+    return;
+  }
+  [
+    ["GDT Patient", summary.gdtPatientNumber],
+    ["DOB", summary.dob],
+    ["Sex", summary.sex],
+    ["Orders", patient.orderCount],
+    ["Results", patient.resultCount],
+  ].forEach(([label, value]) => {
+    const item = document.createElement("p");
+    item.appendChild(createElement("strong", `${label}: `));
+    item.appendChild(document.createTextNode(value || "-"));
+    container.appendChild(item);
+  });
+}
+
+function gdtActionButton(label, handler) {
+  const button = createElement("button", label, "small-button");
+  button.type = "button";
+  button.addEventListener("click", handler);
+  return button;
+}
+
+function renderGdtOrders() {
+  const body = byId("gdt-order-list");
+  body.replaceChildren();
+  const orders = selectedGdtPatient()?.orders || [];
+  if (!orders.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell("No GDT ECG orders for this patient.");
+    cell.colSpan = 6;
+    cell.className = "muted";
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  orders.forEach((item) => {
+    const resultCount = (item.messages || []).filter((message) => message.direction === "inbound").length;
+    const actions = document.createElement("div");
+    actions.className = "button-row compact-actions";
+    actions.append(
+      gdtActionButton("Preview 6302", (event) => {
+        event.stopPropagation();
+        selectGdtOrder(item);
+      }),
+      gdtActionButton("Write 6302", (event) => {
+        event.stopPropagation();
+        writeGdtOrder(item.id);
+      }),
+      gdtActionButton("Demo Result", (event) => {
+        event.stopPropagation();
+        createGdtDemoResult(item.id);
+      }),
+    );
+    const row = document.createElement("tr");
+    row.append(
+      rowCell(item.localGdtOrderNumber),
+      rowCell(item.gdtTestCode),
+      rowCell(item.status),
+      rowCell(taipeiTimestamp(item.requestedAt)),
+      rowCell(resultCount ? `${resultCount} result(s)` : "-"),
+      rowCell(actions),
+    );
+    row.addEventListener("click", () => selectGdtOrder(item));
+    body.appendChild(row);
+  });
+}
+
+function renderGdtResults() {
+  const body = byId("gdt-result-list");
+  body.replaceChildren();
+  const results = selectedGdtPatient()?.results || [];
+  if (!results.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell("No imported 6310 results for this patient.");
+    cell.colSpan = 5;
+    cell.className = "muted";
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  results.forEach((item) => {
+    const row = document.createElement("tr");
+    const attachments = item.attachments || [];
+    row.append(
+      rowCell(item.messageType || "6310"),
+      rowCell(item.matchStatus),
+      rowCell(measurementSummary(item) || "-"),
+      rowCell(attachments.length),
+      rowCell(taipeiTimestamp(item.receivedAt)),
+    );
+    row.addEventListener("click", () => selectGdtResult(item));
+    body.appendChild(row);
+  });
+}
+
+function renderGdtInbox() {
+  const body = byId("gdt-inbox-list");
+  body.replaceChildren();
+  const files = gdtWorkbench.bridgeInbox || [];
+  if (!files.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell("No inbound GDT files found.");
+    cell.colSpan = 5;
+    cell.className = "muted";
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  files.forEach((item) => {
+    const action = item.status === "pending"
+      ? gdtActionButton("Import 6310", () => importGdtInboxFile(item.name))
+      : createElement("span", "-", "muted");
+    const row = document.createElement("tr");
+    row.append(
+      rowCell(item.name),
+      rowCell(item.status),
+      rowCell(item.size),
+      rowCell(taipeiTimestamp(item.updatedAt)),
+      rowCell(action),
+    );
+    body.appendChild(row);
+  });
+}
+
+function renderGdtArtifacts(artifacts = []) {
+  const container = byId("gdt-artifact-list");
+  container.replaceChildren();
+  if (!artifacts.length) {
+    container.appendChild(createElement("p", "No artifact references selected.", "muted"));
+    return;
+  }
+  artifacts.forEach((artifact) => {
+    const item = document.createElement("div");
+    item.className = "artifact-reference";
+    item.appendChild(createElement("strong", `${artifact.contentType || artifact.role || "Artifact"}`));
+    item.appendChild(createElement("span", artifact.description || artifact.filename || "Reference"));
+    item.appendChild(createElement("code", artifact.reference || artifact.url || artifact.path || "-"));
+    item.appendChild(createElement("span", artifact.status || "reference-only", `status ${artifact.status === "warning" ? "warning" : "neutral"}`));
+    const actions = document.createElement("div");
+    actions.className = "button-row compact-actions";
+    actions.appendChild(gdtActionButton("Copy", () => navigator.clipboard.writeText(artifact.reference || artifact.url || artifact.path || "")));
+    if (artifact.url) {
+      const open = gdtActionButton("Open", () => window.open(artifact.url, "_blank", "noopener"));
+      actions.appendChild(open);
+    }
+    item.appendChild(actions);
+    container.appendChild(item);
+  });
+}
+
+function selectGdtOrder(item) {
+  selectedGdtPayload = item.rawGdtText || item.payload || "";
+  byId("gdt-detail-title").textContent = "Raw 6302";
+  byId("gdt-payload-preview").textContent = selectedGdtPayload;
+  renderGdtArtifacts(item.attachments || []);
+  renderGdtDetailSummary([
+    ["Order", item.localGdtOrderNumber],
+    ["Patient", item.summary?.name],
+    ["Status", item.status],
+    ["Export", item.exportPath || "-"],
+  ]);
+}
+
+function selectGdtResult(item) {
+  selectedGdtPayload = item.rawGdtText || "";
+  byId("gdt-detail-title").textContent = "Raw 6310";
+  byId("gdt-payload-preview").textContent = selectedGdtPayload;
+  renderGdtArtifacts(item.attachments || []);
+  renderGdtDetailSummary([
+    ["Result", item.messageType],
+    ["Match", item.matchStatus],
+    ["Status", item.canonical?.result?.status || "-"],
+    ["Measurements", measurementSummary(item) || "-"],
+  ]);
+}
+
+function renderGdtDetailSummary(rows) {
+  const container = byId("gdt-detail-summary");
+  container.replaceChildren();
+  rows.forEach(([label, value]) => {
+    const item = document.createElement("p");
+    item.appendChild(createElement("strong", `${label}: `));
+    item.appendChild(document.createTextNode(value || "-"));
+    container.appendChild(item);
+  });
+}
+
+function renderGdtConsole() {
+  renderGdtPatients();
+  renderGdtSelectedPatient();
+  renderGdtOrders();
+  renderGdtResults();
+  renderGdtInbox();
+}
+
+async function refreshGdtConsole() {
+  setStatus("gdt-console-status", "Refreshing...", "pending");
+  try {
+    const result = await requestJson("/api/gdt/workbench");
+    gdtWorkbench = result;
+    renderGdtConsole();
+    setStatus("gdt-console-status", "Updated", "success");
+  } catch (error) {
+    setStatus("gdt-console-status", error.message, "error");
+  }
+}
+
+async function writeGdtOrder(orderId) {
+  setStatus("gdt-console-status", "Writing 6302...", "pending");
+  try {
+    await requestJson(`/api/gdt/orders/${orderId}/write-6302`, { method: "POST", body: JSON.stringify({}) });
+    await refreshGdtConsole();
+    setStatus("gdt-console-status", "6302 written", "success");
+  } catch (error) {
+    setStatus("gdt-console-status", error.message, "error");
+  }
+}
+
+async function createGdtDemoResult(orderId) {
+  setStatus("gdt-console-status", "Creating demo result...", "pending");
+  try {
+    await requestJson(`/api/gdt/orders/${orderId}/demo-result`, { method: "POST", body: JSON.stringify({}) });
+    await refreshGdtConsole();
+    setStatus("gdt-console-status", "Demo result imported", "success");
+  } catch (error) {
+    setStatus("gdt-console-status", error.message, "error");
+  }
+}
+
+async function importGdtInboxFile(filename) {
+  setStatus("gdt-console-status", "Importing 6310...", "pending");
+  try {
+    await requestJson("/api/gdt/bridge/import", {
+      method: "POST",
+      body: JSON.stringify({ filename }),
+    });
+    await refreshGdtConsole();
+    setStatus("gdt-console-status", "6310 imported", "success");
+  } catch (error) {
+    setStatus("gdt-console-status", error.message, "error");
+  }
+}
+
 async function copyTextFromElement(elementId) {
   const text = byId(elementId).textContent || "";
   if (!text.trim()) return;
@@ -1438,5 +1745,7 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("copy-oie-payload").addEventListener("click", () => copyTextFromElement("oie-payload-preview"));
   byId("start-oie-listener").addEventListener("click", startOieListener);
   byId("stop-oie-listener").addEventListener("click", stopOieListener);
+  byId("refresh-gdt-console").addEventListener("click", refreshGdtConsole);
+  byId("copy-gdt-payload").addEventListener("click", () => copyTextFromElement("gdt-payload-preview"));
   setActiveView("lab-console-view");
 });
