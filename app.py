@@ -1451,6 +1451,111 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
 
+    def gdt_bridge_file_item(path: Path, status: str = "pending") -> dict[str, Any]:
+        stat = path.stat()
+        return {
+            "name": path.name,
+            "path": str(path),
+            "status": status,
+            "size": stat.st_size,
+            "updatedAt": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+        }
+
+    def list_gdt_bridge_inbox_items() -> list[dict[str, Any]]:
+        bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
+        items = [
+            gdt_bridge_file_item(path, "pending")
+            for path in sorted(bridge_dirs["inbound"].glob("*.gdt"))
+            if path.is_file()
+        ]
+        for status, folder_name in (("imported", "archive"), ("error", "error")):
+            for path in sorted(bridge_dirs[folder_name].glob("*.gdt")):
+                if path.is_file():
+                    items.append(gdt_bridge_file_item(path, status))
+        return items
+
+    @app.get("/api/gdt/workbench")
+    def gdt_workbench():
+        return jsonify(
+            {
+                "success": True,
+                **store.list_gdt_workbench(bridge_inbox=list_gdt_bridge_inbox_items()),
+            }
+        )
+
+    @app.post("/api/gdt/orders/<int:order_id>/write-6302")
+    def write_gdt_order_6302(order_id: int):
+        try:
+            item = store.get_gdt_order_record(order_id)
+        except KeyError:
+            return error_response("GDT order was not found.", 404)
+        bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+        target = bridge_dirs["outbox"] / f"gdtin_{item['localGdtOrderNumber']}_{timestamp}.gdt"
+        temp_path = target.with_suffix(".tmp")
+        try:
+            temp_path.write_bytes(item["rawGdtText"].encode("cp1252"))
+            temp_path.replace(target)
+            updated = store.record_gdt_order_export(
+                order_id,
+                export_path=str(target),
+                status="exported",
+            )
+        except OSError as exc:
+            updated = store.record_gdt_order_export(
+                order_id,
+                export_path=str(target),
+                status="error",
+                error_text=str(exc),
+            )
+            return jsonify({"success": False, "item": updated, "error": str(exc)}), 500
+        return jsonify({"success": True, "item": updated, "path": str(target)})
+
+    @app.get("/api/gdt/bridge/inbox")
+    def list_gdt_bridge_inbox():
+        return jsonify({"success": True, "items": list_gdt_bridge_inbox_items()})
+
+    @app.post("/api/gdt/bridge/import")
+    def import_gdt_bridge_file():
+        payload = request.get_json(silent=True) or {}
+        filename = Path(str(payload.get("filename") or payload.get("name") or "")).name
+        if not filename.lower().endswith(".gdt"):
+            return error_response("A .gdt inbox filename is required.", 400)
+        bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
+        source_path = bridge_dirs["inbound"] / filename
+        if not source_path.exists() or not source_path.is_file():
+            return error_response("GDT inbox file was not found.", 404)
+        raw_gdt_text = source_path.read_bytes().decode("cp1252")
+        try:
+            item = store.record_gdt_result(
+                {
+                    "rawGdtText": raw_gdt_text,
+                    "bridgeRoot": str(bridge_dirs["root"]),
+                    "sourceFile": filename,
+                    "sourcePath": str(source_path),
+                }
+            )
+            target_path = bridge_dirs["archive"] / filename
+            source_path.replace(target_path)
+        except SimulatorValidationError as exc:
+            target_path = bridge_dirs["error"] / filename
+            try:
+                source_path.replace(target_path)
+            except OSError:
+                pass
+            return jsonify({"success": False, "error": str(exc), "path": str(target_path)}), 400
+        return jsonify({"success": True, "item": item, "path": str(target_path)}), 201
+
+    @app.post("/api/gdt/orders/<int:order_id>/demo-result")
+    def create_gdt_demo_result(order_id: int):
+        try:
+            item = store.create_gdt_demo_result(order_id)
+        except KeyError:
+            return error_response("GDT order was not found.", 404)
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        return jsonify({"success": True, "item": item}), 201
+
     @app.get("/api/gdt/messages")
     def list_gdt_messages():
         return jsonify({"success": True, "items": store.list_gdt_messages()})

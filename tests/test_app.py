@@ -118,6 +118,9 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'id="create-gdt-patient"', response.data)
         self.assertIn(b'id="gdt-test-code" value="8402=EKG01"', response.data)
         self.assertIn(b'id="oie-order-list"', response.data)
+        self.assertIn(b'id="gdt-view"', response.data)
+        self.assertIn(b'id="gdt-inbox-list"', response.data)
+        self.assertIn(b'id="gdt-order-list"', response.data)
         self.assertIn(b'id="oie-send-host" value="localhost"', response.data)
         self.assertIn(b'id="oie-listener-port" value="6665"', response.data)
         self.assertIn(b'id="oie-unmatched-result-list"', response.data)
@@ -136,6 +139,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('service.id === "openemr-gdt"', script)
         self.assertIn("ECG Order", script)
         self.assertIn('"/api/gdt/orders"', script)
+        self.assertIn('"/api/gdt/workbench"', script)
+        self.assertIn("write-6302", script)
+        self.assertIn('selector.value = "gdt"', script)
+        self.assertIn('setActiveView("order-view")', script)
 
     def test_sidebar_views_hide_inactive_pages(self):
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
@@ -161,6 +168,11 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("/api/gdt/messages", routes)
         self.assertIn("/api/gdt/orders/<int:order_id>/events", routes)
         self.assertIn("/api/gdt/results", routes)
+        self.assertIn("/api/gdt/workbench", routes)
+        self.assertIn("/api/gdt/orders/<int:order_id>/write-6302", routes)
+        self.assertIn("/api/gdt/orders/<int:order_id>/demo-result", routes)
+        self.assertIn("/api/gdt/bridge/inbox", routes)
+        self.assertIn("/api/gdt/bridge/import", routes)
 
     def create_local_patient(self):
         response = self.client.post(
@@ -271,10 +283,15 @@ class HealthcareLabApiTests(unittest.TestCase):
                 ("6200", order["localGdtOrderNumber"]),
                 ("8410", order["localGdtOrderNumber"]),
                 ("6220", "Normal sinus rhythm"),
-                ("6302", "reports/ecg-result.pdf"),
-                ("6303", "application/pdf"),
-                ("6304", "reports/ecg-waveform.xml"),
-                ("6305", "application/xml"),
+                ("8401", "72 bpm"),
+                ("8402", "160 ms"),
+                ("8403", "92 ms"),
+                ("8404", "390 ms"),
+                ("8405", "427 ms"),
+                ("6302", "report"),
+                ("6303", "PDF"),
+                ("6304", "ECG report"),
+                ("6305", "reports/ecg-result.pdf"),
             ],
             set_type="6310",
         )
@@ -285,12 +302,67 @@ class HealthcareLabApiTests(unittest.TestCase):
         item = imported.get_json()["item"]
         self.assertEqual(item["messageType"], "6310")
         self.assertEqual(item["matchStatus"], "order-matched")
+        self.assertEqual(item["canonical"]["result"]["measurements"]["HR"], "72 bpm")
+        self.assertEqual(item["canonical"]["attachments"][0]["reference"], "reports/ecg-result.pdf")
         messages = self.client.get("/api/gdt/messages")
         self.assertEqual(messages.status_code, 200)
         self.assertTrue(any(message["messageType"] == "6310" for message in messages.get_json()["items"]))
         events = self.client.get(f"/api/gdt/orders/{order['id']}/events")
         self.assertEqual(events.status_code, 200)
         self.assertIn("result-matched", {event["eventType"] for event in events.get_json()["items"]})
+
+    def test_gdt_bridge_write_import_demo_and_workbench(self):
+        patient = self.create_local_patient()
+        order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+
+        written = self.client.post(f"/api/gdt/orders/{order['id']}/write-6302", json={})
+        self.assertEqual(written.status_code, 200)
+        outbox_path = Path(written.get_json()["path"])
+        self.assertTrue(outbox_path.exists())
+        self.assertIn(order["localGdtOrderNumber"], outbox_path.read_text(encoding="cp1252"))
+
+        demo = self.client.post(f"/api/gdt/orders/{order['id']}/demo-result", json={})
+        self.assertEqual(demo.status_code, 201)
+        self.assertEqual(demo.get_json()["item"]["canonical"]["result"]["measurements"]["QTC"], "427 ms")
+
+        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
+        inbound = bridge_root / "inbound" / "device-result.gdt"
+        inbound.parent.mkdir(parents=True, exist_ok=True)
+        inbound.write_bytes(
+            render_gdt_message(
+                [
+                    ("3000", order["gdtPatientNumber"]),
+                    ("6200", order["localGdtOrderNumber"]),
+                    ("8410", order["localGdtOrderNumber"]),
+                    ("6220", "Imported from bridge file"),
+                    ("6302", "report"),
+                    ("6303", "PDF"),
+                    ("6304", "Bridge PDF"),
+                    ("6305", "reports/missing.pdf"),
+                ],
+                set_type="6310",
+            ).encode("cp1252"),
+        )
+
+        inbox = self.client.get("/api/gdt/bridge/inbox")
+        self.assertEqual(inbox.status_code, 200)
+        self.assertEqual(inbox.get_json()["items"][0]["name"], "device-result.gdt")
+
+        imported = self.client.post("/api/gdt/bridge/import", json={"filename": "device-result.gdt"})
+        self.assertEqual(imported.status_code, 201)
+        self.assertFalse(inbound.exists())
+        self.assertTrue((bridge_root / "archive" / "device-result.gdt").exists())
+
+        workbench = self.client.get("/api/gdt/workbench")
+        self.assertEqual(workbench.status_code, 200)
+        body = workbench.get_json()
+        self.assertEqual(body["patients"][0]["orderCount"], 1)
+        self.assertGreaterEqual(body["patients"][0]["resultCount"], 2)
+        warning_artifacts = [
+            item for item in body["attachments"]
+            if item["reference"] == "reports/missing.pdf"
+        ]
+        self.assertEqual(warning_artifacts[0]["status"], "warning")
 
     def test_gdt_order_api_rejects_non_mvp_test_codes(self):
         patient = self.create_local_patient()

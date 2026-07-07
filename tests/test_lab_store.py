@@ -290,10 +290,19 @@ class HealthcareLabStoreTests(unittest.TestCase):
                 ("6200", order["localGdtOrderNumber"]),
                 ("8410", order["localGdtOrderNumber"]),
                 ("6220", "Normal sinus rhythm"),
-                ("6302", "reports/ecg-result.pdf"),
-                ("6303", "application/pdf"),
-                ("6304", "reports/ecg-waveform.xml"),
-                ("6305", "application/xml"),
+                ("8401", "72 bpm"),
+                ("8402", "160 ms"),
+                ("8403", "92 ms"),
+                ("8404", "390 ms"),
+                ("8405", "427 ms"),
+                ("6302", "report"),
+                ("6303", "PDF"),
+                ("6304", "ECG report"),
+                ("6305", "reports/ecg-result.pdf"),
+                ("6302", "dicom"),
+                ("6303", "DICOM"),
+                ("6304", "DICOM ECG object"),
+                ("6305", "reports/ecg-waveform.dcm"),
             ],
             set_type="6310",
         )
@@ -304,11 +313,14 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(result["matchStatus"], "order-matched")
         self.assertEqual(result["parsedFields"]["6220"], ["Normal sinus rhythm"])
         self.assertEqual(result["canonical"]["order"]["localGdtOrderNumber"], order["localGdtOrderNumber"])
+        self.assertEqual(result["canonical"]["result"]["measurements"]["HR"], "72 bpm")
+        self.assertEqual(result["canonical"]["attachments"][0]["reference"], "reports/ecg-result.pdf")
         updated_order = self.store.get_gdt_order_record(order["id"])
         self.assertEqual(updated_order["status"], "Result received")
-        roles = {attachment["role"] for attachment in updated_order["attachments"]}
-        self.assertIn("report", roles)
-        self.assertIn("waveform", roles)
+        by_role = {attachment["role"]: attachment for attachment in updated_order["attachments"]}
+        self.assertEqual(by_role["report"]["reference"], "reports/ecg-result.pdf")
+        self.assertEqual(by_role["dicom"]["contentType"], "DICOM")
+        self.assertEqual(by_role["dicom"]["status"], "warning")
         event_types = {event["eventType"] for event in updated_order["events"]}
         self.assertIn("result-imported", event_types)
         self.assertIn("result-matched", event_types)
