@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Healthcare Lab defines Medplum-backed FHIR source ownership
 Healthcare Lab SHALL treat Medplum as the canonical source of truth for synced FHIR clinical resources while retaining local workflow ledger records for sync, retry, audit, and diagnostics.
