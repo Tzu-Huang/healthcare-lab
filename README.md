@@ -172,12 +172,27 @@ defaults:
 | MWL AE title | `DCM4CHEE` |
 | Default Scheduled Station AE Title | `ECG_AP` |
 | DICOMweb base URL | `http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs` |
+| Study Instance UID root | `1.2.826.0.1.3680043.10.543` |
 
 The profile also includes QIDO-RS, WADO-RS, STOW-RS, viewer-link, auth, and TLS
 fields for future MWL, verification, C-STORE reconciliation, and viewer-link
 workflows. The local default uses `DCM4CHEE_AUTH_MODE=none` and
 `DCM4CHEE_TLS_ENABLED=false`; that is only for the local lab and is not a
 production security profile.
+
+DICOM MWL order creation uses the dcm4chee MWL REST path:
+
+```text
+POST /dcm4chee-arc/aets/{AETitle}/rs/mwlitems
+Content-Type: application/dicom+json
+```
+
+Healthcare Lab stores the local order first, then records the outbound DICOM
+JSON request, dcm4chee response, generated Accession Number, Requested Procedure
+ID, Scheduled Procedure Step ID, and Study Instance UID. If dcm4chee rejects the
+request because the patient does not exist, the local order remains available
+and the dcm4chee MWL sync state is recorded as `Patient missing`. AP MWL query,
+C-STORE reconciliation, and viewer-link consumption are future work.
 
 The first Docker Desktop runtime scaffold for the Lab Console lives in
 [deploy/](deploy/README.md). It includes `docker-compose.yml` and the
