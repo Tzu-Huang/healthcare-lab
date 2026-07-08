@@ -352,8 +352,8 @@ class HealthcareLabStoreTests(unittest.TestCase):
                     "priority": "stat",
                     "codeCode": "ECG12",
                     "codeDisplay": "12 Lead ECG",
-                    "occurrenceDateTime": "2026-07-08T10:30:00",
-                    "authoredOn": "2026-07-08T09:00:00",
+                    "occurrenceDateTime": "2026-07-08T10:30",
+                    "authoredOn": "2026-07-08T09:00",
                     "requester": "Practitioner/prac-1",
                     "reasonCodeText": "Chest pain evaluation",
                     "note": "Internal note",
@@ -369,6 +369,8 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(resource["status"], "active")
         self.assertEqual(resource["intent"], "order")
         self.assertEqual(resource["priority"], "stat")
+        self.assertRegex(resource["occurrenceDateTime"], r"^2026-07-08T10:30:00[+-]\d{2}:\d{2}$")
+        self.assertRegex(resource["authoredOn"], r"^2026-07-08T09:00:00[+-]\d{2}:\d{2}$")
         self.assertEqual(resource["requester"]["reference"], "Practitioner/prac-1")
         self.assertEqual(resource["reasonCode"][0]["text"], "Chest pain evaluation")
         self.assertEqual(resource["note"][0]["text"], "Internal note")

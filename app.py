@@ -480,6 +480,88 @@ def direct_patient_references(resource: dict[str, Any]) -> list[str]:
     return references
 
 
+def all_fhir_references(value: Any) -> list[str]:
+    references: list[str] = []
+    if isinstance(value, dict):
+        reference = str(value.get("reference") or "").strip()
+        if reference and reference not in references:
+            references.append(reference)
+        for nested in value.values():
+            for nested_reference in all_fhir_references(nested):
+                if nested_reference not in references:
+                    references.append(nested_reference)
+    elif isinstance(value, list):
+        for item in value:
+            for nested_reference in all_fhir_references(item):
+                if nested_reference not in references:
+                    references.append(nested_reference)
+    return references
+
+
+def first_code_text(value: Any) -> str:
+    if isinstance(value, dict):
+        text = str(value.get("text") or "").strip()
+        if text:
+            return text
+        coding = value.get("coding")
+        if isinstance(coding, list):
+            for item in coding:
+                if not isinstance(item, dict):
+                    continue
+                display = str(item.get("display") or item.get("code") or "").strip()
+                if display:
+                    return display
+    return ""
+
+
+def fhir_resource_summary(resource: dict[str, Any], reference: str) -> dict[str, str]:
+    resource_type = str(resource.get("resourceType") or "").strip()
+    status = str(resource.get("status") or "").strip()
+    code = first_code_text(resource.get("code"))
+    title = str(resource.get("title") or resource.get("description") or "").strip()
+    if resource_type == "Patient":
+        names = resource.get("name") if isinstance(resource.get("name"), list) else []
+        name = ""
+        for item in names:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("text") or "").strip()
+            if not name:
+                given = " ".join(str(value).strip() for value in item.get("given") or [] if str(value).strip())
+                family = str(item.get("family") or "").strip()
+                name = " ".join(value for value in (given, family) if value)
+            if name:
+                break
+        identifiers = resource.get("identifier") if isinstance(resource.get("identifier"), list) else []
+        mrn = ""
+        for item in identifiers:
+            if isinstance(item, dict) and str(item.get("value") or "").strip():
+                mrn = str(item.get("value")).strip()
+                break
+        return {"primary": name or mrn or reference or "Patient", "secondary": mrn, "status": status}
+    if resource_type == "Task":
+        return {"primary": code or title or reference or "Task", "secondary": str(resource.get("intent") or "").strip(), "status": status}
+    if resource_type == "DiagnosticReport":
+        return {
+            "primary": code or title or reference or "DiagnosticReport",
+            "secondary": str(resource.get("issued") or resource.get("effectiveDateTime") or "").strip(),
+            "status": status,
+        }
+    if resource_type == "Observation":
+        value = ""
+        if "valueQuantity" in resource and isinstance(resource["valueQuantity"], dict):
+            quantity = resource["valueQuantity"]
+            value = " ".join(
+                str(part).strip()
+                for part in (quantity.get("value"), quantity.get("unit") or quantity.get("code"))
+                if str(part or "").strip()
+            )
+        return {"primary": code or reference or "Observation", "secondary": value, "status": status}
+    if resource_type == "DocumentReference":
+        return {"primary": title or code or reference or "DocumentReference", "secondary": str(resource.get("docStatus") or "").strip(), "status": status}
+    return {"primary": code or title or reference or resource_type, "secondary": "", "status": status}
+
+
 def medplum_inventory_record(record: dict[str, Any]) -> dict[str, Any]:
     sync_status = str((record.get("sync") or {}).get("status") or "")
     medplum = record.get("medplum") or {}
@@ -488,6 +570,7 @@ def medplum_inventory_record(record: dict[str, Any]) -> dict[str, Any]:
     patient_references = direct_patient_references(resource)
     if record.get("resourceType") == "Patient" and reference and reference not in patient_references:
         patient_references.insert(0, reference)
+    references = all_fhir_references(resource)
     return {
         "id": record["id"],
         "localFhirRecordNumber": record["localFhirRecordNumber"],
@@ -496,6 +579,8 @@ def medplum_inventory_record(record: dict[str, Any]) -> dict[str, Any]:
         "resourceType": record["resourceType"],
         "identifier": record["identifier"],
         "patientReferences": patient_references,
+        "references": references,
+        "summary": fhir_resource_summary(resource, reference),
         "medplum": medplum,
         "sync": record["sync"],
         "createdAt": record["createdAt"],

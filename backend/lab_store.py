@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -1581,15 +1582,31 @@ class DemoStore:
         if not text:
             return fallback
         if "T" in text:
-            return text
+            match = re.match(
+                r"^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$",
+                text,
+            )
+            if not match:
+                return text
+            date_part, hour, minute, second, fraction, offset = match.groups()
+            normalized = f"{date_part}T{hour}:{minute}:{second or '00'}{fraction or ''}"
+            if offset:
+                if offset != "Z" and ":" not in offset:
+                    offset = f"{offset[:3]}:{offset[3:]}"
+                return f"{normalized}{offset}"
+            local_offset = datetime.now().astimezone().strftime("%z")
+            return f"{normalized}{local_offset[:3]}:{local_offset[3:]}"
         digits = "".join(character for character in text if character.isdigit())
         if len(digits) == 8:
             return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
         if len(digits) >= 12:
             base = f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}T{digits[8:10]}:{digits[10:12]}"
             if len(digits) >= 14:
-                return f"{base}:{digits[12:14]}"
-            return base
+                base = f"{base}:{digits[12:14]}"
+            else:
+                base = f"{base}:00"
+            local_offset = datetime.now().astimezone().strftime("%z")
+            return f"{base}{local_offset[:3]}:{local_offset[3:]}"
         return text
 
     @staticmethod
