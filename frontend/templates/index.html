@@ -255,11 +255,11 @@
         </section>
       </section>
 
-      <section id="medplum-view" class="app-view medplum-workspace" aria-label="Medplum FHIR Inventory" hidden>
+      <section id="medplum-view" class="app-view medplum-workspace" aria-label="Medplum FHIR Patient Console" hidden>
         <div class="lab-console-header">
           <div>
             <p class="eyebrow">Medplum</p>
-            <h2>FHIR Resource Inventory</h2>
+            <h2>FHIR Patient Console</h2>
           </div>
           <div class="lab-console-actions">
             <button id="refresh-medplum-inventory" type="button">Refresh</button>
@@ -267,23 +267,13 @@
           </div>
         </div>
 
-        <section class="lab-panel">
-          <div class="section-heading compact-heading">
-            <div>
-              <p class="eyebrow">Filters</p>
-              <h2>Patient-Centered View</h2>
-            </div>
-          </div>
-          <div class="form-grid medplum-filter-grid">
-            <label>Patient
-              <select id="medplum-patient-filter"></select>
-            </label>
-            <label>Resource
-              <select id="medplum-resource-filter">
-                <option value="">All supported resources</option>
-              </select>
-            </label>
-            <label>Sync Status
+        <section class="medplum-console-grid patient-focused-grid">
+          <div class="lab-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Patients</p>
+                <h2>FHIR Patients</h2>
+              </div>
               <select id="medplum-sync-filter">
                 <option value="">All statuses</option>
                 <option value="Synced">Synced</option>
@@ -291,41 +281,59 @@
                 <option value="Sync failed">Sync failed</option>
                 <option value="Syncing">Syncing</option>
               </select>
-            </label>
-          </div>
-        </section>
-
-        <section class="medplum-inventory-grid">
-          <div class="lab-panel medplum-resource-panel">
-            <div class="section-heading compact-heading">
-              <div>
-                <p class="eyebrow">Inventory</p>
-                <h2>FHIR Resources</h2>
-              </div>
             </div>
-            <div class="table-wrap medplum-resource-table-wrap">
-              <table class="medplum-resource-table">
+            <div class="table-wrap medplum-patient-table-wrap">
+              <table class="medplum-patient-table">
                 <thead>
-                  <tr><th>Record</th><th>Type</th><th>Status</th><th>Medplum</th><th>Source</th><th>Updated</th><th>Action</th></tr>
+                  <tr><th></th><th>Patient</th><th>Status</th><th>Orders</th><th>Reports</th><th>Action</th></tr>
                 </thead>
-                <tbody id="medplum-resource-list"></tbody>
+                <tbody id="medplum-patient-list"></tbody>
               </table>
             </div>
           </div>
 
-          <div class="lab-panel medplum-preview-panel">
+          <div class="lab-panel medplum-selected-patient-panel">
             <div class="section-heading compact-heading">
               <div>
-                <p class="eyebrow">Selected Resource</p>
-                <h2 id="medplum-selected-title">No resource selected</h2>
+                <p class="eyebrow">Selected Patient</p>
+                <h2 id="medplum-selected-patient-title">No patient selected</h2>
               </div>
-              <button id="copy-medplum-json" type="button">Copy JSON</button>
             </div>
-            <div id="medplum-selected-summary" class="record-detail compact-detail">
-              <p class="muted">Select a FHIR resource to inspect raw JSON.</p>
+            <div id="medplum-selected-patient-summary" class="record-detail compact-detail">
+              <p class="muted">Select a FHIR patient.</p>
             </div>
-            <pre id="medplum-json-preview" class="compact-output medplum-json-preview">Select a FHIR resource to inspect raw JSON.</pre>
+            <div class="form-grid medplum-workflow-controls">
+              <label>ServiceRequest
+                <select id="medplum-service-request-select"></select>
+              </label>
+              <label>DiagnosticReport
+                <select id="medplum-diagnostic-report-select"></select>
+              </label>
+            </div>
+            <section class="medplum-related-section">
+              <div class="section-heading compact-heading">
+                <div>
+                  <p class="eyebrow">Workflow</p>
+                  <h2>Related Resources</h2>
+                </div>
+              </div>
+              <div id="medplum-related-resources" class="medplum-related-list"></div>
+            </section>
           </div>
+        </section>
+
+        <section class="lab-panel medplum-json-console">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Console JSON</p>
+              <h2 id="medplum-selected-title">No resource selected</h2>
+            </div>
+            <button id="copy-medplum-json" type="button">Copy JSON</button>
+          </div>
+          <div id="medplum-selected-summary" class="record-detail compact-detail">
+            <p class="muted">Select a FHIR Patient, ServiceRequest, DiagnosticReport, Task, Observation, or DocumentReference.</p>
+          </div>
+          <pre id="medplum-json-preview" class="compact-output medplum-json-preview">Select a FHIR resource to inspect raw JSON.</pre>
         </section>
       </section>
 
