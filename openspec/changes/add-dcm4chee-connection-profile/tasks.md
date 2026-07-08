@@ -13,8 +13,8 @@
 
 ## 3. Documentation And Defaults
 
-- [ ] 3.1 Document the local dcm4chee profile defaults in `.env.example` or README context.
-- [ ] 3.2 Clarify that local auth/TLS defaults are lab-only and not production security.
+- [x] 3.1 Document the local dcm4chee profile defaults in `.env.example` or README context.
+- [x] 3.2 Clarify that local auth/TLS defaults are lab-only and not production security.
 
 ## 4. Verification
 
