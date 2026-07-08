@@ -14,15 +14,15 @@
 
 ## 3. Frontend
 
-- [ ] 3.1 Add a Retry action to DICOM MWL order rows when the backend marks the dcm4chee sync state retryable.
-- [ ] 3.2 Show latest dcm4chee sync details for the selected DICOM order, including status, retry count, timestamps, HTTP status, error type/text, and key identifiers.
-- [ ] 3.3 Show dcm4chee attempt history for the selected DICOM order, including operation type, status, request target, HTTP status, error, and response payload.
-- [ ] 3.4 Refresh the order list and selected-order inspection state after retry.
+- [x] 3.1 Add a Retry action to DICOM MWL order rows when the backend marks the dcm4chee sync state retryable.
+- [x] 3.2 Show latest dcm4chee sync details for the selected DICOM order, including status, retry count, timestamps, HTTP status, error type/text, and key identifiers.
+- [x] 3.3 Show dcm4chee attempt history for the selected DICOM order, including operation type, status, request target, HTTP status, error, and response payload.
+- [x] 3.4 Refresh the order list and selected-order inspection state after retry.
 
 ## 4. Verification
 
 - [x] 4.1 Add backend tests for successful retry from a failed dcm4chee sync without duplicate MWL POST after an existing successful mapping.
 - [x] 4.2 Add backend tests for retry failure preserving the local order and exposing latest error/status metadata.
 - [x] 4.3 Add backend tests for dcm4chee attempt-history API output.
-- [ ] 4.4 Add frontend/API contract coverage for retryable metadata and DICOM order row actions where practical.
+- [x] 4.4 Add frontend/API contract coverage for retryable metadata and DICOM order row actions where practical.
 - [ ] 4.5 Run OpenSpec validation and the relevant Healthcare Lab Python test suite.

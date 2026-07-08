@@ -6,6 +6,7 @@ let dashboardResources = null;
 let patientRecords = [];
 let orderRecords = [];
 let gdtOrderRecords = [];
+let selectedOrderRecordId = null;
 let gdtWorkbench = { patients: [], bridgeInbox: [] };
 let gdtBridgeConfig = null;
 let selectedGdtPatientId = null;
@@ -2100,6 +2101,10 @@ function renderOrderSummary(payload, patient, createdAt = "") {
     return;
   }
   if (payload.mode === "dicom") {
+    const dcm4chee = payload.dcm4chee || {};
+    const mwl = dcm4chee.mwl || {};
+    const mapping = mwl.mapping || {};
+    const latest = mwl.latest || {};
     [
       ["Patient", patient?.summary?.name],
       ["MRN", patient?.summary?.mrn],
@@ -2114,6 +2119,29 @@ function renderOrderSummary(payload, patient, createdAt = "") {
       item.appendChild(document.createTextNode(value || "-"));
       container.appendChild(item);
     });
+    if (mwl.status || mapping.status) {
+      container.appendChild(dcm4cheeDetailBlock("Sync", [
+        ["Status", mwl.displayStatus || mapping.status || mwl.status],
+        ["Retryable", mwl.retryable ? "Yes" : "No"],
+        ["Retry Count", mapping.retryCount ?? latest.retryCount ?? 0],
+        ["Last Sync", mapping.lastSyncAt || latest.lastSyncAt],
+        ["HTTP", mapping.lastHttpStatus || latest.httpStatus],
+        ["Error Type", mapping.lastErrorType || latest.errorType],
+        ["Error", mapping.lastError || latest.error],
+      ]));
+      container.appendChild(dcm4cheeDetailBlock("Identifiers", [
+        ["Study UID", mapping.studyInstanceUid || mwl.studyInstanceUid],
+        ["Accession", mapping.accessionNumber || mwl.accessionNumber],
+        ["Requested Procedure", mapping.requestedProcedureId || mwl.requestedProcedureId],
+        ["SPS ID", mapping.scheduledProcedureStepId || mwl.scheduledProcedureStepId],
+        ["Patient ID", mapping.patientId],
+      ]));
+      const history = createElement("div", "", "detail-block raw-details");
+      history.id = "dcm4chee-attempt-history";
+      history.appendChild(createElement("h3", "dcm4chee Attempts"));
+      history.appendChild(createElement("p", "Loading attempt history...", "muted"));
+      container.appendChild(history);
+    }
     return;
   }
   const rows = [
@@ -2132,6 +2160,94 @@ function renderOrderSummary(payload, patient, createdAt = "") {
     item.appendChild(document.createTextNode(value || "-"));
     container.appendChild(item);
   });
+}
+
+function dcm4cheeDetailBlock(title, rows) {
+  const block = createElement("div", "", "detail-block");
+  block.appendChild(createElement("h3", title));
+  const list = createElement("dl", "", "detail-list");
+  rows.forEach(([label, value]) => {
+    const dt = createElement("dt", label);
+    const dd = createElement("dd", value === null || value === undefined || value === "" ? "-" : String(value));
+    list.append(dt, dd);
+  });
+  block.appendChild(list);
+  return block;
+}
+
+function renderDcm4cheeAttemptHistory(attempts) {
+  const container = byId("dcm4chee-attempt-history");
+  if (!container) return;
+  container.replaceChildren(createElement("h3", "dcm4chee Attempts"));
+  if (!attempts.length) {
+    container.appendChild(createElement("p", "No dcm4chee attempts recorded.", "muted"));
+    return;
+  }
+  const list = createElement("ol", "", "attempt-list");
+  attempts.forEach((attempt) => {
+    const item = document.createElement("li");
+    const parts = [
+      attempt.operationType || "attempt",
+      attempt.status || "-",
+      attempt.httpStatus ? `HTTP ${attempt.httpStatus}` : "",
+      attempt.error || "",
+    ].filter(Boolean);
+    item.textContent = parts.join(" | ");
+    if (attempt.requestUrl || attempt.responseBody) {
+      const details = document.createElement("details");
+      details.appendChild(createElement("summary", "Payload"));
+      const body = [
+        attempt.requestUrl ? `URL: ${attempt.requestUrl}` : "",
+        attempt.responseBody ? `Response: ${attempt.responseBody}` : "",
+      ].filter(Boolean).join("\n");
+      details.appendChild(createElement("pre", body, "compact-output"));
+      item.appendChild(details);
+    }
+    list.appendChild(item);
+  });
+  container.appendChild(list);
+}
+
+async function loadDcm4cheeAttemptHistory(orderId) {
+  const container = byId("dcm4chee-attempt-history");
+  if (!container) return;
+  try {
+    const result = await requestJson(`/api/orders/${orderId}/dcm4chee-attempts`);
+    renderDcm4cheeAttemptHistory(result.items || []);
+  } catch (error) {
+    container.replaceChildren(createElement("h3", "dcm4chee Attempts"), createElement("p", error.message, "muted"));
+  }
+}
+
+function selectedOrderPayloadPreview(item, mode) {
+  if (mode !== "dicom") return item.payload || "";
+  const mwl = item.dcm4chee?.mwl || {};
+  const mapping = mwl.mapping || {};
+  const payload = mapping.latestRequestPayload || mwl.requestPayload || {};
+  return Object.keys(payload).length ? JSON.stringify(payload, null, 2) : "";
+}
+
+function selectOrderRecord(item, mode) {
+  selectedOrderRecordId = item.id;
+  const summary = item.summary || {};
+  byId("order-payload-preview").textContent = selectedOrderPayloadPreview(item, mode);
+  renderOrderSummary({
+    mode,
+    priority: item.priority,
+    requestedAt: item.requestedAt,
+    orderingProvider: item.orderingProvider,
+    orderCode: item.orderCode,
+    alternateCode: item.alternateCode,
+    fhir: item.fhir?.serviceRequest?.resource || {},
+    dcm4chee: item.dcm4chee || {},
+  }, {
+    summary: {
+      name: summary.name,
+      mrn: summary.mrn,
+    },
+    visitNumber: item.visitId,
+  }, item.createdAt);
+  if (mode === "dicom") loadDcm4cheeAttemptHistory(item.id);
 }
 
 function refreshOrderPreview() {
@@ -2170,7 +2286,7 @@ function renderOrderRecordList() {
             ? "No local DICOM MWL orders created yet."
             : "No local orders created yet.",
     );
-    cell.colSpan = 7;
+    cell.colSpan = 8;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
@@ -2190,7 +2306,7 @@ function renderOrderRecordList() {
         `Task: ${fhir.task?.sync?.status || "-"}`,
       ].join(" / ")
       : mode === "dicom"
-        ? dcm4cheeMapping.status || dcm4cheeMwl.status || item.status
+        ? dcm4cheeMwl.displayStatus || dcm4cheeMapping.status || dcm4cheeMwl.status || item.status
       : item.status;
     const fhirMedplum = mode === "fhir"
       ? [
@@ -2204,6 +2320,19 @@ function renderOrderRecordList() {
           dcm4cheeMwl.error || "",
         ].filter(Boolean).join(" | ")
       : "";
+    const actionCell = rowCell("");
+    if (mode === "dicom" && dcm4cheeMwl.retryable) {
+      const retryButton = createElement("button", "Retry", "small-button");
+      retryButton.type = "button";
+      retryButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        retryDcm4cheeOrder(item.id, retryButton);
+      });
+      actionCell.replaceChildren(retryButton);
+    } else {
+      actionCell.textContent = "-";
+      actionCell.className = "muted";
+    }
     row.append(
       rowCell(orderNumber || item.id),
       rowCell(summary.mrn),
@@ -2212,25 +2341,9 @@ function renderOrderRecordList() {
       rowCell(fhirMedplum ? `${fhirStatus} (${fhirMedplum})` : fhirStatus),
       rowCell(item.requestedAt),
       rowCell(item.createdAt),
+      actionCell,
     );
-    row.addEventListener("click", () => {
-      byId("order-payload-preview").textContent = item.payload || "";
-      renderOrderSummary({
-        mode,
-        priority: item.priority,
-        requestedAt: item.requestedAt,
-        orderingProvider: item.orderingProvider,
-        orderCode: item.orderCode,
-        alternateCode: item.alternateCode,
-        fhir: item.fhir?.serviceRequest?.resource || {},
-      }, {
-        summary: {
-          name: summary.name,
-          mrn: summary.mrn,
-        },
-        visitNumber: item.visitId,
-      }, item.createdAt);
-    });
+    row.addEventListener("click", () => selectOrderRecord(item, mode));
     body.appendChild(row);
   });
 }
@@ -2245,8 +2358,33 @@ async function refreshOrders() {
       orderRecords = result.items || [];
     }
     renderOrderRecordList();
+    const selectedMode = currentOrderMode();
+    const selected = orderRecords.find((item) => {
+      if (item.id !== selectedOrderRecordId) return false;
+      if (selectedMode === "fhir") return item.protocolVersion === "FHIR R4";
+      if (selectedMode === "dicom") return item.protocolVersion === "DICOM";
+      return item.protocolVersion !== "FHIR R4" && item.protocolVersion !== "DICOM";
+    });
+    if (selected && selectedMode !== "gdt") selectOrderRecord(selected, selectedMode);
   } catch (error) {
     setStatus("order-form-status", "Refresh failed", "error");
+  }
+}
+
+async function retryDcm4cheeOrder(orderId, button) {
+  if (button) button.disabled = true;
+  setStatus("order-form-status", "Retrying dcm4chee sync...", "pending");
+  try {
+    const result = await requestJson(`/api/orders/${orderId}/dcm4chee-sync`, { method: "POST", body: JSON.stringify({}) });
+    const mwl = result.item?.dcm4chee?.mwl || {};
+    setStatus("order-form-status", mwl.displayStatus || "dcm4chee sync updated", result.success ? "success" : "error");
+    selectedOrderRecordId = orderId;
+    await refreshOrders();
+  } catch (error) {
+    setStatus("order-form-status", "Retry failed", "error");
+    byId("order-payload-preview").textContent = error.message;
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
