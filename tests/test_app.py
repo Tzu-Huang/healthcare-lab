@@ -18,11 +18,13 @@ from app import (
     create_app,
     dashboard_action_for_group,
     derive_lab_overall_status,
+    dcm4chee_profile_from_config,
     import_gdt_bridge_files,
     parse_hl7_ack,
     parse_oru_summary,
     run_lab_application_check,
     run_lab_smoke_check,
+    validate_dcm4chee_profile,
 )
 from backend.lab_store import render_gdt_message
 
@@ -1997,6 +1999,54 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(by_name["GDT Bridge"]["serverType"], "GDT Bridge")
         self.assertEqual(by_name["dcm4chee"]["serverType"], "DICOM Archive")
         self.assertTrue(all(item["overallStatus"] == "Unknown" for item in items))
+
+    def test_dcm4chee_profile_api_returns_local_defaults(self):
+        response = self.client.get("/api/dcm4chee/profile")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        profile = body["item"]
+
+        self.assertEqual(profile["profileName"], "local-dcm4chee")
+        self.assertEqual(profile["displayName"], "dcm4chee Local Archive")
+        self.assertEqual(profile["environmentName"], "local-docker")
+        self.assertEqual(profile["webUiUrl"], "http://127.0.0.1:8082/dcm4chee-arc/ui2")
+        self.assertEqual(profile["dimse"]["host"], "127.0.0.1")
+        self.assertEqual(profile["dimse"]["port"], 11112)
+        self.assertEqual(profile["dimse"]["calledAETitle"], "DCM4CHEE")
+        self.assertEqual(profile["dimse"]["callingAETitle"], "HEALTHCARE_LAB")
+        self.assertEqual(profile["mwl"]["aeTitle"], "DCM4CHEE")
+        self.assertEqual(profile["mwl"]["defaultScheduledStationAETitle"], "ECG_AP")
+        self.assertEqual(
+            profile["dicomweb"]["baseUrl"],
+            "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+        )
+        self.assertEqual(profile["security"]["authMode"], "none")
+        self.assertFalse(profile["security"]["tlsEnabled"])
+        self.assertTrue(body["diagnostics"]["valid"])
+
+    def test_dcm4chee_profile_diagnostics_report_missing_values(self):
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+        profile["dimse"]["calledAETitle"] = ""
+        profile["dicomweb"]["baseUrl"] = "not-a-url"
+        profile["security"]["certificatePath"] = "cert.pem"
+
+        diagnostics = validate_dcm4chee_profile(profile)
+
+        self.assertFalse(diagnostics["valid"])
+        messages = {check["field"]: check["message"] for check in diagnostics["checks"]}
+        self.assertEqual(messages["dimse.calledAETitle"], "Called AE title is required.")
+        self.assertEqual(
+            messages["dicomweb.baseUrl"],
+            "dicomweb.baseUrl must start with http:// or https://.",
+        )
+        self.assertEqual(
+            messages["security.tlsEnabled"],
+            "Certificate or key paths require TLS to be enabled.",
+        )
+
+    def test_dcm4chee_profile_named_route_rejects_unknown_profile(self):
+        response = self.client.get("/api/dcm4chee/profiles/remote")
+        self.assertEqual(response.status_code, 404)
 
     def test_lab_server_create_update_and_detail_api(self):
         created = self.client.post(
