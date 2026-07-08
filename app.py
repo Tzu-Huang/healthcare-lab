@@ -639,6 +639,10 @@ def sync_order_to_dcm4chee_mwl(
     if existing_mapping and existing_mapping.get("status") == DCM4CHEE_MWL_STATUS_CREATED:
         return existing_mapping
     if existing_mapping:
+        created_but_unconfirmed = (
+            int(existing_mapping.get("lastHttpStatus") or 0) in range(200, 300)
+            and str(existing_mapping.get("lastErrorType") or "").startswith("dcm4chee_readback")
+        )
         readback_attempt = store.create_dcm4chee_mwl_attempt(
             int(order["id"]),
             profile,
@@ -691,6 +695,8 @@ def sync_order_to_dcm4chee_mwl(
             )
             if readback_identifiers:
                 return updated_readback_attempt
+            if created_but_unconfirmed:
+                return updated_readback_attempt
         except UpstreamDcm4cheeError as exc:
             updated_readback_attempt = store.update_dcm4chee_mwl_attempt_result(
                 int(readback_attempt["id"]),
@@ -710,6 +716,8 @@ def sync_order_to_dcm4chee_mwl(
                 error_text=updated_readback_attempt["error"],
                 error_payload={"responseBody": exc.response_body},
             )
+            if created_but_unconfirmed:
+                return updated_readback_attempt
     mapping = store.upsert_dcm4chee_mwl_mapping(
         int(order["id"]),
         profile,
@@ -787,7 +795,7 @@ def sync_order_to_dcm4chee_mwl(
     store.update_dcm4chee_mwl_mapping_from_attempt(
         int(order["id"]),
         attempt_id=int(updated_attempt["id"]),
-        sync_status=DCM4CHEE_MWL_STATUS_CREATED,
+        sync_status=DCM4CHEE_MWL_STATUS_PENDING if readback_error_type else DCM4CHEE_MWL_STATUS_CREATED,
         http_status=status,
         response_body=response_body,
         error_type=readback_error_type,

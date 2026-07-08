@@ -1063,6 +1063,7 @@ class DemoStore:
                 "operation_type",
                 "TEXT NOT NULL DEFAULT 'create'",
             )
+            self._backfill_dcm4chee_mwl_mappings(connection)
             self._ensure_column(connection, "local_patient_records", "email", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(connection, "local_patient_records", "fhir_active", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_column(connection, "local_patient_records", "address_line", "TEXT NOT NULL DEFAULT ''")
@@ -5051,6 +5052,111 @@ class DemoStore:
             except sqlite3.OperationalError as exc:
                 if "duplicate column name" not in str(exc).lower():
                     raise
+
+    @classmethod
+    def _backfill_dcm4chee_mwl_mappings(cls, connection: sqlite3.Connection) -> None:
+        rows = connection.execute(
+            """
+            SELECT a.*, o.mrn, o.order_code, o.order_code_text
+            FROM local_dcm4chee_mwl_attempts a
+            JOIN local_order_records o ON o.id = a.order_record_id
+            WHERE NOT EXISTS (
+                SELECT 1 FROM local_dcm4chee_mwl_mappings m
+                WHERE m.order_record_id = a.order_record_id
+            )
+            AND a.id = (
+                SELECT latest.id
+                FROM local_dcm4chee_mwl_attempts latest
+                WHERE latest.order_record_id = a.order_record_id
+                ORDER BY latest.attempted_at DESC, latest.id DESC
+                LIMIT 1
+            )
+            ORDER BY a.order_record_id
+            """
+        ).fetchall()
+        for row in rows:
+            request_payload = cls._json_value(row["request_payload_json"], {})
+            sps_payload = cls._dcm4chee_sps_payload(request_payload)
+            patient_id = cls._dicom_first_value(request_payload, "00100020", row["mrn"])
+            issuer = cls._dicom_first_value(request_payload, "00100021", row["profile_name"])
+            worklist_label = cls._dicom_first_value(
+                request_payload,
+                "00741202",
+                str(row["order_code_text"] or row["order_code"] or ORDER_DEFAULT_TEXT).strip(),
+            )
+            scheduled_station = row["scheduled_station_ae_title"] or cls._dicom_first_value(
+                sps_payload,
+                "00400001",
+            )
+            completed_or_attempted = row["completed_at"] or row["attempted_at"]
+            response_body = row["response_body"] or ""
+            error_payload = {"responseBody": response_body} if row["error_type"] else {}
+            cursor = connection.execute(
+                """
+                INSERT INTO local_dcm4chee_mwl_mappings (
+                    order_record_id, profile_name, server_identity, mwl_ae_title,
+                    scheduled_station_ae_title, local_dcm4chee_order_number,
+                    patient_id, issuer_of_patient_id, accession_number,
+                    requested_procedure_id, scheduled_procedure_step_id,
+                    study_instance_uid, worklist_label, uid_root, sync_status,
+                    last_sync_at, retry_count, last_attempt_id, last_http_status,
+                    last_response_body, last_error_type, last_error_text,
+                    last_error_payload_json, latest_request_payload_json,
+                    latest_readback_payload_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    row["order_record_id"],
+                    row["profile_name"],
+                    row["server_identity"],
+                    row["mwl_ae_title"],
+                    scheduled_station,
+                    row["local_dcm4chee_order_number"],
+                    patient_id,
+                    issuer,
+                    row["accession_number"],
+                    row["requested_procedure_id"],
+                    row["scheduled_procedure_step_id"],
+                    row["study_instance_uid"],
+                    worklist_label,
+                    row["uid_root"],
+                    row["attempt_status"],
+                    completed_or_attempted,
+                    max(
+                        0,
+                        int(
+                            connection.execute(
+                                """
+                                SELECT COUNT(*) FROM local_dcm4chee_mwl_attempts
+                                WHERE order_record_id = ?
+                                """,
+                                (row["order_record_id"],),
+                            ).fetchone()[0]
+                        )
+                        - 1,
+                    ),
+                    row["id"],
+                    row["http_status"],
+                    response_body,
+                    row["error_type"],
+                    row["error_text"],
+                    json.dumps(error_payload, sort_keys=True),
+                    row["request_payload_json"] or "{}",
+                    "{}",
+                    row["created_at"],
+                    row["updated_at"],
+                ),
+            )
+            mapping_id = int(cursor.lastrowid)
+            connection.execute(
+                """
+                UPDATE local_dcm4chee_mwl_attempts
+                SET mapping_id = ?, operation_type = COALESCE(NULLIF(operation_type, ''), ?)
+                WHERE order_record_id = ? AND mapping_id IS NULL
+                """,
+                (mapping_id, DCM4CHEE_MWL_OPERATION_CREATE, row["order_record_id"]),
+            )
 
     @staticmethod
     def _operation_metadata_for_name(name: str) -> dict[str, Any]:
