@@ -1918,6 +1918,63 @@ body {
   font-size: 12px;
 }
 
+.medplum-inventory-grid {
+  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.6fr);
+}
+
+.medplum-resource-table {
+  min-width: 1060px;
+  table-layout: fixed;
+}
+
+.medplum-resource-table th:nth-child(1),
+.medplum-resource-table td:nth-child(1) {
+  width: 118px;
+}
+
+.medplum-resource-table th:nth-child(2),
+.medplum-resource-table td:nth-child(2) {
+  width: 136px;
+}
+
+.medplum-resource-table th:nth-child(3),
+.medplum-resource-table td:nth-child(3) {
+  width: 132px;
+}
+
+.medplum-resource-table th:nth-child(5),
+.medplum-resource-table td:nth-child(5) {
+  width: 150px;
+}
+
+.medplum-resource-table th:nth-child(6),
+.medplum-resource-table td:nth-child(6) {
+  width: 188px;
+}
+
+.medplum-resource-table th:last-child,
+.medplum-resource-table td:last-child {
+  width: 96px;
+}
+
+.medplum-resource-table td:nth-child(4) {
+  overflow-wrap: anywhere;
+}
+
+.timestamp-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  column-gap: 6px;
+  row-gap: 2px;
+  min-width: 150px;
+  white-space: normal;
+}
+
+.timestamp-date,
+.timestamp-time {
+  white-space: nowrap;
+}
+
 .oie-subsection-heading {
   margin-top: 22px;
 }
@@ -2143,6 +2200,7 @@ button.primary:hover,
 
   .patient-grid,
   .order-workspace .patient-grid,
+  .medplum-inventory-grid,
   .oie-inventory-grid {
     grid-template-columns: 1fr;
   }
