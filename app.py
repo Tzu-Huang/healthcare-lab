@@ -429,6 +429,10 @@ def medplum_create_resource_url(base_url: str, record: dict[str, Any]) -> str:
     return f"{base_url}/{record['resourceType']}"
 
 
+def medplum_update_resource_url(base_url: str, record: dict[str, Any], resource_id: str) -> str:
+    return f"{base_url}/{record['resourceType']}/{urllib.parse.quote(resource_id, safe='')}"
+
+
 def first_fhir_bundle_resource(bundle: dict[str, Any], resource_type: str) -> dict[str, Any] | None:
     if bundle.get("resourceType") != "Bundle":
         return None
@@ -456,6 +460,8 @@ def sync_fhir_workflow_record_to_medplum(
     auth_manager: MedplumAuthManager,
 ) -> dict[str, Any]:
     base = normalize_fhir_base_url(base_url)
+    current_record = store.get_fhir_workflow_record(record_id)
+    original_sync_status = current_record.get("sync", {}).get("status")
     record = store.mark_fhir_syncing(record_id)
     search_url = medplum_identifier_search_url(base, record)
 
@@ -532,10 +538,36 @@ def sync_fhir_workflow_record_to_medplum(
         stored_medplum = record.get("medplum") or {}
         stored_medplum_id = str(stored_medplum.get("id") or "").strip()
         if stored_medplum_id:
+            if original_sync_status == FHIR_SYNC_STATUS_SYNCED:
+                return store.mark_fhir_sync_success(
+                    record_id,
+                    medplum_resource_id=stored_medplum_id,
+                    medplum_resource_reference=str(stored_medplum.get("reference") or "").strip(),
+                )
+            update_payload = dict(record["resource"])
+            update_payload["id"] = stored_medplum_id
+            update_url = medplum_update_resource_url(base, record, stored_medplum_id)
+            update_status, update_body = sync_request(
+                update_url,
+                method="PUT",
+                request_payload=update_payload,
+                body=json.dumps(update_payload).encode("utf-8"),
+                content_type="application/fhir+json",
+            )
+            store.record_fhir_sync_attempt(
+                record_id,
+                method="PUT",
+                request_url=update_url,
+                request_payload=update_payload,
+                http_status=update_status,
+                response_payload=update_body,
+                operation_outcome=operation_outcome_from_payload(update_body),
+            )
+            medplum_id, reference = medplum_resource_reference(update_body, record["resourceType"])
             return store.mark_fhir_sync_success(
                 record_id,
-                medplum_resource_id=stored_medplum_id,
-                medplum_resource_reference=str(stored_medplum.get("reference") or "").strip(),
+                medplum_resource_id=medplum_id,
+                medplum_resource_reference=reference,
             )
 
         create_url = medplum_create_resource_url(base, record)
