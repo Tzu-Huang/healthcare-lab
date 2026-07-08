@@ -151,6 +151,34 @@ reserved for later work. Server detail pages show operation buttons such as
 Start, Stop, and Restart as disabled controls because real command execution is
 not implemented in this phase.
 
+The local dcm4chee profile is available through:
+
+```text
+GET /api/dcm4chee/profile
+GET /api/dcm4chee/profile/diagnostics
+```
+
+The default profile is named `local-dcm4chee` and matches the Docker lab
+defaults:
+
+| Field | Value |
+| --- | --- |
+| Display name | `dcm4chee Local Archive` |
+| Environment | `local-docker` |
+| Web UI URL | `http://127.0.0.1:8082/dcm4chee-arc/ui2` |
+| DIMSE host / port | `127.0.0.1:11112` |
+| Called AE title | `DCM4CHEE` |
+| Healthcare Lab calling AE title | `HEALTHCARE_LAB` |
+| MWL AE title | `DCM4CHEE` |
+| Default Scheduled Station AE Title | `ECG_AP` |
+| DICOMweb base URL | `http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs` |
+
+The profile also includes QIDO-RS, WADO-RS, STOW-RS, viewer-link, auth, and TLS
+fields for future MWL, verification, C-STORE reconciliation, and viewer-link
+workflows. The local default uses `DCM4CHEE_AUTH_MODE=none` and
+`DCM4CHEE_TLS_ENABLED=false`; that is only for the local lab and is not a
+production security profile.
+
 The first Docker Desktop runtime scaffold for the Lab Console lives in
 [deploy/](deploy/README.md). It includes `docker-compose.yml` and the
 `deploy/lab.ps1` wrapper for local `status`, `start`, `stop`, `restart`,

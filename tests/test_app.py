@@ -18,11 +18,13 @@ from app import (
     create_app,
     dashboard_action_for_group,
     derive_lab_overall_status,
+    dcm4chee_profile_from_config,
     import_gdt_bridge_files,
     parse_hl7_ack,
     parse_oru_summary,
     run_lab_application_check,
     run_lab_smoke_check,
+    validate_dcm4chee_profile,
 )
 from backend.lab_store import render_gdt_message
 
@@ -1997,6 +1999,95 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(by_name["GDT Bridge"]["serverType"], "GDT Bridge")
         self.assertEqual(by_name["dcm4chee"]["serverType"], "DICOM Archive")
         self.assertTrue(all(item["overallStatus"] == "Unknown" for item in items))
+
+    def test_dcm4chee_profile_api_returns_local_defaults(self):
+        response = self.client.get("/api/dcm4chee/profile")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        profile = body["item"]
+
+        self.assertEqual(profile["profileName"], "local-dcm4chee")
+        self.assertEqual(profile["displayName"], "dcm4chee Local Archive")
+        self.assertEqual(profile["environmentName"], "local-docker")
+        self.assertEqual(profile["webUiUrl"], "http://127.0.0.1:8082/dcm4chee-arc/ui2")
+        self.assertEqual(profile["dimse"]["host"], "127.0.0.1")
+        self.assertEqual(profile["dimse"]["port"], 11112)
+        self.assertEqual(profile["dimse"]["calledAETitle"], "DCM4CHEE")
+        self.assertEqual(profile["dimse"]["callingAETitle"], "HEALTHCARE_LAB")
+        self.assertEqual(profile["mwl"]["aeTitle"], "DCM4CHEE")
+        self.assertEqual(profile["mwl"]["defaultScheduledStationAETitle"], "ECG_AP")
+        self.assertEqual(
+            profile["dicomweb"]["baseUrl"],
+            "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+        )
+        self.assertEqual(profile["security"]["authMode"], "none")
+        self.assertFalse(profile["security"]["tlsEnabled"])
+        self.assertTrue(body["diagnostics"]["valid"])
+
+    def test_dcm4chee_profile_diagnostics_report_missing_values(self):
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+        profile["dimse"]["calledAETitle"] = ""
+        profile["dicomweb"]["baseUrl"] = "not-a-url"
+        profile["security"]["certificatePath"] = "cert.pem"
+
+        diagnostics = validate_dcm4chee_profile(profile)
+
+        self.assertFalse(diagnostics["valid"])
+        messages = {check["field"]: check["message"] for check in diagnostics["checks"]}
+        self.assertEqual(messages["dimse.calledAETitle"], "Called AE title is required.")
+        self.assertEqual(
+            messages["dicomweb.baseUrl"],
+            "dicomweb.baseUrl must start with http:// or https://.",
+        )
+        self.assertEqual(
+            messages["security.certificatePath"],
+            "Certificate or key paths require TLS to be enabled.",
+        )
+
+    def test_dcm4chee_profile_named_route_rejects_unknown_profile(self):
+        response = self.client.get("/api/dcm4chee/profiles/remote")
+        self.assertEqual(response.status_code, 404)
+
+    def test_dcm4chee_profile_diagnostics_handles_malformed_env_values(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(
+                os.environ,
+                {
+                    "DCM4CHEE_DIMSE_PORT": "abc",
+                    "DCM4CHEE_TLS_ENABLED": "maybe",
+                    "DCM4CHEE_TLS_VERIFY": "sometimes",
+                },
+            ):
+                app = create_app(str(Path(temp_dir) / "malformed.db"))
+            app.config.update(TESTING=True, GDT_BRIDGE_PATH=str(Path(temp_dir) / "gdt-bridge"))
+            response = app.test_client().get("/api/dcm4chee/profile/diagnostics")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertFalse(body["valid"])
+        messages = {check["field"]: check["message"] for check in body["checks"]}
+        self.assertEqual(
+            messages["dimse.port"],
+            "DIMSE port must be an integer between 1 and 65535.",
+        )
+        self.assertEqual(messages["security.tlsEnabled"], "TLS enabled must be true or false.")
+        self.assertEqual(messages["security.tlsVerify"], "TLS verify must be true or false.")
+
+    @patch("app.socket.create_connection")
+    @patch("app.urllib.request.urlopen")
+    def test_dcm4chee_smoke_reports_out_of_range_dimse_port(self, urlopen, create_connection):
+        urlopen.return_value = FakeHttpResponse(b"ok", status=200)
+        self.client.application.config["DCM4CHEE_DIMSE_PORT"] = "99999"
+        store = self.client.application.extensions["demo_store"]
+        dcm4chee = next(item for item in store.list_lab_servers() if item["name"] == "dcm4chee")
+
+        result = run_lab_smoke_check(self.client.application, store, dcm4chee)
+
+        self.assertEqual(result["status"], "Down")
+        dimse_step = next(step for step in result["steps"] if step["name"] == "dicom_dimse")
+        self.assertEqual(dimse_step["status"], "Down")
+        self.assertEqual(dimse_step["message"], "Port must be an integer between 1 and 65535.")
+        create_connection.assert_not_called()
 
     def test_lab_server_create_update_and_detail_api(self):
         created = self.client.post(

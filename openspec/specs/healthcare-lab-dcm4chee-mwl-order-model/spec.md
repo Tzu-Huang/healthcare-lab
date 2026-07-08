@@ -36,6 +36,12 @@ Healthcare Lab SHALL include the agreed Scheduled Procedure Step and order attri
 - **AND** the payload includes `00401001 Requested Procedure ID`
 - **AND** the payload includes `00741202 Worklist Label`
 
+#### Scenario: Order fields use the selected dcm4chee profile
+- **WHEN** Healthcare Lab prepares a future dcm4chee MWL/order request
+- **THEN** it uses the selected dcm4chee connection profile for server identity
+- **AND** it uses the profile MWL AE title and default Scheduled Station AE Title unless the workflow selects a more specific AP station
+- **AND** it uses the profile DICOMweb and viewer settings for future query, verification, reconciliation, and viewer-link behavior
+
 ### Requirement: Healthcare Lab generated identifiers are sequential and namespace-aware
 Healthcare Lab SHALL generate readable sequential identifiers for its local MWL workflow while keeping namespace boundaries explicit.
 
@@ -64,3 +70,4 @@ Healthcare Lab SHALL define deterministic matching precedence for reconciling AP
 - **AND** otherwise matches by `00080050 Accession Number` within the dcm4chee server namespace
 - **AND** otherwise matches by `00401001 Requested Procedure ID` and `00400009 Scheduled Procedure Step ID`
 - **AND** weak fallback matching by Patient ID, issuer, Scheduled Station AE Title, modality/time window, and order status is treated as ambiguous unless exactly one active candidate exists
+

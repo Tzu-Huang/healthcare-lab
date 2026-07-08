@@ -69,6 +69,8 @@ MEDPLUM_INVENTORY_RESOURCE_TYPES = (
 )
 MEDPLUM_READ_RESOURCE_TYPES = MEDPLUM_INVENTORY_RESOURCE_TYPES + ("Binary",)
 MEDPLUM_PATIENT_REFERENCE_FIELDS = ("subject", "patient", "for")
+DCM4CHEE_PROFILE_NAME = "local-dcm4chee"
+DCM4CHEE_AUTH_MODES = ("none", "basic", "bearer", "oauth2", "mtls")
 
 load_dotenv(Path(__file__).with_name(".env"))
 
@@ -246,6 +248,220 @@ def normalize_fhir_base_url(value: str) -> str:
     if not base_url.startswith(("http://", "https://")):
         raise ValidationError("Medplum FHIR base URL must start with http:// or https://.")
     return base_url
+
+
+def parse_config_bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if not text:
+        return default
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    raise ValidationError(f"Boolean config value is invalid: {value}")
+
+
+def coerce_config_int(value: Any, *, default: int) -> int | str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    if not text:
+        return default
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return text
+
+
+def coerce_config_bool(value: Any, *, default: bool) -> bool | str:
+    try:
+        return parse_config_bool(value, default=default)
+    except ValidationError:
+        return str(value).strip()
+
+
+def require_http_url(value: Any, field: str) -> str:
+    url = str(value or "").strip()
+    if not url:
+        raise ValidationError(f"{field} is required.")
+    if not url.startswith(("http://", "https://")):
+        raise ValidationError(f"{field} must start with http:// or https://.")
+    return url.rstrip("/")
+
+
+def dcm4chee_profile_from_config(config: dict[str, Any]) -> dict[str, Any]:
+    profile_name = str(config.get("DCM4CHEE_PROFILE_NAME", DCM4CHEE_PROFILE_NAME) or "").strip()
+    called_ae_title = str(config.get("DCM4CHEE_CALLED_AE_TITLE", "DCM4CHEE") or "").strip()
+    dicomweb_base_url = str(
+        config.get(
+            "DCM4CHEE_DICOMWEB_BASE_URL",
+            f"http://127.0.0.1:8082/dcm4chee-arc/aets/{called_ae_title or 'DCM4CHEE'}/rs",
+        )
+        or ""
+    ).strip().rstrip("/")
+    web_ui_url = str(
+        config.get("DCM4CHEE_WEB_UI_URL", "http://127.0.0.1:8082/dcm4chee-arc/ui2") or ""
+    ).strip().rstrip("/")
+    qido_url = str(config.get("DCM4CHEE_QIDO_RS_URL") or dicomweb_base_url).strip().rstrip("/")
+    wado_url = str(config.get("DCM4CHEE_WADO_RS_URL") or dicomweb_base_url).strip().rstrip("/")
+    stow_url = str(config.get("DCM4CHEE_STOW_RS_URL") or dicomweb_base_url).strip().rstrip("/")
+    viewer_url_template = (
+        str(config.get("DCM4CHEE_VIEWER_STUDY_URL_TEMPLATE") or "").strip()
+        or (f"{web_ui_url}/#/study/{{studyInstanceUid}}" if web_ui_url else "")
+    )
+    return {
+        "profileName": profile_name,
+        "displayName": str(config.get("DCM4CHEE_DISPLAY_NAME", "dcm4chee Local Archive") or "").strip(),
+        "environmentName": str(config.get("DCM4CHEE_ENVIRONMENT_NAME", "local-docker") or "").strip(),
+        "webUiUrl": web_ui_url,
+        "dimse": {
+            "host": str(config.get("DCM4CHEE_DIMSE_HOST", "127.0.0.1") or "").strip(),
+            "port": coerce_config_int(config.get("DCM4CHEE_DIMSE_PORT"), default=11112),
+            "calledAETitle": called_ae_title,
+            "callingAETitle": str(
+                config.get("DCM4CHEE_CALLING_AE_TITLE", "HEALTHCARE_LAB") or ""
+            ).strip(),
+        },
+        "mwl": {
+            "aeTitle": str(config.get("DCM4CHEE_MWL_AE_TITLE", called_ae_title) or "").strip(),
+            "defaultScheduledStationAETitle": str(
+                config.get("DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE", "ECG_AP") or ""
+            ).strip(),
+        },
+        "dicomweb": {
+            "baseUrl": dicomweb_base_url,
+            "qidoRsUrl": qido_url,
+            "wadoRsUrl": wado_url,
+            "stowRsUrl": stow_url,
+        },
+        "viewer": {
+            "studyUrlTemplate": viewer_url_template,
+        },
+        "security": {
+            "authMode": str(config.get("DCM4CHEE_AUTH_MODE", "none") or "").strip().lower(),
+            "tlsEnabled": coerce_config_bool(config.get("DCM4CHEE_TLS_ENABLED"), default=False),
+            "tlsVerify": coerce_config_bool(config.get("DCM4CHEE_TLS_VERIFY"), default=True),
+            "username": str(config.get("DCM4CHEE_USERNAME", "") or "").strip(),
+            "tokenUrl": str(config.get("DCM4CHEE_TOKEN_URL", "") or "").strip(),
+            "certificatePath": str(config.get("DCM4CHEE_CERTIFICATE_PATH", "") or "").strip(),
+            "privateKeyPath": str(config.get("DCM4CHEE_PRIVATE_KEY_PATH", "") or "").strip(),
+            "localLabOnly": str(config.get("DCM4CHEE_AUTH_MODE", "none") or "").strip().lower() == "none",
+        },
+    }
+
+
+def validate_dcm4chee_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    checks: list[dict[str, str]] = []
+
+    def add_check(name: str, field: str, ok: bool, message: str) -> None:
+        checks.append(
+            {
+                "name": name,
+                "field": field,
+                "status": "Healthy" if ok else "Down",
+                "message": message,
+            }
+        )
+
+    def required_text(path: tuple[str, ...], label: str) -> str:
+        value: Any = profile
+        for part in path:
+            value = value.get(part, {}) if isinstance(value, dict) else {}
+        text = str(value or "").strip()
+        add_check(
+            "_".join(path),
+            ".".join(path),
+            bool(text),
+            f"{label} is configured." if text else f"{label} is required.",
+        )
+        return text
+
+    required_text(("profileName",), "Profile name")
+    required_text(("displayName",), "Display name")
+    required_text(("environmentName",), "Environment name")
+    try:
+        require_http_url(profile.get("webUiUrl"), "webUiUrl")
+        add_check("web_ui_url", "webUiUrl", True, "Web UI URL is valid.")
+    except ValidationError as exc:
+        add_check("web_ui_url", "webUiUrl", False, str(exc))
+
+    dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
+    required_text(("dimse", "host"), "DIMSE host")
+    try:
+        port = int(dimse.get("port") or 0)
+        valid_port = 1 <= port <= 65535
+    except (TypeError, ValueError):
+        valid_port = False
+    add_check(
+        "dimse_port",
+        "dimse.port",
+        valid_port,
+        "DIMSE port is valid." if valid_port else "DIMSE port must be an integer between 1 and 65535.",
+    )
+    required_text(("dimse", "calledAETitle"), "Called AE title")
+    required_text(("dimse", "callingAETitle"), "Calling AE title")
+    required_text(("mwl", "aeTitle"), "MWL AE title")
+    required_text(("mwl", "defaultScheduledStationAETitle"), "Default Scheduled Station AE Title")
+
+    dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
+    for field in ("baseUrl", "qidoRsUrl", "wadoRsUrl", "stowRsUrl"):
+        try:
+            require_http_url(dicomweb.get(field), f"dicomweb.{field}")
+            add_check(f"dicomweb_{field}", f"dicomweb.{field}", True, f"DICOMweb {field} is valid.")
+        except ValidationError as exc:
+            add_check(f"dicomweb_{field}", f"dicomweb.{field}", False, str(exc))
+
+    security = profile.get("security") if isinstance(profile.get("security"), dict) else {}
+    auth_mode = str(security.get("authMode") or "").strip().lower()
+    add_check(
+        "security_auth_mode",
+        "security.authMode",
+        auth_mode in DCM4CHEE_AUTH_MODES,
+        "Auth mode is supported." if auth_mode in DCM4CHEE_AUTH_MODES else "Auth mode is unsupported.",
+    )
+    tls_enabled_value = security.get("tlsEnabled")
+    tls_verify_value = security.get("tlsVerify")
+    add_check(
+        "security_tls_enabled",
+        "security.tlsEnabled",
+        isinstance(tls_enabled_value, bool),
+        "TLS enabled value is valid." if isinstance(tls_enabled_value, bool) else "TLS enabled must be true or false.",
+    )
+    add_check(
+        "security_tls_verify",
+        "security.tlsVerify",
+        isinstance(tls_verify_value, bool),
+        "TLS verify value is valid." if isinstance(tls_verify_value, bool) else "TLS verify must be true or false.",
+    )
+    tls_enabled = tls_enabled_value is True
+    has_cert_material = bool(security.get("certificatePath") or security.get("privateKeyPath"))
+    add_check(
+        "security_tls",
+        "security.certificatePath",
+        tls_enabled or not has_cert_material,
+        "TLS settings are consistent."
+        if tls_enabled or not has_cert_material
+        else "Certificate or key paths require TLS to be enabled.",
+    )
+    if auth_mode == "none":
+        add_check(
+            "security_local_lab",
+            "security.authMode",
+            True,
+            "Local profile is unauthenticated and is not production-ready.",
+        )
+
+    valid = all(check["status"] == "Healthy" for check in checks)
+    return {
+        "valid": valid,
+        "status": "Healthy" if valid else "Down",
+        "summary": "dcm4chee profile is valid." if valid else "dcm4chee profile is incomplete or invalid.",
+        "checks": checks,
+    }
 
 
 def current_timestamp() -> str:
@@ -1149,7 +1365,13 @@ def run_tcp_smoke(host: str, port: Any, name: str, *, required: bool = True) -> 
     if not host or not port:
         return smoke_step(name, "Unknown", "Host or port is not configured.", required=required)
     try:
-        with socket.create_connection((host, int(port)), 3):
+        port_number = int(port)
+    except (TypeError, ValueError):
+        return smoke_step(name, "Down", "Port must be an integer between 1 and 65535.", required=required)
+    if not 1 <= port_number <= 65535:
+        return smoke_step(name, "Down", "Port must be an integer between 1 and 65535.", required=required)
+    try:
+        with socket.create_connection((host, port_number), 3):
             return smoke_step(name, "Healthy", "TCP reachable.", required=required)
     except (OSError, socket.timeout) as exc:
         return smoke_step(name, "Down", str(exc), required=required)
@@ -1995,7 +2217,18 @@ def run_lab_smoke_check(
     elif profile == "gdt-bridge":
         steps = run_gdt_bridge_smoke(app, server)
     elif profile == "dcm4chee":
-        steps = [run_http_smoke(base_url, "dicom_archive_http")]
+        dcm4chee_profile = dcm4chee_profile_from_config(app.config)
+        diagnostics = validate_dcm4chee_profile(dcm4chee_profile)
+        dimse = dcm4chee_profile["dimse"]
+        steps = [
+            smoke_step(
+                "connection_profile",
+                diagnostics["status"],
+                diagnostics["summary"],
+            ),
+            run_http_smoke(dcm4chee_profile["webUiUrl"], "dicom_archive_http"),
+            run_tcp_smoke(dimse["host"], dimse["port"], "dicom_dimse", required=False),
+        ]
     elif profile == "oie":
         check_config = server.get("checkConfig") or {}
         mllp_host = str(check_config.get("mllpHost") or "").strip()
@@ -2421,6 +2654,43 @@ def create_app(database_path: str | None = None) -> Flask:
     app.config["OIE_MLLP_ORDER_PORT"] = int(os.environ.get("OIE_MLLP_ORDER_PORT", "6663"))
     app.config["OIE_MLLP_RESULT_HOST"] = os.environ.get("OIE_MLLP_RESULT_HOST", "0.0.0.0").strip() or "0.0.0.0"
     app.config["OIE_MLLP_RESULT_PORT"] = int(os.environ.get("OIE_MLLP_RESULT_PORT", "6665"))
+    app.config["DCM4CHEE_PROFILE_NAME"] = os.environ.get("DCM4CHEE_PROFILE_NAME", DCM4CHEE_PROFILE_NAME).strip()
+    app.config["DCM4CHEE_DISPLAY_NAME"] = os.environ.get("DCM4CHEE_DISPLAY_NAME", "dcm4chee Local Archive").strip()
+    app.config["DCM4CHEE_ENVIRONMENT_NAME"] = os.environ.get("DCM4CHEE_ENVIRONMENT_NAME", "local-docker").strip()
+    app.config["DCM4CHEE_WEB_UI_URL"] = os.environ.get(
+        "DCM4CHEE_WEB_UI_URL",
+        "http://127.0.0.1:8082/dcm4chee-arc/ui2",
+    ).strip()
+    app.config["DCM4CHEE_DIMSE_HOST"] = os.environ.get("DCM4CHEE_DIMSE_HOST", "127.0.0.1").strip()
+    app.config["DCM4CHEE_DIMSE_PORT"] = os.environ.get("DCM4CHEE_DIMSE_PORT", "11112").strip()
+    app.config["DCM4CHEE_CALLED_AE_TITLE"] = os.environ.get("DCM4CHEE_CALLED_AE_TITLE", "DCM4CHEE").strip()
+    app.config["DCM4CHEE_CALLING_AE_TITLE"] = os.environ.get("DCM4CHEE_CALLING_AE_TITLE", "HEALTHCARE_LAB").strip()
+    app.config["DCM4CHEE_MWL_AE_TITLE"] = os.environ.get(
+        "DCM4CHEE_MWL_AE_TITLE",
+        app.config["DCM4CHEE_CALLED_AE_TITLE"] or "DCM4CHEE",
+    ).strip()
+    app.config["DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE"] = os.environ.get(
+        "DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE",
+        "ECG_AP",
+    ).strip()
+    app.config["DCM4CHEE_DICOMWEB_BASE_URL"] = os.environ.get(
+        "DCM4CHEE_DICOMWEB_BASE_URL",
+        f"http://127.0.0.1:8082/dcm4chee-arc/aets/{app.config['DCM4CHEE_CALLED_AE_TITLE'] or 'DCM4CHEE'}/rs",
+    ).strip()
+    app.config["DCM4CHEE_QIDO_RS_URL"] = os.environ.get("DCM4CHEE_QIDO_RS_URL", "").strip()
+    app.config["DCM4CHEE_WADO_RS_URL"] = os.environ.get("DCM4CHEE_WADO_RS_URL", "").strip()
+    app.config["DCM4CHEE_STOW_RS_URL"] = os.environ.get("DCM4CHEE_STOW_RS_URL", "").strip()
+    app.config["DCM4CHEE_VIEWER_STUDY_URL_TEMPLATE"] = os.environ.get(
+        "DCM4CHEE_VIEWER_STUDY_URL_TEMPLATE",
+        "",
+    ).strip()
+    app.config["DCM4CHEE_AUTH_MODE"] = os.environ.get("DCM4CHEE_AUTH_MODE", "none").strip()
+    app.config["DCM4CHEE_TLS_ENABLED"] = os.environ.get("DCM4CHEE_TLS_ENABLED", "").strip()
+    app.config["DCM4CHEE_TLS_VERIFY"] = os.environ.get("DCM4CHEE_TLS_VERIFY", "").strip()
+    app.config["DCM4CHEE_USERNAME"] = os.environ.get("DCM4CHEE_USERNAME", "").strip()
+    app.config["DCM4CHEE_TOKEN_URL"] = os.environ.get("DCM4CHEE_TOKEN_URL", "").strip()
+    app.config["DCM4CHEE_CERTIFICATE_PATH"] = os.environ.get("DCM4CHEE_CERTIFICATE_PATH", "").strip()
+    app.config["DCM4CHEE_PRIVATE_KEY_PATH"] = os.environ.get("DCM4CHEE_PRIVATE_KEY_PATH", "").strip()
     app.config["LAB_DEPLOY_SCRIPT"] = os.environ.get(
         "LAB_DEPLOY_SCRIPT",
         str(Path(__file__).parent / "deploy" / "lab.ps1"),
@@ -3198,6 +3468,31 @@ def create_app(database_path: str | None = None) -> Flask:
                 "serverTypes": list(LAB_SERVER_TYPES),
                 "protocols": list(LAB_SERVER_PROTOCOLS),
                 "healthStatuses": list(LAB_HEALTH_STATUSES),
+            }
+        )
+
+    @app.get("/api/dcm4chee/profile")
+    @app.get("/api/dcm4chee/profiles/<profile_name>")
+    def get_dcm4chee_profile(profile_name: str | None = None):
+        profile = dcm4chee_profile_from_config(app.config)
+        if profile_name and profile_name != profile["profileName"]:
+            return error_response("dcm4chee profile was not found.", 404)
+        return jsonify(
+            {
+                "success": True,
+                "item": profile,
+                "diagnostics": validate_dcm4chee_profile(profile),
+            }
+        )
+
+    @app.get("/api/dcm4chee/profile/diagnostics")
+    def get_dcm4chee_profile_diagnostics():
+        profile = dcm4chee_profile_from_config(app.config)
+        return jsonify(
+            {
+                "success": True,
+                "profileName": profile["profileName"],
+                **validate_dcm4chee_profile(profile),
             }
         )
 
