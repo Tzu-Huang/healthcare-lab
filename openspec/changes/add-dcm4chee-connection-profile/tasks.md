@@ -19,5 +19,5 @@
 ## 4. Verification
 
 - [x] 4.1 Add focused tests for profile loading and validation errors.
-- [ ] 4.2 Run the relevant Python test suite.
-- [ ] 4.3 Run OpenSpec validation for this change.
+- [x] 4.2 Run the relevant Python test suite.
+- [x] 4.3 Run OpenSpec validation for this change.
