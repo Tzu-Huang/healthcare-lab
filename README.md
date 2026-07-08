@@ -9,6 +9,26 @@ checks, and service operation controls.
 
 See [PROJECT_BOUNDARY.md](PROJECT_BOUNDARY.md) for the split rules.
 
+## Current Progress
+
+The lab now has three working local workflow tracks:
+
+- **HL7 v2 / OIE:** local Patient and Order workflows can create HL7 ADT and
+  ORM payloads, send selected ORM messages to the configured OIE MLLP endpoint,
+  and record ACK or transport results.
+- **FHIR R4 / Medplum:** Patient creation is local-first with Medplum sync,
+  retry, and idempotent identifier matching. FHIR Orders create a local order
+  anchor, sync a `ServiceRequest`, then generate and sync a dependent ECG
+  worklist `Task`.
+- **GDT 2.1 / OpenEMR-style bridge:** Patient/order context can be exported as
+  GDT `6302`, result files can be imported from the bridge folders, and parsed
+  `6310` result context is retained locally.
+
+Healthcare Lab treats Medplum as the canonical source of truth for synced FHIR
+clinical resources. Local SQLite storage is a workflow ledger for unsynced
+intent, sync status, deterministic identifiers, retry/idempotency metadata,
+request/response audit, OperationOutcome details, and Medplum references.
+
 ## Test UI
 
 ![ECG AP Simulator SOP workflow](docs/images/ap-simulator-sop.png)
@@ -69,6 +89,17 @@ The recommended hospital-side simulator is
 - Healthcare Interoperability Lab Console first screen for managed service
   health visibility, editable server registry, server detail, Run Check, and a
   Servers / Settings Port Matrix.
+- Patient page with HL7 v2.3.1, FHIR R4, GDT 2.1, and DICOM preview modes.
+- FHIR Patient creation through a local-first Medplum sync flow, including
+  common demographics, contact/address fields, sync status display, and retry.
+- Local FHIR workflow ledger for `Patient`, `ServiceRequest`, `Task`,
+  `DiagnosticReport`, `Observation`, `DocumentReference`, `Binary`, and
+  `Provenance` mapping metadata.
+- Medplum page for supported FHIR resource inventory, Patient-centered
+  filtering, live Medplum JSON preview, local fallback preview, copy action,
+  and non-destructive retry for pending or failed local workflow records.
+- FHIR Order mode that builds and syncs `ServiceRequest` resources, then
+  creates ECG worklist `Task` resources linked to the synced patient and order.
 - Raw TCP reachability and MLLP ACK testing.
 - AP-side MLLP listener with start, stop, status, and configurable demo ACK.
 - Inbound support for `ADT^A04`, `ADT^A08`, and `ORM^O01`.
@@ -125,17 +156,36 @@ The first Docker Desktop runtime scaffold for the Lab Console lives in
 `deploy/lab.ps1` wrapper for local `status`, `start`, `stop`, `restart`,
 `smoke`, and `logs` operations.
 
+## Patient Page
+
+Use **Patient** to create local virtual patient records for the supported
+workflow modes:
+
+- **HL7 v2.3.1:** previews an `ADT^A04` payload for the local OIE workflow.
+- **FHIR R4:** previews a FHIR `Patient`, stores the local Patient first, then
+  creates or updates the paired FHIR workflow ledger record and attempts Medplum
+  sync.
+- **GDT 2.1:** stores patient context used by the GDT order/export workflow.
+- **DICOM:** previews patient module attributes for future DICOM-oriented
+  workflow work.
+
+FHIR Patient rows show sync status, Medplum `Patient/<id>` reference, last sync
+metadata, and sync errors when available. `Pending sync` and `Sync failed` rows
+remain visible locally and can be retried without creating duplicate Medplum
+Patients because sync uses deterministic identifiers.
+
 ## Order Page
 
 The app uses a left sidebar for primary navigation. The Dashboard remains
 focused on managed server health and operations, while **Patient**, **Order**,
-and **OIE** provide the local HL7 workflow.
+**OIE**, **Medplum**, and **GDT** provide the local interoperability workflows.
 
-Use **Order** to create a local 12-lead ECG order from an existing local
-Patient record:
+Use **Order** to create a local 12-lead ECG order from an existing local Patient
+record.
+
+For **HL7 v2.3.1** orders:
 
 - HL7 v2.3.1 is enabled for the MVP.
-- HL7 v2.5.1, FHIR, GDT, and DICOM appear as future order modes.
 - The generated `ORM^O01` preview includes `MSH`, `PID`, `PV1`, `ORC`, and
   `OBR`.
 - Orders are stored in the local SQLite demo database with status, raw ORM
@@ -150,6 +200,43 @@ code (`AA`, `AE`, or `AR`) or transport error.
 OIE-to-AP routing is intentionally outside this app scope. Configure downstream
 channels inside OIE when an integration demo needs received ORM messages routed
 to another application endpoint.
+
+For **FHIR R4** orders:
+
+- The selected Patient must already be a synced FHIR Patient with a Medplum
+  `Patient/<id>` reference.
+- The Order page exposes the scoped ServiceRequest form fields needed for the
+  ECG order workflow and renders a FHIR R4 `ServiceRequest` preview.
+- Creating the order stores a local order anchor, syncs the `ServiceRequest` to
+  Medplum, then generates an ECG worklist `Task` with
+  `Task.for = Patient/<id>` and `Task.focus = ServiceRequest/<id>`.
+- Local Orders shows independent sync status and Medplum references or errors
+  for both the `ServiceRequest` and generated `Task`.
+
+GDT order creation is handled through the GDT workflow and bridge contract.
+HL7 v2.5.1 and DICOM order modes remain future work.
+
+## Medplum Console
+
+Select **Medplum** from the sidebar to inspect supported FHIR workflow
+resources. The page reads synced resource previews from live Medplum APIs when
+possible and joins local ledger metadata such as sync status, local identifiers,
+Medplum references, and last error.
+
+The Medplum page currently supports:
+
+- Inventory rows for `Patient`, `ServiceRequest`, `Task`, `DiagnosticReport`,
+  `Observation`, and `DocumentReference`.
+- Patient-centered filtering through direct FHIR references such as `subject`,
+  `patient`, and `for`.
+- A selected Patient workspace with related ServiceRequest, Task,
+  DiagnosticReport, Observation, and DocumentReference context when available.
+- A bottom JSON console that labels whether the preview came from Medplum live
+  data, local submitted JSON, or local fallback after a live fetch failure.
+- Non-destructive retry for local `Pending sync` and `Sync failed` records.
+
+The page does not expose destructive Medplum actions such as delete or arbitrary
+resource update.
 
 ## Requirements
 
@@ -298,6 +385,14 @@ both:
 The UI displays the created `DiagnosticReport`, related structured resources,
 and raw Medplum response details for the submission.
 
+For newer Patient-centered FHIR work, use the **Patient**, **Order**, and
+**Medplum** sidebar pages:
+
+1. Create a Patient in FHIR mode and confirm the row reaches `Synced`.
+2. Create an Order in FHIR mode from that synced Patient.
+3. Open **Medplum** to inspect the Patient, ServiceRequest, generated Task, and
+   raw live FHIR JSON.
+
 ## Mirth Connect Channel Setup
 
 Create these two channels in Mirth Connect Administrator before running the
@@ -383,12 +478,13 @@ Patient Pull lookup.
 - [ECG hospital integration research](docs/ecg-hl7-integration-research.md)
 - [GDT bridge MVP](docs/gdt-bridge-mvp.md)
 - [HL7 ORU PDF validation tool](docs/hl7-oru-pdf-validation.md)
+- [Reverse proxy notes](docs/reverse-proxy-nginx.md)
 
 ## Tests
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile app.py backend\lab_store.py backend\dashboard_services.py backend\lab_operations.py tests\test_app.py tests\test_lab_store.py tests\test_b64_pdf.py
+python -m py_compile app.py backend\lab_store.py backend\dashboard_services.py backend\lab_operations.py backend\gdt_adapter.py tests\test_app.py tests\test_lab_store.py tests\test_b64_pdf.py tests\test_gdt_adapter.py
 node --check frontend\static\app.js
 ```
 
