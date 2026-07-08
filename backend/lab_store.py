@@ -2271,6 +2271,69 @@ class DemoStore:
             attempt_id = int(cursor.lastrowid)
         return self.get_dcm4chee_mwl_attempt(attempt_id)
 
+    def create_dcm4chee_mwl_profile_failure_attempt(
+        self,
+        order_record_id: int,
+        profile: dict[str, Any],
+        *,
+        uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT,
+        request_url: str = "",
+        diagnostics: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        order = self.get_order_record(order_record_id)
+        order_id = int(order["id"])
+        mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
+        dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
+        uid_root_text = self.normalize_dcm4chee_uid_root(uid_root)
+        study_uid = self.dcm4chee_study_instance_uid(
+            uid_root_text,
+            order_record_id=order_id,
+            timestamp=str(order.get("requestedAt") or ""),
+        )
+        now = now_iso()
+        diagnostic_payload = diagnostics or {}
+        with self.lock, self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO local_dcm4chee_mwl_attempts (
+                    order_record_id, profile_name, server_identity, mwl_ae_title,
+                    scheduled_station_ae_title, local_dcm4chee_order_number,
+                    accession_number, requested_procedure_id,
+                    scheduled_procedure_step_id, study_instance_uid, uid_root,
+                    request_url, request_payload_json, http_status, response_body,
+                    attempt_status, error_type, error_text, attempted_at,
+                    completed_at, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    order_id,
+                    str(profile.get("profileName") or "").strip(),
+                    str(dimse.get("calledAETitle") or mwl.get("aeTitle") or "").strip(),
+                    str(mwl.get("aeTitle") or "").strip(),
+                    str(mwl.get("defaultScheduledStationAETitle") or "").strip(),
+                    self._dcm4chee_local_order_number(order_id),
+                    self._dcm4chee_accession_number(order_id),
+                    self._dcm4chee_requested_procedure_id(order_id),
+                    self._dcm4chee_scheduled_procedure_step_id(order_id),
+                    study_uid,
+                    uid_root_text,
+                    request_url,
+                    "{}",
+                    None,
+                    json.dumps(diagnostic_payload, sort_keys=True),
+                    DCM4CHEE_MWL_STATUS_FAILED,
+                    "profile_invalid",
+                    str(diagnostic_payload.get("summary") or "dcm4chee profile is incomplete or invalid."),
+                    now,
+                    now,
+                    now,
+                    now,
+                ),
+            )
+            attempt_id = int(cursor.lastrowid)
+        return self.get_dcm4chee_mwl_attempt(attempt_id)
+
     def update_dcm4chee_mwl_attempt_result(
         self,
         attempt_id: int,

@@ -583,22 +583,18 @@ def sync_order_to_dcm4chee_mwl(
     uid_root: str,
 ) -> dict[str, Any]:
     diagnostics = validate_dcm4chee_profile(profile)
-    payload = store.build_dcm4chee_mwl_payload(order, profile, uid_root=uid_root)
     dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
     base_url = str(dicomweb.get("baseUrl") or "").strip().rstrip("/")
     request_url = f"{base_url}/mwlitems" if base_url else ""
     if not diagnostics["valid"]:
-        return store.create_dcm4chee_mwl_attempt(
+        return store.create_dcm4chee_mwl_profile_failure_attempt(
             int(order["id"]),
             profile,
             uid_root=uid_root,
             request_url=request_url,
-            request_payload=payload,
-            attempt_status=DCM4CHEE_MWL_STATUS_FAILED,
-            error_type="profile_invalid",
-            error_text=diagnostics["summary"],
-            response_body=json.dumps(diagnostics, sort_keys=True),
+            diagnostics=diagnostics,
         )
+    payload = store.build_dcm4chee_mwl_payload(order, profile, uid_root=uid_root)
     attempt = store.create_dcm4chee_mwl_attempt(
         int(order["id"]),
         profile,
