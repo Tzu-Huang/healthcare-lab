@@ -102,6 +102,12 @@ const ORDER_MODE_CONFIG = {
     emptyPreview: "Select or create a local patient to preview a GDT ECG order payload.",
     createLabel: "Create GDT Order",
   },
+  dicom: {
+    title: "DICOM MWL Order",
+    payloadTitle: "DICOM JSON MWL item",
+    emptyPreview: "Select a local patient to preview a DICOM MWL payload.",
+    createLabel: "Create DICOM MWL Order",
+  },
 };
 
 function setStatus(id, message, state = "neutral") {
@@ -2002,6 +2008,29 @@ function buildFhirOrderPreviewPayload(payload) {
 function buildOrderPreviewPayload(payload, patient) {
   if (payload.mode === "gdt") return buildGdtOrderPreviewPayload(payload, patient);
   if (payload.mode === "fhir") return buildFhirOrderPreviewPayload(payload, patient);
+  if (payload.mode === "dicom") {
+    const patientData = patient?.patient || {};
+    const summary = patient?.summary || {};
+    return JSON.stringify({
+      "00100010": { vr: "PN", Value: [{ Alphabetic: [patientData.lastName, patientData.firstName, patientData.middleName].filter(Boolean).join("^") }] },
+      "00100020": { vr: "LO", Value: [summary.mrn || ""] },
+      "00100021": { vr: "LO", Value: ["local-dcm4chee"] },
+      "00100030": { vr: "DA", Value: [summary.dob || ""] },
+      "00100040": { vr: "CS", Value: [summary.sex || "U"] },
+      "00080050": { vr: "SH", Value: ["ACC-GENERATED"] },
+      "0020000D": { vr: "UI", Value: ["UID-GENERATED"] },
+      "00401001": { vr: "SH", Value: ["RP-GENERATED"] },
+      "00741202": { vr: "LO", Value: [payload.orderCodeText || orderDemoPreset.orderCodeText] },
+      "00400100": {
+        vr: "SQ",
+        Value: [{
+          "00400001": { vr: "AE", Value: ["ECG_AP"] },
+          "00400009": { vr: "SH", Value: ["SPS-GENERATED"] },
+          "00400020": { vr: "CS", Value: ["SCHEDULED"] },
+        }],
+      },
+    }, null, 2);
+  }
   const timestamp = hl7Timestamp();
   const requestedAt = payload.requestedAt || timestamp;
   const orderNumber = "ORD-GENERATED";
@@ -2070,6 +2099,23 @@ function renderOrderSummary(payload, patient, createdAt = "") {
     });
     return;
   }
+  if (payload.mode === "dicom") {
+    [
+      ["Patient", patient?.summary?.name],
+      ["MRN", patient?.summary?.mrn],
+      ["MWL AE", "DCM4CHEE"],
+      ["Station AE", "ECG_AP"],
+      ["Code", `${payload.orderCode || orderDemoPreset.orderCode}`],
+      ["Requested", payload.requestedAt || "Generated on create"],
+      ["Created", createdAt],
+    ].forEach(([label, value]) => {
+      const item = document.createElement("p");
+      item.appendChild(createElement("strong", `${label}: `));
+      item.appendChild(document.createTextNode(value || "-"));
+      container.appendChild(item);
+    });
+    return;
+  }
   const rows = [
     ["Patient", patient?.summary?.name],
     ["MRN", patient?.summary?.mrn],
@@ -2108,7 +2154,9 @@ function renderOrderRecordList() {
     : orderRecords.filter((item) => (
       mode === "fhir"
         ? item.protocolVersion === "FHIR R4"
-        : item.protocolVersion !== "FHIR R4"
+        : mode === "dicom"
+          ? item.protocolVersion === "DICOM"
+          : item.protocolVersion !== "FHIR R4" && item.protocolVersion !== "DICOM"
     ));
   body.replaceChildren();
   if (!records.length) {
@@ -2118,7 +2166,9 @@ function renderOrderRecordList() {
         ? "No local GDT ECG orders created yet."
         : mode === "fhir"
           ? "No local FHIR ECG orders created yet."
-          : "No local orders created yet.",
+          : mode === "dicom"
+            ? "No local DICOM MWL orders created yet."
+            : "No local orders created yet.",
     );
     cell.colSpan = 7;
     cell.className = "muted";
@@ -2132,17 +2182,25 @@ function renderOrderRecordList() {
     const orderNumber = mode === "gdt" ? item.localGdtOrderNumber : item.localOrderNumber;
     const orderCode = mode === "gdt" ? summary.testCode : summary.orderCode;
     const fhir = item.fhir || {};
+    const dcm4cheeMwl = item.dcm4chee?.mwl || {};
     const fhirStatus = mode === "fhir"
       ? [
         `SR: ${fhir.serviceRequest?.sync?.status || "-"}`,
         `Task: ${fhir.task?.sync?.status || "-"}`,
       ].join(" / ")
+      : mode === "dicom"
+        ? dcm4cheeMwl.status || item.status
       : item.status;
     const fhirMedplum = mode === "fhir"
       ? [
         fhir.serviceRequest?.medplum?.reference || fhir.serviceRequest?.sync?.error || "",
         fhir.task?.medplum?.reference || fhir.task?.sync?.error || "",
       ].filter(Boolean).join(" | ")
+      : mode === "dicom"
+        ? [
+          dcm4cheeMwl.studyInstanceUid || "",
+          dcm4cheeMwl.error || "",
+        ].filter(Boolean).join(" | ")
       : "";
     row.append(
       rowCell(orderNumber || item.id),
@@ -2210,7 +2268,13 @@ async function createOrderRecord() {
     const item = result.item;
     setStatus(
       "order-form-status",
-      mode === "gdt" ? "GDT ECG order created" : mode === "fhir" ? "FHIR order created" : "Local order created",
+      mode === "gdt"
+        ? "GDT ECG order created"
+        : mode === "fhir"
+          ? "FHIR order created"
+          : mode === "dicom"
+            ? "DICOM MWL order created"
+            : "Local order created",
       "success",
     );
     byId("order-payload-preview").textContent = item.payload || "";

@@ -24,6 +24,9 @@ except ModuleNotFoundError:  # pragma: no cover - optional in minimal test envs
         return False
 
 from backend.lab_store import (
+    DCM4CHEE_MWL_STATUS_CREATED,
+    DCM4CHEE_MWL_STATUS_FAILED,
+    DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
     DemoStore,
     LAB_OPERATION_ACTIONS,
     LAB_HEALTH_STATUSES,
@@ -98,6 +101,13 @@ class UpstreamFhirError(RuntimeError):
         self.http_status = http_status
         self.response_payload = response_payload or {}
         self.attempt_recorded = False
+
+
+class UpstreamDcm4cheeError(RuntimeError):
+    def __init__(self, message: str, *, http_status: int | None = None, response_body: str = "") -> None:
+        super().__init__(message)
+        self.http_status = http_status
+        self.response_body = response_body
 
 
 @dataclass(frozen=True)
@@ -530,6 +540,90 @@ def request_fhir_raw(
         auth_manager.invalidate(base_url or url)
         refreshed_token = auth_manager.get_access_token(base_url or url, force_refresh=True)
         return perform_request(refreshed_token)
+
+
+def request_dcm4chee_mwl_create(
+    profile: dict[str, Any],
+    payload: dict[str, Any],
+) -> tuple[int, str, str]:
+    dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
+    base_url = require_http_url(dicomweb.get("baseUrl"), "dicomweb.baseUrl")
+    url = f"{base_url}/mwlitems"
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    headers = {
+        "Accept": "application/dicom+json, application/json, text/plain",
+        "Content-Type": "application/dicom+json",
+    }
+    api_request = urllib.request.Request(
+        url,
+        data=body,
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(api_request, timeout=30) as response:
+            response_body = response.read().decode("utf-8", errors="replace")
+            return response.status, response_body, url
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise UpstreamDcm4cheeError(
+            f"dcm4chee returned HTTP {exc.code}: {error_body}",
+            http_status=exc.code,
+            response_body=error_body,
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise UpstreamDcm4cheeError(f"dcm4chee request failed: {exc.reason}") from exc
+
+
+def sync_order_to_dcm4chee_mwl(
+    store: DemoStore,
+    order: dict[str, Any],
+    profile: dict[str, Any],
+    *,
+    uid_root: str,
+) -> dict[str, Any]:
+    diagnostics = validate_dcm4chee_profile(profile)
+    dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
+    base_url = str(dicomweb.get("baseUrl") or "").strip().rstrip("/")
+    request_url = f"{base_url}/mwlitems" if base_url else ""
+    if not diagnostics["valid"]:
+        return store.create_dcm4chee_mwl_profile_failure_attempt(
+            int(order["id"]),
+            profile,
+            uid_root=uid_root,
+            request_url=request_url,
+            diagnostics=diagnostics,
+        )
+    payload = store.build_dcm4chee_mwl_payload(order, profile, uid_root=uid_root)
+    attempt = store.create_dcm4chee_mwl_attempt(
+        int(order["id"]),
+        profile,
+        uid_root=uid_root,
+        request_url=request_url,
+        request_payload=payload,
+    )
+    try:
+        status, response_body, actual_url = request_dcm4chee_mwl_create(profile, payload)
+    except UpstreamDcm4cheeError as exc:
+        response_body = exc.response_body
+        lower_body = response_body.lower()
+        is_patient_missing = exc.http_status == 404 and "patient" in lower_body and "exist" in lower_body
+        return store.update_dcm4chee_mwl_attempt_result(
+            int(attempt["id"]),
+            attempt_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING if is_patient_missing else DCM4CHEE_MWL_STATUS_FAILED,
+            http_status=exc.http_status,
+            response_body=response_body,
+            error_type="patient_missing" if is_patient_missing else "dcm4chee_request_failed",
+            error_text=str(exc),
+        )
+    if actual_url != attempt["requestUrl"]:
+        request_url = actual_url
+    return store.update_dcm4chee_mwl_attempt_result(
+        int(attempt["id"]),
+        attempt_status=DCM4CHEE_MWL_STATUS_CREATED,
+        http_status=status,
+        response_body=response_body,
+    )
 
 
 def request_fhir_json(
@@ -2684,6 +2778,10 @@ def create_app(database_path: str | None = None) -> Flask:
         "DCM4CHEE_VIEWER_STUDY_URL_TEMPLATE",
         "",
     ).strip()
+    app.config["DCM4CHEE_UID_ROOT"] = os.environ.get(
+        "DCM4CHEE_UID_ROOT",
+        "1.2.826.0.1.3680043.10.543",
+    ).strip()
     app.config["DCM4CHEE_AUTH_MODE"] = os.environ.get("DCM4CHEE_AUTH_MODE", "none").strip()
     app.config["DCM4CHEE_TLS_ENABLED"] = os.environ.get("DCM4CHEE_TLS_ENABLED", "").strip()
     app.config["DCM4CHEE_TLS_VERIFY"] = os.environ.get("DCM4CHEE_TLS_VERIFY", "").strip()
@@ -2861,6 +2959,16 @@ def create_app(database_path: str | None = None) -> Flask:
                             base_url=base_url,
                             auth_manager=get_auth_manager(),
                         )
+                item = store.get_order_record(int(item["id"]))
+            elif mode == "dicom":
+                item = store.create_dcm4chee_order_record(payload)
+                profile = dcm4chee_profile_from_config(app.config)
+                sync_order_to_dcm4chee_mwl(
+                    store,
+                    item,
+                    profile,
+                    uid_root=app.config["DCM4CHEE_UID_ROOT"],
+                )
                 item = store.get_order_record(int(item["id"]))
             else:
                 item = store.create_order_record(payload)
