@@ -117,6 +117,13 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'id="patient-mode"', response.data)
         self.assertIn(b'id="order-view"', response.data)
         self.assertIn(b'id="order-payload-preview"', response.data)
+        self.assertIn(b'<option value="fhir">FHIR</option>', response.data)
+        self.assertIn(b'id="fhir-resource-type" value="ServiceRequest"', response.data)
+        self.assertIn(b'id="fhir-service-request-id"', response.data)
+        self.assertIn(b'id="fhir-status"', response.data)
+        self.assertIn(b'id="fhir-intent"', response.data)
+        self.assertIn(b'id="fhir-subject-reference"', response.data)
+        self.assertIn(b'id="fhir-relevant-history"', response.data)
         self.assertIn(b'<option value="gdt">GDT ECG</option>', response.data)
         self.assertIn(b'id="create-gdt-patient"', response.data)
         self.assertIn(b'id="gdt-test-code" value="8402=EKG01"', response.data)
@@ -162,6 +169,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('`/api/fhir/records/${recordId}/sync`', script)
         self.assertIn("Live fetch failed; local submitted JSON", script)
         self.assertIn("medplumRecordMatchesPatient", script)
+        self.assertIn("buildFhirOrderPreviewPayload", script)
+        self.assertIn("FHIR Order requires a synced FHIR Patient", script)
+        self.assertIn("serviceRequest", script)
+        self.assertIn("Task:", script)
 
     def test_sidebar_views_hide_inactive_pages(self):
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
