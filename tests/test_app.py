@@ -24,12 +24,14 @@ from app import (
     parse_oru_summary,
     run_lab_application_check,
     run_lab_smoke_check,
+    sync_order_to_dcm4chee_mwl,
     validate_dcm4chee_profile,
 )
 from backend.lab_store import (
     DCM4CHEE_MWL_STATUS_CREATED,
     DCM4CHEE_MWL_STATUS_FAILED,
     DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+    DCM4CHEE_MWL_STATUS_PENDING,
     render_gdt_message,
 )
 
@@ -1460,13 +1462,43 @@ class HealthcareLabApiTests(unittest.TestCase):
     @patch("app.urllib.request.urlopen")
     def test_order_api_creates_dcm4chee_mwl_attempt(self, urlopen):
         patient = self.create_local_patient()
-        captured = {}
+        captured = []
 
         def fake_urlopen(request, timeout):
-            captured["url"] = request.full_url
-            captured["method"] = request.get_method()
-            captured["payload"] = json.loads(request.data.decode("utf-8"))
-            captured["headers"] = dict(request.header_items())
+            method = request.get_method()
+            captured.append(
+                {
+                    "url": request.full_url,
+                    "method": method,
+                    "payload": json.loads(request.data.decode("utf-8")) if request.data else None,
+                    "headers": dict(request.header_items()),
+                }
+            )
+            if method == "GET":
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
+                                "00080050": {"vr": "SH", "Value": ["ACC-DCM-000001"]},
+                                "00401001": {"vr": "SH", "Value": ["RP-DCM-000001"]},
+                                "0020000D": {"vr": "UI", "Value": ["1.2.826.0.1.3680043.10.543.20260708103000.1"]},
+                                "00741202": {"vr": "LO", "Value": ["12 Lead ECG"]},
+                                "00400100": {
+                                    "vr": "SQ",
+                                    "Value": [
+                                        {
+                                            "00400001": {"vr": "AE", "Value": ["ECG_AP"]},
+                                            "00400009": {"vr": "SH", "Value": ["SPS-DCM-000001"]},
+                                        }
+                                    ],
+                                },
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
             return FakeHttpResponse(
                 json.dumps({"created": True, "id": "mwl-1"}).encode("utf-8"),
                 status=200,
@@ -1493,13 +1525,306 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_CREATED)
         self.assertEqual(mwl["httpStatus"], 200)
         self.assertEqual(mwl["accessionNumber"], "ACC-000001")
-        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(mwl["mapping"]["status"], DCM4CHEE_MWL_STATUS_CREATED)
+        self.assertEqual(mwl["mapping"]["accessionNumber"], "ACC-DCM-000001")
+        self.assertEqual(mwl["mapping"]["requestedProcedureId"], "RP-DCM-000001")
+        self.assertEqual(mwl["mapping"]["scheduledProcedureStepId"], "SPS-DCM-000001")
+        self.assertEqual(mwl["mapping"]["patientId"], "MRN-A04-001")
+        self.assertEqual(captured[0]["method"], "POST")
         self.assertEqual(
-            captured["url"],
+            captured[0]["url"],
             "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs/mwlitems",
         )
-        self.assertEqual(captured["headers"]["Content-type"], "application/dicom+json")
-        self.assertEqual(captured["payload"]["00400100"]["Value"][0]["00400001"]["Value"], ["ECG_AP"])
+        self.assertEqual(captured[0]["headers"]["Content-type"], "application/dicom+json")
+        self.assertEqual(captured[0]["payload"]["00400100"]["Value"][0]["00400001"]["Value"], ["ECG_AP"])
+        self.assertEqual(captured[1]["method"], "GET")
+        self.assertIn("AccessionNumber=ACC-000001", captured[1]["url"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_dcm4chee_sync_reuses_successful_mapping_without_duplicate_post(self, urlopen):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+
+        def fake_urlopen(request, timeout):
+            if request.get_method() == "GET":
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "00080050": {"vr": "SH", "Value": ["ACC-000001"]},
+                                "00401001": {"vr": "SH", "Value": ["RP-000001"]},
+                                "0020000D": {"vr": "UI", "Value": ["1.2.826.0.1.3680043.10.543.20260708103000.1"]},
+                                "00400100": {
+                                    "vr": "SQ",
+                                    "Value": [{"00400009": {"vr": "SH", "Value": ["SPS-000001"]}}],
+                                },
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            return FakeHttpResponse(json.dumps({"created": True}).encode("utf-8"), status=200)
+
+        urlopen.side_effect = fake_urlopen
+
+        sync_order_to_dcm4chee_mwl(
+            store,
+            order,
+            dcm4chee_profile_from_config(self.client.application.config),
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+        self.assertEqual(urlopen.call_count, 2)
+
+        urlopen.reset_mock()
+        mapping = sync_order_to_dcm4chee_mwl(
+            store,
+            store.get_order_record(int(order["id"])),
+            dcm4chee_profile_from_config(self.client.application.config),
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+
+        self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
+        urlopen.assert_not_called()
+
+    def test_dcm4chee_mapping_retry_reuses_stable_identifiers(self):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = store.build_dcm4chee_mwl_payload(
+            order,
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+
+        first = store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_FAILED,
+        )
+        second = store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_PENDING,
+            increment_retry=True,
+        )
+
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(second["retryCount"], 1)
+        self.assertEqual(second["accessionNumber"], first["accessionNumber"])
+        self.assertEqual(second["requestedProcedureId"], first["requestedProcedureId"])
+        self.assertEqual(second["scheduledProcedureStepId"], first["scheduledProcedureStepId"])
+        self.assertEqual(second["studyInstanceUid"], first["studyInstanceUid"])
+
+    def test_dcm4chee_mapping_lookup_uses_reconciliation_identifiers(self):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = store.build_dcm4chee_mwl_payload(
+            order,
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+        mapping = store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_CREATED,
+        )
+
+        by_study = store.find_dcm4chee_mwl_mapping_for_reconciliation(
+            study_instance_uid=mapping["studyInstanceUid"]
+        )
+        by_accession = store.find_dcm4chee_mwl_mapping_for_reconciliation(
+            accession_number=mapping["accessionNumber"],
+            profile_name=mapping["profileName"],
+            server_identity=mapping["serverIdentity"],
+        )
+        by_procedure = store.find_dcm4chee_mwl_mapping_for_reconciliation(
+            requested_procedure_id=mapping["requestedProcedureId"],
+            scheduled_procedure_step_id=mapping["scheduledProcedureStepId"],
+            profile_name=mapping["profileName"],
+            server_identity=mapping["serverIdentity"],
+        )
+
+        self.assertEqual(by_study["orderRecordId"], order["id"])
+        self.assertEqual(by_accession["orderRecordId"], order["id"])
+        self.assertEqual(by_procedure["orderRecordId"], order["id"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_dcm4chee_failed_retry_reads_back_before_duplicate_post(self, urlopen):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = store.build_dcm4chee_mwl_payload(
+            order,
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+        store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_FAILED,
+        )
+        methods = []
+
+        def fake_urlopen(request, timeout):
+            methods.append(request.get_method())
+            self.assertEqual(request.get_method(), "GET")
+            return FakeHttpResponse(
+                json.dumps(
+                    [
+                        {
+                            "00080050": {"vr": "SH", "Value": ["ACC-000001"]},
+                            "00401001": {"vr": "SH", "Value": ["RP-000001"]},
+                            "0020000D": {"vr": "UI", "Value": ["1.2.826.0.1.3680043.10.543.20260708103000.1"]},
+                            "00400100": {
+                                "vr": "SQ",
+                                "Value": [{"00400009": {"vr": "SH", "Value": ["SPS-000001"]}}],
+                            },
+                        }
+                    ]
+                ).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        result = sync_order_to_dcm4chee_mwl(
+            store,
+            store.get_order_record(int(order["id"])),
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+
+        self.assertEqual(result["operationType"], "read-back")
+        self.assertEqual(methods, ["GET"])
+        mapping = store.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
+        self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
+
+    @patch("app.urllib.request.urlopen")
+    def test_dcm4chee_create_with_readback_failure_retries_readback_without_post(self, urlopen):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        methods = []
+
+        def first_urlopen(request, timeout):
+            methods.append(request.get_method())
+            if request.get_method() == "GET":
+                raise urllib.error.URLError("read-back unavailable")
+            return FakeHttpResponse(json.dumps({"created": True}).encode("utf-8"), status=200)
+
+        urlopen.side_effect = first_urlopen
+        response = self.client.post("/api/orders", json={"mode": "dicom", "patientRecordId": patient["id"]})
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(methods, ["POST", "GET"])
+        item = response.get_json()["item"]
+        mapping = item["dcm4chee"]["mwl"]["mapping"]
+        self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_PENDING)
+        self.assertEqual(mapping["lastErrorType"], "dcm4chee_readback_failed")
+
+        methods.clear()
+
+        def retry_urlopen(request, timeout):
+            methods.append(request.get_method())
+            self.assertEqual(request.get_method(), "GET")
+            return FakeHttpResponse(
+                json.dumps(
+                    [
+                        {
+                            "00080050": {"vr": "SH", "Value": ["ACC-000001"]},
+                            "00401001": {"vr": "SH", "Value": ["RP-000001"]},
+                            "0020000D": {"vr": "UI", "Value": ["1.2.826.0.1.3680043.10.543.20260708103000.1"]},
+                            "00400100": {
+                                "vr": "SQ",
+                                "Value": [{"00400009": {"vr": "SH", "Value": ["SPS-000001"]}}],
+                            },
+                        }
+                    ]
+                ).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = retry_urlopen
+        result = sync_order_to_dcm4chee_mwl(
+            store,
+            store.get_order_record(int(item["id"])),
+            dcm4chee_profile_from_config(self.client.application.config),
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+
+        self.assertEqual(result["operationType"], "read-back")
+        self.assertEqual(methods, ["GET"])
+        mapping = store.get_dcm4chee_mwl_mapping_for_order(int(item["id"]))
+        self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
+
+    @patch("app.urllib.request.urlopen")
+    def test_dcm4chee_create_with_empty_readback_retries_readback_without_post(self, urlopen):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        methods = []
+
+        def first_urlopen(request, timeout):
+            methods.append(request.get_method())
+            if request.get_method() == "GET":
+                return FakeHttpResponse(b"[]", status=200)
+            return FakeHttpResponse(json.dumps({"created": True}).encode("utf-8"), status=200)
+
+        urlopen.side_effect = first_urlopen
+        response = self.client.post("/api/orders", json={"mode": "dicom", "patientRecordId": patient["id"]})
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(methods, ["POST", "GET"])
+        item = response.get_json()["item"]
+        mapping = item["dcm4chee"]["mwl"]["mapping"]
+        self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_PENDING)
+        self.assertEqual(mapping["lastErrorType"], "dcm4chee_readback_empty")
+
+        methods.clear()
+
+        def retry_urlopen(request, timeout):
+            methods.append(request.get_method())
+            self.assertEqual(request.get_method(), "GET")
+            return FakeHttpResponse(
+                json.dumps(
+                    [
+                        {
+                            "00080050": {"vr": "SH", "Value": ["ACC-000001"]},
+                            "00401001": {"vr": "SH", "Value": ["RP-000001"]},
+                            "0020000D": {"vr": "UI", "Value": ["1.2.826.0.1.3680043.10.543.20260708103000.1"]},
+                            "00400100": {
+                                "vr": "SQ",
+                                "Value": [{"00400009": {"vr": "SH", "Value": ["SPS-000001"]}}],
+                            },
+                        }
+                    ]
+                ).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = retry_urlopen
+        result = sync_order_to_dcm4chee_mwl(
+            store,
+            store.get_order_record(int(item["id"])),
+            dcm4chee_profile_from_config(self.client.application.config),
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+
+        self.assertEqual(result["operationType"], "read-back")
+        self.assertEqual(methods, ["GET"])
+        mapping = store.get_dcm4chee_mwl_mapping_for_order(int(item["id"]))
+        self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
 
     @patch("app.urllib.request.urlopen")
     def test_order_api_records_dcm4chee_patient_missing_without_deleting_order(self, urlopen):

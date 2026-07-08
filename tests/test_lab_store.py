@@ -3,7 +3,12 @@ import unittest
 import json
 from pathlib import Path
 
-from backend.lab_store import DemoStore, SimulatorValidationError, render_gdt_message
+from backend.lab_store import (
+    DCM4CHEE_MWL_STATUS_CREATED,
+    DemoStore,
+    SimulatorValidationError,
+    render_gdt_message,
+)
 
 
 def parse_gdt_records(payload):
@@ -151,6 +156,53 @@ class HealthcareLabStoreTests(unittest.TestCase):
             "ECG12^12 Lead ECG^L^93000^Electrocardiogram, routine ECG with at least 12 leads^C4",
             order["payload"],
         )
+
+    def test_dcm4chee_mapping_backfills_from_existing_attempts(self):
+        patient = self.store.create_patient_record(
+            {
+                "mrn": "MRN-A04-001",
+                "firstName": "Avery",
+                "middleName": "Lee",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+                "patientClass": "O",
+                "assignedLocation": "CARDIOLOGY^ROOM1",
+                "attendingProvider": "P123^Rivera^Elena",
+                "accountNumber": "",
+            }
+        )
+        profile = {
+            "profileName": "local-dcm4chee",
+            "dimse": {"calledAETitle": "DCM4CHEE"},
+            "mwl": {"aeTitle": "DCM4CHEE", "defaultScheduledStationAETitle": "ECG_AP"},
+        }
+        order = self.store.create_dcm4chee_order_record(
+            {"patientRecordId": patient["id"], "requestedAt": "20260708103000"}
+        )
+        payload = self.store.build_dcm4chee_mwl_payload(order, profile)
+        attempt = self.store.create_dcm4chee_mwl_attempt(
+            int(order["id"]),
+            profile,
+            request_payload=payload,
+            attempt_status=DCM4CHEE_MWL_STATUS_CREATED,
+            http_status=200,
+            response_body='{"created":true}',
+        )
+        with self.store.connect() as connection:
+            connection.execute("DELETE FROM local_dcm4chee_mwl_mappings")
+            connection.execute("UPDATE local_dcm4chee_mwl_attempts SET mapping_id = NULL")
+
+        reopened = DemoStore(self.store.path)
+        mapping = reopened.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
+        attempts = reopened.list_dcm4chee_mwl_attempts(int(order["id"]))
+
+        self.assertIsNotNone(mapping)
+        self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
+        self.assertEqual(mapping["lastAttemptId"], attempt["id"])
+        self.assertEqual(mapping["accessionNumber"], "ACC-000001")
+        self.assertEqual(mapping["patientId"], "MRN-A04-001")
+        self.assertEqual(attempts[0]["mappingId"], mapping["id"])
         self.assertEqual(self.store.list_order_records()[0]["id"], order["id"])
 
     def test_local_patient_modes_generate_protocol_specific_payloads(self):
