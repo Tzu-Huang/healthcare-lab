@@ -65,6 +65,7 @@ DCM4CHEE_MWL_STATUS_PENDING = "Pending sync"
 DCM4CHEE_MWL_STATUS_CREATED = "Created"
 DCM4CHEE_MWL_STATUS_FAILED = "Sync failed"
 DCM4CHEE_MWL_STATUS_PATIENT_MISSING = "Patient missing"
+DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES = {"patient_missing", "profile_invalid"}
 DCM4CHEE_MWL_OPERATION_CREATE = "create"
 DCM4CHEE_MWL_OPERATION_READBACK = "read-back"
 DCM4CHEE_DEFAULT_UID_ROOT = "1.2.826.0.1.3680043.10.543"
@@ -4233,10 +4234,7 @@ class DemoStore:
             if row["protocol_version"] == FHIR_ORDER_PROTOCOL_VERSION
             else None,
             "dcm4chee": {
-                "mwl": {
-                    **(dcm4chee_attempt or {}),
-                    "mapping": dcm4chee_mapping,
-                }
+                "mwl": DemoStore._dcm4chee_mwl_status_view(dcm4chee_attempt, dcm4chee_mapping)
                 if dcm4chee_attempt or dcm4chee_mapping
                 else None,
             }
@@ -4323,6 +4321,60 @@ class DemoStore:
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
         }
+
+    @staticmethod
+    def _dcm4chee_mwl_status_view(
+        attempt: dict[str, Any] | None,
+        mapping: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        attempt = attempt or {}
+        mapping = mapping or {}
+        status = str(mapping.get("status") or attempt.get("status") or "").strip()
+        error_type = str(mapping.get("lastErrorType") or attempt.get("errorType") or "").strip()
+        retryable = DemoStore._dcm4chee_mwl_retryable(status, error_type)
+        display_status, display_state = DemoStore._dcm4chee_mwl_display_status(status, retryable)
+        return {
+            **attempt,
+            "mapping": mapping or None,
+            "status": status,
+            "displayStatus": display_status,
+            "displayState": display_state,
+            "retryable": retryable,
+            "latest": {
+                "attemptId": attempt.get("id"),
+                "mappingId": mapping.get("id") or attempt.get("mappingId"),
+                "operationType": attempt.get("operationType") or "",
+                "status": status,
+                "displayStatus": display_status,
+                "retryable": retryable,
+                "httpStatus": mapping.get("lastHttpStatus") or attempt.get("httpStatus"),
+                "errorType": error_type,
+                "error": mapping.get("lastError") or attempt.get("error") or "",
+                "responseBody": mapping.get("lastResponseBody") or attempt.get("responseBody") or "",
+                "retryCount": mapping.get("retryCount", 0),
+                "lastSyncAt": mapping.get("lastSyncAt") or attempt.get("completedAt") or "",
+                "updatedAt": mapping.get("updatedAt") or attempt.get("updatedAt") or "",
+            },
+        }
+
+    @staticmethod
+    def _dcm4chee_mwl_retryable(status: str, error_type: str = "") -> bool:
+        normalized_error = str(error_type or "").strip()
+        if normalized_error in DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES:
+            return False
+        return str(status or "").strip() in {DCM4CHEE_MWL_STATUS_PENDING, DCM4CHEE_MWL_STATUS_FAILED}
+
+    @staticmethod
+    def _dcm4chee_mwl_display_status(status: str, retryable: bool) -> tuple[str, str]:
+        if status == DCM4CHEE_MWL_STATUS_CREATED:
+            return "Synced", "synced"
+        if status == DCM4CHEE_MWL_STATUS_PENDING:
+            return ("Retry needed", "retry-needed") if retryable else ("Pending", "pending")
+        if status == DCM4CHEE_MWL_STATUS_FAILED:
+            return ("Retry needed", "retry-needed") if retryable else ("Failed", "failed")
+        if status == DCM4CHEE_MWL_STATUS_PATIENT_MISSING:
+            return "Failed", "failed"
+        return status or "Unknown", "unknown"
 
     @staticmethod
     def _json_value(value: str, fallback: Any) -> Any:
