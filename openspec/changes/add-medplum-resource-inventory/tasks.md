@@ -1,9 +1,9 @@
 ## 1. Medplum Inventory API
 
-- [ ] 1.1 Add or reuse API support for listing FHIR ledger records with resource type, sync status, Medplum reference, Patient relation metadata, and local submitted JSON.
-- [ ] 1.2 Add API support for fetching Medplum live JSON for a selected synced resource reference.
-- [ ] 1.3 Return clear fallback metadata when Medplum live fetch fails and local submitted JSON is used.
-- [ ] 1.4 Ensure retry from the Medplum page uses the existing idempotent `/api/fhir/records/<id>/sync` path.
+- [x] 1.1 Add or reuse API support for listing FHIR ledger records with resource type, sync status, Medplum reference, Patient relation metadata, and local submitted JSON.
+- [x] 1.2 Add API support for fetching Medplum live JSON for a selected synced resource reference.
+- [x] 1.3 Return clear fallback metadata when Medplum live fetch fails and local submitted JSON is used.
+- [x] 1.4 Ensure retry from the Medplum page uses the existing idempotent `/api/fhir/records/<id>/sync` path.
 
 ## 2. Patient-Centered Inventory UI
 
@@ -21,7 +21,7 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Add backend tests for live JSON fetch success, fetch failure fallback metadata, and retry behavior.
+- [x] 4.1 Add backend tests for live JSON fetch success, fetch failure fallback metadata, and retry behavior.
 - [ ] 4.2 Add frontend or API regression coverage for Medplum page row rendering, Patient filtering, raw JSON preview source labels, and retry visibility.
 - [ ] 4.3 Run OpenSpec validation.
 - [ ] 4.4 Run the Healthcare Lab Python test suite.
