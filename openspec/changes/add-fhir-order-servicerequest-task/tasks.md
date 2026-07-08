@@ -35,4 +35,4 @@
 - [x] 5.1 Add store tests for ServiceRequest mapping, Task mapping, deterministic identifiers, and Patient precondition validation.
 - [x] 5.2 Add app tests for successful FHIR order create-and-sync, ServiceRequest/Task reference correctness, and partial sync failure preservation.
 - [x] 5.3 Add frontend/API regression coverage for FHIR mode enablement, full form visibility, preview, and Local Orders sync display.
-- [ ] 5.4 Run OpenSpec validation and the Healthcare Lab Python test suite.
+- [x] 5.4 Run OpenSpec validation and the Healthcare Lab Python test suite.
