@@ -320,6 +320,81 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertIn("DocumentReference", mappings["DiagnosticReport"]["dependsOn"])
         self.assertIn("DiagnosticReport", mappings["Provenance"]["dependsOn"])
 
+    def test_fhir_order_builds_service_request_task_and_requires_synced_patient(self):
+        patient = self.store.create_patient_record(
+            {
+                "mode": "fhir",
+                "mrn": "MRN-FHIR-ORDER-001",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            }
+        )
+
+        with self.assertRaisesRegex(SimulatorValidationError, "synced Medplum Patient"):
+            self.store.create_fhir_order_record({"mode": "fhir", "patientRecordId": patient["id"]})
+
+        patient_fhir = self.store.create_patient_fhir_workflow_record(patient)
+        self.store.mark_fhir_sync_success(
+            patient_fhir["id"],
+            medplum_resource_id="patient-1",
+            medplum_resource_reference="Patient/patient-1",
+        )
+
+        order = self.store.create_fhir_order_record(
+            {
+                "mode": "fhir",
+                "patientRecordId": patient["id"],
+                "fhir": {
+                    "status": "active",
+                    "intent": "order",
+                    "priority": "stat",
+                    "codeCode": "ECG12",
+                    "codeDisplay": "12 Lead ECG",
+                    "occurrenceDateTime": "2026-07-08T10:30:00",
+                    "authoredOn": "2026-07-08T09:00:00",
+                    "requester": "Practitioner/prac-1",
+                    "reasonCodeText": "Chest pain evaluation",
+                    "note": "Internal note",
+                },
+            }
+        )
+
+        self.assertEqual(order["protocolVersion"], "FHIR R4")
+        self.assertEqual(order["messageType"], "ServiceRequest")
+        resource = json.loads(order["payload"])
+        self.assertEqual(resource["resourceType"], "ServiceRequest")
+        self.assertEqual(resource["subject"]["reference"], "Patient/patient-1")
+        self.assertEqual(resource["status"], "active")
+        self.assertEqual(resource["intent"], "order")
+        self.assertEqual(resource["priority"], "stat")
+        self.assertEqual(resource["requester"]["reference"], "Practitioner/prac-1")
+        self.assertEqual(resource["reasonCode"][0]["text"], "Chest pain evaluation")
+        self.assertEqual(resource["note"][0]["text"], "Internal note")
+
+        service_request = self.store.create_order_service_request_fhir_workflow_record(order)
+        self.store.mark_fhir_sync_success(
+            service_request["id"],
+            medplum_resource_id="sr-1",
+            medplum_resource_reference="ServiceRequest/sr-1",
+        )
+        task = self.store.create_order_task_fhir_workflow_record(
+            order,
+            patient_reference="Patient/patient-1",
+            service_request_reference="ServiceRequest/sr-1",
+        )
+
+        self.assertEqual(service_request["identifier"]["value"], f"local-order-records-{order['id']}")
+        self.assertEqual(task["identifier"]["value"], f"local-order-records-{order['id']}")
+        self.assertEqual(task["resource"]["status"], "requested")
+        self.assertEqual(task["resource"]["intent"], "order")
+        self.assertEqual(task["resource"]["for"]["reference"], "Patient/patient-1")
+        self.assertEqual(task["resource"]["focus"]["reference"], "ServiceRequest/sr-1")
+        refreshed = self.store.get_order_record(order["id"])
+        self.assertEqual(refreshed["fhir"]["serviceRequest"]["resourceType"], "ServiceRequest")
+        self.assertEqual(refreshed["fhir"]["task"]["resourceType"], "Task")
+
     def test_fhir_sync_attempts_and_failure_details_are_preserved(self):
         item = self.store.create_fhir_workflow_record(
             {

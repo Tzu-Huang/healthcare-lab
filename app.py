@@ -2214,7 +2214,46 @@ def create_app(database_path: str | None = None) -> Flask:
     def create_order():
         payload = request.get_json(silent=True) or {}
         try:
-            item = store.create_order_record(payload)
+            mode = str(payload.get("mode") or "").strip().lower()
+            if mode == "fhir":
+                item = store.create_fhir_order_record(payload)
+                service_request = store.create_order_service_request_fhir_workflow_record(item)
+                base_url = configured_medplum_base_url()
+                if base_url:
+                    service_request = sync_fhir_workflow_record_to_medplum(
+                        store,
+                        int(service_request["id"]),
+                        base_url=base_url,
+                        auth_manager=get_auth_manager(),
+                    )
+                else:
+                    service_request = store.mark_fhir_sync_failure(
+                        int(service_request["id"]),
+                        error_text="Medplum FHIR base URL is required.",
+                    )
+                service_request_reference = str((service_request.get("medplum") or {}).get("reference") or "")
+                patient_reference = str(
+                    ((service_request.get("resource") or {}).get("subject") or {}).get("reference") or ""
+                )
+                if (
+                    (service_request.get("sync") or {}).get("status") == FHIR_SYNC_STATUS_SYNCED
+                    and service_request_reference
+                ):
+                    task = store.create_order_task_fhir_workflow_record(
+                        item,
+                        patient_reference=patient_reference,
+                        service_request_reference=service_request_reference,
+                    )
+                    if base_url:
+                        sync_fhir_workflow_record_to_medplum(
+                            store,
+                            int(task["id"]),
+                            base_url=base_url,
+                            auth_manager=get_auth_manager(),
+                        )
+                item = store.get_order_record(int(item["id"]))
+            else:
+                item = store.create_order_record(payload)
         except KeyError:
             return error_response("Patient record was not found.", 404)
         except SimulatorValidationError as exc:
