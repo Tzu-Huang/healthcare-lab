@@ -695,20 +695,64 @@ tbody tr.recently-updated {
   margin: 22px 0 34px;
 }
 
-.medplum-filter-grid {
-  grid-template-columns: minmax(260px, 1.2fr) minmax(180px, 0.7fr) minmax(180px, 0.7fr);
-}
-
-.medplum-inventory-grid {
+.medplum-console-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  grid-template-columns: minmax(320px, 0.72fr) minmax(0, 1.28fr);
   gap: 18px;
   align-items: start;
 }
 
-.medplum-resource-panel,
-.medplum-preview-panel {
+.medplum-console-grid.patient-focused-grid {
+  grid-template-columns: minmax(340px, 0.72fr) minmax(0, 1.28fr);
+}
+
+.medplum-selected-patient-panel,
+.medplum-json-console {
   min-width: 0;
+}
+
+.medplum-workflow-controls {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.medplum-related-section {
+  margin-top: 18px;
+}
+
+.medplum-related-list,
+.medplum-related-group {
+  display: grid;
+  gap: 10px;
+}
+
+.medplum-related-group h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.medplum-related-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) minmax(180px, 0.6fr);
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.medplum-related-row:hover {
+  border-color: var(--ui-blue);
+}
+
+.medplum-related-row code {
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
 
 .medplum-json-preview {
@@ -1337,8 +1381,8 @@ tr.selected-row {
   .lab-summary-strip,
   .lab-server-grid,
   .dashboard-main-grid,
-  .medplum-filter-grid,
-  .medplum-inventory-grid,
+    .medplum-console-grid,
+    .medplum-workflow-controls,
   .lab-workbench,
   .detail-workbench,
   .workbench-layout,
@@ -1918,47 +1962,35 @@ body {
   font-size: 12px;
 }
 
-.medplum-inventory-grid {
-  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.6fr);
+.medplum-console-grid {
+  grid-template-columns: minmax(340px, 0.72fr) minmax(0, 1.28fr);
 }
 
-.medplum-resource-table {
-  min-width: 1060px;
+.medplum-patient-table {
+  min-width: 720px;
   table-layout: fixed;
 }
 
-.medplum-resource-table th:nth-child(1),
-.medplum-resource-table td:nth-child(1) {
-  width: 118px;
+.medplum-patient-table th:nth-child(1),
+.medplum-patient-table td:nth-child(1) {
+  width: 42px;
 }
 
-.medplum-resource-table th:nth-child(2),
-.medplum-resource-table td:nth-child(2) {
-  width: 136px;
+.medplum-patient-table th:nth-child(3),
+.medplum-patient-table td:nth-child(3) {
+  width: 126px;
 }
 
-.medplum-resource-table th:nth-child(3),
-.medplum-resource-table td:nth-child(3) {
-  width: 132px;
+.medplum-patient-table th:nth-child(4),
+.medplum-patient-table td:nth-child(4),
+.medplum-patient-table th:nth-child(5),
+.medplum-patient-table td:nth-child(5) {
+  width: 86px;
 }
 
-.medplum-resource-table th:nth-child(5),
-.medplum-resource-table td:nth-child(5) {
-  width: 150px;
-}
-
-.medplum-resource-table th:nth-child(6),
-.medplum-resource-table td:nth-child(6) {
-  width: 188px;
-}
-
-.medplum-resource-table th:last-child,
-.medplum-resource-table td:last-child {
+.medplum-patient-table th:last-child,
+.medplum-patient-table td:last-child {
   width: 96px;
-}
-
-.medplum-resource-table td:nth-child(4) {
-  overflow-wrap: anywhere;
 }
 
 .timestamp-cell {
@@ -2200,7 +2232,8 @@ button.primary:hover,
 
   .patient-grid,
   .order-workspace .patient-grid,
-  .medplum-inventory-grid,
+  .medplum-console-grid,
+  .medplum-workflow-controls,
   .oie-inventory-grid {
     grid-template-columns: 1fr;
   }

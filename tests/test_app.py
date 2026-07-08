@@ -135,7 +135,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'id="start-gdt-watcher"', response.data)
         self.assertIn(b'data-nav-target="medplum-view"', response.data)
         self.assertIn(b'id="medplum-view"', response.data)
-        self.assertIn(b'id="medplum-resource-list"', response.data)
+        self.assertIn(b'id="medplum-patient-list"', response.data)
+        self.assertIn(b'id="medplum-service-request-select"', response.data)
+        self.assertIn(b'id="medplum-diagnostic-report-select"', response.data)
+        self.assertIn(b'id="medplum-related-resources"', response.data)
         self.assertIn(b'id="medplum-json-preview"', response.data)
         self.assertIn(b"raw GDT-OUT or GDT-IN content", response.data)
         self.assertIn(b'id="oie-send-host" value="localhost"', response.data)
@@ -169,8 +172,17 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('`/api/fhir/records/${recordId}/sync`', script)
         self.assertIn("Live fetch failed; local submitted JSON", script)
         self.assertIn("medplumRecordMatchesPatient", script)
+        self.assertIn("renderMedplumPatientList", script)
+        self.assertIn("renderMedplumPatientList();\n  const patient = selectedMedplumPatient();", script)
+        self.assertIn('const serviceRequests = patient ? medplumRecordsForPatient(patient, "ServiceRequest") : [];', script)
+        self.assertIn("clearMedplumPreview", script)
+        self.assertIn("medplum-service-request-select", script)
+        self.assertIn("medplum-diagnostic-report-select", script)
+        self.assertIn("medplum-related-row", script)
         self.assertIn("buildFhirOrderPreviewPayload", script)
         self.assertIn("FHIR Order requires a synced FHIR Patient", script)
+        self.assertIn('payload.mode === "hl7-v231"', script)
+        self.assertIn("FHIR order code is required.", script)
         self.assertIn('payload.mode !== "fhir" && payload.requestedAt', script)
         self.assertIn("serviceRequest", script)
         self.assertIn("Task:", script)
@@ -521,6 +533,9 @@ class HealthcareLabApiTests(unittest.TestCase):
         by_id = {item["id"]: item for item in body["items"]}
         self.assertEqual(by_id[patient["id"]]["previewSource"], "medplum-live")
         self.assertEqual(by_id[observation["id"]]["patientReferences"], ["Patient/patient-created"])
+        self.assertEqual(by_id[observation["id"]]["references"], ["Patient/patient-created"])
+        self.assertEqual(by_id[observation["id"]]["summary"]["primary"], "Observation")
+        self.assertEqual(by_id[observation["id"]]["summary"]["status"], "final")
         self.assertTrue(by_id[observation["id"]]["retryable"])
         self.assertEqual(body["patients"][0]["reference"], "Patient/patient-created")
 
@@ -946,8 +961,8 @@ class HealthcareLabApiTests(unittest.TestCase):
                     "priority": "stat",
                     "codeCode": "ECG12",
                     "codeDisplay": "12 Lead ECG",
-                    "occurrenceDateTime": "2026-07-08T10:30:00",
-                    "authoredOn": "2026-07-08T09:00:00",
+                    "occurrenceDateTime": "2026-07-08T10:30",
+                    "authoredOn": "2026-07-08T09:00",
                     "requester": "Practitioner/prac-1",
                     "reasonCodeText": "Chest pain evaluation",
                 },
@@ -964,6 +979,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         service_request = next(payload for payload in created_payloads if payload["resourceType"] == "ServiceRequest")
         task = next(payload for payload in created_payloads if payload["resourceType"] == "Task")
         self.assertEqual(service_request["subject"]["reference"], "Patient/patient-order")
+        self.assertRegex(service_request["occurrenceDateTime"], r"^2026-07-08T10:30:00[+-]\d{2}:\d{2}$")
+        self.assertRegex(service_request["authoredOn"], r"^2026-07-08T09:00:00[+-]\d{2}:\d{2}$")
         self.assertEqual(task["for"]["reference"], "Patient/patient-order")
         self.assertEqual(task["focus"]["reference"], "ServiceRequest/sr-created")
 
