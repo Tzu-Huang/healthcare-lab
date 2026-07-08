@@ -2073,6 +2073,22 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(messages["security.tlsEnabled"], "TLS enabled must be true or false.")
         self.assertEqual(messages["security.tlsVerify"], "TLS verify must be true or false.")
 
+    @patch("app.socket.create_connection")
+    @patch("app.urllib.request.urlopen")
+    def test_dcm4chee_smoke_reports_out_of_range_dimse_port(self, urlopen, create_connection):
+        urlopen.return_value = FakeHttpResponse(b"ok", status=200)
+        self.client.application.config["DCM4CHEE_DIMSE_PORT"] = "99999"
+        store = self.client.application.extensions["demo_store"]
+        dcm4chee = next(item for item in store.list_lab_servers() if item["name"] == "dcm4chee")
+
+        result = run_lab_smoke_check(self.client.application, store, dcm4chee)
+
+        self.assertEqual(result["status"], "Down")
+        dimse_step = next(step for step in result["steps"] if step["name"] == "dicom_dimse")
+        self.assertEqual(dimse_step["status"], "Down")
+        self.assertEqual(dimse_step["message"], "Port must be an integer between 1 and 65535.")
+        create_connection.assert_not_called()
+
     def test_lab_server_create_update_and_detail_api(self):
         created = self.client.post(
             "/api/lab/servers",
