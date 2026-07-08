@@ -67,6 +67,7 @@ MEDPLUM_INVENTORY_RESOURCE_TYPES = (
     "Observation",
     "DocumentReference",
 )
+MEDPLUM_READ_RESOURCE_TYPES = MEDPLUM_INVENTORY_RESOURCE_TYPES + ("Binary",)
 MEDPLUM_PATIENT_REFERENCE_FIELDS = ("subject", "patient", "for")
 
 load_dotenv(Path(__file__).with_name(".env"))
@@ -407,6 +408,234 @@ def fetch_fhir_service_requests(
     }
 
 
+def normalize_fhir_reference(value: str, resource_type: str) -> str:
+    reference = value.strip()
+    parts = [part.strip() for part in reference.split("/") if part.strip()]
+    if len(parts) != 2 or parts[0] != resource_type:
+        raise ValidationError(f"FHIR reference must look like {resource_type}/id.")
+    return f"{resource_type}/{parts[1]}"
+
+
+def fhir_bundle_resources(bundle: dict[str, Any], resource_type: str) -> list[dict[str, Any]]:
+    if bundle.get("resourceType") != "Bundle":
+        raise UpstreamFhirError(
+            f"Medplum {resource_type} search returned a non-Bundle response.",
+            response_payload=bundle,
+        )
+    entries = bundle.get("entry") or []
+    if not isinstance(entries, list):
+        raise UpstreamFhirError(
+            f"Medplum {resource_type} Bundle entry is malformed.",
+            response_payload=bundle,
+        )
+    resources: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        resource = entry.get("resource")
+        if isinstance(resource, dict) and resource.get("resourceType") == resource_type:
+            resources.append(resource)
+    return resources
+
+
+def service_request_references(references: list[str]) -> list[str]:
+    return [reference for reference in references if reference.startswith("ServiceRequest/")]
+
+
+def diagnostic_report_effective_date(resource: dict[str, Any]) -> str:
+    effective = str(resource.get("effectiveDateTime") or "").strip()
+    if effective:
+        return effective
+    effective_period = resource.get("effectivePeriod")
+    if isinstance(effective_period, dict):
+        return str(
+            effective_period.get("start")
+            or effective_period.get("end")
+            or ""
+        ).strip()
+    return str(resource.get("issued") or "").strip()
+
+
+def attachment_reference_values(value: Any) -> list[str]:
+    references: list[str] = []
+    if isinstance(value, dict):
+        url = str(value.get("url") or "").strip()
+        if url and re.match(r"^[A-Za-z]+/[A-Za-z0-9\-.]+$", url):
+            references.append(url)
+        for nested in value.values():
+            for reference in attachment_reference_values(nested):
+                if reference not in references:
+                    references.append(reference)
+    elif isinstance(value, list):
+        for item in value:
+            for reference in attachment_reference_values(item):
+                if reference not in references:
+                    references.append(reference)
+    return references
+
+
+def diagnostic_report_relationships(resource: dict[str, Any]) -> dict[str, Any]:
+    media_references: list[str] = []
+    for item in resource.get("media") or []:
+        if isinstance(item, dict):
+            media_references.extend(fhir_reference_values(item.get("link")))
+    presented_form = resource.get("presentedForm") if isinstance(resource.get("presentedForm"), list) else []
+    presented_form_references = attachment_reference_values(presented_form)
+    related_references: list[dict[str, str]] = []
+    for reference in all_fhir_references(resource) + presented_form_references:
+        resource_type = reference.split("/", 1)[0] if "/" in reference else ""
+        if resource_type not in {"Observation", "DocumentReference", "Binary"}:
+            continue
+        if any(item["reference"] == reference for item in related_references):
+            continue
+        related_references.append({"resourceType": resource_type, "reference": reference})
+    return {
+        "subject": fhir_reference_values(resource.get("subject")),
+        "basedOn": fhir_reference_values(resource.get("basedOn")),
+        "result": fhir_reference_values(resource.get("result")),
+        "media": media_references,
+        "presentedForm": presented_form_references,
+        "related": related_references,
+    }
+
+
+def diagnostic_report_summary(
+    resource: dict[str, Any],
+    *,
+    selected_service_request: str = "",
+) -> dict[str, Any]:
+    resource_id = str(resource.get("id") or "").strip()
+    reference = f"DiagnosticReport/{resource_id}" if resource_id else ""
+    relationships = diagnostic_report_relationships(resource)
+    based_on = relationships["basedOn"]
+    service_refs = service_request_references(based_on)
+    result_refs = relationships["result"]
+    attachment_count = len(relationships["media"]) + len(relationships["presentedForm"])
+    relationship_type = (
+        "order-linked"
+        if service_refs and (not selected_service_request or selected_service_request in service_refs)
+        else "patient-level"
+    )
+    return {
+        "id": resource_id,
+        "reference": reference,
+        "resourceType": "DiagnosticReport",
+        "code": first_code_text(resource.get("code")),
+        "display": first_code_text(resource.get("code")) or reference or "DiagnosticReport",
+        "status": str(resource.get("status") or "").strip(),
+        "date": diagnostic_report_effective_date(resource),
+        "issued": str(resource.get("issued") or "").strip(),
+        "subject": relationships["subject"][0] if relationships["subject"] else "",
+        "basedOn": based_on,
+        "linkedOrder": service_refs[0] if service_refs else "",
+        "relationshipType": relationship_type,
+        "resultCount": len(result_refs),
+        "attachmentCount": attachment_count,
+        "relationships": relationships,
+        "resource": resource,
+    }
+
+
+def fetch_fhir_diagnostic_report_bundle(
+    base_url: str,
+    token: str,
+    *,
+    patient_reference: str = "",
+    service_request_reference: str = "",
+    auth_manager: MedplumAuthManager | None = None,
+) -> dict[str, Any]:
+    base = normalize_fhir_base_url(base_url)
+    patient_ref = normalize_fhir_reference(patient_reference, "Patient") if patient_reference else ""
+    service_ref = (
+        normalize_fhir_reference(service_request_reference, "ServiceRequest")
+        if service_request_reference
+        else ""
+    )
+    if not patient_ref and not service_ref:
+        raise ValidationError("Patient or ServiceRequest reference is required.")
+
+    def search(params: list[tuple[str, str]]) -> dict[str, Any]:
+        query = urllib.parse.urlencode([("_count", "50"), ("_sort", "-date"), *params])
+        url = f"{base}/DiagnosticReport?{query}"
+        status_code, parsed_body = request_fhir_json(
+            url, token, auth_manager=auth_manager, base_url=base
+        )
+        fhir_bundle_resources(parsed_body, "DiagnosticReport")
+        return {"status": status_code, "body": parsed_body, "requestUrl": url}
+
+    patient_fetch: dict[str, Any] | None = None
+    patient_reports: list[dict[str, Any]] = []
+    based_on_fetch: dict[str, Any] | None = None
+    fallback_reason = ""
+    report_resources: list[dict[str, Any]] = []
+    strategy = "patient"
+
+    def fetch_patient_reports(*, optional: bool = False) -> list[dict[str, Any]]:
+        nonlocal patient_fetch, fallback_reason
+        if not patient_ref:
+            return []
+        try:
+            patient_fetch = search([("subject", patient_ref)])
+            return fhir_bundle_resources(patient_fetch["body"], "DiagnosticReport")
+        except UpstreamFhirError as exc:
+            if not optional or exc.http_status not in {400, 404, 422}:
+                raise
+            fallback_reason = str(exc)
+            return []
+
+    if service_ref:
+        try:
+            based_on_fetch = search([("based-on", service_ref)])
+            order_reports = fhir_bundle_resources(based_on_fetch["body"], "DiagnosticReport")
+            patient_reports = fetch_patient_reports(optional=True)
+            patient_level_reports = [
+                item for item in patient_reports
+                if not service_request_references(fhir_reference_values(item.get("basedOn")))
+            ]
+            by_reference: dict[str, dict[str, Any]] = {}
+            for item in order_reports + patient_level_reports:
+                item_id = str(item.get("id") or "").strip()
+                key = f"DiagnosticReport/{item_id}" if item_id else json.dumps(item, sort_keys=True)
+                by_reference[key] = item
+            report_resources = list(by_reference.values())
+            strategy = "based-on"
+        except UpstreamFhirError as exc:
+            if exc.http_status not in {400, 404, 422}:
+                raise
+            fallback_reason = str(exc)
+            patient_reports = fetch_patient_reports()
+            report_resources = [
+                item for item in patient_reports
+                if service_ref in fhir_reference_values(item.get("basedOn"))
+                or not service_request_references(fhir_reference_values(item.get("basedOn")))
+            ]
+            strategy = "patient-filter"
+    else:
+        patient_reports = fetch_patient_reports()
+        report_resources = patient_reports
+
+    summaries = [
+        diagnostic_report_summary(item, selected_service_request=service_ref)
+        for item in report_resources
+    ]
+    return {
+        "resourceType": "Bundle",
+        "status": patient_fetch["status"] if patient_fetch else based_on_fetch["status"],
+        "requestUrl": patient_fetch["requestUrl"] if patient_fetch else based_on_fetch["requestUrl"],
+        "patientReference": patient_ref,
+        "serviceRequestReference": service_ref,
+        "strategy": strategy,
+        "fallbackReason": fallback_reason,
+        "empty": not summaries,
+        "body": patient_fetch["body"] if patient_fetch else based_on_fetch["body"],
+        "bundles": {
+            "patient": patient_fetch,
+            "basedOn": based_on_fetch,
+        },
+        "reports": summaries,
+    }
+
+
 def operation_outcome_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if isinstance(payload, dict) and payload.get("resourceType") == "OperationOutcome":
         return payload
@@ -449,8 +678,8 @@ def medplum_reference_resource_url(base_url: str, reference: str) -> str:
     if len(parts) != 2:
         raise ValidationError("Medplum resource reference must look like ResourceType/id.")
     resource_type, resource_id = parts
-    if resource_type not in MEDPLUM_INVENTORY_RESOURCE_TYPES:
-        raise ValidationError("Medplum resource reference type is not supported by inventory.")
+    if resource_type not in MEDPLUM_READ_RESOURCE_TYPES:
+        raise ValidationError("Medplum resource reference type is not supported.")
     return (
         f"{base_url}/{urllib.parse.quote(resource_type, safe='')}/"
         f"{urllib.parse.quote(resource_id, safe='')}"
@@ -907,6 +1136,13 @@ def describe_medplum_service_request_failure(exc: Exception) -> str:
     if "Medplum returned HTTP 401:" in message:
         return f"FHIR data fetch unauthorized: {message}"
     return f"ServiceRequest fetch failed: {message}"
+
+
+def describe_medplum_diagnostic_report_failure(exc: Exception) -> str:
+    message = str(exc)
+    if "Medplum returned HTTP 401:" in message:
+        return f"FHIR DiagnosticReport fetch unauthorized: {message}"
+    return f"DiagnosticReport fetch failed: {message}"
 
 
 def run_tcp_smoke(host: str, port: Any, name: str, *, required: bool = True) -> dict[str, Any]:
@@ -1735,8 +1971,27 @@ def run_lab_smoke_check(
                 )
             except (ValidationError, UpstreamFhirError) as exc:
                 steps.append(smoke_step("service_request_fetch", "Down", describe_medplum_service_request_failure(exc), required=False))
+            try:
+                diagnostic_result = fetch_fhir_diagnostic_report_bundle(
+                    base_url,
+                    "",
+                    patient_reference="Patient/lab-smoke-probe",
+                    auth_manager=auth_manager if auth_manager and auth_manager.is_configured() else None,
+                )
+                report_count = len(diagnostic_result["reports"])
+                steps.append(
+                    smoke_step(
+                        "diagnostic_report_fetch",
+                        "Healthy" if diagnostic_result["resourceType"] == "Bundle" else "Degraded",
+                        f"HTTP {diagnostic_result['status']}; {report_count} report(s).",
+                        required=False,
+                    )
+                )
+            except (ValidationError, UpstreamFhirError) as exc:
+                steps.append(smoke_step("diagnostic_report_fetch", "Down", describe_medplum_diagnostic_report_failure(exc), required=False))
         else:
             steps.append(smoke_step("service_request_fetch", "Unknown", "FHIR base URL is not configured.", required=False))
+            steps.append(smoke_step("diagnostic_report_fetch", "Unknown", "FHIR base URL is not configured.", required=False))
     elif profile == "gdt-bridge":
         steps = run_gdt_bridge_smoke(app, server)
     elif profile == "dcm4chee":
@@ -2386,6 +2641,96 @@ def create_app(database_path: str | None = None) -> Flask:
                 "items": items,
                 "patients": patients,
                 "resourceTypes": list(MEDPLUM_INVENTORY_RESOURCE_TYPES),
+            }
+        )
+
+    @app.get("/api/fhir/diagnostic-reports")
+    def fetch_fhir_diagnostic_reports():
+        patient_reference = str(
+            request.args.get("patient")
+            or request.args.get("patientReference")
+            or ""
+        ).strip()
+        service_request_reference = str(
+            request.args.get("serviceRequest")
+            or request.args.get("serviceRequestReference")
+            or ""
+        ).strip()
+        base_url = str(request.args.get("baseUrl") or configured_medplum_base_url()).strip()
+        if not base_url:
+            return error_response("Medplum FHIR base URL is required.", 400)
+        try:
+            result = fetch_fhir_diagnostic_report_bundle(
+                base_url,
+                "",
+                patient_reference=patient_reference,
+                service_request_reference=service_request_reference,
+                auth_manager=get_auth_manager(),
+            )
+        except ValidationError as exc:
+            return error_response(str(exc), 400)
+        except UpstreamFhirError as exc:
+            status_code = exc.http_status if exc.http_status in {401, 403} else 502
+            return jsonify(
+                {
+                    "success": False,
+                    "error": str(exc),
+                    "statusCode": exc.http_status,
+                    "operationOutcome": operation_outcome_from_payload(exc.response_payload),
+                    "response": exc.response_payload,
+                }
+            ), status_code
+        return jsonify(
+            {
+                "success": True,
+                "source": "medplum-live",
+                "patientReference": result["patientReference"],
+                "serviceRequestReference": result["serviceRequestReference"],
+                "strategy": result["strategy"],
+                "fallbackReason": result["fallbackReason"],
+                "empty": result["empty"],
+                "requestUrl": result["requestUrl"],
+                "bundle": result["body"],
+                "bundles": result["bundles"],
+                "reports": result["reports"],
+            }
+        )
+
+    @app.get("/api/fhir/resource-preview")
+    def fetch_fhir_resource_preview():
+        reference = str(request.args.get("reference") or "").strip()
+        base_url = str(request.args.get("baseUrl") or configured_medplum_base_url()).strip()
+        if not base_url:
+            return error_response("Medplum FHIR base URL is required.", 400)
+        try:
+            base = normalize_fhir_base_url(base_url)
+            fetch_url = medplum_reference_resource_url(base, reference)
+            status_code, live_resource = request_fhir_json(
+                fetch_url,
+                "",
+                auth_manager=get_auth_manager(),
+                base_url=base,
+            )
+        except ValidationError as exc:
+            return error_response(str(exc), 400)
+        except UpstreamFhirError as exc:
+            status_code = exc.http_status if exc.http_status in {401, 403, 404} else 502
+            return jsonify(
+                {
+                    "success": False,
+                    "error": str(exc),
+                    "statusCode": exc.http_status,
+                    "operationOutcome": operation_outcome_from_payload(exc.response_payload),
+                    "response": exc.response_payload,
+                }
+            ), status_code
+        return jsonify(
+            {
+                "success": True,
+                "source": "medplum-live",
+                "reference": reference,
+                "statusCode": status_code,
+                "resource": live_resource,
             }
         )
 
