@@ -265,6 +265,25 @@ def parse_config_bool(value: Any, *, default: bool = False) -> bool:
     raise ValidationError(f"Boolean config value is invalid: {value}")
 
 
+def coerce_config_int(value: Any, *, default: int) -> int | str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    if not text:
+        return default
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return text
+
+
+def coerce_config_bool(value: Any, *, default: bool) -> bool | str:
+    try:
+        return parse_config_bool(value, default=default)
+    except ValidationError:
+        return str(value).strip()
+
+
 def require_http_url(value: Any, field: str) -> str:
     url = str(value or "").strip()
     if not url:
@@ -301,7 +320,7 @@ def dcm4chee_profile_from_config(config: dict[str, Any]) -> dict[str, Any]:
         "webUiUrl": web_ui_url,
         "dimse": {
             "host": str(config.get("DCM4CHEE_DIMSE_HOST", "127.0.0.1") or "").strip(),
-            "port": int(config.get("DCM4CHEE_DIMSE_PORT", 11112) or 0),
+            "port": coerce_config_int(config.get("DCM4CHEE_DIMSE_PORT"), default=11112),
             "calledAETitle": called_ae_title,
             "callingAETitle": str(
                 config.get("DCM4CHEE_CALLING_AE_TITLE", "HEALTHCARE_LAB") or ""
@@ -324,8 +343,8 @@ def dcm4chee_profile_from_config(config: dict[str, Any]) -> dict[str, Any]:
         },
         "security": {
             "authMode": str(config.get("DCM4CHEE_AUTH_MODE", "none") or "").strip().lower(),
-            "tlsEnabled": parse_config_bool(config.get("DCM4CHEE_TLS_ENABLED"), default=False),
-            "tlsVerify": parse_config_bool(config.get("DCM4CHEE_TLS_VERIFY"), default=True),
+            "tlsEnabled": coerce_config_bool(config.get("DCM4CHEE_TLS_ENABLED"), default=False),
+            "tlsVerify": coerce_config_bool(config.get("DCM4CHEE_TLS_VERIFY"), default=True),
             "username": str(config.get("DCM4CHEE_USERNAME", "") or "").strip(),
             "tokenUrl": str(config.get("DCM4CHEE_TOKEN_URL", "") or "").strip(),
             "certificatePath": str(config.get("DCM4CHEE_CERTIFICATE_PATH", "") or "").strip(),
@@ -404,11 +423,25 @@ def validate_dcm4chee_profile(profile: dict[str, Any]) -> dict[str, Any]:
         auth_mode in DCM4CHEE_AUTH_MODES,
         "Auth mode is supported." if auth_mode in DCM4CHEE_AUTH_MODES else "Auth mode is unsupported.",
     )
-    tls_enabled = bool(security.get("tlsEnabled"))
+    tls_enabled_value = security.get("tlsEnabled")
+    tls_verify_value = security.get("tlsVerify")
+    add_check(
+        "security_tls_enabled",
+        "security.tlsEnabled",
+        isinstance(tls_enabled_value, bool),
+        "TLS enabled value is valid." if isinstance(tls_enabled_value, bool) else "TLS enabled must be true or false.",
+    )
+    add_check(
+        "security_tls_verify",
+        "security.tlsVerify",
+        isinstance(tls_verify_value, bool),
+        "TLS verify value is valid." if isinstance(tls_verify_value, bool) else "TLS verify must be true or false.",
+    )
+    tls_enabled = tls_enabled_value is True
     has_cert_material = bool(security.get("certificatePath") or security.get("privateKeyPath"))
     add_check(
         "security_tls",
-        "security.tlsEnabled",
+        "security.certificatePath",
         tls_enabled or not has_cert_material,
         "TLS settings are consistent."
         if tls_enabled or not has_cert_material
@@ -1332,7 +1365,11 @@ def run_tcp_smoke(host: str, port: Any, name: str, *, required: bool = True) -> 
     if not host or not port:
         return smoke_step(name, "Unknown", "Host or port is not configured.", required=required)
     try:
-        with socket.create_connection((host, int(port)), 3):
+        port_number = int(port)
+    except (TypeError, ValueError):
+        return smoke_step(name, "Down", "Port must be an integer between 1 and 65535.", required=required)
+    try:
+        with socket.create_connection((host, port_number), 3):
             return smoke_step(name, "Healthy", "TCP reachable.", required=required)
     except (OSError, socket.timeout) as exc:
         return smoke_step(name, "Down", str(exc), required=required)
@@ -2623,7 +2660,7 @@ def create_app(database_path: str | None = None) -> Flask:
         "http://127.0.0.1:8082/dcm4chee-arc/ui2",
     ).strip()
     app.config["DCM4CHEE_DIMSE_HOST"] = os.environ.get("DCM4CHEE_DIMSE_HOST", "127.0.0.1").strip()
-    app.config["DCM4CHEE_DIMSE_PORT"] = int(os.environ.get("DCM4CHEE_DIMSE_PORT", "11112"))
+    app.config["DCM4CHEE_DIMSE_PORT"] = os.environ.get("DCM4CHEE_DIMSE_PORT", "11112").strip()
     app.config["DCM4CHEE_CALLED_AE_TITLE"] = os.environ.get("DCM4CHEE_CALLED_AE_TITLE", "DCM4CHEE").strip()
     app.config["DCM4CHEE_CALLING_AE_TITLE"] = os.environ.get("DCM4CHEE_CALLING_AE_TITLE", "HEALTHCARE_LAB").strip()
     app.config["DCM4CHEE_MWL_AE_TITLE"] = os.environ.get(
@@ -2646,8 +2683,8 @@ def create_app(database_path: str | None = None) -> Flask:
         "",
     ).strip()
     app.config["DCM4CHEE_AUTH_MODE"] = os.environ.get("DCM4CHEE_AUTH_MODE", "none").strip()
-    app.config["DCM4CHEE_TLS_ENABLED"] = parse_config_bool(os.environ.get("DCM4CHEE_TLS_ENABLED"), default=False)
-    app.config["DCM4CHEE_TLS_VERIFY"] = parse_config_bool(os.environ.get("DCM4CHEE_TLS_VERIFY"), default=True)
+    app.config["DCM4CHEE_TLS_ENABLED"] = os.environ.get("DCM4CHEE_TLS_ENABLED", "").strip()
+    app.config["DCM4CHEE_TLS_VERIFY"] = os.environ.get("DCM4CHEE_TLS_VERIFY", "").strip()
     app.config["DCM4CHEE_USERNAME"] = os.environ.get("DCM4CHEE_USERNAME", "").strip()
     app.config["DCM4CHEE_TOKEN_URL"] = os.environ.get("DCM4CHEE_TOKEN_URL", "").strip()
     app.config["DCM4CHEE_CERTIFICATE_PATH"] = os.environ.get("DCM4CHEE_CERTIFICATE_PATH", "").strip()
