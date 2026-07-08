@@ -1308,11 +1308,12 @@ function validateOrderPayload(payload) {
     const patient = selectedOrderPatient();
     if (!payload.fhir?.status) messages.push("FHIR status is required.");
     if (!payload.fhir?.intent) messages.push("FHIR intent is required.");
+    if (!payload.fhir?.codeCode && !payload.fhir?.codeDisplay) messages.push("FHIR order code is required.");
     if (!patient?.fhir?.medplum?.reference || patient?.fhir?.sync?.status !== "Synced") {
       messages.push("FHIR Order requires a synced FHIR Patient.");
     }
   }
-  if (payload.mode !== "gdt") {
+  if (payload.mode === "hl7-v231") {
     if (!payload.orderingProvider) messages.push("Ordering provider is required.");
     if (!payload.orderCode) messages.push("Order code is required.");
     if (!payload.alternateCode) messages.push("Alternate code is required.");

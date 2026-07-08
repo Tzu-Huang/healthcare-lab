@@ -171,6 +171,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("medplumRecordMatchesPatient", script)
         self.assertIn("buildFhirOrderPreviewPayload", script)
         self.assertIn("FHIR Order requires a synced FHIR Patient", script)
+        self.assertIn('payload.mode === "hl7-v231"', script)
+        self.assertIn("FHIR order code is required.", script)
         self.assertIn('payload.mode !== "fhir" && payload.requestedAt', script)
         self.assertIn("serviceRequest", script)
         self.assertIn("Task:", script)
@@ -946,8 +948,8 @@ class HealthcareLabApiTests(unittest.TestCase):
                     "priority": "stat",
                     "codeCode": "ECG12",
                     "codeDisplay": "12 Lead ECG",
-                    "occurrenceDateTime": "2026-07-08T10:30:00",
-                    "authoredOn": "2026-07-08T09:00:00",
+                    "occurrenceDateTime": "2026-07-08T10:30",
+                    "authoredOn": "2026-07-08T09:00",
                     "requester": "Practitioner/prac-1",
                     "reasonCodeText": "Chest pain evaluation",
                 },
@@ -964,6 +966,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         service_request = next(payload for payload in created_payloads if payload["resourceType"] == "ServiceRequest")
         task = next(payload for payload in created_payloads if payload["resourceType"] == "Task")
         self.assertEqual(service_request["subject"]["reference"], "Patient/patient-order")
+        self.assertRegex(service_request["occurrenceDateTime"], r"^2026-07-08T10:30:00[+-]\d{2}:\d{2}$")
+        self.assertRegex(service_request["authoredOn"], r"^2026-07-08T09:00:00[+-]\d{2}:\d{2}$")
         self.assertEqual(task["for"]["reference"], "Patient/patient-order")
         self.assertEqual(task["focus"]["reference"], "ServiceRequest/sr-created")
 
