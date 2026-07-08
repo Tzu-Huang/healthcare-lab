@@ -419,6 +419,13 @@ class HealthcareLabApiTests(unittest.TestCase):
         attempts = self.client.get(f"/api/fhir/records/{created['id']}/attempts").get_json()["items"]
         self.assertEqual([item["method"] for item in attempts], ["POST", "GET"])
 
+        retried = self.client.post(f"/api/fhir/records/{created['id']}/sync", json={})
+
+        self.assertEqual(retried.status_code, 200)
+        self.assertEqual(retried.get_json()["item"]["medplum"]["id"], "patient-created")
+        retry_methods = [method for method, _url in calls if not _url.endswith("/oauth2/token")]
+        self.assertEqual(retry_methods, ["GET", "POST", "GET"])
+
     @patch("app.urllib.request.urlopen")
     def test_fhir_sync_failure_preserves_operation_outcome(self, urlopen):
         created = self.client.post(
