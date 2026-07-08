@@ -916,6 +916,18 @@ function medplumPatientLabel(patient) {
   return `${identifier} | ${reference}`;
 }
 
+function medplumTimestamp(value) {
+  const text = taipeiTimestamp(value);
+  const match = text.match(/^(\d{4}-\d{2}-\d{2}) TPE (.+)$/);
+  if (!match) return text;
+  const timestamp = createElement("span", "", "timestamp-cell");
+  timestamp.append(
+    createElement("span", match[1], "timestamp-date"),
+    createElement("span", `TPE ${match[2]}`, "timestamp-time"),
+  );
+  return timestamp;
+}
+
 function selectedMedplumPatient() {
   const selectedId = Number(byId("medplum-patient-filter")?.value || 0);
   return medplumPatients.find((item) => Number(item.id) === selectedId) || null;
@@ -1002,7 +1014,7 @@ function renderMedplumInventory() {
       rowCell(createElement("span", status, `status ${fhirSyncStatusClass(status)}`)),
       rowCell(item.medplum?.reference || item.sync?.error || "-"),
       rowCell(medplumSourceLabel(source)),
-      rowCell(taipeiTimestamp(item.updatedAt)),
+      rowCell(medplumTimestamp(item.updatedAt)),
       rowCell(actionCell),
     );
     body.appendChild(row);
