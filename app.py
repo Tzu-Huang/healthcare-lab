@@ -29,6 +29,8 @@ from backend.lab_store import (
     LAB_HEALTH_STATUSES,
     LAB_SERVER_PROTOCOLS,
     LAB_SERVER_TYPES,
+    FHIR_SYNC_STATUS_FAILED,
+    FHIR_SYNC_STATUS_PENDING,
     FHIR_SYNC_STATUS_SYNCED,
     OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES,
     ORDER_STATUS_ACCEPTED,
@@ -57,6 +59,15 @@ from backend.dashboard_services import (
 )
 
 MEDPLUM_DEFAULT_AUTH_GRACE_SECONDS = 300
+MEDPLUM_INVENTORY_RESOURCE_TYPES = (
+    "Patient",
+    "ServiceRequest",
+    "Task",
+    "DiagnosticReport",
+    "Observation",
+    "DocumentReference",
+)
+MEDPLUM_PATIENT_REFERENCE_FIELDS = ("subject", "patient", "for")
 
 load_dotenv(Path(__file__).with_name(".env"))
 
@@ -431,6 +442,71 @@ def medplum_create_resource_url(base_url: str, record: dict[str, Any]) -> str:
 
 def medplum_update_resource_url(base_url: str, record: dict[str, Any], resource_id: str) -> str:
     return f"{base_url}/{record['resourceType']}/{urllib.parse.quote(resource_id, safe='')}"
+
+
+def medplum_reference_resource_url(base_url: str, reference: str) -> str:
+    parts = [part.strip() for part in reference.strip().split("/") if part.strip()]
+    if len(parts) != 2:
+        raise ValidationError("Medplum resource reference must look like ResourceType/id.")
+    resource_type, resource_id = parts
+    if resource_type not in MEDPLUM_INVENTORY_RESOURCE_TYPES:
+        raise ValidationError("Medplum resource reference type is not supported by inventory.")
+    return (
+        f"{base_url}/{urllib.parse.quote(resource_type, safe='')}/"
+        f"{urllib.parse.quote(resource_id, safe='')}"
+    )
+
+
+def fhir_reference_values(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, dict):
+        reference = str(value.get("reference") or "").strip()
+        return [reference] if reference else []
+    if isinstance(value, list):
+        references: list[str] = []
+        for item in value:
+            references.extend(fhir_reference_values(item))
+        return references
+    return []
+
+
+def direct_patient_references(resource: dict[str, Any]) -> list[str]:
+    references: list[str] = []
+    for field_name in MEDPLUM_PATIENT_REFERENCE_FIELDS:
+        for reference in fhir_reference_values(resource.get(field_name)):
+            if reference.startswith("Patient/") and reference not in references:
+                references.append(reference)
+    return references
+
+
+def medplum_inventory_record(record: dict[str, Any]) -> dict[str, Any]:
+    sync_status = str((record.get("sync") or {}).get("status") or "")
+    medplum = record.get("medplum") or {}
+    reference = str(medplum.get("reference") or "").strip()
+    resource = record.get("resource") if isinstance(record.get("resource"), dict) else {}
+    patient_references = direct_patient_references(resource)
+    if record.get("resourceType") == "Patient" and reference and reference not in patient_references:
+        patient_references.insert(0, reference)
+    return {
+        "id": record["id"],
+        "localFhirRecordNumber": record["localFhirRecordNumber"],
+        "localSourceType": record["localSourceType"],
+        "localSourceId": record["localSourceId"],
+        "resourceType": record["resourceType"],
+        "identifier": record["identifier"],
+        "patientReferences": patient_references,
+        "medplum": medplum,
+        "sync": record["sync"],
+        "createdAt": record["createdAt"],
+        "updatedAt": record["updatedAt"],
+        "retryable": sync_status in (FHIR_SYNC_STATUS_PENDING, FHIR_SYNC_STATUS_FAILED),
+        "previewSource": (
+            "medplum-live"
+            if sync_status == FHIR_SYNC_STATUS_SYNCED and reference
+            else "local-submitted"
+        ),
+    }
 
 
 def first_fhir_bundle_resource(bundle: dict[str, Any], resource_type: str) -> dict[str, Any] | None:
@@ -2154,6 +2230,41 @@ def create_app(database_path: str | None = None) -> Flask:
         sync_status = str(request.args.get("syncStatus") or "").strip()
         return jsonify({"success": True, "items": store.list_fhir_workflow_records(sync_status)})
 
+    @app.get("/api/fhir/inventory")
+    def list_fhir_inventory():
+        sync_status = str(request.args.get("syncStatus") or "").strip()
+        resource_type = str(request.args.get("resourceType") or "").strip()
+        if resource_type and resource_type not in MEDPLUM_INVENTORY_RESOURCE_TYPES:
+            return error_response("FHIR resource type is not supported by Medplum inventory.", 400)
+        records = [
+            record
+            for record in store.list_fhir_workflow_records(sync_status)
+            if record["resourceType"] in MEDPLUM_INVENTORY_RESOURCE_TYPES
+            and (not resource_type or record["resourceType"] == resource_type)
+        ]
+        items = [medplum_inventory_record(record) for record in records]
+        patients = [
+            {
+                "id": item["id"],
+                "localFhirRecordNumber": item["localFhirRecordNumber"],
+                "localSourceId": item["localSourceId"],
+                "identifier": item["identifier"],
+                "medplum": item["medplum"],
+                "sync": item["sync"],
+                "reference": item["medplum"].get("reference") or "",
+            }
+            for item in items
+            if item["resourceType"] == "Patient"
+        ]
+        return jsonify(
+            {
+                "success": True,
+                "items": items,
+                "patients": patients,
+                "resourceTypes": list(MEDPLUM_INVENTORY_RESOURCE_TYPES),
+            }
+        )
+
     @app.post("/api/fhir/records")
     def create_fhir_record():
         payload = request.get_json(silent=True) or {}
@@ -2170,6 +2281,74 @@ def create_app(database_path: str | None = None) -> Flask:
         except KeyError:
             return error_response("FHIR workflow record was not found.", 404)
         return jsonify({"success": True, "item": item})
+
+    @app.get("/api/fhir/records/<int:record_id>/preview")
+    def get_fhir_record_preview(record_id: int):
+        try:
+            item = store.get_fhir_workflow_record(record_id)
+        except KeyError:
+            return error_response("FHIR workflow record was not found.", 404)
+        if item["resourceType"] not in MEDPLUM_INVENTORY_RESOURCE_TYPES:
+            return error_response("FHIR resource type is not supported by Medplum inventory.", 400)
+
+        sync_status = (item.get("sync") or {}).get("status")
+        reference = str((item.get("medplum") or {}).get("reference") or "").strip()
+        base_url = configured_medplum_base_url()
+        fallback_resource = item.get("resource") or {}
+        if sync_status == FHIR_SYNC_STATUS_SYNCED and reference:
+            try:
+                base = normalize_fhir_base_url(base_url)
+                fetch_url = medplum_reference_resource_url(base, reference)
+                status_code, live_resource = request_fhir_json(
+                    fetch_url,
+                    "",
+                    auth_manager=get_auth_manager(),
+                    base_url=base,
+                )
+                return jsonify(
+                    {
+                        "success": True,
+                        "item": item,
+                        "resource": live_resource,
+                        "source": "medplum-live",
+                        "live": {
+                            "fetched": True,
+                            "statusCode": status_code,
+                            "reference": reference,
+                            "error": "",
+                        },
+                    }
+                )
+            except (ValidationError, SimulatorValidationError, UpstreamFhirError) as exc:
+                return jsonify(
+                    {
+                        "success": True,
+                        "item": item,
+                        "resource": fallback_resource,
+                        "source": "local-submitted-fallback",
+                        "live": {
+                            "fetched": False,
+                            "statusCode": http_status_from_upstream_error(str(exc)),
+                            "reference": reference,
+                            "error": str(exc),
+                        },
+                    }
+                )
+
+        return jsonify(
+            {
+                "success": True,
+                "item": item,
+                "resource": fallback_resource,
+                "source": "local-submitted",
+                "live": {
+                    "fetched": False,
+                    "statusCode": None,
+                    "reference": reference,
+                    "error": "",
+                },
+            }
+        )
 
     @app.get("/api/fhir/records/<int:record_id>/attempts")
     def list_fhir_record_attempts(record_id: int):
