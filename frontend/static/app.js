@@ -16,13 +16,24 @@ let oieInventory = [];
 let oieUnmatchedResults = [];
 let selectedOiePatientId = null;
 let selectedOiePayload = "";
+let medplumInventory = [];
+let medplumPatients = [];
+let medplumResourceTypes = [];
+let selectedMedplumRecordId = null;
 
 const VIEW_TITLES = {
   "lab-console-view": "Service Health",
   "patient-view": "Patient",
+  "medplum-view": "Medplum",
   "order-view": "Order",
   "oie-view": "OIE",
   "gdt-view": "GDT",
+};
+
+const MEDPLUM_SOURCE_LABELS = {
+  "medplum-live": "Medplum live JSON",
+  "local-submitted": "Local submitted JSON",
+  "local-submitted-fallback": "Live fetch failed; local submitted JSON",
 };
 
 const DASHBOARD_RESOURCE_CONTAINERS = [
@@ -120,6 +131,7 @@ function setActiveView(viewId) {
     refreshPatientPreview();
     refreshPatients();
   }
+  if (viewId === "medplum-view") refreshMedplumInventory();
   if (viewId === "order-view") refreshOrderWorkspace();
   if (viewId === "oie-view") refreshOieInventory();
   if (viewId === "gdt-view") refreshGdtConsole();
@@ -889,6 +901,185 @@ async function retryPatientFhirSync(patientId, button) {
     await refreshPatients();
   } catch (error) {
     setStatus("patient-form-status", error.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function medplumSourceLabel(source) {
+  return MEDPLUM_SOURCE_LABELS[source] || source || "Unknown source";
+}
+
+function medplumPatientLabel(patient) {
+  const identifier = patient?.identifier?.value || patient?.localFhirRecordNumber || `FHIR-${patient?.id}`;
+  const reference = patient?.reference || patient?.medplum?.reference || "No Medplum reference";
+  return `${identifier} | ${reference}`;
+}
+
+function selectedMedplumPatient() {
+  const selectedId = Number(byId("medplum-patient-filter")?.value || 0);
+  return medplumPatients.find((item) => Number(item.id) === selectedId) || null;
+}
+
+function medplumRecordMatchesPatient(item, patient) {
+  if (!patient) return true;
+  if (item.resourceType === "Patient") return Number(item.id) === Number(patient.id);
+  const reference = patient.reference || patient.medplum?.reference || "";
+  return Boolean(reference && (item.patientReferences || []).includes(reference));
+}
+
+function filteredMedplumInventory() {
+  const patient = selectedMedplumPatient();
+  const resourceType = byId("medplum-resource-filter")?.value || "";
+  const syncStatus = byId("medplum-sync-filter")?.value || "";
+  return medplumInventory.filter((item) => {
+    if (resourceType && item.resourceType !== resourceType) return false;
+    if (syncStatus && item.sync?.status !== syncStatus) return false;
+    return medplumRecordMatchesPatient(item, patient);
+  });
+}
+
+function renderMedplumFilters() {
+  const patientFilter = byId("medplum-patient-filter");
+  const selectedPatientId = patientFilter.value;
+  patientFilter.replaceChildren();
+  patientFilter.appendChild(new Option("All patients", ""));
+  medplumPatients.forEach((patient) => {
+    patientFilter.appendChild(new Option(medplumPatientLabel(patient), String(patient.id)));
+  });
+  if ([...patientFilter.options].some((option) => option.value === selectedPatientId)) {
+    patientFilter.value = selectedPatientId;
+  }
+
+  const resourceFilter = byId("medplum-resource-filter");
+  const selectedResourceType = resourceFilter.value;
+  resourceFilter.replaceChildren();
+  resourceFilter.appendChild(new Option("All supported resources", ""));
+  medplumResourceTypes.forEach((resourceType) => {
+    resourceFilter.appendChild(new Option(resourceType, resourceType));
+  });
+  if ([...resourceFilter.options].some((option) => option.value === selectedResourceType)) {
+    resourceFilter.value = selectedResourceType;
+  }
+}
+
+function renderMedplumInventory() {
+  renderMedplumFilters();
+  const body = byId("medplum-resource-list");
+  const visible = filteredMedplumInventory();
+  body.replaceChildren();
+  if (!visible.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell("No FHIR resources match the current filters.");
+    cell.colSpan = 7;
+    cell.className = "muted";
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  visible.forEach((item) => {
+    const row = document.createElement("tr");
+    row.className = Number(item.id) === Number(selectedMedplumRecordId) ? "selected-row" : "";
+    row.addEventListener("click", () => loadMedplumPreview(item.id));
+    const status = item.sync?.status || "-";
+    const source = item.previewSource || "local-submitted";
+    const actionCell = document.createElement("div");
+    actionCell.className = "button-row compact-actions";
+    if (item.retryable) {
+      const retryButton = createElement("button", "Retry", "");
+      retryButton.type = "button";
+      retryButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        retryMedplumRecord(item.id, retryButton);
+      });
+      actionCell.appendChild(retryButton);
+    } else {
+      actionCell.appendChild(createElement("span", "-", "muted"));
+    }
+    row.append(
+      rowCell(item.localFhirRecordNumber || item.id),
+      rowCell(item.resourceType),
+      rowCell(createElement("span", status, `status ${fhirSyncStatusClass(status)}`)),
+      rowCell(item.medplum?.reference || item.sync?.error || "-"),
+      rowCell(medplumSourceLabel(source)),
+      rowCell(taipeiTimestamp(item.updatedAt)),
+      rowCell(actionCell),
+    );
+    body.appendChild(row);
+  });
+}
+
+function renderMedplumPreviewSummary(result) {
+  const container = byId("medplum-selected-summary");
+  const item = result.item || {};
+  container.replaceChildren();
+  const blocks = [
+    ["Type", item.resourceType || "-"],
+    ["Sync", item.sync?.status || "-"],
+    ["Reference", item.medplum?.reference || "-"],
+    ["Preview Source", medplumSourceLabel(result.source)],
+  ];
+  if (result.live?.error) {
+    blocks.push(["Live Fetch", result.live.error]);
+  }
+  blocks.forEach(([label, value]) => {
+    const block = createElement("div", "", "detail-block");
+    const title = createElement("h3", label);
+    const text = createElement("p", value || "-", value ? "" : "muted");
+    block.append(title, text);
+    container.appendChild(block);
+  });
+}
+
+async function refreshMedplumInventory() {
+  setStatus("medplum-inventory-status", "Loading inventory...", "pending");
+  try {
+    const result = await requestJson("/api/fhir/inventory");
+    medplumInventory = result.items || [];
+    medplumPatients = result.patients || [];
+    medplumResourceTypes = result.resourceTypes || [];
+    renderMedplumInventory();
+    setStatus("medplum-inventory-status", "Inventory loaded", "success");
+  } catch (error) {
+    setStatus("medplum-inventory-status", error.message, "error");
+  }
+}
+
+async function loadMedplumPreview(recordId) {
+  selectedMedplumRecordId = recordId;
+  renderMedplumInventory();
+  byId("medplum-selected-title").textContent = "Loading resource...";
+  byId("medplum-json-preview").textContent = "Loading...";
+  try {
+    const result = await requestJson(`/api/fhir/records/${recordId}/preview`);
+    byId("medplum-selected-title").textContent =
+      `${result.item?.resourceType || "FHIR"} ${result.item?.medplum?.reference || result.item?.localFhirRecordNumber || ""}`.trim();
+    renderMedplumPreviewSummary(result);
+    byId("medplum-json-preview").textContent = JSON.stringify(result.resource || {}, null, 2);
+    setStatus(
+      "medplum-inventory-status",
+      result.source === "local-submitted-fallback" ? "Live fetch failed; showing local JSON" : "Resource loaded",
+      result.source === "local-submitted-fallback" ? "warning" : "success",
+    );
+  } catch (error) {
+    byId("medplum-selected-title").textContent = "Preview failed";
+    byId("medplum-json-preview").textContent = error.message;
+    setStatus("medplum-inventory-status", error.message, "error");
+  }
+}
+
+async function retryMedplumRecord(recordId, button) {
+  button.disabled = true;
+  setStatus("medplum-inventory-status", "Retrying sync...", "pending");
+  try {
+    await requestJson(`/api/fhir/records/${recordId}/sync`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    await refreshMedplumInventory();
+    await loadMedplumPreview(recordId);
+  } catch (error) {
+    setStatus("medplum-inventory-status", error.message, "error");
   } finally {
     button.disabled = false;
   }
@@ -2082,6 +2273,11 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("create-patient").addEventListener("click", createPatientRecord);
   byId("refresh-patients").addEventListener("click", refreshPatients);
   byId("copy-patient-payload").addEventListener("click", () => copyTextFromElement("patient-payload-preview"));
+  byId("refresh-medplum-inventory").addEventListener("click", refreshMedplumInventory);
+  byId("medplum-patient-filter").addEventListener("change", renderMedplumInventory);
+  byId("medplum-resource-filter").addEventListener("change", renderMedplumInventory);
+  byId("medplum-sync-filter").addEventListener("change", renderMedplumInventory);
+  byId("copy-medplum-json").addEventListener("click", () => copyTextFromElement("medplum-json-preview"));
   byId("refresh-order-preview").addEventListener("click", refreshOrderPreview);
   byId("create-gdt-patient").addEventListener("click", createGdtPatientFromOrderFlow);
   byId("create-order").addEventListener("click", createOrderRecord);

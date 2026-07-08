@@ -126,6 +126,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'id="gdt-patient-list"', response.data)
         self.assertIn(b'id="gdt-watcher-status"', response.data)
         self.assertIn(b'id="start-gdt-watcher"', response.data)
+        self.assertIn(b'data-nav-target="medplum-view"', response.data)
+        self.assertIn(b'id="medplum-view"', response.data)
+        self.assertIn(b'id="medplum-resource-list"', response.data)
+        self.assertIn(b'id="medplum-json-preview"', response.data)
         self.assertIn(b"raw GDT-OUT or GDT-IN content", response.data)
         self.assertIn(b'id="oie-send-host" value="localhost"', response.data)
         self.assertIn(b'id="oie-listener-port" value="6665"', response.data)
@@ -153,6 +157,11 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("write-6302", script)
         self.assertIn('selector.value = "gdt"', script)
         self.assertIn('setActiveView("order-view")', script)
+        self.assertIn('"/api/fhir/inventory"', script)
+        self.assertIn('`/api/fhir/records/${recordId}/preview`', script)
+        self.assertIn('`/api/fhir/records/${recordId}/sync`', script)
+        self.assertIn("Live fetch failed; local submitted JSON", script)
+        self.assertIn("medplumRecordMatchesPatient", script)
 
     def test_sidebar_views_hide_inactive_pages(self):
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
