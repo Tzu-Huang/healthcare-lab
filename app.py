@@ -1368,6 +1368,8 @@ def run_tcp_smoke(host: str, port: Any, name: str, *, required: bool = True) -> 
         port_number = int(port)
     except (TypeError, ValueError):
         return smoke_step(name, "Down", "Port must be an integer between 1 and 65535.", required=required)
+    if not 1 <= port_number <= 65535:
+        return smoke_step(name, "Down", "Port must be an integer between 1 and 65535.", required=required)
     try:
         with socket.create_connection((host, port_number), 3):
             return smoke_step(name, "Healthy", "TCP reachable.", required=required)
