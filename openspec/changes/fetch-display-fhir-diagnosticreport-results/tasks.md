@@ -28,4 +28,4 @@
 - [x] 3.3 Add backend tests for unauthorized/auth failure, upstream FHIR errors, and malformed Bundle responses.
 - [x] 3.4 Add backend tests for DiagnosticReport summary and relationship parsing.
 - [x] 3.5 Add frontend/template tests for GDT-style DiagnosticReport controls and raw JSON preview behavior.
-- [ ] 3.6 Run OpenSpec validation and the Healthcare Lab Python test suite.
+- [x] 3.6 Run OpenSpec validation and the Healthcare Lab Python test suite.
