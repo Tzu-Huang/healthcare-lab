@@ -1020,7 +1020,13 @@ function medplumRecordsReferencing(reference, resourceType = "") {
 
 function medplumLiveReportsForPatient(patient) {
   const patientReference = selectedMedplumPatientReference(patient);
-  if (!patientReference || medplumDiagnosticReports.patientReference !== patientReference) return [];
+  if (
+    !patientReference
+    || medplumDiagnosticReports.patientReference !== patientReference
+    || medplumDiagnosticReports.key !== currentMedplumDiagnosticReportKey(patient)
+  ) {
+    return [];
+  }
   return medplumDiagnosticReports.reports || [];
 }
 
@@ -1041,6 +1047,28 @@ function currentMedplumDiagnosticReportKey(patient = selectedMedplumPatient()) {
   const patientReference = selectedMedplumPatientReference(patient);
   if (!patientReference) return "";
   return `${patientReference}|${selectedMedplumServiceRequestReference()}`;
+}
+
+function medplumDiagnosticReportKeyMatchesCurrent(patient = selectedMedplumPatient()) {
+  const key = currentMedplumDiagnosticReportKey(patient);
+  return Boolean(key && medplumDiagnosticReports.key === key);
+}
+
+function resetMedplumDiagnosticReportState() {
+  medplumDiagnosticReports = {
+    key: "",
+    loading: false,
+    error: "",
+    source: "",
+    strategy: "",
+    fallbackReason: "",
+    patientReference: "",
+    serviceRequestReference: "",
+    reports: [],
+    bundle: null,
+    bundles: {},
+    requestId: medplumDiagnosticReports.requestId + 1,
+  };
 }
 
 function medplumWorkflowLabel(item) {
@@ -1172,7 +1200,9 @@ function selectedMedplumDiagnosticReport() {
 function renderMedplumDiagnosticReportSelect(localReports) {
   const select = byId("medplum-diagnostic-report-select");
   const previous = select.value;
-  const liveReports = medplumDiagnosticReports.reports || [];
+  const liveReports = medplumDiagnosticReportKeyMatchesCurrent()
+    ? medplumDiagnosticReports.reports || []
+    : [];
   select.replaceChildren();
   if (liveReports.length) {
     select.disabled = false;
@@ -1400,7 +1430,7 @@ function renderMedplumDiagnosticReportRollup(patient) {
 async function fetchMedplumDiagnosticReportsForCurrentSelection() {
   const patient = selectedMedplumPatient();
   const key = currentMedplumDiagnosticReportKey(patient);
-  if (!key || medplumDiagnosticReports.loading) {
+  if (!key || (medplumDiagnosticReports.loading && medplumDiagnosticReports.key === key)) {
     renderMedplumDiagnosticReportRollup(patient);
     return;
   }
@@ -1561,6 +1591,7 @@ async function loadMedplumPreview(recordId) {
 
 function loadMedplumLiveReportPreview(reference) {
   if (!reference) return;
+  if (!medplumDiagnosticReportKeyMatchesCurrent()) return;
   const report = (medplumDiagnosticReports.reports || []).find((item) => item.reference === reference);
   if (!report) return;
   selectedMedplumRecordId = null;
@@ -1634,7 +1665,7 @@ function selectMedplumPatient(patientId) {
   selectedMedplumRecordId = null;
   selectedMedplumLiveReportReference = "";
   selectedMedplumLiveRelatedReference = "";
-  medplumDiagnosticReports.key = "";
+  resetMedplumDiagnosticReportState();
   renderMedplumConsole();
 }
 
@@ -3084,9 +3115,9 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("refresh-medplum-inventory").addEventListener("click", refreshMedplumInventory);
   byId("medplum-sync-filter").addEventListener("change", renderMedplumConsole);
   byId("medplum-service-request-select").addEventListener("change", (event) => {
-    medplumDiagnosticReports.key = "";
     selectedMedplumLiveReportReference = "";
     selectedMedplumLiveRelatedReference = "";
+    resetMedplumDiagnosticReportState();
     renderMedplumRelatedResources(selectedMedplumPatient());
     fetchMedplumDiagnosticReportsForCurrentSelection();
     loadMedplumPreview(Number(event.target.value || 0));
