@@ -23,5 +23,5 @@
 
 - [x] 4.1 Add backend tests for live JSON fetch success, fetch failure fallback metadata, and retry behavior.
 - [x] 4.2 Add frontend or API regression coverage for Medplum page row rendering, Patient filtering, raw JSON preview source labels, and retry visibility.
-- [ ] 4.3 Run OpenSpec validation.
-- [ ] 4.4 Run the Healthcare Lab Python test suite.
+- [x] 4.3 Run OpenSpec validation.
+- [x] 4.4 Run the Healthcare Lab Python test suite.
