@@ -126,6 +126,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'id="gdt-patient-list"', response.data)
         self.assertIn(b'id="gdt-watcher-status"', response.data)
         self.assertIn(b'id="start-gdt-watcher"', response.data)
+        self.assertIn(b'data-nav-target="medplum-view"', response.data)
+        self.assertIn(b'id="medplum-view"', response.data)
+        self.assertIn(b'id="medplum-resource-list"', response.data)
+        self.assertIn(b'id="medplum-json-preview"', response.data)
         self.assertIn(b"raw GDT-OUT or GDT-IN content", response.data)
         self.assertIn(b'id="oie-send-host" value="localhost"', response.data)
         self.assertIn(b'id="oie-listener-port" value="6665"', response.data)
@@ -153,6 +157,11 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("write-6302", script)
         self.assertIn('selector.value = "gdt"', script)
         self.assertIn('setActiveView("order-view")', script)
+        self.assertIn('"/api/fhir/inventory"', script)
+        self.assertIn('`/api/fhir/records/${recordId}/preview`', script)
+        self.assertIn('`/api/fhir/records/${recordId}/sync`', script)
+        self.assertIn("Live fetch failed; local submitted JSON", script)
+        self.assertIn("medplumRecordMatchesPatient", script)
 
     def test_sidebar_views_hide_inactive_pages(self):
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
@@ -174,8 +183,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn("/api/workbench/orders", routes)
         self.assertNotIn("/api/fhir/submit", routes)
         self.assertIn("/api/fhir/mappings", routes)
+        self.assertIn("/api/fhir/inventory", routes)
         self.assertIn("/api/fhir/records", routes)
         self.assertIn("/api/fhir/records/<int:record_id>", routes)
+        self.assertIn("/api/fhir/records/<int:record_id>/preview", routes)
         self.assertIn("/api/fhir/records/<int:record_id>/sync", routes)
         self.assertIn("/api/fhir/records/<int:record_id>/attempts", routes)
         self.assertIn("/api/gdt/orders", routes)
@@ -462,6 +473,144 @@ class HealthcareLabApiTests(unittest.TestCase):
         listed = self.client.get("/api/fhir/records")
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.get_json()["items"][0]["id"], item["id"])
+
+    def test_fhir_inventory_exposes_patient_relations_and_local_preview(self):
+        patient = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_patient_records",
+                "localSourceId": "1",
+                "resource": {"resourceType": "Patient", "active": True},
+            },
+        ).get_json()["item"]
+        observation = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_fhir_results",
+                "localSourceId": "obs-1",
+                "resource": {
+                    "resourceType": "Observation",
+                    "status": "final",
+                    "subject": {"reference": "Patient/patient-created"},
+                },
+            },
+        ).get_json()["item"]
+        store = self.client.application.extensions["demo_store"]
+        store.mark_fhir_sync_success(
+            patient["id"],
+            medplum_resource_id="patient-created",
+            medplum_resource_reference="Patient/patient-created",
+        )
+
+        inventory = self.client.get("/api/fhir/inventory")
+
+        self.assertEqual(inventory.status_code, 200)
+        body = inventory.get_json()
+        by_id = {item["id"]: item for item in body["items"]}
+        self.assertEqual(by_id[patient["id"]]["previewSource"], "medplum-live")
+        self.assertEqual(by_id[observation["id"]]["patientReferences"], ["Patient/patient-created"])
+        self.assertTrue(by_id[observation["id"]]["retryable"])
+        self.assertEqual(body["patients"][0]["reference"], "Patient/patient-created")
+
+        preview = self.client.get(f"/api/fhir/records/{observation['id']}/preview")
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.get_json()["source"], "local-submitted")
+        self.assertEqual(preview.get_json()["resource"]["subject"]["reference"], "Patient/patient-created")
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_record_preview_uses_medplum_live_json_for_synced_resource(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+        created = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_patient_records",
+                "localSourceId": "1",
+                "resource": {"resourceType": "Patient", "active": True},
+            },
+        ).get_json()["item"]
+        store = self.client.application.extensions["demo_store"]
+        store.mark_fhir_sync_success(
+            created["id"],
+            medplum_resource_id="patient-created",
+            medplum_resource_reference="Patient/patient-created",
+        )
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            self.assertEqual(request.full_url, "http://medplum.test/fhir/R4/Patient/patient-created")
+            return FakeHttpResponse(
+                json.dumps(
+                    {
+                        "resourceType": "Patient",
+                        "id": "patient-created",
+                        "active": False,
+                    }
+                ).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        preview = self.client.get(f"/api/fhir/records/{created['id']}/preview")
+
+        self.assertEqual(preview.status_code, 200)
+        body = preview.get_json()
+        self.assertEqual(body["source"], "medplum-live")
+        self.assertTrue(body["live"]["fetched"])
+        self.assertFalse(body["resource"]["active"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_record_preview_falls_back_to_local_json_when_live_fetch_fails(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+        created = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_patient_records",
+                "localSourceId": "1",
+                "resource": {"resourceType": "Patient", "active": True},
+            },
+        ).get_json()["item"]
+        store = self.client.application.extensions["demo_store"]
+        store.mark_fhir_sync_success(
+            created["id"],
+            medplum_resource_id="patient-created",
+            medplum_resource_reference="Patient/patient-created",
+        )
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            raise urllib.error.URLError("medplum down")
+
+        urlopen.side_effect = fake_urlopen
+
+        preview = self.client.get(f"/api/fhir/records/{created['id']}/preview")
+
+        self.assertEqual(preview.status_code, 200)
+        body = preview.get_json()
+        self.assertEqual(body["source"], "local-submitted-fallback")
+        self.assertFalse(body["live"]["fetched"])
+        self.assertIn("medplum down", body["live"]["error"])
+        self.assertTrue(body["resource"]["active"])
 
     @patch("app.urllib.request.urlopen")
     def test_fhir_sync_reuses_existing_medplum_resource_by_identifier(self, urlopen):

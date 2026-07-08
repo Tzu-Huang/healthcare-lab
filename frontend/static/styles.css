@@ -689,6 +689,36 @@ tbody tr.recently-updated {
   align-items: start;
 }
 
+.medplum-workspace {
+  display: grid;
+  gap: 16px;
+  margin: 22px 0 34px;
+}
+
+.medplum-filter-grid {
+  grid-template-columns: minmax(260px, 1.2fr) minmax(180px, 0.7fr) minmax(180px, 0.7fr);
+}
+
+.medplum-inventory-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.medplum-resource-panel,
+.medplum-preview-panel {
+  min-width: 0;
+}
+
+.medplum-json-preview {
+  max-height: 520px;
+}
+
+tr.selected-row {
+  background: #eef5ff;
+}
+
 .dashboard-services-panel {
   min-width: 0;
 }
@@ -1307,6 +1337,8 @@ tbody tr.recently-updated {
   .lab-summary-strip,
   .lab-server-grid,
   .dashboard-main-grid,
+  .medplum-filter-grid,
+  .medplum-inventory-grid,
   .lab-workbench,
   .detail-workbench,
   .workbench-layout,
