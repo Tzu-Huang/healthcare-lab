@@ -85,6 +85,50 @@ To rotate the client secret:
 4. Confirm any remaining `ServiceRequest` failure is reported separately from
    token acquisition.
 
+## Troubleshooting Medplum Sync
+
+If Patient, Order, or FHIR workflow sync fails with:
+
+```text
+Medplum request failed: [Errno 111] Connection refused
+```
+
+first check the Lab Console's stored Medplum server URL. The sync path reads
+the Medplum `baseUrl` from the Lab Server inventory, not from
+`MEDPLUM_PUBLIC_BASE_URL` in `.env`. When `lab-app` runs in Docker, a stored
+URL such as `http://127.0.0.1:8103/fhir/R4` points back to the `lab-app`
+container itself, not to the Medplum container.
+
+Confirm the stored value:
+
+```powershell
+(Invoke-RestMethod -Uri "http://127.0.0.1:5000/api/lab/servers").items | Where-Object {$_.name -eq "Medplum"} | Select-Object name,host,baseUrl
+```
+
+For the Docker Compose runtime, update Medplum to use the Docker service name:
+
+```powershell
+Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:5000/api/lab/servers/2" -ContentType "application/json" -Body '{"name":"Medplum","serverType":"FHIR Server","description":"FHIR R4 API server","host":"medplum","port":8103,"baseUrl":"http://medplum:8103/fhir/R4","protocol":"FHIR","enabled":true}'
+```
+
+The expected Medplum server values are:
+
+```text
+host    = medplum
+baseUrl = http://medplum:8103/fhir/R4
+```
+
+Optionally verify container-to-container reachability before retrying sync:
+
+```powershell
+docker-compose --env-file .env -f deploy\docker-compose.yml exec lab-app python -c "import urllib.request; print(urllib.request.urlopen('http://medplum:8103/fhir/R4/metadata').status)"
+```
+
+The smoke check can still report Medplum as healthy while sync fails if the
+stored Lab Server `baseUrl` is wrong. Docker-backed smoke checks use the
+Compose service URL internally, while sync intentionally uses the persisted Lab
+Server configuration.
+
 ## PowerShell CLI
 
 Run commands from `repo`:
