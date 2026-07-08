@@ -173,6 +173,11 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn("/api/integration-records", routes)
         self.assertNotIn("/api/workbench/orders", routes)
         self.assertNotIn("/api/fhir/submit", routes)
+        self.assertIn("/api/fhir/mappings", routes)
+        self.assertIn("/api/fhir/records", routes)
+        self.assertIn("/api/fhir/records/<int:record_id>", routes)
+        self.assertIn("/api/fhir/records/<int:record_id>/sync", routes)
+        self.assertIn("/api/fhir/records/<int:record_id>/attempts", routes)
         self.assertIn("/api/gdt/orders", routes)
         self.assertIn("/api/gdt/orders/<int:order_id>", routes)
         self.assertIn("/api/gdt/messages", routes)
@@ -207,6 +212,7 @@ class HealthcareLabApiTests(unittest.TestCase):
             [
                 ("3000", order["gdtPatientNumber"]),
                 ("6200", order["localGdtOrderNumber"]),
+                ("8402", "EKG01"),
                 ("8410", order["localGdtOrderNumber"]),
                 ("6220", text),
                 ("6302", "report"),
@@ -284,6 +290,283 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(item["protocolVersion"], "FHIR R4")
         self.assertEqual(item["messageType"], "Patient")
         self.assertIn('"resourceType": "Patient"', item["payload"])
+
+    def test_fhir_mapping_and_record_apis_expose_local_sync_status(self):
+        mappings = self.client.get("/api/fhir/mappings")
+        self.assertEqual(mappings.status_code, 200)
+        by_type = {item["resourceType"]: item for item in mappings.get_json()["items"]}
+        self.assertIn("Patient", by_type)
+        self.assertIn("DiagnosticReport", by_type)
+        self.assertIn("DocumentReference", by_type["DiagnosticReport"]["dependsOn"])
+
+        created = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_patient_records",
+                "localSourceId": "1",
+                "resource": {"resourceType": "Patient", "active": True},
+            },
+        )
+
+        self.assertEqual(created.status_code, 201)
+        item = created.get_json()["item"]
+        self.assertEqual(item["sync"]["status"], "Pending sync")
+        self.assertEqual(item["resource"]["identifier"][0]["value"], "local-patient-records-1")
+        listed = self.client.get("/api/fhir/records")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.get_json()["items"][0]["id"], item["id"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_sync_reuses_existing_medplum_resource_by_identifier(self, urlopen):
+        created = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_patient_records",
+                "localSourceId": "1",
+                "resource": {"resourceType": "Patient", "active": True},
+            },
+        ).get_json()["item"]
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            self.assertIn("/Patient?", request.full_url)
+            self.assertEqual(request.get_method(), "GET")
+            return FakeHttpResponse(
+                json.dumps(
+                    {
+                        "resourceType": "Bundle",
+                        "entry": [
+                            {
+                                "resource": {
+                                    "resourceType": "Patient",
+                                    "id": "patient-existing",
+                                }
+                            }
+                        ],
+                    }
+                ).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        synced = self.client.post(f"/api/fhir/records/{created['id']}/sync", json={})
+
+        self.assertEqual(synced.status_code, 200)
+        item = synced.get_json()["item"]
+        self.assertTrue(synced.get_json()["success"])
+        self.assertEqual(item["sync"]["status"], "Synced")
+        self.assertEqual(item["medplum"]["reference"], "Patient/patient-existing")
+        attempts = self.client.get(f"/api/fhir/records/{created['id']}/attempts").get_json()["items"]
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0]["method"], "GET")
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_sync_creates_once_when_identifier_is_missing(self, urlopen):
+        created = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_patient_records",
+                "localSourceId": "2",
+                "resource": {"resourceType": "Patient", "active": True},
+            },
+        ).get_json()["item"]
+        calls = []
+
+        def fake_urlopen(request, timeout):
+            calls.append((request.get_method(), request.full_url))
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            if request.get_method() == "GET":
+                return FakeHttpResponse(
+                    json.dumps({"resourceType": "Bundle", "entry": []}).encode("utf-8"),
+                    status=200,
+                )
+            self.assertEqual(request.get_method(), "POST")
+            self.assertTrue(request.data)
+            return FakeHttpResponse(
+                json.dumps({"resourceType": "Patient", "id": "patient-created"}).encode("utf-8"),
+                status=201,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        synced = self.client.post(f"/api/fhir/records/{created['id']}/sync", json={})
+
+        self.assertEqual(synced.status_code, 200)
+        self.assertEqual(synced.get_json()["item"]["medplum"]["id"], "patient-created")
+        methods = [method for method, _url in calls if not _url.endswith("/oauth2/token")]
+        self.assertEqual(methods, ["GET", "POST"])
+        attempts = self.client.get(f"/api/fhir/records/{created['id']}/attempts").get_json()["items"]
+        self.assertEqual([item["method"] for item in attempts], ["POST", "GET"])
+
+        retried = self.client.post(f"/api/fhir/records/{created['id']}/sync", json={})
+
+        self.assertEqual(retried.status_code, 200)
+        self.assertEqual(retried.get_json()["item"]["medplum"]["id"], "patient-created")
+        retry_methods = [method for method, _url in calls if not _url.endswith("/oauth2/token")]
+        self.assertEqual(retry_methods, ["GET", "POST", "GET"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_sync_updates_existing_medplum_resource_after_local_change(self, urlopen):
+        created = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_patient_records",
+                "localSourceId": "22",
+                "resource": {"resourceType": "Patient", "active": True},
+            },
+        ).get_json()["item"]
+        calls = []
+        put_payloads = []
+
+        def fake_urlopen(request, timeout):
+            calls.append((request.get_method(), request.full_url))
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            if request.get_method() == "GET":
+                return FakeHttpResponse(
+                    json.dumps({"resourceType": "Bundle", "entry": []}).encode("utf-8"),
+                    status=200,
+                )
+            if request.get_method() == "POST":
+                return FakeHttpResponse(
+                    json.dumps({"resourceType": "Patient", "id": "patient-created"}).encode("utf-8"),
+                    status=201,
+                )
+            self.assertEqual(request.get_method(), "PUT")
+            put_payloads.append(json.loads(request.data.decode("utf-8")))
+            return FakeHttpResponse(
+                json.dumps({"resourceType": "Patient", "id": "patient-created"}).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        first_sync = self.client.post(f"/api/fhir/records/{created['id']}/sync", json={})
+        changed = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_patient_records",
+                "localSourceId": "22",
+                "resource": {"resourceType": "Patient", "active": False},
+            },
+        ).get_json()["item"]
+        second_sync = self.client.post(f"/api/fhir/records/{created['id']}/sync", json={})
+
+        self.assertEqual(first_sync.status_code, 200)
+        self.assertEqual(changed["sync"]["status"], "Pending sync")
+        self.assertEqual(second_sync.status_code, 200)
+        self.assertEqual(second_sync.get_json()["item"]["sync"]["status"], "Synced")
+        methods = [method for method, _url in calls if not _url.endswith("/oauth2/token")]
+        self.assertEqual(methods, ["GET", "POST", "GET", "PUT"])
+        self.assertEqual(put_payloads[0]["id"], "patient-created")
+        self.assertFalse(put_payloads[0]["active"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_sync_failure_preserves_operation_outcome(self, urlopen):
+        created = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_order_records",
+                "localSourceId": "7",
+                "resource": {
+                    "resourceType": "ServiceRequest",
+                    "status": "active",
+                    "intent": "order",
+                },
+            },
+        ).get_json()["item"]
+        outcome = {
+            "resourceType": "OperationOutcome",
+            "issue": [{"severity": "error", "diagnostics": "bad identifier"}],
+        }
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            raise urllib.error.HTTPError(
+                request.full_url,
+                400,
+                "Bad Request",
+                hdrs=None,
+                fp=FakeHttpResponse(json.dumps(outcome).encode("utf-8"), status=400),
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        synced = self.client.post(f"/api/fhir/records/{created['id']}/sync", json={})
+
+        self.assertEqual(synced.status_code, 200)
+        body = synced.get_json()
+        self.assertFalse(body["success"])
+        self.assertEqual(body["item"]["sync"]["status"], "Sync failed")
+        self.assertEqual(body["item"]["sync"]["operationOutcome"], outcome)
+        attempts = self.client.get(f"/api/fhir/records/{created['id']}/attempts").get_json()["items"]
+        self.assertEqual(attempts[0]["method"], "GET")
+        self.assertEqual(attempts[0]["httpStatus"], 400)
+        self.assertEqual(attempts[0]["responsePayload"], outcome)
+        self.assertEqual(attempts[0]["operationOutcome"], outcome)
+
+    def test_fhir_sync_validation_failure_marks_record_failed(self):
+        self.client.application.config["MEDPLUM_CLIENT_ID"] = ""
+        self.client.application.config["MEDPLUM_CLIENT_SECRET"] = ""
+        created = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_patient_records",
+                "localSourceId": "3",
+                "resource": {"resourceType": "Patient", "active": True},
+            },
+        ).get_json()["item"]
+
+        synced = self.client.post(f"/api/fhir/records/{created['id']}/sync", json={})
+
+        self.assertEqual(synced.status_code, 200)
+        body = synced.get_json()
+        self.assertFalse(body["success"])
+        self.assertEqual(body["item"]["sync"]["status"], "Sync failed")
+        self.assertIn("client credentials", body["item"]["sync"]["error"])
+        attempts = self.client.get(f"/api/fhir/records/{created['id']}/attempts").get_json()["items"]
+        self.assertEqual(attempts[0]["method"], "GET")
+        self.assertIn("client credentials", attempts[0]["error"])
 
     def test_order_api_rejects_missing_patient(self):
         response = self.client.post("/api/orders", json={"patientRecordId": 404})
@@ -376,7 +659,10 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         demo = self.client.post(f"/api/gdt/orders/{order['id']}/demo-result", json={})
         self.assertEqual(demo.status_code, 201)
-        self.assertEqual(demo.get_json()["item"]["canonical"]["result"]["measurements"]["QTC"], "427 ms")
+        self.assertEqual(
+            demo.get_json()["item"]["canonical"]["result"]["measurements"]["QTC"],
+            {"value": 427, "unit": "ms", "sourceTestId": "QTC"},
+        )
 
         bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
         inbound = self.write_gdt_result_file(order)
