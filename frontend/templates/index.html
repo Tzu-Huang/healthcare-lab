@@ -32,7 +32,7 @@
         <button class="sidebar-link" type="button" data-nav-target="gdt-view">
           <span class="nav-icon">GD</span>GDT
         </button>
-        <button class="sidebar-link" type="button" disabled>
+        <button class="sidebar-link" type="button" data-nav-target="medplum-view">
           <span class="nav-icon">MP</span>Medplum
         </button>
         <button class="sidebar-link" type="button" disabled>
@@ -251,6 +251,80 @@
               </thead>
               <tbody id="patient-record-list"></tbody>
             </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="medplum-view" class="app-view medplum-workspace" aria-label="Medplum FHIR Inventory" hidden>
+        <div class="lab-console-header">
+          <div>
+            <p class="eyebrow">Medplum</p>
+            <h2>FHIR Resource Inventory</h2>
+          </div>
+          <div class="lab-console-actions">
+            <button id="refresh-medplum-inventory" type="button">Refresh</button>
+            <span id="medplum-inventory-status" class="status neutral">Ready</span>
+          </div>
+        </div>
+
+        <section class="lab-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Filters</p>
+              <h2>Patient-Centered View</h2>
+            </div>
+          </div>
+          <div class="form-grid medplum-filter-grid">
+            <label>Patient
+              <select id="medplum-patient-filter"></select>
+            </label>
+            <label>Resource
+              <select id="medplum-resource-filter">
+                <option value="">All supported resources</option>
+              </select>
+            </label>
+            <label>Sync Status
+              <select id="medplum-sync-filter">
+                <option value="">All statuses</option>
+                <option value="Synced">Synced</option>
+                <option value="Pending sync">Pending sync</option>
+                <option value="Sync failed">Sync failed</option>
+                <option value="Syncing">Syncing</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="medplum-inventory-grid">
+          <div class="lab-panel medplum-resource-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Inventory</p>
+                <h2>FHIR Resources</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Record</th><th>Type</th><th>Status</th><th>Medplum</th><th>Source</th><th>Updated</th><th>Action</th></tr>
+                </thead>
+                <tbody id="medplum-resource-list"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="lab-panel medplum-preview-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Selected Resource</p>
+                <h2 id="medplum-selected-title">No resource selected</h2>
+              </div>
+              <button id="copy-medplum-json" type="button">Copy JSON</button>
+            </div>
+            <div id="medplum-selected-summary" class="record-detail compact-detail">
+              <p class="muted">Select a FHIR resource to inspect raw JSON.</p>
+            </div>
+            <pre id="medplum-json-preview" class="compact-output medplum-json-preview">Select a FHIR resource to inspect raw JSON.</pre>
           </div>
         </section>
       </section>
