@@ -16,13 +16,13 @@
 
 ## 3. Order UI
 
-- [ ] 3.1 Enable the Order page FHIR option.
-- [ ] 3.2 Add a FHIR ECG Order Demo Preset.
-- [ ] 3.3 Show the full ServiceRequest field set in FHIR mode.
-- [ ] 3.4 Render a ServiceRequest JSON preview for FHIR mode.
-- [ ] 3.5 Submit FHIR mode orders through the FHIR order creation path.
-- [ ] 3.6 Display FHIR order ServiceRequest and Task sync status in Local Orders.
-- [ ] 3.7 Keep existing HL7 v2.3.1 and GDT order flows working.
+- [x] 3.1 Enable the Order page FHIR option.
+- [x] 3.2 Add a FHIR ECG Order Demo Preset.
+- [x] 3.3 Show the full ServiceRequest field set in FHIR mode.
+- [x] 3.4 Render a ServiceRequest JSON preview for FHIR mode.
+- [x] 3.5 Submit FHIR mode orders through the FHIR order creation path.
+- [x] 3.6 Display FHIR order ServiceRequest and Task sync status in Local Orders.
+- [x] 3.7 Keep existing HL7 v2.3.1 and GDT order flows working.
 
 ## 4. Medplum Inventory
 
@@ -34,5 +34,5 @@
 
 - [x] 5.1 Add store tests for ServiceRequest mapping, Task mapping, deterministic identifiers, and Patient precondition validation.
 - [x] 5.2 Add app tests for successful FHIR order create-and-sync, ServiceRequest/Task reference correctness, and partial sync failure preservation.
-- [ ] 5.3 Add frontend/API regression coverage for FHIR mode enablement, full form visibility, preview, and Local Orders sync display.
+- [x] 5.3 Add frontend/API regression coverage for FHIR mode enablement, full form visibility, preview, and Local Orders sync display.
 - [ ] 5.4 Run OpenSpec validation and the Healthcare Lab Python test suite.

@@ -354,7 +354,7 @@
                 <select id="order-protocol">
                   <option value="hl7-v231">HL7 v2.3.1</option>
                   <option value="hl7-v251" disabled>HL7 v2.5.1</option>
-                  <option value="fhir" disabled>FHIR</option>
+                  <option value="fhir">FHIR</option>
                   <option value="gdt">GDT ECG</option>
                   <option value="dicom" disabled>DICOM</option>
                 </select>
@@ -388,6 +388,87 @@
                   <option value="U">U</option>
                 </select>
               </label>
+              <label data-order-mode-field="fhir">Resource Type<input id="fhir-resource-type" value="ServiceRequest" readonly></label>
+              <label data-order-mode-field="fhir">ID<input id="fhir-service-request-id" placeholder="Optional logical id"></label>
+              <label data-order-mode-field="fhir">Identifier<input id="fhir-identifier" placeholder="system|value, one per line"></label>
+              <label data-order-mode-field="fhir">Identifier System<input id="fhir-identifier-system" value="https://healthcare-lab.local/fhir/identifier/service-request"></label>
+              <label data-order-mode-field="fhir">Identifier Value<input id="fhir-identifier-value" placeholder="Generated if blank"></label>
+              <label data-order-mode-field="fhir">Instantiates Canonical<input id="fhir-instantiates-canonical" placeholder="Canonical URL"></label>
+              <label data-order-mode-field="fhir">Instantiates URI<input id="fhir-instantiates-uri" placeholder="External protocol URL"></label>
+              <label data-order-mode-field="fhir">Based On<input id="fhir-based-on" placeholder="CarePlan/example"></label>
+              <label data-order-mode-field="fhir">Replaces<input id="fhir-replaces" placeholder="ServiceRequest/old"></label>
+              <label data-order-mode-field="fhir">Requisition System<input id="fhir-requisition-system" placeholder="System"></label>
+              <label data-order-mode-field="fhir">Requisition Value<input id="fhir-requisition-value" placeholder="Value"></label>
+              <label data-order-mode-field="fhir">Status
+                <select id="fhir-status">
+                  <option value="active">active</option>
+                  <option value="draft">draft</option>
+                  <option value="on-hold">on-hold</option>
+                  <option value="revoked">revoked</option>
+                  <option value="completed">completed</option>
+                  <option value="entered-in-error">entered-in-error</option>
+                  <option value="unknown">unknown</option>
+                </select>
+              </label>
+              <label data-order-mode-field="fhir">Intent
+                <select id="fhir-intent">
+                  <option value="order">order</option>
+                  <option value="proposal">proposal</option>
+                  <option value="plan">plan</option>
+                  <option value="original-order">original-order</option>
+                  <option value="reflex-order">reflex-order</option>
+                  <option value="filler-order">filler-order</option>
+                  <option value="instance-order">instance-order</option>
+                  <option value="option">option</option>
+                </select>
+              </label>
+              <label data-order-mode-field="fhir">Category<input id="fhir-category" value="Procedure"></label>
+              <label data-order-mode-field="fhir">FHIR Priority
+                <select id="fhir-priority">
+                  <option value="routine">routine</option>
+                  <option value="urgent">urgent</option>
+                  <option value="asap">asap</option>
+                  <option value="stat">stat</option>
+                </select>
+              </label>
+              <label data-order-mode-field="fhir">Do Not Perform
+                <select id="fhir-do-not-perform">
+                  <option value="false">false</option>
+                  <option value="true">true</option>
+                </select>
+              </label>
+              <label data-order-mode-field="fhir">Code System<input id="fhir-code-system" value="urn:healthcare-lab:service-code"></label>
+              <label data-order-mode-field="fhir">Code<input id="fhir-code-code" value="ECG12"></label>
+              <label data-order-mode-field="fhir">Code Display<input id="fhir-code-display" value="12 Lead ECG"></label>
+              <label data-order-mode-field="fhir">Order Detail<input id="fhir-order-detail" placeholder="Additional delivery instructions"></label>
+              <label data-order-mode-field="fhir">Quantity Value<input id="fhir-quantity-value" placeholder="1"></label>
+              <label data-order-mode-field="fhir">Quantity Unit<input id="fhir-quantity-unit" placeholder="procedure"></label>
+              <label data-order-mode-field="fhir">Subject<input id="fhir-subject-reference" readonly placeholder="Patient reference from selected patient"></label>
+              <label data-order-mode-field="fhir">Encounter<input id="fhir-encounter" placeholder="Encounter/example"></label>
+              <label data-order-mode-field="fhir">Occurrence<input id="fhir-occurrence" type="datetime-local"></label>
+              <label data-order-mode-field="fhir">As Needed
+                <select id="fhir-as-needed-boolean">
+                  <option value="">-</option>
+                  <option value="false">false</option>
+                  <option value="true">true</option>
+                </select>
+              </label>
+              <label data-order-mode-field="fhir">As Needed Code<input id="fhir-as-needed-code-text" placeholder="pain, flare-up"></label>
+              <label data-order-mode-field="fhir">Authored On<input id="fhir-authored-on" type="datetime-local"></label>
+              <label data-order-mode-field="fhir">Requester<input id="fhir-requester" placeholder="Practitioner/example or display"></label>
+              <label data-order-mode-field="fhir">Performer Type<input id="fhir-performer-type" placeholder="ECG technician"></label>
+              <label data-order-mode-field="fhir">Performer<input id="fhir-performer" placeholder="Practitioner/example"></label>
+              <label data-order-mode-field="fhir">Location Code<input id="fhir-location-code" placeholder="Cardiology lab"></label>
+              <label data-order-mode-field="fhir">Location Reference<input id="fhir-location-reference" placeholder="Location/example"></label>
+              <label data-order-mode-field="fhir">Reason Code<input id="fhir-reason-code-text" placeholder="Chest pain evaluation"></label>
+              <label data-order-mode-field="fhir">Reason Reference<input id="fhir-reason-reference" placeholder="Condition/example"></label>
+              <label data-order-mode-field="fhir">Insurance<input id="fhir-insurance" placeholder="Coverage/example"></label>
+              <label data-order-mode-field="fhir">Supporting Info<input id="fhir-supporting-info" placeholder="Observation/example"></label>
+              <label data-order-mode-field="fhir">Specimen<input id="fhir-specimen" placeholder="Specimen/example"></label>
+              <label data-order-mode-field="fhir">Body Site<input id="fhir-body-site" placeholder="Chest"></label>
+              <label data-order-mode-field="fhir">Note<input id="fhir-note" placeholder="Internal note"></label>
+              <label data-order-mode-field="fhir">Patient Instruction<input id="fhir-patient-instruction" placeholder="Patient-facing instruction"></label>
+              <label data-order-mode-field="fhir">Relevant History<input id="fhir-relevant-history" placeholder="Provenance/example"></label>
             </div>
             <div class="button-row patient-actions">
               <button id="create-gdt-patient" type="button" data-order-mode-field="gdt">Create Patient</button>
