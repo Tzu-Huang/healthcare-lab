@@ -1173,12 +1173,21 @@ function renderMedplumRelatedResources(patient) {
   }
 }
 
+function clearMedplumPreview() {
+  selectedMedplumRecordId = null;
+  byId("medplum-selected-title").textContent = "No resource selected";
+  const summary = byId("medplum-selected-summary");
+  summary.replaceChildren();
+  summary.appendChild(createElement("p", "Select a FHIR Patient, ServiceRequest, DiagnosticReport, Task, Observation, or DocumentReference.", "muted"));
+  byId("medplum-json-preview").textContent = "Select a FHIR resource to inspect raw JSON.";
+}
+
 function renderMedplumConsole() {
-  const patient = selectedMedplumPatient();
   renderMedplumPatientList();
+  const patient = selectedMedplumPatient();
   renderMedplumPatientSummary(patient);
-  const serviceRequests = medplumRecordsForPatient(patient, "ServiceRequest");
-  const reports = medplumRecordsForPatient(patient, "DiagnosticReport");
+  const serviceRequests = patient ? medplumRecordsForPatient(patient, "ServiceRequest") : [];
+  const reports = patient ? medplumRecordsForPatient(patient, "DiagnosticReport") : [];
   const serviceRequestId = renderMedplumResourceSelect(
     "medplum-service-request-select",
     serviceRequests,
@@ -1190,7 +1199,9 @@ function renderMedplumConsole() {
     "No DiagnosticReports for this patient",
   );
   renderMedplumRelatedResources(patient);
-  if (!selectedMedplumRecordId && patient) {
+  if (!patient) {
+    clearMedplumPreview();
+  } else if (!selectedMedplumRecordId) {
     loadMedplumPreview(patient.id);
   } else if (selectedMedplumRecordId) {
     const selected = medplumInventory.find((item) => Number(item.id) === Number(selectedMedplumRecordId));
