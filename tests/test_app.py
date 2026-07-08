@@ -1,4 +1,5 @@
 import json
+import io
 import os
 import socket
 import tempfile
@@ -168,9 +169,22 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('selector.value = "gdt"', script)
         self.assertIn('setActiveView("order-view")', script)
         self.assertIn('"/api/fhir/inventory"', script)
+        self.assertIn('`/api/fhir/diagnostic-reports?${params.toString()}`', script)
+        self.assertIn('`/api/fhir/resource-preview?${params.toString()}`', script)
         self.assertIn('`/api/fhir/records/${recordId}/preview`', script)
         self.assertIn('`/api/fhir/records/${recordId}/sync`', script)
         self.assertIn("Live fetch failed; local submitted JSON", script)
+        self.assertIn("medplumDiagnosticReports", script)
+        self.assertIn("fetchMedplumDiagnosticReportsForCurrentSelection", script)
+        self.assertIn("renderMedplumDiagnosticReportRollup", script)
+        self.assertIn("loadMedplumLiveReportPreview", script)
+        self.assertIn("loadMedplumLiveReferencePreview", script)
+        self.assertIn("resetMedplumDiagnosticReportState", script)
+        self.assertIn("medplumDiagnosticReportKeyMatchesCurrent", script)
+        self.assertIn("medplumDiagnosticReports.requestId + 1", script)
+        self.assertIn("medplumDiagnosticReports.loading && medplumDiagnosticReports.key === key", script)
+        self.assertIn("Patient-level result", script)
+        self.assertIn("Live DiagnosticReport References", script)
         self.assertIn("medplumRecordMatchesPatient", script)
         self.assertIn("renderMedplumPatientList", script)
         self.assertIn("renderMedplumPatientList();\n  const patient = selectedMedplumPatient();", script)
@@ -186,6 +200,12 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('payload.mode !== "fhir" && payload.requestedAt', script)
         self.assertIn("serviceRequest", script)
         self.assertIn("Task:", script)
+
+        template = Path(__file__).resolve().parents[1] / "frontend" / "templates" / "index.html"
+        html = template.read_text(encoding="utf-8")
+        self.assertIn('id="medplum-diagnostic-report-rollup"', html)
+        self.assertIn('id="medplum-diagnostic-report-status"', html)
+        self.assertIn("Live Results", html)
 
     def test_sidebar_views_hide_inactive_pages(self):
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
@@ -208,6 +228,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn("/api/fhir/submit", routes)
         self.assertIn("/api/fhir/mappings", routes)
         self.assertIn("/api/fhir/inventory", routes)
+        self.assertIn("/api/fhir/diagnostic-reports", routes)
+        self.assertIn("/api/fhir/resource-preview", routes)
         self.assertIn("/api/fhir/records", routes)
         self.assertIn("/api/fhir/records/<int:record_id>", routes)
         self.assertIn("/api/fhir/records/<int:record_id>/preview", routes)
@@ -638,6 +660,357 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertFalse(body["live"]["fetched"])
         self.assertIn("medplum down", body["live"]["error"])
         self.assertTrue(body["resource"]["active"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_diagnostic_reports_fetches_patient_bundle_and_summaries(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+        calls = []
+
+        def fake_urlopen(request, timeout):
+            calls.append((request.get_method(), request.full_url))
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            self.assertIn("/DiagnosticReport?", request.full_url)
+            self.assertIn("subject=Patient%2Fpatient-1", request.full_url)
+            return FakeHttpResponse(
+                json.dumps(
+                    {
+                        "resourceType": "Bundle",
+                        "entry": [
+                            {
+                                "resource": {
+                                    "resourceType": "DiagnosticReport",
+                                    "id": "report-1",
+                                    "status": "final",
+                                    "code": {"text": "ECG report"},
+                                    "subject": {"reference": "Patient/patient-1"},
+                                    "effectiveDateTime": "2026-07-08T01:02:03Z",
+                                    "result": [{"reference": "Observation/obs-1"}],
+                                    "media": [
+                                        {
+                                            "comment": "PDF",
+                                            "link": {"reference": "DocumentReference/doc-1"},
+                                        }
+                                    ],
+                                    "presentedForm": [{"url": "Binary/bin-1"}],
+                                }
+                            }
+                        ],
+                    }
+                ).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.get("/api/fhir/diagnostic-reports?patient=Patient/patient-1")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body["success"])
+        self.assertFalse(body["empty"])
+        self.assertEqual(body["strategy"], "patient")
+        self.assertEqual(body["patientReference"], "Patient/patient-1")
+        self.assertEqual(body["bundle"]["resourceType"], "Bundle")
+        report = body["reports"][0]
+        self.assertEqual(report["reference"], "DiagnosticReport/report-1")
+        self.assertEqual(report["display"], "ECG report")
+        self.assertEqual(report["status"], "final")
+        self.assertEqual(report["date"], "2026-07-08T01:02:03Z")
+        self.assertEqual(report["relationshipType"], "patient-level")
+        self.assertEqual(report["resultCount"], 1)
+        self.assertEqual(report["attachmentCount"], 2)
+        self.assertEqual(
+            report["relationships"]["related"],
+            [
+                {"resourceType": "Observation", "reference": "Observation/obs-1"},
+                {"resourceType": "DocumentReference", "reference": "DocumentReference/doc-1"},
+                {"resourceType": "Binary", "reference": "Binary/bin-1"},
+            ],
+        )
+        self.assertTrue(any("subject=Patient%2Fpatient-1" in url for _method, url in calls))
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_diagnostic_reports_empty_bundle_is_successful(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            return FakeHttpResponse(
+                json.dumps({"resourceType": "Bundle", "entry": []}).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.get("/api/fhir/diagnostic-reports?patient=Patient/patient-empty")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body["success"])
+        self.assertTrue(body["empty"])
+        self.assertEqual(body["reports"], [])
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_diagnostic_reports_falls_back_when_based_on_search_is_unsupported(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            if "based-on=ServiceRequest%2Fsr-1" in request.full_url:
+                raise urllib.error.HTTPError(
+                    request.full_url,
+                    400,
+                    "Unsupported search parameter",
+                    hdrs=None,
+                    fp=io.BytesIO(
+                        json.dumps(
+                            {
+                                "resourceType": "OperationOutcome",
+                                "issue": [{"diagnostics": "Unknown search parameter based-on"}],
+                            }
+                        ).encode("utf-8")
+                    ),
+                )
+            self.assertIn("subject=Patient%2Fpatient-1", request.full_url)
+            return FakeHttpResponse(
+                json.dumps(
+                    {
+                        "resourceType": "Bundle",
+                        "entry": [
+                            {
+                                "resource": {
+                                    "resourceType": "DiagnosticReport",
+                                    "id": "linked",
+                                    "subject": {"reference": "Patient/patient-1"},
+                                    "basedOn": [{"reference": "ServiceRequest/sr-1"}],
+                                }
+                            },
+                            {
+                                "resource": {
+                                    "resourceType": "DiagnosticReport",
+                                    "id": "other-order",
+                                    "subject": {"reference": "Patient/patient-1"},
+                                    "basedOn": [{"reference": "ServiceRequest/sr-2"}],
+                                }
+                            },
+                            {
+                                "resource": {
+                                    "resourceType": "DiagnosticReport",
+                                    "id": "patient-level",
+                                    "subject": {"reference": "Patient/patient-1"},
+                                }
+                            },
+                        ],
+                    }
+                ).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.get(
+            "/api/fhir/diagnostic-reports"
+            "?patient=Patient/patient-1&serviceRequest=ServiceRequest/sr-1"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["strategy"], "patient-filter")
+        self.assertIn("based-on", body["fallbackReason"])
+        self.assertEqual([item["id"] for item in body["reports"]], ["linked", "patient-level"])
+        self.assertEqual(body["reports"][0]["relationshipType"], "order-linked")
+        self.assertEqual(body["reports"][1]["relationshipType"], "patient-level")
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_diagnostic_reports_prefers_based_on_when_subject_search_fails(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            if "based-on=ServiceRequest%2Fsr-1" in request.full_url:
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "resourceType": "Bundle",
+                            "entry": [
+                                {
+                                    "resource": {
+                                        "resourceType": "DiagnosticReport",
+                                        "id": "linked",
+                                        "subject": {"reference": "Patient/patient-1"},
+                                        "basedOn": [{"reference": "ServiceRequest/sr-1"}],
+                                    }
+                                }
+                            ],
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            self.assertIn("subject=Patient%2Fpatient-1", request.full_url)
+            raise urllib.error.HTTPError(
+                request.full_url,
+                400,
+                "Unsupported subject search",
+                hdrs=None,
+                fp=io.BytesIO(b'{"resourceType":"OperationOutcome"}'),
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.get(
+            "/api/fhir/diagnostic-reports"
+            "?patient=Patient/patient-1&serviceRequest=ServiceRequest/sr-1"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["strategy"], "based-on")
+        self.assertIn("HTTP 400", body["fallbackReason"])
+        self.assertEqual([item["id"] for item in body["reports"]], ["linked"])
+        self.assertEqual(body["reports"][0]["relationshipType"], "order-linked")
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_diagnostic_reports_surfaces_unauthorized_fetch(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            raise urllib.error.HTTPError(
+                request.full_url,
+                401,
+                "Unauthorized",
+                hdrs=None,
+                fp=io.BytesIO(b'{"resourceType":"OperationOutcome"}'),
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.get("/api/fhir/diagnostic-reports?patient=Patient/patient-1")
+
+        self.assertEqual(response.status_code, 401)
+        body = response.get_json()
+        self.assertFalse(body["success"])
+        self.assertEqual(body["statusCode"], 401)
+        self.assertEqual(body["operationOutcome"]["resourceType"], "OperationOutcome")
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_diagnostic_reports_rejects_malformed_bundle(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            return FakeHttpResponse(
+                json.dumps({"resourceType": "OperationOutcome"}).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.get("/api/fhir/diagnostic-reports?patient=Patient/patient-1")
+
+        self.assertEqual(response.status_code, 502)
+        body = response.get_json()
+        self.assertFalse(body["success"])
+        self.assertIn("non-Bundle", body["error"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_resource_preview_fetches_live_binary_reference(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            self.assertEqual(request.full_url, "http://medplum.test/fhir/R4/Binary/bin-1")
+            return FakeHttpResponse(
+                json.dumps(
+                    {
+                        "resourceType": "Binary",
+                        "id": "bin-1",
+                        "contentType": "application/pdf",
+                    }
+                ).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.get("/api/fhir/resource-preview?reference=Binary/bin-1")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["source"], "medplum-live")
+        self.assertEqual(body["reference"], "Binary/bin-1")
+        self.assertEqual(body["resource"]["resourceType"], "Binary")
 
     @patch("app.urllib.request.urlopen")
     def test_fhir_sync_reuses_existing_medplum_resource_by_identifier(self, urlopen):
@@ -1750,6 +2123,44 @@ class HealthcareLabApiTests(unittest.TestCase):
             step for step in result["steps"] if step["name"] == "service_request_fetch"
         )
         self.assertIn("FHIR data fetch unauthorized", service_request_step["message"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_medplum_smoke_treats_empty_diagnostic_report_bundle_as_healthy(self, urlopen):
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            if "ServiceRequest" in request.full_url:
+                return FakeHttpResponse(
+                    json.dumps({"resourceType": "Bundle", "entry": []}).encode("utf-8"),
+                    status=200,
+                )
+            if "DiagnosticReport" in request.full_url:
+                return FakeHttpResponse(
+                    json.dumps({"resourceType": "Bundle", "entry": []}).encode("utf-8"),
+                    status=200,
+                )
+            return FakeHttpResponse(b"{}", status=200)
+
+        urlopen.side_effect = fake_urlopen
+        store = self.client.application.extensions["demo_store"]
+        medplum = next(item for item in store.list_lab_servers() if item["name"] == "Medplum")
+
+        result = run_lab_smoke_check(self.client.application, store, medplum)
+
+        diagnostic_step = next(
+            step for step in result["steps"] if step["name"] == "diagnostic_report_fetch"
+        )
+        self.assertEqual(diagnostic_step["status"], "Healthy")
+        self.assertIn("0 report(s)", diagnostic_step["message"])
 
     def install_openemr_source(self, connection_factory):
         self.client.application.extensions["openemr_procedure_order_source"] = OpenEMRProcedureOrderSource(
