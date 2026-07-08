@@ -171,6 +171,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("medplumRecordMatchesPatient", script)
         self.assertIn("buildFhirOrderPreviewPayload", script)
         self.assertIn("FHIR Order requires a synced FHIR Patient", script)
+        self.assertIn('payload.mode !== "fhir" && payload.requestedAt', script)
         self.assertIn("serviceRequest", script)
         self.assertIn("Task:", script)
 
