@@ -27,6 +27,8 @@ from backend.lab_store import (
     DCM4CHEE_MWL_STATUS_CREATED,
     DCM4CHEE_MWL_STATUS_FAILED,
     DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+    DCM4CHEE_MWL_STATUS_PENDING,
+    DCM4CHEE_MWL_OPERATION_READBACK,
     DemoStore,
     LAB_OPERATION_ACTIONS,
     LAB_HEALTH_STATUSES,
@@ -575,6 +577,44 @@ def request_dcm4chee_mwl_create(
         raise UpstreamDcm4cheeError(f"dcm4chee request failed: {exc.reason}") from exc
 
 
+def request_dcm4chee_mwl_readback(
+    profile: dict[str, Any],
+    identifiers: dict[str, str],
+) -> tuple[int, str, str]:
+    dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
+    base_url = require_http_url(dicomweb.get("baseUrl"), "dicomweb.baseUrl")
+    query = {
+        key: value
+        for key, value in {
+            "StudyInstanceUID": identifiers.get("study_instance_uid", ""),
+            "AccessionNumber": identifiers.get("accession_number", ""),
+            "RequestedProcedureID": identifiers.get("requested_procedure_id", ""),
+            "ScheduledProcedureStepID": identifiers.get("scheduled_procedure_step_id", ""),
+            "PatientID": identifiers.get("patient_id", ""),
+            "IssuerOfPatientID": identifiers.get("issuer_of_patient_id", ""),
+        }.items()
+        if value
+    }
+    url = f"{base_url}/mwlitems"
+    if query:
+        url = f"{url}?{urllib.parse.urlencode(query)}"
+    headers = {"Accept": "application/dicom+json, application/json, text/plain"}
+    api_request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(api_request, timeout=30) as response:
+            response_body = response.read().decode("utf-8", errors="replace")
+            return response.status, response_body, url
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise UpstreamDcm4cheeError(
+            f"dcm4chee read-back returned HTTP {exc.code}: {error_body}",
+            http_status=exc.code,
+            response_body=error_body,
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise UpstreamDcm4cheeError(f"dcm4chee read-back failed: {exc.reason}") from exc
+
+
 def sync_order_to_dcm4chee_mwl(
     store: DemoStore,
     order: dict[str, Any],
@@ -595,12 +635,96 @@ def sync_order_to_dcm4chee_mwl(
             diagnostics=diagnostics,
         )
     payload = store.build_dcm4chee_mwl_payload(order, profile, uid_root=uid_root)
+    existing_mapping = store.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
+    if existing_mapping and existing_mapping.get("status") == DCM4CHEE_MWL_STATUS_CREATED:
+        return existing_mapping
+    if existing_mapping:
+        readback_attempt = store.create_dcm4chee_mwl_attempt(
+            int(order["id"]),
+            profile,
+            uid_root=uid_root,
+            request_url=request_url,
+            request_payload=payload,
+            operation_type=DCM4CHEE_MWL_OPERATION_READBACK,
+            mapping_id=int(existing_mapping["id"]),
+        )
+        try:
+            readback_status, readback_body, _readback_url = request_dcm4chee_mwl_readback(
+                profile,
+                {
+                    "study_instance_uid": existing_mapping.get("studyInstanceUid", ""),
+                    "accession_number": existing_mapping.get("accessionNumber", ""),
+                    "requested_procedure_id": existing_mapping.get("requestedProcedureId", ""),
+                    "scheduled_procedure_step_id": existing_mapping.get("scheduledProcedureStepId", ""),
+                    "patient_id": existing_mapping.get("patientId", ""),
+                    "issuer_of_patient_id": existing_mapping.get("issuerOfPatientId", ""),
+                },
+            )
+            readback_identifiers = store.dcm4chee_identifiers_from_response_body(readback_body)
+            try:
+                readback_payload = json.loads(readback_body) if readback_body else {}
+            except json.JSONDecodeError:
+                readback_payload = {"raw": readback_body}
+            readback_status_text = (
+                DCM4CHEE_MWL_STATUS_CREATED if readback_identifiers else DCM4CHEE_MWL_STATUS_FAILED
+            )
+            readback_error = "" if readback_identifiers else "dcm4chee read-back returned no identifiers."
+            updated_readback_attempt = store.update_dcm4chee_mwl_attempt_result(
+                int(readback_attempt["id"]),
+                attempt_status=readback_status_text,
+                http_status=readback_status,
+                response_body=readback_body,
+                error_type="" if readback_identifiers else "dcm4chee_readback_empty",
+                error_text=readback_error,
+            )
+            store.update_dcm4chee_mwl_mapping_from_attempt(
+                int(order["id"]),
+                attempt_id=int(updated_readback_attempt["id"]),
+                sync_status=readback_status_text,
+                http_status=readback_status,
+                response_body=readback_body,
+                error_type=updated_readback_attempt["errorType"],
+                error_text=updated_readback_attempt["error"],
+                error_payload={} if readback_identifiers else {"responseBody": readback_body},
+                readback_payload=readback_payload,
+                identifiers=readback_identifiers,
+            )
+            if readback_identifiers:
+                return updated_readback_attempt
+        except UpstreamDcm4cheeError as exc:
+            updated_readback_attempt = store.update_dcm4chee_mwl_attempt_result(
+                int(readback_attempt["id"]),
+                attempt_status=DCM4CHEE_MWL_STATUS_FAILED,
+                http_status=exc.http_status,
+                response_body=exc.response_body,
+                error_type="dcm4chee_readback_failed",
+                error_text=str(exc),
+            )
+            store.update_dcm4chee_mwl_mapping_from_attempt(
+                int(order["id"]),
+                attempt_id=int(updated_readback_attempt["id"]),
+                sync_status=DCM4CHEE_MWL_STATUS_FAILED,
+                http_status=exc.http_status,
+                response_body=exc.response_body,
+                error_type=updated_readback_attempt["errorType"],
+                error_text=updated_readback_attempt["error"],
+                error_payload={"responseBody": exc.response_body},
+            )
+    mapping = store.upsert_dcm4chee_mwl_mapping(
+        int(order["id"]),
+        profile,
+        uid_root=uid_root,
+        request_payload=payload,
+        sync_status=DCM4CHEE_MWL_STATUS_PENDING,
+        increment_retry=existing_mapping is not None,
+    )
     attempt = store.create_dcm4chee_mwl_attempt(
         int(order["id"]),
         profile,
         uid_root=uid_root,
         request_url=request_url,
         request_payload=payload,
+        mapping_id=int(mapping["id"]),
     )
     try:
         status, response_body, actual_url = request_dcm4chee_mwl_create(profile, payload)
@@ -608,7 +732,7 @@ def sync_order_to_dcm4chee_mwl(
         response_body = exc.response_body
         lower_body = response_body.lower()
         is_patient_missing = exc.http_status == 404 and "patient" in lower_body and "exist" in lower_body
-        return store.update_dcm4chee_mwl_attempt_result(
+        updated_attempt = store.update_dcm4chee_mwl_attempt_result(
             int(attempt["id"]),
             attempt_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING if is_patient_missing else DCM4CHEE_MWL_STATUS_FAILED,
             http_status=exc.http_status,
@@ -616,14 +740,63 @@ def sync_order_to_dcm4chee_mwl(
             error_type="patient_missing" if is_patient_missing else "dcm4chee_request_failed",
             error_text=str(exc),
         )
+        store.update_dcm4chee_mwl_mapping_from_attempt(
+            int(order["id"]),
+            attempt_id=int(updated_attempt["id"]),
+            sync_status=updated_attempt["status"],
+            http_status=exc.http_status,
+            response_body=response_body,
+            error_type=updated_attempt["errorType"],
+            error_text=updated_attempt["error"],
+            error_payload={"responseBody": response_body},
+        )
+        return updated_attempt
     if actual_url != attempt["requestUrl"]:
         request_url = actual_url
-    return store.update_dcm4chee_mwl_attempt_result(
+    response_identifiers = store.dcm4chee_identifiers_from_response_body(response_body)
+    readback_payload: dict[str, Any] | list[Any] | None = None
+    readback_identifiers: dict[str, str] = {}
+    readback_error_type = ""
+    readback_error_text = ""
+    try:
+        readback_status, readback_body, _readback_url = request_dcm4chee_mwl_readback(
+            profile,
+            {
+                **store.dcm4chee_identifiers_from_payload(order, profile, uid_root=uid_root, payload=payload),
+                **response_identifiers,
+            },
+        )
+        try:
+            readback_payload = json.loads(readback_body) if readback_body else {}
+        except json.JSONDecodeError:
+            readback_payload = {"raw": readback_body}
+        readback_identifiers = store.dcm4chee_identifiers_from_response_body(readback_body)
+    except UpstreamDcm4cheeError as exc:
+        readback_status = exc.http_status
+        readback_error_type = "dcm4chee_readback_failed"
+        readback_error_text = str(exc)
+        readback_payload = {"responseBody": exc.response_body}
+    updated_attempt = store.update_dcm4chee_mwl_attempt_result(
         int(attempt["id"]),
         attempt_status=DCM4CHEE_MWL_STATUS_CREATED,
         http_status=status,
         response_body=response_body,
+        error_type=readback_error_type,
+        error_text=readback_error_text,
     )
+    store.update_dcm4chee_mwl_mapping_from_attempt(
+        int(order["id"]),
+        attempt_id=int(updated_attempt["id"]),
+        sync_status=DCM4CHEE_MWL_STATUS_CREATED,
+        http_status=status,
+        response_body=response_body,
+        error_type=readback_error_type,
+        error_text=readback_error_text,
+        error_payload=readback_payload if readback_error_type else {},
+        readback_payload=readback_payload,
+        identifiers={**response_identifiers, **readback_identifiers},
+    )
+    return updated_attempt
 
 
 def request_fhir_json(

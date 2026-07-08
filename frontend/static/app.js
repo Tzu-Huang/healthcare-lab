@@ -2183,13 +2183,14 @@ function renderOrderRecordList() {
     const orderCode = mode === "gdt" ? summary.testCode : summary.orderCode;
     const fhir = item.fhir || {};
     const dcm4cheeMwl = item.dcm4chee?.mwl || {};
+    const dcm4cheeMapping = dcm4cheeMwl.mapping || {};
     const fhirStatus = mode === "fhir"
       ? [
         `SR: ${fhir.serviceRequest?.sync?.status || "-"}`,
         `Task: ${fhir.task?.sync?.status || "-"}`,
       ].join(" / ")
       : mode === "dicom"
-        ? dcm4cheeMwl.status || item.status
+        ? dcm4cheeMapping.status || dcm4cheeMwl.status || item.status
       : item.status;
     const fhirMedplum = mode === "fhir"
       ? [
@@ -2198,7 +2199,8 @@ function renderOrderRecordList() {
       ].filter(Boolean).join(" | ")
       : mode === "dicom"
         ? [
-          dcm4cheeMwl.studyInstanceUid || "",
+          dcm4cheeMapping.studyInstanceUid || dcm4cheeMwl.studyInstanceUid || "",
+          dcm4cheeMapping.accessionNumber || "",
           dcm4cheeMwl.error || "",
         ].filter(Boolean).join(" | ")
       : "";

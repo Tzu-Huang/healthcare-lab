@@ -187,12 +187,24 @@ POST /dcm4chee-arc/aets/{AETitle}/rs/mwlitems
 Content-Type: application/dicom+json
 ```
 
-Healthcare Lab stores the local order first, then records the outbound DICOM
-JSON request, dcm4chee response, generated Accession Number, Requested Procedure
-ID, Scheduled Procedure Step ID, and Study Instance UID. If dcm4chee rejects the
+Healthcare Lab stores the local order first, then maintains a local PACS/MWL
+ledger that maps the Healthcare Lab order to dcm4chee identifiers. The canonical
+mapping stores Patient ID, Issuer of Patient ID, Accession Number, Requested
+Procedure ID, Scheduled Procedure Step ID, Study Instance UID, Worklist Label,
+profile/server namespace, sync status, retry count, and latest error details.
+Every create/read-back operation also keeps request/response audit history for
+debugging.
+
+After a successful MWL create, Healthcare Lab attempts a best-effort dcm4chee
+read-back query and stores any identifiers dcm4chee returned, generated, or
+normalized. Re-running sync for an order with a successful canonical mapping
+does not POST a duplicate MWL item. Failed or ambiguous retries reuse the stable
+local identifiers from the mapping so later dcm4chee studies can be matched back
+to the original local order by Study Instance UID, then Accession Number, then
+Requested Procedure ID plus Scheduled Procedure Step ID. If dcm4chee rejects the
 request because the patient does not exist, the local order remains available
-and the dcm4chee MWL sync state is recorded as `Patient missing`. AP MWL query,
-C-STORE reconciliation, and viewer-link consumption are future work.
+and the dcm4chee MWL sync state is recorded as `Patient missing`. Full AP
+C-STORE result ingestion/display and viewer-link consumption remain future work.
 
 The first Docker Desktop runtime scaffold for the Lab Console lives in
 [deploy/](deploy/README.md). It includes `docker-compose.yml` and the
