@@ -58,6 +58,15 @@ ORDER_DEFAULT_ALT_CODE = "93000"
 ORDER_DEFAULT_ALT_TEXT = "Electrocardiogram, routine ECG with at least 12 leads"
 ORDER_DEFAULT_ALT_SYSTEM = "C4"
 ORDER_DEFAULT_PROVIDER = "1001^WANG^AMY"
+FHIR_ORDER_PROTOCOL_VERSION = "FHIR R4"
+FHIR_ORDER_MESSAGE_TYPE = "ServiceRequest"
+FHIR_ORDER_STATUS_CREATED = "Created"
+FHIR_ORDER_DEFAULT_STATUS = "active"
+FHIR_ORDER_DEFAULT_INTENT = "order"
+FHIR_ORDER_DEFAULT_CATEGORY = "Procedure"
+FHIR_ORDER_DEFAULT_PRIORITY = "routine"
+FHIR_ORDER_TASK_CODE = "ECG-WORKLIST"
+FHIR_ORDER_TASK_DISPLAY = "ECG worklist task"
 GDT_ORDER_PROTOCOL_VERSION = "GDT 2.1"
 GDT_ORDER_STATUS_CREATED = "Created"
 GDT_ORDER_STATUS_ERROR = "Error"
@@ -1499,6 +1508,166 @@ class DemoStore:
         }
 
     @staticmethod
+    def _fhir_order_values(payload: dict[str, Any]) -> dict[str, Any]:
+        fhir = payload.get("fhir") if isinstance(payload.get("fhir"), dict) else payload
+        return fhir if isinstance(fhir, dict) else {}
+
+    @staticmethod
+    def _clean_fhir_order_text(value: Any) -> str:
+        return str(value or "").strip()
+
+    @staticmethod
+    def _fhir_order_list(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list | tuple):
+            raw_items = value
+        else:
+            raw_items = str(value).replace(",", "\n").splitlines()
+        return [str(item or "").strip() for item in raw_items if str(item or "").strip()]
+
+    @staticmethod
+    def _fhir_reference_item(value: str, field_name: str) -> dict[str, str]:
+        text = value.strip()
+        if not text:
+            return {}
+        if "/" not in text:
+            raise SimulatorValidationError(f"FHIR Order {field_name} must be a FHIR reference like Resource/id.")
+        return {"reference": text}
+
+    @classmethod
+    def _fhir_reference_list(cls, value: Any, field_name: str) -> list[dict[str, str]]:
+        return [
+            reference
+            for reference in (
+                cls._fhir_reference_item(item, field_name)
+                for item in cls._fhir_order_list(value)
+            )
+            if reference
+        ]
+
+    @classmethod
+    def _fhir_codeable_concept(
+        cls,
+        *,
+        text: Any = "",
+        code: Any = "",
+        system: Any = "",
+        display: Any = "",
+    ) -> dict[str, Any]:
+        concept: dict[str, Any] = {}
+        text_value = cls._clean_fhir_order_text(text)
+        code_value = cls._clean_fhir_order_text(code)
+        system_value = cls._clean_fhir_order_text(system)
+        display_value = cls._clean_fhir_order_text(display)
+        if text_value:
+            concept["text"] = text_value
+        if code_value or system_value or display_value:
+            coding: dict[str, str] = {}
+            if system_value:
+                coding["system"] = system_value
+            if code_value:
+                coding["code"] = code_value
+            if display_value:
+                coding["display"] = display_value
+            concept["coding"] = [coding]
+            if not concept.get("text"):
+                concept["text"] = display_value or code_value
+        return concept
+
+    @staticmethod
+    def _fhir_order_datetime(value: Any, fallback: str = "") -> str:
+        text = str(value or "").strip()
+        if not text:
+            return fallback
+        if "T" in text:
+            return text
+        digits = "".join(character for character in text if character.isdigit())
+        if len(digits) == 8:
+            return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+        if len(digits) >= 12:
+            base = f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}T{digits[8:10]}:{digits[10:12]}"
+            if len(digits) >= 14:
+                return f"{base}:{digits[12:14]}"
+            return base
+        return text
+
+    @staticmethod
+    def _fhir_order_storage_timestamp(value: Any) -> str:
+        text = str(value or "").strip()
+        digits = "".join(character for character in text if character.isdigit())
+        if len(digits) >= 14:
+            return digits[:14]
+        if len(digits) >= 12:
+            return digits[:12]
+        if len(digits) >= 8:
+            return digits[:8]
+        return hl7_timestamp()
+
+    @staticmethod
+    def _fhir_order_storage_priority(value: Any) -> str:
+        normalized = str(value or FHIR_ORDER_DEFAULT_PRIORITY).strip().lower()
+        return {
+            "routine": "R",
+            "stat": "S",
+            "asap": "A",
+            "urgent": "A",
+        }.get(normalized, "R")
+
+    @classmethod
+    def _validate_fhir_order_payload(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise SimulatorValidationError("FHIR Order payload must be a JSON object.")
+        try:
+            patient_record_id = int(payload.get("patientRecordId"))
+        except (TypeError, ValueError) as exc:
+            raise SimulatorValidationError("FHIR Order patientRecordId is required.") from exc
+        fhir = cls._fhir_order_values(payload)
+        status = cls._clean_fhir_order_text(fhir.get("status") or FHIR_ORDER_DEFAULT_STATUS)
+        intent = cls._clean_fhir_order_text(fhir.get("intent") or FHIR_ORDER_DEFAULT_INTENT)
+        if not status:
+            raise SimulatorValidationError("FHIR Order status is required.")
+        if not intent:
+            raise SimulatorValidationError("FHIR Order intent is required.")
+        priority = cls._clean_fhir_order_text(fhir.get("priority") or FHIR_ORDER_DEFAULT_PRIORITY)
+        occurrence = cls._fhir_order_datetime(fhir.get("occurrenceDateTime") or payload.get("requestedAt"))
+        authored_on = cls._fhir_order_datetime(fhir.get("authoredOn"), fallback=now_iso())
+        requested_at = cls._fhir_order_storage_timestamp(occurrence or authored_on)
+        order_code = cls._clean_fhir_order_text(
+            fhir.get("codeCode") or fhir.get("code") or payload.get("orderCode") or ORDER_DEFAULT_CODE
+        )
+        order_text = cls._clean_fhir_order_text(
+            fhir.get("codeDisplay") or payload.get("orderCodeText") or ORDER_DEFAULT_TEXT
+        )
+        return {
+            "patient_record_id": patient_record_id,
+            "status": status,
+            "intent": intent,
+            "priority": priority,
+            "requested_at": requested_at,
+            "ordering_provider": cls._clean_fhir_order_text(
+                fhir.get("requester") or payload.get("orderingProvider") or ORDER_DEFAULT_PROVIDER
+            ),
+            "clinical_indication": cls._clean_fhir_order_text(
+                fhir.get("reasonCodeText") or payload.get("clinicalIndication")
+            ),
+            "order_code": order_code or ORDER_DEFAULT_CODE,
+            "order_code_text": order_text or ORDER_DEFAULT_TEXT,
+            "alternate_code": cls._clean_fhir_order_text(
+                fhir.get("alternateCode") or payload.get("alternateCode") or ORDER_DEFAULT_ALT_CODE
+            ),
+            "alternate_code_text": cls._clean_fhir_order_text(
+                fhir.get("alternateCodeText") or payload.get("alternateCodeText") or ORDER_DEFAULT_ALT_TEXT
+            ),
+            "alternate_code_system": cls._clean_fhir_order_text(
+                fhir.get("alternateCodeSystem") or payload.get("alternateCodeSystem") or ORDER_DEFAULT_ALT_SYSTEM
+            ),
+            "fhir": dict(fhir),
+            "occurrence": occurrence,
+            "authored_on": authored_on,
+        }
+
+    @staticmethod
     def _build_order_orm_payload(values: dict[str, Any], *, record_id: int, timestamp: str) -> str:
         order_number = values["local_order_number"] or DemoStore._order_record_number(record_id)
         visit_id = values["visit_id"] or DemoStore._order_visit_id(record_id)
@@ -1547,6 +1716,204 @@ class DemoStore:
             ),
         ]
         return "\r".join(segments)
+
+    @classmethod
+    def _build_service_request_resource(
+        cls,
+        values: dict[str, Any],
+        *,
+        record_id: int,
+        local_order_number: str,
+        patient_reference: str,
+    ) -> dict[str, Any]:
+        fhir = values.get("fhir") or {}
+        resource: dict[str, Any] = {
+            "resourceType": "ServiceRequest",
+            "status": values["status"],
+            "intent": values["intent"],
+            "subject": {"reference": patient_reference},
+        }
+        explicit_id = cls._clean_fhir_order_text(fhir.get("id") or fhir.get("serviceRequestId"))
+        if explicit_id:
+            resource["id"] = explicit_id
+
+        identifier_system = cls._clean_fhir_order_text(
+            fhir.get("identifierSystem") or FHIR_IDENTIFIER_SYSTEMS["ServiceRequest"]
+        )
+        identifier_value = cls._clean_fhir_order_text(
+            fhir.get("identifierValue") or cls.fhir_identifier_value(
+                "ServiceRequest",
+                "local_order_records",
+                record_id,
+            )
+        )
+        resource["identifier"] = [{"system": identifier_system, "value": identifier_value}]
+        for item in cls._fhir_order_list(fhir.get("identifier")):
+            if "|" in item:
+                system, value = item.split("|", 1)
+                resource["identifier"].append({"system": system.strip(), "value": value.strip()})
+            else:
+                resource["identifier"].append({"value": item})
+
+        instantiates_canonical = cls._fhir_order_list(fhir.get("instantiatesCanonical"))
+        if instantiates_canonical:
+            resource["instantiatesCanonical"] = instantiates_canonical
+        instantiates_uri = cls._fhir_order_list(fhir.get("instantiatesUri"))
+        if instantiates_uri:
+            resource["instantiatesUri"] = instantiates_uri
+        for key, field_name in (
+            ("basedOn", "basedOn"),
+            ("replaces", "replaces"),
+            ("reasonReference", "reasonReference"),
+            ("insurance", "insurance"),
+            ("supportingInfo", "supportingInfo"),
+            ("specimen", "specimen"),
+            ("relevantHistory", "relevantHistory"),
+        ):
+            references = cls._fhir_reference_list(fhir.get(key), field_name)
+            if references:
+                resource[key] = references
+
+        requisition_system = cls._clean_fhir_order_text(fhir.get("requisitionSystem"))
+        requisition_value = cls._clean_fhir_order_text(fhir.get("requisitionValue"))
+        if requisition_system or requisition_value:
+            resource["requisition"] = {
+                key: value
+                for key, value in {
+                    "system": requisition_system,
+                    "value": requisition_value or local_order_number,
+                }.items()
+                if value
+            }
+
+        category = cls._fhir_codeable_concept(text=fhir.get("category") or FHIR_ORDER_DEFAULT_CATEGORY)
+        if category:
+            resource["category"] = [category]
+        if values["priority"]:
+            resource["priority"] = values["priority"]
+        if "doNotPerform" in fhir:
+            resource["doNotPerform"] = bool(fhir.get("doNotPerform"))
+
+        code = cls._fhir_codeable_concept(
+            text=fhir.get("codeText") or values["order_code_text"],
+            code=fhir.get("codeCode") or values["order_code"],
+            system=fhir.get("codeSystem") or "urn:healthcare-lab:service-code",
+            display=fhir.get("codeDisplay") or values["order_code_text"],
+        )
+        if values.get("alternate_code"):
+            coding = code.setdefault("coding", [])
+            coding.append(
+                {
+                    key: value
+                    for key, value in {
+                        "system": values.get("alternate_code_system"),
+                        "code": values.get("alternate_code"),
+                        "display": values.get("alternate_code_text"),
+                    }.items()
+                    if value
+                }
+            )
+        resource["code"] = code
+
+        order_detail = cls._fhir_codeable_concept(text=fhir.get("orderDetail"))
+        if order_detail:
+            resource["orderDetail"] = [order_detail]
+        quantity_value = cls._clean_fhir_order_text(fhir.get("quantityValue"))
+        quantity_unit = cls._clean_fhir_order_text(fhir.get("quantityUnit"))
+        if quantity_value or quantity_unit:
+            quantity: dict[str, Any] = {}
+            if quantity_value:
+                try:
+                    quantity["value"] = float(quantity_value)
+                except ValueError:
+                    raise SimulatorValidationError("FHIR Order quantity value must be numeric.")
+            if quantity_unit:
+                quantity["unit"] = quantity_unit
+            resource["quantityQuantity"] = quantity
+
+        encounter = cls._clean_fhir_order_text(fhir.get("encounter"))
+        if encounter:
+            resource["encounter"] = cls._fhir_reference_item(encounter, "encounter")
+        if values.get("occurrence"):
+            resource["occurrenceDateTime"] = values["occurrence"]
+        if "asNeededBoolean" in fhir:
+            resource["asNeededBoolean"] = bool(fhir.get("asNeededBoolean"))
+        as_needed = cls._fhir_codeable_concept(text=fhir.get("asNeededCodeText"))
+        if as_needed:
+            resource["asNeededCodeableConcept"] = as_needed
+        if values.get("authored_on"):
+            resource["authoredOn"] = values["authored_on"]
+
+        requester = cls._clean_fhir_order_text(fhir.get("requester") or values["ordering_provider"])
+        if requester:
+            resource["requester"] = (
+                cls._fhir_reference_item(requester, "requester")
+                if "/" in requester
+                else {"display": requester}
+            )
+        performer_type = cls._fhir_codeable_concept(text=fhir.get("performerType"))
+        if performer_type:
+            resource["performerType"] = performer_type
+        performer = cls._fhir_reference_list(fhir.get("performer"), "performer")
+        if performer:
+            resource["performer"] = performer
+        location_code = cls._fhir_codeable_concept(text=fhir.get("locationCode"))
+        if location_code:
+            resource["locationCode"] = [location_code]
+        location_reference = cls._fhir_reference_list(fhir.get("locationReference"), "locationReference")
+        if location_reference:
+            resource["locationReference"] = location_reference
+        reason_code = cls._fhir_codeable_concept(text=fhir.get("reasonCodeText") or values["clinical_indication"])
+        if reason_code:
+            resource["reasonCode"] = [reason_code]
+        body_site = cls._fhir_codeable_concept(text=fhir.get("bodySite"))
+        if body_site:
+            resource["bodySite"] = [body_site]
+        note = cls._clean_fhir_order_text(fhir.get("note"))
+        if note:
+            resource["note"] = [{"text": note}]
+        patient_instruction = cls._clean_fhir_order_text(fhir.get("patientInstruction"))
+        if patient_instruction:
+            resource["patientInstruction"] = patient_instruction
+        return resource
+
+    @classmethod
+    def _build_order_task_resource(
+        cls,
+        order: dict[str, Any],
+        *,
+        patient_reference: str,
+        service_request_reference: str,
+    ) -> dict[str, Any]:
+        return {
+            "resourceType": "Task",
+            "status": "requested",
+            "intent": "order",
+            "identifier": [
+                {
+                    "system": FHIR_IDENTIFIER_SYSTEMS["Task"],
+                    "value": cls.fhir_identifier_value(
+                        "Task",
+                        "local_order_records",
+                        order["id"],
+                    ),
+                }
+            ],
+            "code": {
+                "coding": [
+                    {
+                        "system": "urn:healthcare-lab:task-code",
+                        "code": FHIR_ORDER_TASK_CODE,
+                        "display": FHIR_ORDER_TASK_DISPLAY,
+                    }
+                ],
+                "text": FHIR_ORDER_TASK_DISPLAY,
+            },
+            "focus": {"reference": service_request_reference},
+            "for": {"reference": patient_reference},
+            "authoredOn": now_iso(),
+            "description": f"Perform ECG order {order.get('localOrderNumber') or order.get('id')}",
+        }
 
     def create_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
         values = self._validate_order_payload(payload)
@@ -1650,6 +2017,149 @@ class DemoStore:
             )
         return self.get_order_record(record_id)
 
+    def _synced_patient_reference_for_fhir_order(self, patient_record_id: int) -> str:
+        patient = self.get_patient_record(patient_record_id)
+        fhir = patient.get("fhir") or {}
+        sync_status = (fhir.get("sync") or {}).get("status")
+        reference = str((fhir.get("medplum") or {}).get("reference") or "").strip()
+        if (
+            patient.get("protocolVersion") != "FHIR R4"
+            or sync_status != FHIR_SYNC_STATUS_SYNCED
+            or not reference.startswith("Patient/")
+        ):
+            raise SimulatorValidationError(
+                "FHIR Order requires a selected Patient with synced Medplum Patient/<id> reference."
+            )
+        return reference
+
+    def create_fhir_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
+        values = self._validate_fhir_order_payload(payload)
+        patient_reference = self._synced_patient_reference_for_fhir_order(values["patient_record_id"])
+        timestamp = now_iso()
+        with self.lock, self.connect() as connection:
+            patient_row = connection.execute(
+                "SELECT * FROM local_patient_records WHERE id = ?",
+                (values["patient_record_id"],),
+            ).fetchone()
+            if not patient_row:
+                raise KeyError(values["patient_record_id"])
+            cursor = connection.execute(
+                """
+                INSERT INTO local_order_records (
+                    local_order_number, patient_record_id, protocol_version, message_type,
+                    order_status, mrn, first_name, last_name, middle_name, dob, sex,
+                    visit_id, patient_class, assigned_location, account_number,
+                    placer_order_number, filler_order_number, priority, requested_at,
+                    ordering_provider, clinical_indication, order_code, order_code_text,
+                    alternate_code, alternate_code_text, alternate_code_system,
+                    validation_status, validation_messages_json, payload_hl7,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "",
+                    values["patient_record_id"],
+                    FHIR_ORDER_PROTOCOL_VERSION,
+                    FHIR_ORDER_MESSAGE_TYPE,
+                    FHIR_ORDER_STATUS_CREATED,
+                    patient_row["mrn"],
+                    patient_row["first_name"],
+                    patient_row["last_name"],
+                    patient_row["middle_name"],
+                    patient_row["dob"],
+                    patient_row["sex"],
+                    patient_row["visit_number"],
+                    patient_row["patient_class"],
+                    patient_row["assigned_location"],
+                    patient_row["account_number"],
+                    "",
+                    "",
+                    self._fhir_order_storage_priority(values["priority"]),
+                    values["requested_at"],
+                    values["ordering_provider"],
+                    values["clinical_indication"],
+                    values["order_code"],
+                    values["order_code_text"],
+                    values["alternate_code"],
+                    values["alternate_code_text"],
+                    values["alternate_code_system"],
+                    "valid",
+                    "[]",
+                    "",
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            record_id = int(cursor.lastrowid)
+            local_order_number = self._order_record_number(record_id)
+            visit_id = patient_row["visit_number"] or self._order_visit_id(record_id)
+            account_number = patient_row["account_number"] or self._order_account_number(record_id)
+            resource = self._build_service_request_resource(
+                values,
+                record_id=record_id,
+                local_order_number=local_order_number,
+                patient_reference=patient_reference,
+            )
+            connection.execute(
+                """
+                UPDATE local_order_records
+                SET local_order_number = ?, placer_order_number = ?, visit_id = ?,
+                    account_number = ?, payload_hl7 = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    local_order_number,
+                    local_order_number,
+                    visit_id,
+                    account_number,
+                    json.dumps(resource, indent=2, sort_keys=True),
+                    timestamp,
+                    record_id,
+                ),
+            )
+        return self.get_order_record(record_id)
+
+    def create_order_service_request_fhir_workflow_record(self, order: dict[str, Any]) -> dict[str, Any]:
+        if order.get("protocolVersion") != FHIR_ORDER_PROTOCOL_VERSION:
+            raise SimulatorValidationError("Order record is not FHIR mode.")
+        resource = self._json_value(order.get("payload"), {})
+        return self.create_fhir_workflow_record(
+            {
+                "localSourceType": "local_order_records",
+                "localSourceId": str(order["id"]),
+                "resourceType": "ServiceRequest",
+                "resource": resource,
+            }
+        )
+
+    def create_order_task_fhir_workflow_record(
+        self,
+        order: dict[str, Any],
+        *,
+        patient_reference: str,
+        service_request_reference: str,
+    ) -> dict[str, Any]:
+        if order.get("protocolVersion") != FHIR_ORDER_PROTOCOL_VERSION:
+            raise SimulatorValidationError("Order record is not FHIR mode.")
+        if not patient_reference.startswith("Patient/"):
+            raise SimulatorValidationError("FHIR Task requires a Patient/<id> reference.")
+        if not service_request_reference.startswith("ServiceRequest/"):
+            raise SimulatorValidationError("FHIR Task requires a ServiceRequest/<id> focus reference.")
+        resource = self._build_order_task_resource(
+            order,
+            patient_reference=patient_reference,
+            service_request_reference=service_request_reference,
+        )
+        return self.create_fhir_workflow_record(
+            {
+                "localSourceType": "local_order_records",
+                "localSourceId": str(order["id"]),
+                "resourceType": "Task",
+                "resource": resource,
+            }
+        )
+
     def list_order_records(self) -> list[dict[str, Any]]:
         with self.connect() as connection:
             rows = connection.execute(
@@ -1658,7 +2168,7 @@ class DemoStore:
                 ORDER BY created_at DESC, id DESC
                 """
             ).fetchall()
-        return [self._order_record_dict(row) for row in rows]
+        return self._order_record_dicts_with_fhir(rows)
 
     def get_order_record(self, record_id: int) -> dict[str, Any]:
         with self.connect() as connection:
@@ -1668,7 +2178,7 @@ class DemoStore:
             ).fetchone()
             if not row:
                 raise KeyError(record_id)
-        return self._order_record_dict(row)
+        return self._order_record_dicts_with_fhir([row])[0]
 
     def update_order_send_result(
         self,
@@ -2802,12 +3312,40 @@ class DemoStore:
             workbench_patients.append(item)
         return {"patients": workbench_patients, "unmatchedResults": unmatched_results}
 
+    def _order_record_dicts_with_fhir(self, rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
+        source_ids = [str(row["id"]) for row in rows]
+        fhir_by_source_id: dict[str, dict[str, dict[str, Any]]] = {}
+        if source_ids:
+            placeholders = ", ".join("?" for _ in source_ids)
+            with self.connect() as connection:
+                fhir_rows = connection.execute(
+                    f"""
+                    SELECT * FROM local_fhir_workflow_records
+                    WHERE local_source_type = 'local_order_records'
+                    AND local_source_id IN ({placeholders})
+                    AND resource_type IN ('ServiceRequest', 'Task')
+                    """,
+                    source_ids,
+                ).fetchall()
+            for fhir_row in fhir_rows:
+                source_id = str(fhir_row["local_source_id"])
+                fhir_by_source_id.setdefault(source_id, {})[fhir_row["resource_type"]] = (
+                    self._fhir_workflow_record_dict(fhir_row)
+                )
+        return [
+            self._order_record_dict(row, fhir_by_source_id.get(str(row["id"]), {}))
+            for row in rows
+        ]
+
     @staticmethod
-    def _order_record_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _order_record_dict(row: sqlite3.Row, fhir_records: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
         validation_messages = json.loads(row["validation_messages_json"] or "[]")
         summary_name = " ".join(
             part for part in (row["first_name"], row["middle_name"], row["last_name"]) if part
         )
+        fhir_records = fhir_records or {}
+        service_request = fhir_records.get("ServiceRequest")
+        task = fhir_records.get("Task")
         return {
             "id": row["id"],
             "localOrderNumber": row["local_order_number"],
@@ -2847,6 +3385,12 @@ class DemoStore:
             "alternateCode": row["alternate_code"],
             "alternateCodeText": row["alternate_code_text"],
             "alternateCodeSystem": row["alternate_code_system"],
+            "fhir": {
+                "serviceRequest": service_request,
+                "task": task,
+            }
+            if row["protocol_version"] == FHIR_ORDER_PROTOCOL_VERSION
+            else None,
             "validation": {
                 "status": row["validation_status"],
                 "messages": validation_messages,
