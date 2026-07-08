@@ -1587,6 +1587,109 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
         urlopen.assert_not_called()
 
+    @patch("app.urllib.request.urlopen")
+    def test_dcm4chee_sync_endpoint_retries_failed_order_and_reuses_successful_mapping(self, urlopen):
+        patient = self.create_local_patient()
+        phase = {"name": "fail-create"}
+        calls = []
+
+        def fake_urlopen(request, timeout):
+            calls.append(request.get_method())
+            if phase["name"] == "fail-create":
+                raise urllib.error.URLError("connection refused")
+            if phase["name"] == "retry-success":
+                if request.get_method() == "GET":
+                    body = [] if calls.count("GET") == 1 else [
+                        {
+                            "00080050": {"vr": "SH", "Value": ["ACC-000001"]},
+                            "00401001": {"vr": "SH", "Value": ["RP-000001"]},
+                            "0020000D": {"vr": "UI", "Value": ["1.2.826.0.1.3680043.10.543.20260708103000.1"]},
+                            "00400100": {
+                                "vr": "SQ",
+                                "Value": [{"00400009": {"vr": "SH", "Value": ["SPS-000001"]}}],
+                            },
+                        }
+                    ]
+                    return FakeHttpResponse(json.dumps(body).encode("utf-8"), status=200)
+                return FakeHttpResponse(json.dumps({"created": True}).encode("utf-8"), status=200)
+            raise AssertionError("Unexpected dcm4chee request")
+
+        urlopen.side_effect = fake_urlopen
+        created = self.client.post("/api/orders", json={"mode": "dicom", "patientRecordId": patient["id"]})
+
+        self.assertEqual(created.status_code, 201)
+        order_id = created.get_json()["item"]["id"]
+        mwl = created.get_json()["item"]["dcm4chee"]["mwl"]
+        self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_FAILED)
+        self.assertTrue(mwl["retryable"])
+        self.assertEqual(mwl["displayStatus"], "Retry needed")
+
+        phase["name"] = "retry-success"
+        calls.clear()
+        retry = self.client.post(f"/api/orders/{order_id}/dcm4chee-sync")
+
+        self.assertEqual(retry.status_code, 200)
+        body = retry.get_json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["item"]["dcm4chee"]["mwl"]["displayStatus"], "Synced")
+        self.assertFalse(body["item"]["dcm4chee"]["mwl"]["retryable"])
+        self.assertEqual(calls, ["GET", "POST", "GET"])
+
+        calls.clear()
+        duplicate_retry = self.client.post(f"/api/orders/{order_id}/dcm4chee-sync")
+
+        self.assertEqual(duplicate_retry.status_code, 200)
+        self.assertTrue(duplicate_retry.get_json()["success"])
+        self.assertEqual(calls, [])
+
+    @patch("app.urllib.request.urlopen")
+    def test_dcm4chee_sync_endpoint_preserves_order_when_retry_fails(self, urlopen):
+        patient = self.create_local_patient()
+        urlopen.side_effect = urllib.error.URLError("connection refused")
+
+        created = self.client.post("/api/orders", json={"mode": "dicom", "patientRecordId": patient["id"]})
+
+        self.assertEqual(created.status_code, 201)
+        order_id = created.get_json()["item"]["id"]
+        retry = self.client.post(f"/api/orders/{order_id}/dcm4chee-sync")
+
+        self.assertEqual(retry.status_code, 200)
+        body = retry.get_json()
+        self.assertFalse(body["success"])
+        self.assertEqual(body["item"]["id"], order_id)
+        mwl = body["item"]["dcm4chee"]["mwl"]
+        self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_FAILED)
+        self.assertTrue(mwl["retryable"])
+        self.assertIn("connection refused", mwl["latest"]["error"])
+        self.assertGreaterEqual(mwl["mapping"]["retryCount"], 1)
+
+    def test_dcm4chee_sync_endpoint_rejects_unknown_and_non_dicom_orders(self):
+        missing = self.client.post("/api/orders/404/dcm4chee-sync")
+        self.assertEqual(missing.status_code, 404)
+
+        patient = self.create_local_patient()
+        order = self.client.post("/api/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        retry = self.client.post(f"/api/orders/{order['id']}/dcm4chee-sync")
+
+        self.assertEqual(retry.status_code, 400)
+        self.assertIn("not DICOM", retry.get_json()["error"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_dcm4chee_attempt_history_endpoint_lists_newest_first(self, urlopen):
+        patient = self.create_local_patient()
+        urlopen.side_effect = urllib.error.URLError("connection refused")
+        created = self.client.post("/api/orders", json={"mode": "dicom", "patientRecordId": patient["id"]})
+        order_id = created.get_json()["item"]["id"]
+        self.client.post(f"/api/orders/{order_id}/dcm4chee-sync")
+
+        response = self.client.get(f"/api/orders/{order_id}/dcm4chee-attempts")
+
+        self.assertEqual(response.status_code, 200)
+        attempts = response.get_json()["items"]
+        self.assertEqual(len(attempts), 3)
+        self.assertEqual([item["operationType"] for item in attempts], ["create", "read-back", "create"])
+        self.assertTrue(all(item["error"] for item in attempts))
+
     def test_dcm4chee_mapping_retry_reuses_stable_identifiers(self):
         patient = self.create_local_patient()
         store = self.client.application.extensions["demo_store"]
