@@ -1547,6 +1547,29 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("profile is incomplete", mwl["error"])
         urlopen.assert_not_called()
 
+    @patch("app.urllib.request.urlopen")
+    def test_order_api_records_dcm4chee_missing_station_profile_failure(self, urlopen):
+        patient = self.create_local_patient()
+        self.client.application.config["DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE"] = ""
+
+        response = self.client.post(
+            "/api/orders",
+            json={"mode": "dicom", "patientRecordId": patient["id"]},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item = response.get_json()["item"]
+        mwl = item["dcm4chee"]["mwl"]
+        self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_FAILED)
+        self.assertEqual(mwl["errorType"], "profile_invalid")
+        self.assertIn("profile is incomplete", mwl["error"])
+        self.assertEqual(mwl["scheduledStationAETitle"], "")
+        self.assertEqual(mwl["requestPayload"], {})
+        detail = self.client.get("/api/orders").get_json()["items"][0]
+        self.assertEqual(detail["id"], item["id"])
+        self.assertEqual(detail["dcm4chee"]["mwl"]["errorType"], "profile_invalid")
+        urlopen.assert_not_called()
+
     def test_gdt_order_api_creates_and_lists_local_ecg_order_without_openemr(self):
         self.client.application.config["OPENEMR_DB_HOST"] = ""
         patient = self.create_local_patient()
