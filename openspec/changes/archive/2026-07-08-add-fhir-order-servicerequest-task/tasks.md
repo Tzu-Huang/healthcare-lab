@@ -1,0 +1,38 @@
+## 1. FHIR Order Resource Mapping
+
+- [x] 1.1 Add backend builders for FHIR `ServiceRequest` from an Order-page FHIR payload.
+- [x] 1.2 Add backend builder for generated ECG AP/worklist `Task` from the local order, synced Patient reference, and synced ServiceRequest reference.
+- [x] 1.3 Validate FHIR order creation requires a local Patient with synced FHIR `Patient/<id>` reference.
+- [x] 1.4 Preserve deterministic identifiers for both `ServiceRequest` and `Task`.
+
+## 2. Local Create And Medplum Sync
+
+- [x] 2.1 Persist a local order anchor for FHIR mode before Medplum sync.
+- [x] 2.2 Create or update the paired `ServiceRequest` FHIR workflow ledger record for the local order.
+- [x] 2.3 Sync `ServiceRequest` first through the existing idempotent Medplum sync path.
+- [x] 2.4 Create or update the paired `Task` FHIR workflow ledger record after the ServiceRequest reference is known.
+- [x] 2.5 Sync `Task` and preserve failed/pending state independently from the ServiceRequest.
+- [x] 2.6 Return order response metadata containing ServiceRequest and Task ledger ids, sync statuses, Medplum references, and errors.
+
+## 3. Order UI
+
+- [x] 3.1 Enable the Order page FHIR option.
+- [x] 3.2 Add a FHIR ECG Order Demo Preset.
+- [x] 3.3 Show the full ServiceRequest field set in FHIR mode.
+- [x] 3.4 Render a ServiceRequest JSON preview for FHIR mode.
+- [x] 3.5 Submit FHIR mode orders through the FHIR order creation path.
+- [x] 3.6 Display FHIR order ServiceRequest and Task sync status in Local Orders.
+- [x] 3.7 Keep existing HL7 v2.3.1 and GDT order flows working.
+
+## 4. Medplum Inventory
+
+- [x] 4.1 Ensure created ServiceRequest and Task records appear in Medplum inventory.
+- [x] 4.2 Ensure patient filtering includes ServiceRequest via `subject` and Task via `for`.
+- [x] 4.3 Ensure previews show live Medplum JSON when synced and local submitted JSON fallback when live fetch fails.
+
+## 5. Verification
+
+- [x] 5.1 Add store tests for ServiceRequest mapping, Task mapping, deterministic identifiers, and Patient precondition validation.
+- [x] 5.2 Add app tests for successful FHIR order create-and-sync, ServiceRequest/Task reference correctness, and partial sync failure preservation.
+- [x] 5.3 Add frontend/API regression coverage for FHIR mode enablement, full form visibility, preview, and Local Orders sync display.
+- [x] 5.4 Run OpenSpec validation and the Healthcare Lab Python test suite.
