@@ -368,7 +368,16 @@ const patientDemoPreset = {
   attendingProvider: "P123^Rivera^Elena",
   accountNumber: "ACC-1001",
   phone: "555-0100",
+  email: "avery.morgan@example.org",
   address: "100 Main St^^Boston^MA^02110",
+  active: true,
+  addressLine: "",
+  addressCity: "",
+  addressState: "",
+  addressPostalCode: "",
+  addressCountry: "",
+  managingOrganizationReference: "",
+  managingOrganizationDisplay: "",
 };
 
 const patientDemoModeOverrides = {
@@ -383,6 +392,13 @@ const patientDemoModeOverrides = {
     attendingProvider: "",
     accountNumber: "",
     address: "100 Main St, Boston, MA 02110",
+    addressLine: "100 Main St",
+    addressCity: "Boston",
+    addressState: "MA",
+    addressPostalCode: "02110",
+    addressCountry: "US",
+    managingOrganizationReference: "Organization/healthcare-lab",
+    managingOrganizationDisplay: "Healthcare Lab",
   },
   gdt: {
     assignedLocation: "",
@@ -433,7 +449,16 @@ function patientFormPayload() {
     attendingProvider: byId("patient-attending-provider").value.trim(),
     accountNumber: byId("patient-account-number").value.trim(),
     phone: byId("patient-phone").value.trim(),
+    email: byId("patient-email").value.trim(),
     address: byId("patient-address").value.trim(),
+    active: byId("patient-active").value === "true",
+    addressLine: byId("patient-address-line").value.trim(),
+    addressCity: byId("patient-address-city").value.trim(),
+    addressState: byId("patient-address-state").value.trim(),
+    addressPostalCode: byId("patient-address-postal-code").value.trim(),
+    addressCountry: byId("patient-address-country").value.trim(),
+    managingOrganizationReference: byId("patient-managing-organization-reference").value.trim(),
+    managingOrganizationDisplay: byId("patient-managing-organization-display").value.trim(),
   };
 }
 
@@ -451,7 +476,16 @@ function setPatientForm(payload) {
   byId("patient-attending-provider").value = payload.attendingProvider || "";
   byId("patient-account-number").value = payload.accountNumber || "";
   byId("patient-phone").value = payload.phone || "";
+  byId("patient-email").value = payload.email || "";
   byId("patient-address").value = payload.address || "";
+  byId("patient-active").value = payload.active === false ? "false" : "true";
+  byId("patient-address-line").value = payload.addressLine || "";
+  byId("patient-address-city").value = payload.addressCity || "";
+  byId("patient-address-state").value = payload.addressState || "";
+  byId("patient-address-postal-code").value = payload.addressPostalCode || "";
+  byId("patient-address-country").value = payload.addressCountry || "";
+  byId("patient-managing-organization-reference").value = payload.managingOrganizationReference || "";
+  byId("patient-managing-organization-display").value = payload.managingOrganizationDisplay || "";
 }
 
 function updatePatientModeFields(mode) {
@@ -578,9 +612,23 @@ function fhirGender(sex) {
 
 function buildPatientFhirPreviewPayload(payload) {
   const patientName = [payload.firstName, payload.middleName, payload.lastName].filter(Boolean).join(" ");
-  return JSON.stringify({
+  const telecom = [];
+  if (payload.phone) telecom.push({ system: "phone", value: payload.phone });
+  if (payload.email) telecom.push({ system: "email", value: payload.email });
+  const address = {};
+  if (payload.address) address.text = payload.address;
+  if (payload.addressLine) address.line = [payload.addressLine];
+  if (payload.addressCity) address.city = payload.addressCity;
+  if (payload.addressState) address.state = payload.addressState;
+  if (payload.addressPostalCode) address.postalCode = payload.addressPostalCode;
+  if (payload.addressCountry) address.country = payload.addressCountry;
+  const managingOrganization = {};
+  if (payload.managingOrganizationReference) managingOrganization.reference = payload.managingOrganizationReference;
+  if (payload.managingOrganizationDisplay) managingOrganization.display = payload.managingOrganizationDisplay;
+  const resource = {
     resourceType: "Patient",
     id: "PAT-GENERATED",
+    active: payload.active !== false,
     meta: {
       profile: [
         "https://twcore.mohw.gov.tw/ig/twcore/StructureDefinition/Patient-twcore",
@@ -602,15 +650,19 @@ function buildPatientFhirPreviewPayload(payload) {
     ],
     gender: fhirGender(payload.sex),
     birthDate: fhirBirthDate(payload.dob),
-    telecom: payload.phone ? [{ system: "phone", value: payload.phone }] : [],
-    address: payload.address ? [{ text: payload.address }] : [],
+    telecom,
+    address: Object.keys(address).length ? [address] : [],
     extension: [
       {
         url: "urn:healthcare-lab:visit-number",
         valueString: payload.visitNumber || "VISIT-GENERATED",
       },
     ],
-  }, null, 2);
+  };
+  if (Object.keys(managingOrganization).length) {
+    resource.managingOrganization = managingOrganization;
+  }
+  return JSON.stringify(resource, null, 2);
 }
 
 function renderGdtRecord(code, value) {
@@ -688,6 +740,7 @@ function renderPatientSummaryFromPayload(payload, createdAt = "") {
     ["Name", [payload.firstName, payload.middleName, payload.lastName].filter(Boolean).join(" ")],
     ["DOB", payload.dob],
     ["Sex", payload.sex],
+    ["Email", payload.email],
     ["Class", payload.patientClass || "O"],
     ["Visit", payload.visitNumber || "Generated on create"],
     ["Location", payload.assignedLocation],
@@ -719,7 +772,7 @@ function renderPatientRecordList() {
   if (!patientRecords.length) {
     const row = document.createElement("tr");
     const cell = rowCell("No local patients created yet.");
-    cell.colSpan = 8;
+    cell.colSpan = 11;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
@@ -728,6 +781,22 @@ function renderPatientRecordList() {
   patientRecords.forEach((item) => {
     const row = document.createElement("tr");
     const summary = item.summary || {};
+    const fhir = item.fhir || null;
+    const syncStatus = fhir?.sync?.status || (item.protocolVersion === "FHIR R4" ? "Pending sync" : "-");
+    const syncLabel = createElement("span", syncStatus, `status ${fhirSyncStatusClass(syncStatus)}`);
+    const actionCell = document.createElement("div");
+    actionCell.className = "button-row compact-actions";
+    if (item.protocolVersion === "FHIR R4" && fhir?.recordId && syncStatus !== "Synced") {
+      const retryButton = createElement("button", "Retry", "");
+      retryButton.type = "button";
+      retryButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        retryPatientFhirSync(item.id, retryButton);
+      });
+      actionCell.appendChild(retryButton);
+    } else {
+      actionCell.appendChild(createElement("span", "-", "muted"));
+    }
     row.append(
       rowCell(item.localPatientNumber || item.id),
       rowCell(item.protocolVersion),
@@ -736,7 +805,10 @@ function renderPatientRecordList() {
       rowCell(summary.dob),
       rowCell(summary.sex),
       rowCell(summary.visitNumber),
+      rowCell(syncLabel),
+      rowCell(fhir?.medplum?.reference || fhir?.sync?.error || "-"),
       rowCell(taipeiTimestamp(item.createdAt)),
+      rowCell(actionCell),
     );
     row.addEventListener("click", () => {
       byId("patient-payload-preview").textContent = item.payload || "";
@@ -749,6 +821,15 @@ function renderPatientRecordList() {
     });
     body.appendChild(row);
   });
+}
+
+function fhirSyncStatusClass(status) {
+  return {
+    "Synced": "success",
+    "Sync failed": "error",
+    "Syncing": "pending",
+    "Pending sync": "pending",
+  }[status] || "neutral";
 }
 
 async function refreshPatients() {
@@ -772,7 +853,12 @@ async function createPatientRecord() {
       body: JSON.stringify(patientFormPayload()),
     });
     const item = result.item;
-    setStatus("patient-form-status", "Local patient created", "success");
+    const syncStatus = item.fhir?.sync?.status || "";
+    setStatus(
+      "patient-form-status",
+      syncStatus === "Synced" ? "FHIR patient synced" : "Local patient created",
+      syncStatus === "Sync failed" ? "warning" : "success",
+    );
     byId("patient-payload-preview").textContent = item.payload || "";
     renderPatientSummaryFromPayload({
       ...(item.patient || {}),
@@ -784,6 +870,25 @@ async function createPatientRecord() {
   } catch (error) {
     setStatus("patient-form-status", "Create failed", "error");
     byId("patient-payload-preview").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function retryPatientFhirSync(patientId, button) {
+  button.disabled = true;
+  setStatus("patient-form-status", "Retrying FHIR sync...", "pending");
+  try {
+    const result = await requestJson(`/api/patients/${patientId}/fhir-sync`, { method: "POST" });
+    const syncStatus = result.item?.fhir?.sync?.status || "";
+    setStatus(
+      "patient-form-status",
+      syncStatus === "Synced" ? "FHIR patient synced" : "FHIR sync needs attention",
+      syncStatus === "Synced" ? "success" : "warning",
+    );
+    await refreshPatients();
+  } catch (error) {
+    setStatus("patient-form-status", error.message, "error");
   } finally {
     button.disabled = false;
   }

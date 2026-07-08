@@ -2085,9 +2085,50 @@ def create_app(database_path: str | None = None) -> Flask:
         payload = request.get_json(silent=True) or {}
         try:
             item = store.create_patient_record(payload)
+            if item["protocolVersion"] == "FHIR R4":
+                fhir_record = store.create_patient_fhir_workflow_record(item)
+                base_url = configured_medplum_base_url()
+                if base_url:
+                    sync_fhir_workflow_record_to_medplum(
+                        store,
+                        int(fhir_record["id"]),
+                        base_url=base_url,
+                        auth_manager=get_auth_manager(),
+                    )
+                else:
+                    store.mark_fhir_sync_failure(
+                        int(fhir_record["id"]),
+                        error_text="Medplum FHIR base URL is required.",
+                    )
+                item = store.get_patient_record(int(item["id"]))
         except SimulatorValidationError as exc:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
+
+    @app.post("/api/patients/<int:record_id>/fhir-sync")
+    def sync_patient_fhir_record(record_id: int):
+        try:
+            item = store.get_patient_record(record_id)
+        except KeyError:
+            return error_response("Patient record was not found.", 404)
+        if item["protocolVersion"] != "FHIR R4":
+            return error_response("Patient record is not FHIR mode.", 400)
+        fhir = item.get("fhir") or store.create_patient_fhir_workflow_record(item)
+        base_url = configured_medplum_base_url()
+        if not base_url:
+            return error_response("Medplum FHIR base URL is required.", 400)
+        try:
+            sync_fhir_workflow_record_to_medplum(
+                store,
+                int(fhir.get("recordId") or fhir["id"]),
+                base_url=base_url,
+                auth_manager=get_auth_manager(),
+            )
+        except (ValidationError, SimulatorValidationError) as exc:
+            return error_response(str(exc), 400)
+        item = store.get_patient_record(record_id)
+        fhir = item.get("fhir") or {}
+        return jsonify({"success": (fhir.get("sync") or {}).get("status") == FHIR_SYNC_STATUS_SYNCED, "item": item})
 
     @app.get("/api/orders")
     def list_orders():
