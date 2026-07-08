@@ -176,6 +176,7 @@ class HealthcareLabStoreTests(unittest.TestCase):
         )
         self.assertEqual(fhir_payload["name"][0]["text"], "Avery Lee Morgan")
         self.assertEqual(fhir_payload["gender"], "female")
+        self.assertTrue(fhir_payload["active"])
 
         gdt = self.store.create_patient_record({**base_payload, "mode": "gdt", "mrn": "MRN-MODE-002"})
         self.assertEqual(gdt["protocolVersion"], "GDT 2.1")
@@ -196,6 +197,61 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(dicom["messageType"], "Patient Module")
         self.assertIn("(0010,0010) PatientName", dicom["payload"])
         self.assertIn("Morgan^Avery^Lee", dicom["payload"])
+
+    def test_fhir_patient_common_fields_and_paired_ledger_metadata(self):
+        patient = self.store.create_patient_record(
+            {
+                "mode": "fhir",
+                "mrn": "MRN-FHIR-001",
+                "firstName": "Avery",
+                "middleName": "Lee",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+                "phone": "555-0100",
+                "email": "avery@example.org",
+                "active": False,
+                "address": "100 Main St, Boston, MA 02110",
+                "addressLine": "100 Main St",
+                "addressCity": "Boston",
+                "addressState": "MA",
+                "addressPostalCode": "02110",
+                "addressCountry": "US",
+                "managingOrganizationReference": "Organization/healthcare-lab",
+                "managingOrganizationDisplay": "Healthcare Lab",
+            }
+        )
+
+        resource = json.loads(patient["payload"])
+        self.assertFalse(resource["active"])
+        self.assertEqual(
+            resource["telecom"],
+            [
+                {"system": "phone", "value": "555-0100"},
+                {"system": "email", "value": "avery@example.org"},
+            ],
+        )
+        self.assertEqual(resource["address"][0]["line"], ["100 Main St"])
+        self.assertEqual(resource["address"][0]["city"], "Boston")
+        self.assertEqual(resource["address"][0]["postalCode"], "02110")
+        self.assertEqual(
+            resource["managingOrganization"],
+            {
+                "reference": "Organization/healthcare-lab",
+                "display": "Healthcare Lab",
+            },
+        )
+
+        fhir_record = self.store.create_patient_fhir_workflow_record(patient)
+        refreshed = self.store.get_patient_record(patient["id"])
+        self.assertEqual(fhir_record["resourceType"], "Patient")
+        self.assertEqual(fhir_record["localSourceId"], str(patient["id"]))
+        self.assertEqual(refreshed["fhir"]["recordId"], fhir_record["id"])
+        self.assertEqual(refreshed["fhir"]["sync"]["status"], "Pending sync")
+        self.assertEqual(
+            refreshed["fhir"]["identifier"]["value"],
+            f"local-patient-records-{patient['id']}",
+        )
 
     def test_fhir_workflow_record_persists_status_identifier_and_resource(self):
         item = self.store.create_fhir_workflow_record(

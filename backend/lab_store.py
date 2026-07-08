@@ -723,6 +723,15 @@ class DemoStore:
                     sex TEXT NOT NULL,
                     address TEXT NOT NULL DEFAULT '',
                     phone TEXT NOT NULL DEFAULT '',
+                    email TEXT NOT NULL DEFAULT '',
+                    fhir_active INTEGER NOT NULL DEFAULT 1,
+                    address_line TEXT NOT NULL DEFAULT '',
+                    address_city TEXT NOT NULL DEFAULT '',
+                    address_state TEXT NOT NULL DEFAULT '',
+                    address_postal_code TEXT NOT NULL DEFAULT '',
+                    address_country TEXT NOT NULL DEFAULT '',
+                    managing_organization_reference TEXT NOT NULL DEFAULT '',
+                    managing_organization_display TEXT NOT NULL DEFAULT '',
                     visit_number TEXT NOT NULL,
                     patient_class TEXT NOT NULL DEFAULT 'O',
                     assigned_location TEXT NOT NULL DEFAULT '',
@@ -954,6 +963,30 @@ class DemoStore:
                 "INTEGER NOT NULL DEFAULT 60",
             )
             self._ensure_column(connection, "lab_servers", "smoke_profile", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "local_patient_records", "email", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "local_patient_records", "fhir_active", "INTEGER NOT NULL DEFAULT 1")
+            self._ensure_column(connection, "local_patient_records", "address_line", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "local_patient_records", "address_city", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "local_patient_records", "address_state", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(
+                connection,
+                "local_patient_records",
+                "address_postal_code",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(connection, "local_patient_records", "address_country", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(
+                connection,
+                "local_patient_records",
+                "managing_organization_reference",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "local_patient_records",
+                "managing_organization_display",
+                "TEXT NOT NULL DEFAULT ''",
+            )
             self._ensure_column(connection, "local_gdt_order_records", "gdt_patient_context_id", "INTEGER")
             self._ensure_column(
                 connection,
@@ -1068,7 +1101,18 @@ class DemoStore:
             raise SimulatorValidationError("Patient mode must be HL7 v2, FHIR, GDT, or DICOM.")
         return normalized
 
-    def _validate_patient_payload(self, payload: dict[str, Any]) -> dict[str, str]:
+    @staticmethod
+    def _normalize_patient_active(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        normalized = str(value if value is not None else "true").strip().lower()
+        if normalized in {"", "1", "true", "yes", "y", "on", "active"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off", "inactive"}:
+            return False
+        raise SimulatorValidationError("Patient active must be true or false.")
+
+    def _validate_patient_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise SimulatorValidationError("Patient payload must be a JSON object.")
         return {
@@ -1081,6 +1125,21 @@ class DemoStore:
             "sex": self._normalize_patient_sex(payload.get("sex")),
             "address": self._clean_patient_text(payload.get("address"), "address"),
             "phone": self._clean_patient_text(payload.get("phone"), "phone"),
+            "email": self._clean_patient_text(payload.get("email"), "email"),
+            "fhir_active": self._normalize_patient_active(payload.get("active", payload.get("fhirActive", True))),
+            "address_line": self._clean_patient_text(payload.get("addressLine"), "addressLine"),
+            "address_city": self._clean_patient_text(payload.get("addressCity"), "addressCity"),
+            "address_state": self._clean_patient_text(payload.get("addressState"), "addressState"),
+            "address_postal_code": self._clean_patient_text(payload.get("addressPostalCode"), "addressPostalCode"),
+            "address_country": self._clean_patient_text(payload.get("addressCountry"), "addressCountry"),
+            "managing_organization_reference": self._clean_patient_text(
+                payload.get("managingOrganizationReference"),
+                "managingOrganizationReference",
+            ),
+            "managing_organization_display": self._clean_patient_text(
+                payload.get("managingOrganizationDisplay"),
+                "managingOrganizationDisplay",
+            ),
             "visit_number": self._clean_patient_text(payload.get("visitNumber"), "visitNumber"),
             "patient_class": self._clean_patient_text(
                 payload.get("patientClass", PATIENT_CLASS_DEFAULT),
@@ -1135,9 +1194,28 @@ class DemoStore:
         patient_name = " ".join(
             part for part in (values["first_name"], values["middle_name"], values["last_name"]) if part
         )
+        telecom = []
+        if values["phone"]:
+            telecom.append({"system": "phone", "value": values["phone"]})
+        if values["email"]:
+            telecom.append({"system": "email", "value": values["email"]})
+        address = {}
+        if values["address"]:
+            address["text"] = values["address"]
+        if values["address_line"]:
+            address["line"] = [values["address_line"]]
+        if values["address_city"]:
+            address["city"] = values["address_city"]
+        if values["address_state"]:
+            address["state"] = values["address_state"]
+        if values["address_postal_code"]:
+            address["postalCode"] = values["address_postal_code"]
+        if values["address_country"]:
+            address["country"] = values["address_country"]
         resource = {
             "resourceType": "Patient",
             "id": DemoStore._patient_record_number(record_id),
+            "active": bool(values["fhir_active"]),
             "meta": {
                 "profile": [
                     "https://twcore.mohw.gov.tw/ig/twcore/StructureDefinition/Patient-twcore"
@@ -1161,8 +1239,8 @@ class DemoStore:
             ],
             "gender": DemoStore._patient_fhir_gender(values["sex"]),
             "birthDate": DemoStore._patient_fhir_birth_date(values["dob"]),
-            "telecom": [{"system": "phone", "value": values["phone"]}] if values["phone"] else [],
-            "address": [{"text": values["address"]}] if values["address"] else [],
+            "telecom": telecom,
+            "address": [address] if address else [],
             "extension": [
                 {
                     "url": "urn:healthcare-lab:visit-number",
@@ -1170,6 +1248,13 @@ class DemoStore:
                 }
             ],
         }
+        managing_organization = {}
+        if values["managing_organization_reference"]:
+            managing_organization["reference"] = values["managing_organization_reference"]
+        if values["managing_organization_display"]:
+            managing_organization["display"] = values["managing_organization_display"]
+        if managing_organization:
+            resource["managingOrganization"] = managing_organization
         return json.dumps(resource, indent=2), visit_number
 
     @staticmethod
@@ -1232,11 +1317,14 @@ class DemoStore:
                 INSERT INTO local_patient_records (
                     local_patient_number, protocol_version, message_type, mrn,
                     first_name, last_name, middle_name, dob, sex, address, phone,
+                    email, fhir_active, address_line, address_city, address_state,
+                    address_postal_code, address_country, managing_organization_reference,
+                    managing_organization_display,
                     visit_number, patient_class, assigned_location, attending_provider,
                     account_number, validation_status, validation_messages_json,
                     payload_hl7, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     "",
@@ -1250,6 +1338,15 @@ class DemoStore:
                     values["sex"],
                     values["address"],
                     values["phone"],
+                    values["email"],
+                    int(values["fhir_active"]),
+                    values["address_line"],
+                    values["address_city"],
+                    values["address_state"],
+                    values["address_postal_code"],
+                    values["address_country"],
+                    values["managing_organization_reference"],
+                    values["managing_organization_display"],
                     values["visit_number"],
                     values["patient_class"],
                     values["assigned_location"],
@@ -1288,7 +1385,7 @@ class DemoStore:
                 ORDER BY created_at DESC, id DESC
                 """
             ).fetchall()
-        return [self._patient_record_dict(row) for row in rows]
+        return self._patient_record_dicts_with_fhir(rows)
 
     def get_patient_record(self, record_id: int) -> dict[str, Any]:
         with self.connect() as connection:
@@ -1298,7 +1395,20 @@ class DemoStore:
             ).fetchone()
             if not row:
                 raise KeyError(record_id)
-        return self._patient_record_dict(row)
+        return self._patient_record_dicts_with_fhir([row])[0]
+
+    def create_patient_fhir_workflow_record(self, patient_record: dict[str, Any]) -> dict[str, Any]:
+        if patient_record.get("protocolVersion") != "FHIR R4":
+            raise SimulatorValidationError("Patient record is not FHIR mode.")
+        resource = self._json_value(patient_record.get("payload"), {})
+        return self.create_fhir_workflow_record(
+            {
+                "localSourceType": "local_patient_records",
+                "localSourceId": str(patient_record["id"]),
+                "resourceType": "Patient",
+                "resource": resource,
+            }
+        )
 
     def list_oie_local_adt_inventory(self) -> list[dict[str, Any]]:
         return self.list_patient_records()
@@ -3380,8 +3490,30 @@ class DemoStore:
             "updatedAt": row["updated_at"],
         }
 
+    def _patient_record_dicts_with_fhir(self, rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
+        source_ids = [str(row["id"]) for row in rows]
+        fhir_by_source_id: dict[str, dict[str, Any]] = {}
+        if source_ids:
+            placeholders = ", ".join("?" for _ in source_ids)
+            with self.connect() as connection:
+                fhir_rows = connection.execute(
+                    f"""
+                    SELECT * FROM local_fhir_workflow_records
+                    WHERE local_source_type = 'local_patient_records'
+                    AND local_source_id IN ({placeholders})
+                    AND resource_type = 'Patient'
+                    """,
+                    source_ids,
+                ).fetchall()
+            for fhir_row in fhir_rows:
+                fhir_by_source_id[str(fhir_row["local_source_id"])] = self._fhir_workflow_record_dict(fhir_row)
+        return [
+            self._patient_record_dict(row, fhir_by_source_id.get(str(row["id"])))
+            for row in rows
+        ]
+
     @staticmethod
-    def _patient_record_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _patient_record_dict(row: sqlite3.Row, fhir_record: dict[str, Any] | None = None) -> dict[str, Any]:
         validation_messages = json.loads(row["validation_messages_json"] or "[]")
         patient = {
             "mrn": row["mrn"],
@@ -3392,10 +3524,30 @@ class DemoStore:
             "sex": row["sex"],
             "address": row["address"],
             "phone": row["phone"],
+            "email": row["email"],
+            "active": bool(row["fhir_active"]),
+            "addressLine": row["address_line"],
+            "addressCity": row["address_city"],
+            "addressState": row["address_state"],
+            "addressPostalCode": row["address_postal_code"],
+            "addressCountry": row["address_country"],
+            "managingOrganizationReference": row["managing_organization_reference"],
+            "managingOrganizationDisplay": row["managing_organization_display"],
         }
         summary_name = " ".join(
             part for part in (row["first_name"], row["middle_name"], row["last_name"]) if part
         )
+        fhir = None
+        if fhir_record:
+            fhir = {
+                "recordId": fhir_record["id"],
+                "localFhirRecordNumber": fhir_record["localFhirRecordNumber"],
+                "resourceType": fhir_record["resourceType"],
+                "identifier": fhir_record["identifier"],
+                "medplum": fhir_record["medplum"],
+                "sync": fhir_record["sync"],
+                "localOnly": fhir_record["localOnly"],
+            }
         return {
             "id": row["id"],
             "localPatientNumber": row["local_patient_number"],
@@ -3419,6 +3571,7 @@ class DemoStore:
                 "messages": validation_messages,
             },
             "payload": row["payload_hl7"],
+            "fhir": fhir,
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
             "localOnly": True,
