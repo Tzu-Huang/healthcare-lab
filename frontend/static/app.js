@@ -1317,7 +1317,7 @@ function validateOrderPayload(payload) {
     if (!payload.orderCode) messages.push("Order code is required.");
     if (!payload.alternateCode) messages.push("Alternate code is required.");
   }
-  if (payload.requestedAt && !/^\d{8}(\d{4})?(\d{2})?$/.test(payload.requestedAt)) {
+  if (payload.mode !== "fhir" && payload.requestedAt && !/^\d{8}(\d{4})?(\d{2})?$/.test(payload.requestedAt)) {
     messages.push("Requested time must be YYYYMMDD, YYYYMMDDHHMM, or YYYYMMDDHHMMSS.");
   }
   return messages;
