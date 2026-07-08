@@ -26,7 +26,12 @@ from app import (
     run_lab_smoke_check,
     validate_dcm4chee_profile,
 )
-from backend.lab_store import render_gdt_message
+from backend.lab_store import (
+    DCM4CHEE_MWL_STATUS_CREATED,
+    DCM4CHEE_MWL_STATUS_FAILED,
+    DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+    render_gdt_message,
+)
 
 
 class FakeHttpResponse:
@@ -1423,6 +1428,147 @@ class HealthcareLabApiTests(unittest.TestCase):
         response = self.client.post("/api/orders", json={"patientRecordId": 404})
 
         self.assertEqual(response.status_code, 404)
+
+    def test_dcm4chee_mwl_payload_uses_profile_and_generated_identifiers(self):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        order = store.create_dcm4chee_order_record(
+            {
+                "patientRecordId": patient["id"],
+                "requestedAt": "20260708103000",
+                "orderingProvider": "1001^WANG^AMY",
+                "clinicalIndication": "Chest pain evaluation",
+            }
+        )
+        payload = store.build_dcm4chee_mwl_payload(
+            order,
+            dcm4chee_profile_from_config(self.client.application.config),
+            uid_root="1.2.826.0.1.3680043.10.543",
+        )
+
+        self.assertEqual(payload["00100010"]["Value"][0]["Alphabetic"], "Morgan^Avery^Lee")
+        self.assertEqual(payload["00100020"]["Value"], ["MRN-A04-001"])
+        self.assertEqual(payload["00100021"]["Value"], ["local-dcm4chee"])
+        self.assertEqual(payload["00080050"]["Value"], ["ACC-000001"])
+        self.assertEqual(payload["00401001"]["Value"], ["RP-000001"])
+        self.assertRegex(payload["0020000D"]["Value"][0], r"^1\.2\.826\.0\.1\.3680043\.10\.543\.\d+\.\d+$")
+        sps = payload["00400100"]["Value"][0]
+        self.assertEqual(sps["00400001"]["Value"], ["ECG_AP"])
+        self.assertEqual(sps["00400009"]["Value"], ["SPS-000001"])
+        self.assertEqual(sps["00400020"]["Value"], ["SCHEDULED"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_order_api_creates_dcm4chee_mwl_attempt(self, urlopen):
+        patient = self.create_local_patient()
+        captured = {}
+
+        def fake_urlopen(request, timeout):
+            captured["url"] = request.full_url
+            captured["method"] = request.get_method()
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            captured["headers"] = dict(request.header_items())
+            return FakeHttpResponse(
+                json.dumps({"created": True, "id": "mwl-1"}).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.post(
+            "/api/orders",
+            json={
+                "mode": "dicom",
+                "patientRecordId": patient["id"],
+                "requestedAt": "20260708103000",
+                "orderingProvider": "1001^WANG^AMY",
+                "clinicalIndication": "Chest pain evaluation",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item = response.get_json()["item"]
+        self.assertEqual(item["protocolVersion"], "DICOM")
+        self.assertEqual(item["messageType"], "MWL")
+        mwl = item["dcm4chee"]["mwl"]
+        self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_CREATED)
+        self.assertEqual(mwl["httpStatus"], 200)
+        self.assertEqual(mwl["accessionNumber"], "ACC-000001")
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(
+            captured["url"],
+            "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs/mwlitems",
+        )
+        self.assertEqual(captured["headers"]["Content-type"], "application/dicom+json")
+        self.assertEqual(captured["payload"]["00400100"]["Value"][0]["00400001"]["Value"], ["ECG_AP"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_order_api_records_dcm4chee_patient_missing_without_deleting_order(self, urlopen):
+        patient = self.create_local_patient()
+
+        def fake_urlopen(request, timeout):
+            raise urllib.error.HTTPError(
+                request.full_url,
+                404,
+                "Not Found",
+                hdrs=None,
+                fp=FakeHttpResponse(b'{"errorMessage":"Patient[id=MRN-001] does not exist."}', status=404),
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.post(
+            "/api/orders",
+            json={"mode": "dicom", "patientRecordId": patient["id"]},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item = response.get_json()["item"]
+        self.assertEqual(item["dcm4chee"]["mwl"]["status"], DCM4CHEE_MWL_STATUS_PATIENT_MISSING)
+        self.assertEqual(item["dcm4chee"]["mwl"]["errorType"], "patient_missing")
+        self.assertIn("does not exist", item["dcm4chee"]["mwl"]["responseBody"])
+        detail = self.client.get(f"/api/orders").get_json()["items"][0]
+        self.assertEqual(detail["id"], item["id"])
+        self.assertEqual(detail["dcm4chee"]["mwl"]["status"], DCM4CHEE_MWL_STATUS_PATIENT_MISSING)
+
+    @patch("app.urllib.request.urlopen")
+    def test_order_api_records_dcm4chee_profile_validation_failure(self, urlopen):
+        patient = self.create_local_patient()
+        self.client.application.config["DCM4CHEE_DICOMWEB_BASE_URL"] = "not-a-url"
+
+        response = self.client.post(
+            "/api/orders",
+            json={"mode": "dicom", "patientRecordId": patient["id"]},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        mwl = response.get_json()["item"]["dcm4chee"]["mwl"]
+        self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_FAILED)
+        self.assertEqual(mwl["errorType"], "profile_invalid")
+        self.assertIn("profile is incomplete", mwl["error"])
+        urlopen.assert_not_called()
+
+    @patch("app.urllib.request.urlopen")
+    def test_order_api_records_dcm4chee_missing_station_profile_failure(self, urlopen):
+        patient = self.create_local_patient()
+        self.client.application.config["DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE"] = ""
+
+        response = self.client.post(
+            "/api/orders",
+            json={"mode": "dicom", "patientRecordId": patient["id"]},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item = response.get_json()["item"]
+        mwl = item["dcm4chee"]["mwl"]
+        self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_FAILED)
+        self.assertEqual(mwl["errorType"], "profile_invalid")
+        self.assertIn("profile is incomplete", mwl["error"])
+        self.assertEqual(mwl["scheduledStationAETitle"], "")
+        self.assertEqual(mwl["requestPayload"], {})
+        detail = self.client.get("/api/orders").get_json()["items"][0]
+        self.assertEqual(detail["id"], item["id"])
+        self.assertEqual(detail["dcm4chee"]["mwl"]["errorType"], "profile_invalid")
+        urlopen.assert_not_called()
 
     def test_gdt_order_api_creates_and_lists_local_ecg_order_without_openemr(self):
         self.client.application.config["OPENEMR_DB_HOST"] = ""

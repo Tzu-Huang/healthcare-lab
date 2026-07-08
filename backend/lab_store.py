@@ -59,6 +59,13 @@ ORDER_DEFAULT_ALT_CODE = "93000"
 ORDER_DEFAULT_ALT_TEXT = "Electrocardiogram, routine ECG with at least 12 leads"
 ORDER_DEFAULT_ALT_SYSTEM = "C4"
 ORDER_DEFAULT_PROVIDER = "1001^WANG^AMY"
+DCM4CHEE_ORDER_PROTOCOL_VERSION = "DICOM"
+DCM4CHEE_ORDER_MESSAGE_TYPE = "MWL"
+DCM4CHEE_MWL_STATUS_PENDING = "Pending sync"
+DCM4CHEE_MWL_STATUS_CREATED = "Created"
+DCM4CHEE_MWL_STATUS_FAILED = "Sync failed"
+DCM4CHEE_MWL_STATUS_PATIENT_MISSING = "Patient missing"
+DCM4CHEE_DEFAULT_UID_ROOT = "1.2.826.0.1.3680043.10.543"
 FHIR_ORDER_PROTOCOL_VERSION = "FHIR R4"
 FHIR_ORDER_MESSAGE_TYPE = "ServiceRequest"
 FHIR_ORDER_STATUS_CREATED = "Created"
@@ -945,6 +952,32 @@ class DemoStore:
                     attempted_at TEXT NOT NULL,
                     FOREIGN KEY(fhir_record_id) REFERENCES local_fhir_workflow_records(id) ON DELETE CASCADE
                 );
+                CREATE TABLE IF NOT EXISTS local_dcm4chee_mwl_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_record_id INTEGER NOT NULL,
+                    profile_name TEXT NOT NULL,
+                    server_identity TEXT NOT NULL,
+                    mwl_ae_title TEXT NOT NULL,
+                    scheduled_station_ae_title TEXT NOT NULL,
+                    local_dcm4chee_order_number TEXT NOT NULL,
+                    accession_number TEXT NOT NULL,
+                    requested_procedure_id TEXT NOT NULL,
+                    scheduled_procedure_step_id TEXT NOT NULL,
+                    study_instance_uid TEXT NOT NULL,
+                    uid_root TEXT NOT NULL,
+                    request_url TEXT NOT NULL,
+                    request_payload_json TEXT NOT NULL DEFAULT '{}',
+                    http_status INTEGER,
+                    response_body TEXT NOT NULL DEFAULT '',
+                    attempt_status TEXT NOT NULL,
+                    error_type TEXT NOT NULL DEFAULT '',
+                    error_text TEXT NOT NULL DEFAULT '',
+                    attempted_at TEXT NOT NULL,
+                    completed_at TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(order_record_id) REFERENCES local_order_records(id) ON DELETE CASCADE
+                );
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_oie_result_control_id
                 ON oie_result_records(message_control_id)
                 WHERE message_control_id != '';
@@ -956,6 +989,8 @@ class DemoStore:
                 ON local_fhir_workflow_records(sync_status);
                 CREATE INDEX IF NOT EXISTS idx_fhir_attempt_record
                 ON local_fhir_sync_attempts(fhir_record_id, attempted_at);
+                CREATE INDEX IF NOT EXISTS idx_dcm4chee_mwl_attempt_order
+                ON local_dcm4chee_mwl_attempts(order_record_id, attempted_at);
                 """
             )
             self._ensure_column(connection, "lab_servers", "control_type", "TEXT NOT NULL DEFAULT ''")
@@ -1434,6 +1469,113 @@ class DemoStore:
     @staticmethod
     def _order_account_number(record_id: int) -> str:
         return f"ACC-ORD-{record_id:06d}"
+
+    @staticmethod
+    def _dcm4chee_local_order_number(record_id: int) -> str:
+        return f"LAB-ORD-{record_id:06d}"
+
+    @staticmethod
+    def _dcm4chee_accession_number(record_id: int) -> str:
+        return f"ACC-{record_id:06d}"
+
+    @staticmethod
+    def _dcm4chee_requested_procedure_id(record_id: int) -> str:
+        return f"RP-{record_id:06d}"
+
+    @staticmethod
+    def _dcm4chee_scheduled_procedure_step_id(record_id: int) -> str:
+        return f"SPS-{record_id:06d}"
+
+    @staticmethod
+    def normalize_dcm4chee_uid_root(value: Any) -> str:
+        root = str(value or DCM4CHEE_DEFAULT_UID_ROOT).strip().strip(".")
+        if not root:
+            root = DCM4CHEE_DEFAULT_UID_ROOT
+        if not re.match(r"^[0-9]+(?:\.[0-9]+)*$", root):
+            raise SimulatorValidationError("dcm4chee UID root must contain only digits and dots.")
+        if any(part != "0" and part.startswith("0") for part in root.split(".")):
+            raise SimulatorValidationError("dcm4chee UID root components must not have leading zeroes.")
+        if len(root) > 54:
+            raise SimulatorValidationError("dcm4chee UID root is too long for generated Study Instance UIDs.")
+        return root
+
+    @classmethod
+    def dcm4chee_study_instance_uid(cls, uid_root: Any, *, order_record_id: int, timestamp: str = "") -> str:
+        root = cls.normalize_dcm4chee_uid_root(uid_root)
+        digits = "".join(character for character in str(timestamp or hl7_timestamp()) if character.isdigit())
+        suffix = f"{digits[:14] or hl7_timestamp()}.{int(order_record_id)}"
+        uid = f"{root}.{suffix}"
+        if len(uid) > 64:
+            suffix = f"{digits[:8] or datetime.now().strftime('%Y%m%d')}.{int(order_record_id)}"
+            uid = f"{root}.{suffix}"
+        if len(uid) > 64:
+            raise SimulatorValidationError("Generated Study Instance UID exceeds 64 characters.")
+        return uid
+
+    @staticmethod
+    def _dicom_json_element(vr: str, value: Any = None) -> dict[str, Any]:
+        element: dict[str, Any] = {"vr": vr}
+        if value is not None:
+            element["Value"] = value if isinstance(value, list) else [value]
+        return element
+
+    @classmethod
+    def build_dcm4chee_mwl_payload(
+        cls,
+        order: dict[str, Any],
+        profile: dict[str, Any],
+        *,
+        uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT,
+    ) -> dict[str, Any]:
+        order_id = int(order["id"])
+        patient = order.get("patient") or {}
+        mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
+        scheduled_station_ae_title = str(mwl.get("defaultScheduledStationAETitle") or "").strip()
+        if not scheduled_station_ae_title:
+            raise SimulatorValidationError("dcm4chee default Scheduled Station AE Title is required.")
+        patient_name = "^".join(
+            str(patient.get(key) or "").strip()
+            for key in ("lastName", "firstName", "middleName")
+        ).rstrip("^")
+        if not patient_name:
+            raise SimulatorValidationError("dcm4chee MWL Patient's Name is required.")
+        patient_id = str(patient.get("mrn") or "").strip()
+        if not patient_id:
+            raise SimulatorValidationError("dcm4chee MWL Patient ID is required.")
+        issuer = str(profile.get("profileName") or "HEALTHCARE_LAB").strip()
+        accession_number = cls._dcm4chee_accession_number(order_id)
+        requested_procedure_id = cls._dcm4chee_requested_procedure_id(order_id)
+        sps_id = cls._dcm4chee_scheduled_procedure_step_id(order_id)
+        study_uid = cls.dcm4chee_study_instance_uid(
+            uid_root,
+            order_record_id=order_id,
+            timestamp=str(order.get("requestedAt") or ""),
+        )
+        worklist_label = str(order.get("orderCodeText") or order.get("orderCode") or ORDER_DEFAULT_TEXT).strip()
+        requested_at = "".join(character for character in str(order.get("requestedAt") or "") if character.isdigit())
+        scheduled_date = requested_at[:8] if len(requested_at) >= 8 else datetime.now().strftime("%Y%m%d")
+        scheduled_time = requested_at[8:14] if len(requested_at) >= 14 else ""
+        sps_item = {
+            "00400001": cls._dicom_json_element("AE", scheduled_station_ae_title),
+            "00400009": cls._dicom_json_element("SH", sps_id),
+            "00400020": cls._dicom_json_element("CS", "SCHEDULED"),
+            "00400007": cls._dicom_json_element("LO", worklist_label),
+            "00400002": cls._dicom_json_element("DA", scheduled_date),
+        }
+        if scheduled_time:
+            sps_item["00400003"] = cls._dicom_json_element("TM", scheduled_time)
+        return {
+            "00100010": cls._dicom_json_element("PN", {"Alphabetic": patient_name}),
+            "00100020": cls._dicom_json_element("LO", patient_id),
+            "00100021": cls._dicom_json_element("LO", issuer),
+            "00100030": cls._dicom_json_element("DA", str(patient.get("dob") or "").strip()),
+            "00100040": cls._dicom_json_element("CS", str(patient.get("sex") or "").strip() or "U"),
+            "00080050": cls._dicom_json_element("SH", accession_number),
+            "0020000D": cls._dicom_json_element("UI", study_uid),
+            "00401001": cls._dicom_json_element("SH", requested_procedure_id),
+            "00741202": cls._dicom_json_element("LO", worklist_label),
+            "00400100": {"vr": "SQ", "Value": [sps_item]},
+        }
 
     @staticmethod
     def _clean_order_text(value: Any, field_name: str, required: bool = False) -> str:
@@ -2033,6 +2175,232 @@ class DemoStore:
                 ),
             )
         return self.get_order_record(record_id)
+
+    def create_dcm4chee_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
+        item = self.create_order_record(payload)
+        timestamp = now_iso()
+        with self.lock, self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE local_order_records
+                SET protocol_version = ?, message_type = ?, order_status = ?,
+                    payload_hl7 = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    DCM4CHEE_ORDER_PROTOCOL_VERSION,
+                    DCM4CHEE_ORDER_MESSAGE_TYPE,
+                    "Created",
+                    "",
+                    timestamp,
+                    int(item["id"]),
+                ),
+            )
+        return self.get_order_record(int(item["id"]))
+
+    def create_dcm4chee_mwl_attempt(
+        self,
+        order_record_id: int,
+        profile: dict[str, Any],
+        *,
+        uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT,
+        request_url: str = "",
+        request_payload: dict[str, Any] | None = None,
+        attempt_status: str = DCM4CHEE_MWL_STATUS_PENDING,
+        error_type: str = "",
+        error_text: str = "",
+        http_status: int | None = None,
+        response_body: str = "",
+    ) -> dict[str, Any]:
+        order = self.get_order_record(order_record_id)
+        generated_payload = request_payload or self.build_dcm4chee_mwl_payload(
+            order,
+            profile,
+            uid_root=uid_root,
+        )
+        order_id = int(order["id"])
+        mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
+        dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
+        uid_root_text = self.normalize_dcm4chee_uid_root(uid_root)
+        study_uid = str(generated_payload["0020000D"]["Value"][0])
+        accession_number = str(generated_payload["00080050"]["Value"][0])
+        requested_procedure_id = str(generated_payload["00401001"]["Value"][0])
+        sps_item = generated_payload["00400100"]["Value"][0]
+        scheduled_procedure_step_id = str(sps_item["00400009"]["Value"][0])
+        scheduled_station_ae_title = str(sps_item["00400001"]["Value"][0])
+        now = now_iso()
+        with self.lock, self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO local_dcm4chee_mwl_attempts (
+                    order_record_id, profile_name, server_identity, mwl_ae_title,
+                    scheduled_station_ae_title, local_dcm4chee_order_number,
+                    accession_number, requested_procedure_id,
+                    scheduled_procedure_step_id, study_instance_uid, uid_root,
+                    request_url, request_payload_json, http_status, response_body,
+                    attempt_status, error_type, error_text, attempted_at,
+                    completed_at, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    order_id,
+                    str(profile.get("profileName") or "").strip(),
+                    str(dimse.get("calledAETitle") or mwl.get("aeTitle") or "").strip(),
+                    str(mwl.get("aeTitle") or "").strip(),
+                    scheduled_station_ae_title,
+                    self._dcm4chee_local_order_number(order_id),
+                    accession_number,
+                    requested_procedure_id,
+                    scheduled_procedure_step_id,
+                    study_uid,
+                    uid_root_text,
+                    request_url,
+                    json.dumps(generated_payload, sort_keys=True),
+                    http_status,
+                    response_body,
+                    attempt_status,
+                    error_type,
+                    error_text,
+                    now,
+                    now if attempt_status != DCM4CHEE_MWL_STATUS_PENDING else "",
+                    now,
+                    now,
+                ),
+            )
+            attempt_id = int(cursor.lastrowid)
+        return self.get_dcm4chee_mwl_attempt(attempt_id)
+
+    def create_dcm4chee_mwl_profile_failure_attempt(
+        self,
+        order_record_id: int,
+        profile: dict[str, Any],
+        *,
+        uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT,
+        request_url: str = "",
+        diagnostics: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        order = self.get_order_record(order_record_id)
+        order_id = int(order["id"])
+        mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
+        dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
+        uid_root_text = self.normalize_dcm4chee_uid_root(uid_root)
+        study_uid = self.dcm4chee_study_instance_uid(
+            uid_root_text,
+            order_record_id=order_id,
+            timestamp=str(order.get("requestedAt") or ""),
+        )
+        now = now_iso()
+        diagnostic_payload = diagnostics or {}
+        with self.lock, self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO local_dcm4chee_mwl_attempts (
+                    order_record_id, profile_name, server_identity, mwl_ae_title,
+                    scheduled_station_ae_title, local_dcm4chee_order_number,
+                    accession_number, requested_procedure_id,
+                    scheduled_procedure_step_id, study_instance_uid, uid_root,
+                    request_url, request_payload_json, http_status, response_body,
+                    attempt_status, error_type, error_text, attempted_at,
+                    completed_at, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    order_id,
+                    str(profile.get("profileName") or "").strip(),
+                    str(dimse.get("calledAETitle") or mwl.get("aeTitle") or "").strip(),
+                    str(mwl.get("aeTitle") or "").strip(),
+                    str(mwl.get("defaultScheduledStationAETitle") or "").strip(),
+                    self._dcm4chee_local_order_number(order_id),
+                    self._dcm4chee_accession_number(order_id),
+                    self._dcm4chee_requested_procedure_id(order_id),
+                    self._dcm4chee_scheduled_procedure_step_id(order_id),
+                    study_uid,
+                    uid_root_text,
+                    request_url,
+                    "{}",
+                    None,
+                    json.dumps(diagnostic_payload, sort_keys=True),
+                    DCM4CHEE_MWL_STATUS_FAILED,
+                    "profile_invalid",
+                    str(diagnostic_payload.get("summary") or "dcm4chee profile is incomplete or invalid."),
+                    now,
+                    now,
+                    now,
+                    now,
+                ),
+            )
+            attempt_id = int(cursor.lastrowid)
+        return self.get_dcm4chee_mwl_attempt(attempt_id)
+
+    def update_dcm4chee_mwl_attempt_result(
+        self,
+        attempt_id: int,
+        *,
+        attempt_status: str,
+        http_status: int | None = None,
+        response_body: str = "",
+        error_type: str = "",
+        error_text: str = "",
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self.lock, self.connect() as connection:
+            row = connection.execute(
+                "SELECT id FROM local_dcm4chee_mwl_attempts WHERE id = ?",
+                (attempt_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(attempt_id)
+            connection.execute(
+                """
+                UPDATE local_dcm4chee_mwl_attempts
+                SET attempt_status = ?, http_status = ?, response_body = ?,
+                    error_type = ?, error_text = ?, completed_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    attempt_status,
+                    http_status,
+                    response_body,
+                    error_type,
+                    error_text,
+                    timestamp,
+                    timestamp,
+                    attempt_id,
+                ),
+            )
+        return self.get_dcm4chee_mwl_attempt(attempt_id)
+
+    def get_dcm4chee_mwl_attempt(self, attempt_id: int) -> dict[str, Any]:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM local_dcm4chee_mwl_attempts WHERE id = ?",
+                (attempt_id,),
+            ).fetchone()
+            if not row:
+                raise KeyError(attempt_id)
+        return self._dcm4chee_mwl_attempt_dict(row)
+
+    def list_dcm4chee_mwl_attempts(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            if order_record_id is None:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_dcm4chee_mwl_attempts
+                    ORDER BY attempted_at DESC, id DESC
+                    """
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_dcm4chee_mwl_attempts
+                    WHERE order_record_id = ?
+                    ORDER BY attempted_at DESC, id DESC
+                    """,
+                    (order_record_id,),
+                ).fetchall()
+        return [self._dcm4chee_mwl_attempt_dict(row) for row in rows]
 
     def _synced_patient_reference_for_fhir_order(self, patient_record_id: int) -> str:
         patient = self.get_patient_record(patient_record_id)
@@ -3332,6 +3700,7 @@ class DemoStore:
     def _order_record_dicts_with_fhir(self, rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
         source_ids = [str(row["id"]) for row in rows]
         fhir_by_source_id: dict[str, dict[str, dict[str, Any]]] = {}
+        dcm4chee_by_source_id: dict[str, dict[str, Any]] = {}
         if source_ids:
             placeholders = ", ".join("?" for _ in source_ids)
             with self.connect() as connection:
@@ -3344,18 +3713,38 @@ class DemoStore:
                     """,
                     source_ids,
                 ).fetchall()
+                dcm4chee_rows = connection.execute(
+                    f"""
+                    SELECT * FROM local_dcm4chee_mwl_attempts
+                    WHERE order_record_id IN ({placeholders})
+                    ORDER BY attempted_at DESC, id DESC
+                    """,
+                    [int(source_id) for source_id in source_ids],
+                ).fetchall()
             for fhir_row in fhir_rows:
                 source_id = str(fhir_row["local_source_id"])
                 fhir_by_source_id.setdefault(source_id, {})[fhir_row["resource_type"]] = (
                     self._fhir_workflow_record_dict(fhir_row)
                 )
+            for dcm4chee_row in dcm4chee_rows:
+                source_id = str(dcm4chee_row["order_record_id"])
+                if source_id not in dcm4chee_by_source_id:
+                    dcm4chee_by_source_id[source_id] = self._dcm4chee_mwl_attempt_dict(dcm4chee_row)
         return [
-            self._order_record_dict(row, fhir_by_source_id.get(str(row["id"]), {}))
+            self._order_record_dict(
+                row,
+                fhir_by_source_id.get(str(row["id"]), {}),
+                dcm4chee_by_source_id.get(str(row["id"])),
+            )
             for row in rows
         ]
 
     @staticmethod
-    def _order_record_dict(row: sqlite3.Row, fhir_records: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    def _order_record_dict(
+        row: sqlite3.Row,
+        fhir_records: dict[str, dict[str, Any]] | None = None,
+        dcm4chee_attempt: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         validation_messages = json.loads(row["validation_messages_json"] or "[]")
         summary_name = " ".join(
             part for part in (row["first_name"], row["middle_name"], row["last_name"]) if part
@@ -3408,6 +3797,11 @@ class DemoStore:
             }
             if row["protocol_version"] == FHIR_ORDER_PROTOCOL_VERSION
             else None,
+            "dcm4chee": {
+                "mwl": dcm4chee_attempt,
+            }
+            if row["protocol_version"] == DCM4CHEE_ORDER_PROTOCOL_VERSION or dcm4chee_attempt
+            else None,
             "validation": {
                 "status": row["validation_status"],
                 "messages": validation_messages,
@@ -3424,6 +3818,35 @@ class DemoStore:
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
             "localOnly": True,
+        }
+
+    @staticmethod
+    def _dcm4chee_mwl_attempt_dict(row: sqlite3.Row) -> dict[str, Any]:
+        request_payload = DemoStore._json_value(row["request_payload_json"], {})
+        return {
+            "id": row["id"],
+            "orderRecordId": row["order_record_id"],
+            "profileName": row["profile_name"],
+            "serverIdentity": row["server_identity"],
+            "mwlAETitle": row["mwl_ae_title"],
+            "scheduledStationAETitle": row["scheduled_station_ae_title"],
+            "localDcm4cheeOrderNumber": row["local_dcm4chee_order_number"],
+            "accessionNumber": row["accession_number"],
+            "requestedProcedureId": row["requested_procedure_id"],
+            "scheduledProcedureStepId": row["scheduled_procedure_step_id"],
+            "studyInstanceUid": row["study_instance_uid"],
+            "uidRoot": row["uid_root"],
+            "requestUrl": row["request_url"],
+            "requestPayload": request_payload,
+            "httpStatus": row["http_status"],
+            "responseBody": row["response_body"],
+            "status": row["attempt_status"],
+            "errorType": row["error_type"],
+            "error": row["error_text"],
+            "attemptedAt": row["attempted_at"],
+            "completedAt": row["completed_at"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
         }
 
     @staticmethod
