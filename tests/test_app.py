@@ -1770,6 +1770,63 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
 
     @patch("app.urllib.request.urlopen")
+    def test_dcm4chee_create_with_empty_readback_retries_readback_without_post(self, urlopen):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        methods = []
+
+        def first_urlopen(request, timeout):
+            methods.append(request.get_method())
+            if request.get_method() == "GET":
+                return FakeHttpResponse(b"[]", status=200)
+            return FakeHttpResponse(json.dumps({"created": True}).encode("utf-8"), status=200)
+
+        urlopen.side_effect = first_urlopen
+        response = self.client.post("/api/orders", json={"mode": "dicom", "patientRecordId": patient["id"]})
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(methods, ["POST", "GET"])
+        item = response.get_json()["item"]
+        mapping = item["dcm4chee"]["mwl"]["mapping"]
+        self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_PENDING)
+        self.assertEqual(mapping["lastErrorType"], "dcm4chee_readback_empty")
+
+        methods.clear()
+
+        def retry_urlopen(request, timeout):
+            methods.append(request.get_method())
+            self.assertEqual(request.get_method(), "GET")
+            return FakeHttpResponse(
+                json.dumps(
+                    [
+                        {
+                            "00080050": {"vr": "SH", "Value": ["ACC-000001"]},
+                            "00401001": {"vr": "SH", "Value": ["RP-000001"]},
+                            "0020000D": {"vr": "UI", "Value": ["1.2.826.0.1.3680043.10.543.20260708103000.1"]},
+                            "00400100": {
+                                "vr": "SQ",
+                                "Value": [{"00400009": {"vr": "SH", "Value": ["SPS-000001"]}}],
+                            },
+                        }
+                    ]
+                ).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = retry_urlopen
+        result = sync_order_to_dcm4chee_mwl(
+            store,
+            store.get_order_record(int(item["id"])),
+            dcm4chee_profile_from_config(self.client.application.config),
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+
+        self.assertEqual(result["operationType"], "read-back")
+        self.assertEqual(methods, ["GET"])
+        mapping = store.get_dcm4chee_mwl_mapping_for_order(int(item["id"]))
+        self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
+
+    @patch("app.urllib.request.urlopen")
     def test_order_api_records_dcm4chee_patient_missing_without_deleting_order(self, urlopen):
         patient = self.create_local_patient()
 

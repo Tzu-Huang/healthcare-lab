@@ -779,6 +779,9 @@ def sync_order_to_dcm4chee_mwl(
         except json.JSONDecodeError:
             readback_payload = {"raw": readback_body}
         readback_identifiers = store.dcm4chee_identifiers_from_response_body(readback_body)
+        if not readback_identifiers:
+            readback_error_type = "dcm4chee_readback_empty"
+            readback_error_text = "dcm4chee read-back returned no identifiers."
     except UpstreamDcm4cheeError as exc:
         readback_status = exc.http_status
         readback_error_type = "dcm4chee_readback_failed"
