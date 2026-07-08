@@ -25,4 +25,4 @@
 - [x] 4.2 Add backend tests for retry failure preserving the local order and exposing latest error/status metadata.
 - [x] 4.3 Add backend tests for dcm4chee attempt-history API output.
 - [x] 4.4 Add frontend/API contract coverage for retryable metadata and DICOM order row actions where practical.
-- [ ] 4.5 Run OpenSpec validation and the relevant Healthcare Lab Python test suite.
+- [x] 4.5 Run OpenSpec validation and the relevant Healthcare Lab Python test suite.
