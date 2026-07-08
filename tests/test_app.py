@@ -427,6 +427,71 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(retry_methods, ["GET", "POST", "GET"])
 
     @patch("app.urllib.request.urlopen")
+    def test_fhir_sync_updates_existing_medplum_resource_after_local_change(self, urlopen):
+        created = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_patient_records",
+                "localSourceId": "22",
+                "resource": {"resourceType": "Patient", "active": True},
+            },
+        ).get_json()["item"]
+        calls = []
+        put_payloads = []
+
+        def fake_urlopen(request, timeout):
+            calls.append((request.get_method(), request.full_url))
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            if request.get_method() == "GET":
+                return FakeHttpResponse(
+                    json.dumps({"resourceType": "Bundle", "entry": []}).encode("utf-8"),
+                    status=200,
+                )
+            if request.get_method() == "POST":
+                return FakeHttpResponse(
+                    json.dumps({"resourceType": "Patient", "id": "patient-created"}).encode("utf-8"),
+                    status=201,
+                )
+            self.assertEqual(request.get_method(), "PUT")
+            put_payloads.append(json.loads(request.data.decode("utf-8")))
+            return FakeHttpResponse(
+                json.dumps({"resourceType": "Patient", "id": "patient-created"}).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        first_sync = self.client.post(f"/api/fhir/records/{created['id']}/sync", json={})
+        changed = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_patient_records",
+                "localSourceId": "22",
+                "resource": {"resourceType": "Patient", "active": False},
+            },
+        ).get_json()["item"]
+        second_sync = self.client.post(f"/api/fhir/records/{created['id']}/sync", json={})
+
+        self.assertEqual(first_sync.status_code, 200)
+        self.assertEqual(changed["sync"]["status"], "Pending sync")
+        self.assertEqual(second_sync.status_code, 200)
+        self.assertEqual(second_sync.get_json()["item"]["sync"]["status"], "Synced")
+        methods = [method for method, _url in calls if not _url.endswith("/oauth2/token")]
+        self.assertEqual(methods, ["GET", "POST", "GET", "PUT"])
+        self.assertEqual(put_payloads[0]["id"], "patient-created")
+        self.assertFalse(put_payloads[0]["active"])
+
+    @patch("app.urllib.request.urlopen")
     def test_fhir_sync_failure_preserves_operation_outcome(self, urlopen):
         created = self.client.post(
             "/api/fhir/records",
