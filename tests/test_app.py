@@ -247,6 +247,11 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         return response.get_json()["item"]
 
+    def set_medplum_base_url(self, base_url):
+        store = self.client.application.extensions["demo_store"]
+        medplum = next(item for item in store.list_lab_servers() if item["name"] == "Medplum")
+        store.update_lab_server(medplum["id"], {"baseUrl": base_url})
+
     def test_order_api_creates_and_lists_local_orm_order(self):
         patient = self.create_local_patient()
 
@@ -272,7 +277,9 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.get_json()["items"][0]["localOrderNumber"], item["localOrderNumber"])
 
-    def test_patient_api_creates_fhir_local_patient(self):
+    def test_patient_api_creates_fhir_local_patient_without_medplum_base(self):
+        self.set_medplum_base_url("")
+
         response = self.client.post(
             "/api/patients",
             json={
@@ -290,6 +297,146 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(item["protocolVersion"], "FHIR R4")
         self.assertEqual(item["messageType"], "Patient")
         self.assertIn('"resourceType": "Patient"', item["payload"])
+        self.assertEqual(item["fhir"]["sync"]["status"], "Sync failed")
+        self.assertIn("base URL", item["fhir"]["sync"]["error"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_patient_api_creates_fhir_patient_and_syncs_medplum(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+        calls = []
+        create_payloads = []
+
+        def fake_urlopen(request, timeout):
+            calls.append((request.get_method(), request.full_url))
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            if request.get_method() == "GET":
+                return FakeHttpResponse(
+                    json.dumps({"resourceType": "Bundle", "entry": []}).encode("utf-8"),
+                    status=200,
+                )
+            self.assertEqual(request.get_method(), "POST")
+            create_payloads.append(json.loads(request.data.decode("utf-8")))
+            return FakeHttpResponse(
+                json.dumps({"resourceType": "Patient", "id": "patient-created"}).encode("utf-8"),
+                status=201,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.post(
+            "/api/patients",
+            json={
+                "mode": "fhir",
+                "mrn": "MRN-FHIR-002",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+                "email": "avery@example.org",
+                "addressLine": "100 Main St",
+                "addressCity": "Boston",
+                "addressPostalCode": "02110",
+                "managingOrganizationReference": "Organization/healthcare-lab",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item = response.get_json()["item"]
+        self.assertEqual(item["fhir"]["sync"]["status"], "Synced")
+        self.assertEqual(item["fhir"]["medplum"]["reference"], "Patient/patient-created")
+        self.assertEqual(create_payloads[0]["telecom"][0], {"system": "email", "value": "avery@example.org"})
+        self.assertEqual(create_payloads[0]["address"][0]["city"], "Boston")
+        self.assertEqual(create_payloads[0]["managingOrganization"]["reference"], "Organization/healthcare-lab")
+        methods = [method for method, url in calls if not url.endswith("/oauth2/token")]
+        self.assertEqual(methods, ["GET", "POST"])
+
+        listed = self.client.get("/api/patients").get_json()["items"]
+        self.assertEqual(listed[0]["fhir"]["medplum"]["reference"], "Patient/patient-created")
+
+    @patch("app.urllib.request.urlopen")
+    def test_patient_api_preserves_fhir_patient_when_sync_fails_and_retry_succeeds(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+        outcome = {
+            "resourceType": "OperationOutcome",
+            "issue": [{"severity": "error", "diagnostics": "temporary failure"}],
+        }
+        retry_mode = {"enabled": False}
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            if not retry_mode["enabled"]:
+                raise urllib.error.HTTPError(
+                    request.full_url,
+                    400,
+                    "Bad Request",
+                    hdrs=None,
+                    fp=FakeHttpResponse(json.dumps(outcome).encode("utf-8"), status=400),
+                )
+            self.assertEqual(request.get_method(), "GET")
+            return FakeHttpResponse(
+                json.dumps(
+                    {
+                        "resourceType": "Bundle",
+                        "entry": [
+                            {
+                                "resource": {
+                                    "resourceType": "Patient",
+                                    "id": "patient-existing",
+                                }
+                            }
+                        ],
+                    }
+                ).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        created = self.client.post(
+            "/api/patients",
+            json={
+                "mode": "fhir",
+                "mrn": "MRN-FHIR-003",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            },
+        )
+
+        self.assertEqual(created.status_code, 201)
+        item = created.get_json()["item"]
+        self.assertEqual(item["fhir"]["sync"]["status"], "Sync failed")
+        self.assertEqual(item["fhir"]["sync"]["operationOutcome"], outcome)
+        self.assertTrue(self.client.get("/api/patients").get_json()["items"][0]["fhir"]["recordId"])
+
+        retry_mode["enabled"] = True
+        retried = self.client.post(f"/api/patients/{item['id']}/fhir-sync", json={})
+
+        self.assertEqual(retried.status_code, 200)
+        self.assertTrue(retried.get_json()["success"])
+        self.assertEqual(retried.get_json()["item"]["fhir"]["sync"]["status"], "Synced")
+        self.assertEqual(retried.get_json()["item"]["fhir"]["medplum"]["reference"], "Patient/patient-existing")
 
     def test_fhir_mapping_and_record_apis_expose_local_sync_status(self):
         mappings = self.client.get("/api/fhir/mappings")

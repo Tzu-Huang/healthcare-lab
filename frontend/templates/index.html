@@ -187,7 +187,21 @@
               <label data-patient-mode-field="hl7-v2">Attending Provider<input id="patient-attending-provider" placeholder="P123^Rivera^Elena"></label>
               <label data-patient-mode-field="hl7-v2">Account Number<input id="patient-account-number" placeholder="ACC-1001"></label>
               <label data-patient-mode-field="hl7-v2 fhir gdt dicom">Phone<input id="patient-phone" placeholder="555-0100"></label>
+              <label data-patient-mode-field="fhir">Email<input id="patient-email" placeholder="avery.morgan@example.org"></label>
+              <label data-patient-mode-field="fhir">FHIR Active
+                <select id="patient-active">
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+              </label>
               <label class="full-width-field" data-patient-mode-field="hl7-v2 fhir gdt dicom">Address<input id="patient-address" placeholder="100 Main St^^Boston^MA^02110"></label>
+              <label data-patient-mode-field="fhir">Address Line<input id="patient-address-line" placeholder="100 Main St"></label>
+              <label data-patient-mode-field="fhir">City<input id="patient-address-city" placeholder="Boston"></label>
+              <label data-patient-mode-field="fhir">State<input id="patient-address-state" placeholder="MA"></label>
+              <label data-patient-mode-field="fhir">Postal Code<input id="patient-address-postal-code" placeholder="02110"></label>
+              <label data-patient-mode-field="fhir">Country<input id="patient-address-country" placeholder="US"></label>
+              <label data-patient-mode-field="fhir">Organization Reference<input id="patient-managing-organization-reference" placeholder="Organization/demo"></label>
+              <label data-patient-mode-field="fhir">Organization Display<input id="patient-managing-organization-display" placeholder="Healthcare Lab"></label>
             </div>
             <div class="button-row patient-actions">
               <button id="refresh-patient-preview" type="button">Refresh Preview</button>
@@ -233,7 +247,7 @@
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>ID</th><th>Mode</th><th>MRN</th><th>Name</th><th>DOB</th><th>Sex</th><th>Visit</th><th>Created</th></tr>
+                <tr><th>ID</th><th>Mode</th><th>MRN</th><th>Name</th><th>DOB</th><th>Sex</th><th>Visit</th><th>FHIR Sync</th><th>Medplum</th><th>Created</th><th>Action</th></tr>
               </thead>
               <tbody id="patient-record-list"></tbody>
             </table>
