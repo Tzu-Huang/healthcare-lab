@@ -720,6 +720,58 @@ tbody tr.recently-updated {
   margin-top: 18px;
 }
 
+.medplum-diagnostic-report-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.medplum-diagnostic-report-rollup {
+  display: grid;
+  gap: 12px;
+}
+
+.medplum-diagnostic-report-group {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.medplum-diagnostic-report-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.medplum-diagnostic-report-table-wrap {
+  border-top: 1px solid var(--line);
+  max-height: 280px;
+  overflow: auto;
+}
+
+.medplum-diagnostic-report-table {
+  table-layout: auto;
+  min-width: 100%;
+}
+
+.medplum-diagnostic-report-table th,
+.medplum-diagnostic-report-table td {
+  white-space: nowrap;
+}
+
+.medplum-diagnostic-report-table td:first-child {
+  min-width: 180px;
+}
+
+.medplum-diagnostic-report-table td:nth-child(4),
+.medplum-diagnostic-report-table td:nth-child(5) {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .medplum-related-list,
 .medplum-related-group {
   display: grid;

@@ -2682,6 +2682,44 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
+    @app.get("/api/fhir/resource-preview")
+    def fetch_fhir_resource_preview():
+        reference = str(request.args.get("reference") or "").strip()
+        base_url = str(request.args.get("baseUrl") or configured_medplum_base_url()).strip()
+        if not base_url:
+            return error_response("Medplum FHIR base URL is required.", 400)
+        try:
+            base = normalize_fhir_base_url(base_url)
+            fetch_url = medplum_reference_resource_url(base, reference)
+            status_code, live_resource = request_fhir_json(
+                fetch_url,
+                "",
+                auth_manager=get_auth_manager(),
+                base_url=base,
+            )
+        except ValidationError as exc:
+            return error_response(str(exc), 400)
+        except UpstreamFhirError as exc:
+            status_code = exc.http_status if exc.http_status in {401, 403, 404} else 502
+            return jsonify(
+                {
+                    "success": False,
+                    "error": str(exc),
+                    "statusCode": exc.http_status,
+                    "operationOutcome": operation_outcome_from_payload(exc.response_payload),
+                    "response": exc.response_payload,
+                }
+            ), status_code
+        return jsonify(
+            {
+                "success": True,
+                "source": "medplum-live",
+                "reference": reference,
+                "statusCode": status_code,
+                "resource": live_resource,
+            }
+        )
+
     @app.post("/api/fhir/records")
     def create_fhir_record():
         payload = request.get_json(silent=True) or {}
