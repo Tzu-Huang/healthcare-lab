@@ -60,6 +60,16 @@ For the Medplum-backed workflow, the desired boundary is narrower:
 - Task update: send status changes to Medplum and record AP/workflow audit locally.
 - Result return: store result intent and artifacts, submit `Binary`, `Observation`, `DocumentReference`, `DiagnosticReport`, and `Provenance` through transaction/idempotent writes, then record Medplum references and failures.
 
+## Follow-up Ticket Alignment
+
+- ZAC-26 Patient creation should create a local ledger intent, write the `Patient` to Medplum, store the returned `Patient/<id>` reference, and keep failed creates retryable without treating unsynced local data as canonical.
+- ZAC-27 Medplum resource inventory should query Medplum live resources first and join local ledger metadata for sync status, retry actions, and OperationOutcome details.
+- ZAC-28 FHIR order creation should submit `ServiceRequest` and `Task` to Medplum through a transaction Bundle or equivalent idempotent flow, while storing only local order intent and Medplum references in Healthcare Lab.
+- ZAC-29 AP worklist should pull requested `Task` resources and referenced `ServiceRequest`/`Patient` context from Medplum, while recording AP pull and Task update audit locally.
+- ZAC-30 result return should preserve local result/artifact intent for retry, but synced `DiagnosticReport`, `Observation`, `DocumentReference`, `Binary`, and `Provenance` reads should come from Medplum.
+- ZAC-31 patient-centered FHIR panels should render Medplum-sourced resource relationships and enrich them with local ledger status rather than building the page from only local FHIR rows.
+- ZAC-32 E2E tests should verify both live/query behavior and ledger behavior: successful Medplum-backed workflows, failure preservation, retry, idempotency, and OperationOutcome display.
+
 ## Risks / Trade-offs
 
 - [Risk] Live Medplum reads make UI dependent on Medplum availability. -> Mitigation: show pending/failed local ledger records separately and keep clear degraded-state messaging.
