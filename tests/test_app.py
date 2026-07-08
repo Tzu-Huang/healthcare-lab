@@ -848,6 +848,64 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(body["reports"][1]["relationshipType"], "patient-level")
 
     @patch("app.urllib.request.urlopen")
+    def test_fhir_diagnostic_reports_prefers_based_on_when_subject_search_fails(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            if "based-on=ServiceRequest%2Fsr-1" in request.full_url:
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "resourceType": "Bundle",
+                            "entry": [
+                                {
+                                    "resource": {
+                                        "resourceType": "DiagnosticReport",
+                                        "id": "linked",
+                                        "subject": {"reference": "Patient/patient-1"},
+                                        "basedOn": [{"reference": "ServiceRequest/sr-1"}],
+                                    }
+                                }
+                            ],
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            self.assertIn("subject=Patient%2Fpatient-1", request.full_url)
+            raise urllib.error.HTTPError(
+                request.full_url,
+                400,
+                "Unsupported subject search",
+                hdrs=None,
+                fp=io.BytesIO(b'{"resourceType":"OperationOutcome"}'),
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.get(
+            "/api/fhir/diagnostic-reports"
+            "?patient=Patient/patient-1&serviceRequest=ServiceRequest/sr-1"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["strategy"], "based-on")
+        self.assertIn("HTTP 400", body["fallbackReason"])
+        self.assertEqual([item["id"] for item in body["reports"]], ["linked"])
+        self.assertEqual(body["reports"][0]["relationshipType"], "order-linked")
+
+    @patch("app.urllib.request.urlopen")
     def test_fhir_diagnostic_reports_surfaces_unauthorized_fetch(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
 

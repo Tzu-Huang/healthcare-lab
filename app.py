@@ -563,21 +563,31 @@ def fetch_fhir_diagnostic_report_bundle(
         fhir_bundle_resources(parsed_body, "DiagnosticReport")
         return {"status": status_code, "body": parsed_body, "requestUrl": url}
 
-    patient_fetch = search([("subject", patient_ref)]) if patient_ref else None
-    patient_reports = (
-        fhir_bundle_resources(patient_fetch["body"], "DiagnosticReport")
-        if patient_fetch
-        else []
-    )
+    patient_fetch: dict[str, Any] | None = None
+    patient_reports: list[dict[str, Any]] = []
     based_on_fetch: dict[str, Any] | None = None
     fallback_reason = ""
-    report_resources = patient_reports
+    report_resources: list[dict[str, Any]] = []
     strategy = "patient"
+
+    def fetch_patient_reports(*, optional: bool = False) -> list[dict[str, Any]]:
+        nonlocal patient_fetch, fallback_reason
+        if not patient_ref:
+            return []
+        try:
+            patient_fetch = search([("subject", patient_ref)])
+            return fhir_bundle_resources(patient_fetch["body"], "DiagnosticReport")
+        except UpstreamFhirError as exc:
+            if not optional or exc.http_status not in {400, 404, 422}:
+                raise
+            fallback_reason = str(exc)
+            return []
 
     if service_ref:
         try:
             based_on_fetch = search([("based-on", service_ref)])
             order_reports = fhir_bundle_resources(based_on_fetch["body"], "DiagnosticReport")
+            patient_reports = fetch_patient_reports(optional=True)
             patient_level_reports = [
                 item for item in patient_reports
                 if not service_request_references(fhir_reference_values(item.get("basedOn")))
@@ -593,12 +603,16 @@ def fetch_fhir_diagnostic_report_bundle(
             if exc.http_status not in {400, 404, 422}:
                 raise
             fallback_reason = str(exc)
+            patient_reports = fetch_patient_reports()
             report_resources = [
                 item for item in patient_reports
                 if service_ref in fhir_reference_values(item.get("basedOn"))
                 or not service_request_references(fhir_reference_values(item.get("basedOn")))
             ]
             strategy = "patient-filter"
+    else:
+        patient_reports = fetch_patient_reports()
+        report_resources = patient_reports
 
     summaries = [
         diagnostic_report_summary(item, selected_service_request=service_ref)
