@@ -310,6 +310,18 @@
                 <select id="medplum-diagnostic-report-select"></select>
               </label>
             </div>
+            <section class="medplum-diagnostic-report-section">
+              <div class="section-heading compact-heading">
+                <div>
+                  <p class="eyebrow">DiagnosticReports</p>
+                  <h2>Live Results</h2>
+                </div>
+                <span id="medplum-diagnostic-report-status" class="status neutral">Ready</span>
+              </div>
+              <div id="medplum-diagnostic-report-rollup" class="medplum-diagnostic-report-rollup">
+                <p class="muted">Select a synced FHIR patient to fetch live Medplum DiagnosticReports.</p>
+              </div>
+            </section>
             <section class="medplum-related-section">
               <div class="section-heading compact-heading">
                 <div>
@@ -331,7 +343,7 @@
             <button id="copy-medplum-json" type="button">Copy JSON</button>
           </div>
           <div id="medplum-selected-summary" class="record-detail compact-detail">
-            <p class="muted">Select a FHIR Patient, ServiceRequest, DiagnosticReport, Task, Observation, or DocumentReference.</p>
+            <p class="muted">Select a FHIR Patient, ServiceRequest, DiagnosticReport, Task, Observation, DocumentReference, or Binary.</p>
           </div>
           <pre id="medplum-json-preview" class="compact-output medplum-json-preview">Select a FHIR resource to inspect raw JSON.</pre>
         </section>

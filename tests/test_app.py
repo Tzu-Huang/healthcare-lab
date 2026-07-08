@@ -169,9 +169,18 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('selector.value = "gdt"', script)
         self.assertIn('setActiveView("order-view")', script)
         self.assertIn('"/api/fhir/inventory"', script)
+        self.assertIn('`/api/fhir/diagnostic-reports?${params.toString()}`', script)
+        self.assertIn('`/api/fhir/resource-preview?${params.toString()}`', script)
         self.assertIn('`/api/fhir/records/${recordId}/preview`', script)
         self.assertIn('`/api/fhir/records/${recordId}/sync`', script)
         self.assertIn("Live fetch failed; local submitted JSON", script)
+        self.assertIn("medplumDiagnosticReports", script)
+        self.assertIn("fetchMedplumDiagnosticReportsForCurrentSelection", script)
+        self.assertIn("renderMedplumDiagnosticReportRollup", script)
+        self.assertIn("loadMedplumLiveReportPreview", script)
+        self.assertIn("loadMedplumLiveReferencePreview", script)
+        self.assertIn("Patient-level result", script)
+        self.assertIn("Live DiagnosticReport References", script)
         self.assertIn("medplumRecordMatchesPatient", script)
         self.assertIn("renderMedplumPatientList", script)
         self.assertIn("renderMedplumPatientList();\n  const patient = selectedMedplumPatient();", script)
@@ -187,6 +196,12 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('payload.mode !== "fhir" && payload.requestedAt', script)
         self.assertIn("serviceRequest", script)
         self.assertIn("Task:", script)
+
+        template = Path(__file__).resolve().parents[1] / "frontend" / "templates" / "index.html"
+        html = template.read_text(encoding="utf-8")
+        self.assertIn('id="medplum-diagnostic-report-rollup"', html)
+        self.assertIn('id="medplum-diagnostic-report-status"', html)
+        self.assertIn("Live Results", html)
 
     def test_sidebar_views_hide_inactive_pages(self):
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
@@ -210,6 +225,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("/api/fhir/mappings", routes)
         self.assertIn("/api/fhir/inventory", routes)
         self.assertIn("/api/fhir/diagnostic-reports", routes)
+        self.assertIn("/api/fhir/resource-preview", routes)
         self.assertIn("/api/fhir/records", routes)
         self.assertIn("/api/fhir/records/<int:record_id>", routes)
         self.assertIn("/api/fhir/records/<int:record_id>/preview", routes)
@@ -894,6 +910,45 @@ class HealthcareLabApiTests(unittest.TestCase):
         body = response.get_json()
         self.assertFalse(body["success"])
         self.assertIn("non-Bundle", body["error"])
+
+    @patch("app.urllib.request.urlopen")
+    def test_fhir_resource_preview_fetches_live_binary_reference(self, urlopen):
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/oauth2/token"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "access_token": "server-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            self.assertEqual(request.full_url, "http://medplum.test/fhir/R4/Binary/bin-1")
+            return FakeHttpResponse(
+                json.dumps(
+                    {
+                        "resourceType": "Binary",
+                        "id": "bin-1",
+                        "contentType": "application/pdf",
+                    }
+                ).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.get("/api/fhir/resource-preview?reference=Binary/bin-1")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["source"], "medplum-live")
+        self.assertEqual(body["reference"], "Binary/bin-1")
+        self.assertEqual(body["resource"]["resourceType"], "Binary")
 
     @patch("app.urllib.request.urlopen")
     def test_fhir_sync_reuses_existing_medplum_resource_by_identifier(self, urlopen):
