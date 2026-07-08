@@ -1,16 +1,16 @@
 ## 1. Backend API
 
-- [ ] 1.1 Add a dcm4chee sync/retry endpoint for local Healthcare Lab orders.
-- [ ] 1.2 Add a dcm4chee attempt-history endpoint for local Healthcare Lab orders.
-- [ ] 1.3 Return clear 404/400 responses for unknown orders and non-dcm4chee-incompatible order states where applicable.
-- [ ] 1.4 Ensure retry responses include the updated order, latest MWL mapping, latest attempt, and success/retryable metadata.
+- [x] 1.1 Add a dcm4chee sync/retry endpoint for local Healthcare Lab orders.
+- [x] 1.2 Add a dcm4chee attempt-history endpoint for local Healthcare Lab orders.
+- [x] 1.3 Return clear 404/400 responses for unknown orders and non-dcm4chee-incompatible order states where applicable.
+- [x] 1.4 Ensure retry responses include the updated order, latest MWL mapping, latest attempt, and success/retryable metadata.
 
 ## 2. Status Model
 
-- [ ] 2.1 Add response-level `retryable` metadata for dcm4chee MWL sync state.
-- [ ] 2.2 Add display-oriented status metadata that can map existing stored statuses to clearer UI labels such as pending, synced, failed, retry needed, or reconciled.
-- [ ] 2.3 Distinguish retryable infrastructure/read-back failures from non-retryable patient precondition or profile validation failures unless the underlying data changes.
-- [ ] 2.4 Preserve existing local order records and canonical mapping rows when dcm4chee sync fails.
+- [x] 2.1 Add response-level `retryable` metadata for dcm4chee MWL sync state.
+- [x] 2.2 Add display-oriented status metadata that can map existing stored statuses to clearer UI labels such as pending, synced, failed, retry needed, or reconciled.
+- [x] 2.3 Distinguish retryable infrastructure/read-back failures from non-retryable patient precondition or profile validation failures unless the underlying data changes.
+- [x] 2.4 Preserve existing local order records and canonical mapping rows when dcm4chee sync fails.
 
 ## 3. Frontend
 
@@ -21,8 +21,8 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Add backend tests for successful retry from a failed dcm4chee sync without duplicate MWL POST after an existing successful mapping.
-- [ ] 4.2 Add backend tests for retry failure preserving the local order and exposing latest error/status metadata.
-- [ ] 4.3 Add backend tests for dcm4chee attempt-history API output.
+- [x] 4.1 Add backend tests for successful retry from a failed dcm4chee sync without duplicate MWL POST after an existing successful mapping.
+- [x] 4.2 Add backend tests for retry failure preserving the local order and exposing latest error/status metadata.
+- [x] 4.3 Add backend tests for dcm4chee attempt-history API output.
 - [ ] 4.4 Add frontend/API contract coverage for retryable metadata and DICOM order row actions where practical.
 - [ ] 4.5 Run OpenSpec validation and the relevant Healthcare Lab Python test suite.

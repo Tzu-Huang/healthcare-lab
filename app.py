@@ -3102,6 +3102,14 @@ def create_app(database_path: str | None = None) -> Flask:
     def list_orders():
         return jsonify({"success": True, "items": store.list_order_records()})
 
+    @app.get("/api/orders/<int:order_id>")
+    def get_order(order_id: int):
+        try:
+            item = store.get_order_record(order_id)
+        except KeyError:
+            return error_response("Order record was not found.", 404)
+        return jsonify({"success": True, "item": item})
+
     @app.post("/api/orders")
     def create_order():
         payload = request.get_json(silent=True) or {}
@@ -3161,6 +3169,44 @@ def create_app(database_path: str | None = None) -> Flask:
         except SimulatorValidationError as exc:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
+
+    @app.get("/api/orders/<int:order_id>/dcm4chee-attempts")
+    def list_order_dcm4chee_attempts(order_id: int):
+        try:
+            item = store.get_order_record(order_id)
+        except KeyError:
+            return error_response("Order record was not found.", 404)
+        if item["protocolVersion"] != "DICOM":
+            return error_response("Order record is not DICOM MWL mode.", 400)
+        return jsonify({"success": True, "items": store.list_dcm4chee_mwl_attempts(order_id)})
+
+    @app.post("/api/orders/<int:order_id>/dcm4chee-sync")
+    def sync_order_dcm4chee_record(order_id: int):
+        try:
+            item = store.get_order_record(order_id)
+        except KeyError:
+            return error_response("Order record was not found.", 404)
+        if item["protocolVersion"] != "DICOM":
+            return error_response("Order record is not DICOM MWL mode.", 400)
+        try:
+            sync_order_to_dcm4chee_mwl(
+                store,
+                item,
+                dcm4chee_profile_from_config(app.config),
+                uid_root=app.config["DCM4CHEE_UID_ROOT"],
+            )
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        item = store.get_order_record(order_id)
+        mwl = (item.get("dcm4chee") or {}).get("mwl") or {}
+        return jsonify(
+            {
+                "success": (mwl.get("mapping") or {}).get("status") == DCM4CHEE_MWL_STATUS_CREATED,
+                "item": item,
+                "mwl": mwl,
+                "latestAttempt": mwl if mwl.get("id") else None,
+            }
+        )
 
     @app.get("/api/fhir/mappings")
     def list_fhir_mappings():
