@@ -529,6 +529,15 @@ def sync_fhir_workflow_record_to_medplum(
                 medplum_resource_reference=reference,
             )
 
+        stored_medplum = record.get("medplum") or {}
+        stored_medplum_id = str(stored_medplum.get("id") or "").strip()
+        if stored_medplum_id:
+            return store.mark_fhir_sync_success(
+                record_id,
+                medplum_resource_id=stored_medplum_id,
+                medplum_resource_reference=str(stored_medplum.get("reference") or "").strip(),
+            )
+
         create_url = medplum_create_resource_url(base, record)
         request_payload = record["resource"]
         create_status, create_body = sync_request(
