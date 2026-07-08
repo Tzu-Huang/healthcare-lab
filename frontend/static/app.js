@@ -130,6 +130,18 @@ async function requestJson(url, options = {}) {
   return payload;
 }
 
+async function requestJsonAllowBusinessFailure(url, options = {}) {
+  const response = await fetch(url, {
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    ...options,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || response.statusText || "Request failed");
+  }
+  return payload;
+}
+
 function createElement(tag, text = "", className = "") {
   const element = document.createElement(tag);
   if (text) element.textContent = text;
@@ -2375,7 +2387,10 @@ async function retryDcm4cheeOrder(orderId, button) {
   if (button) button.disabled = true;
   setStatus("order-form-status", "Retrying dcm4chee sync...", "pending");
   try {
-    const result = await requestJson(`/api/orders/${orderId}/dcm4chee-sync`, { method: "POST", body: JSON.stringify({}) });
+    const result = await requestJsonAllowBusinessFailure(`/api/orders/${orderId}/dcm4chee-sync`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
     const mwl = result.item?.dcm4chee?.mwl || {};
     setStatus("order-form-status", mwl.displayStatus || "dcm4chee sync updated", result.success ? "success" : "error");
     selectedOrderRecordId = orderId;
