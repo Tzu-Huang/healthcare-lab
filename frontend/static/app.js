@@ -833,6 +833,86 @@ function renderPatientSummaryFromPayload(payload, createdAt = "") {
   });
 }
 
+function dcm4cheeResultStatusClass(status) {
+  return {
+    matched: "success",
+    no_result: "neutral",
+    ambiguous: "warning",
+    duplicate: "warning",
+    wrong_patient: "error",
+    missing_accession: "warning",
+    unlinked: "warning",
+    query_failed: "error",
+  }[status] || "neutral";
+}
+
+function renderPatientDcm4cheeResults(container, patient) {
+  const results = patient?.dcm4chee?.dicomResults || [];
+  const section = document.createElement("details");
+  section.className = "detail-block raw-details";
+  section.open = Boolean(results.length);
+  const summary = document.createElement("summary");
+  summary.append(
+    document.createTextNode(`DICOM Results (${results.length})`),
+  );
+  section.appendChild(summary);
+  if (!results.length) {
+    section.appendChild(createElement("p", "No refreshed dcm4chee results for this patient.", "muted"));
+    container.appendChild(section);
+    return;
+  }
+  const { wrap, tbody } = compactTable(
+    ["Status", "Order", "Modality", "Study UID", "Accession", "Time", "Actions"],
+    "",
+    7,
+  );
+  results.forEach((item) => {
+    const status = createElement(
+      "span",
+      item.reconciliationStatus || "-",
+      `status ${dcm4cheeResultStatusClass(item.reconciliationStatus)}`,
+    );
+    const actions = document.createElement("div");
+    actions.className = "button-row compact-actions";
+    if (item.viewerUrl) {
+      const open = createElement("button", "Open", "");
+      open.type = "button";
+      open.addEventListener("click", () => window.open(item.viewerUrl, "_blank", "noopener"));
+      actions.appendChild(open);
+    }
+    if (item.studyRetrieveUrl) {
+      const copy = createElement("button", "Copy", "");
+      copy.type = "button";
+      copy.addEventListener("click", () => navigator.clipboard.writeText(item.studyRetrieveUrl));
+      actions.appendChild(copy);
+    }
+    if (!actions.childElementCount) actions.appendChild(createElement("span", "-", "muted"));
+    const row = document.createElement("tr");
+    row.append(
+      rowCell(status),
+      rowCell(item.orderRecordId || "-"),
+      rowCell(item.modality || "-"),
+      rowCell(item.studyInstanceUid || "-"),
+      rowCell(item.accessionNumber || "-"),
+      rowCell(taipeiTimestamp(item.instanceDateTime || item.seriesDateTime || item.studyDateTime || item.lastRefreshedAt)),
+      rowCell(actions),
+    );
+    tbody.appendChild(row);
+  });
+  section.appendChild(wrap);
+  container.appendChild(section);
+}
+
+function renderPatientSummaryFromRecord(item) {
+  renderPatientSummaryFromPayload({
+    ...(item.patient || {}),
+    visitNumber: item.visitNumber,
+    patientClass: item.patientClass,
+    assignedLocation: item.assignedLocation,
+  }, item.createdAt);
+  renderPatientDcm4cheeResults(byId("patient-summary"), item);
+}
+
 function refreshPatientPreview() {
   const payload = patientFormPayload();
   updatePatientModeFields(payload.mode);
@@ -873,9 +953,14 @@ function renderPatientRecordList() {
         retryPatientFhirSync(item.id, retryButton);
       });
       actionCell.appendChild(retryButton);
-    } else {
-      actionCell.appendChild(createElement("span", "-", "muted"));
     }
+    const dcmRefreshButton = createElement("button", "DICOM", "");
+    dcmRefreshButton.type = "button";
+    dcmRefreshButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      refreshPatientDcm4cheeResults(item.id, dcmRefreshButton);
+    });
+    actionCell.appendChild(dcmRefreshButton);
     row.append(
       rowCell(item.localPatientNumber || item.id),
       rowCell(item.protocolVersion),
@@ -891,12 +976,7 @@ function renderPatientRecordList() {
     );
     row.addEventListener("click", () => {
       byId("patient-payload-preview").textContent = item.payload || "";
-      renderPatientSummaryFromPayload({
-        ...(item.patient || {}),
-        visitNumber: item.visitNumber,
-        patientClass: item.patientClass,
-        assignedLocation: item.assignedLocation,
-      }, item.createdAt);
+      renderPatientSummaryFromRecord(item);
     });
     body.appendChild(row);
   });
@@ -970,6 +1050,32 @@ async function retryPatientFhirSync(patientId, button) {
     setStatus("patient-form-status", error.message, "error");
   } finally {
     button.disabled = false;
+  }
+}
+
+async function refreshPatientDcm4cheeResults(patientId, button) {
+  if (button) button.disabled = true;
+  setStatus("patient-form-status", "Refreshing dcm4chee results...", "pending");
+  try {
+    const result = await requestJsonAllowBusinessFailure(`/api/patients/${patientId}/dcm4chee-results-refresh`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const patient = result.patient || {};
+    patientRecords = patientRecords.map((item) => Number(item.id) === Number(patient.id) ? patient : item);
+    renderPatientRecordList();
+    byId("patient-payload-preview").textContent = patient.payload || "";
+    renderPatientSummaryFromRecord(patient);
+    const count = (patient.dcm4chee?.dicomResults || []).length;
+    setStatus(
+      "patient-form-status",
+      `dcm4chee results refreshed (${count})`,
+      result.success ? "success" : "warning",
+    );
+  } catch (error) {
+    setStatus("patient-form-status", error.message, "error");
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
