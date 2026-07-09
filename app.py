@@ -349,6 +349,23 @@ def dcm4chee_profile_from_config(config: dict[str, Any]) -> dict[str, Any]:
                 config.get("DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE", "ECG_AP") or ""
             ).strip(),
         },
+        "hl7": {
+            "host": str(config.get("DCM4CHEE_HL7_HOST", "127.0.0.1") or "").strip(),
+            "port": coerce_config_int(config.get("DCM4CHEE_HL7_PORT"), default=2575),
+            "sendingApplication": str(
+                config.get("DCM4CHEE_HL7_SENDING_APPLICATION", "HEALTHCARE_LAB") or ""
+            ).strip(),
+            "sendingFacility": str(config.get("DCM4CHEE_HL7_SENDING_FACILITY", "LAB_APP") or "").strip(),
+            "receivingApplication": str(
+                config.get("DCM4CHEE_HL7_RECEIVING_APPLICATION", "DCM4CHEE") or ""
+            ).strip(),
+            "receivingFacility": str(
+                config.get("DCM4CHEE_HL7_RECEIVING_FACILITY", "DCM4CHEE") or ""
+            ).strip(),
+            "patientAssigningAuthority": str(
+                config.get("DCM4CHEE_PATIENT_ASSIGNING_AUTHORITY", profile_name) or ""
+            ).strip(),
+        },
         "dicomweb": {
             "baseUrl": dicomweb_base_url,
             "qidoRsUrl": qido_url,
@@ -423,6 +440,25 @@ def validate_dcm4chee_profile(profile: dict[str, Any]) -> dict[str, Any]:
     required_text(("dimse", "callingAETitle"), "Calling AE title")
     required_text(("mwl", "aeTitle"), "MWL AE title")
     required_text(("mwl", "defaultScheduledStationAETitle"), "Default Scheduled Station AE Title")
+
+    hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
+    required_text(("hl7", "host"), "HL7 host")
+    try:
+        port = int(hl7.get("port") or 0)
+        valid_port = 1 <= port <= 65535
+    except (TypeError, ValueError):
+        valid_port = False
+    add_check(
+        "hl7_port",
+        "hl7.port",
+        valid_port,
+        "HL7 port is valid." if valid_port else "HL7 port must be an integer between 1 and 65535.",
+    )
+    required_text(("hl7", "sendingApplication"), "HL7 sending application")
+    required_text(("hl7", "sendingFacility"), "HL7 sending facility")
+    required_text(("hl7", "receivingApplication"), "HL7 receiving application")
+    required_text(("hl7", "receivingFacility"), "HL7 receiving facility")
+    required_text(("hl7", "patientAssigningAuthority"), "HL7 Patient assigning authority")
 
     dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
     for field in ("baseUrl", "qidoRsUrl", "wadoRsUrl", "stowRsUrl"):
@@ -3223,6 +3259,28 @@ def create_app(database_path: str | None = None) -> Flask:
     app.config["DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE"] = os.environ.get(
         "DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE",
         "ECG_AP",
+    ).strip()
+    app.config["DCM4CHEE_HL7_HOST"] = os.environ.get("DCM4CHEE_HL7_HOST", "127.0.0.1").strip()
+    app.config["DCM4CHEE_HL7_PORT"] = os.environ.get("DCM4CHEE_HL7_PORT", "2575").strip()
+    app.config["DCM4CHEE_HL7_SENDING_APPLICATION"] = os.environ.get(
+        "DCM4CHEE_HL7_SENDING_APPLICATION",
+        "HEALTHCARE_LAB",
+    ).strip()
+    app.config["DCM4CHEE_HL7_SENDING_FACILITY"] = os.environ.get(
+        "DCM4CHEE_HL7_SENDING_FACILITY",
+        "LAB_APP",
+    ).strip()
+    app.config["DCM4CHEE_HL7_RECEIVING_APPLICATION"] = os.environ.get(
+        "DCM4CHEE_HL7_RECEIVING_APPLICATION",
+        "DCM4CHEE",
+    ).strip()
+    app.config["DCM4CHEE_HL7_RECEIVING_FACILITY"] = os.environ.get(
+        "DCM4CHEE_HL7_RECEIVING_FACILITY",
+        "DCM4CHEE",
+    ).strip()
+    app.config["DCM4CHEE_PATIENT_ASSIGNING_AUTHORITY"] = os.environ.get(
+        "DCM4CHEE_PATIENT_ASSIGNING_AUTHORITY",
+        app.config["DCM4CHEE_PROFILE_NAME"],
     ).strip()
     app.config["DCM4CHEE_DICOMWEB_BASE_URL"] = os.environ.get(
         "DCM4CHEE_DICOMWEB_BASE_URL",

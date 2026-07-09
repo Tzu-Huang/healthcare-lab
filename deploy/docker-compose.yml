@@ -46,6 +46,8 @@ services:
       DCM4CHEE_DIMSE_HOST: ${DCM4CHEE_DIMSE_HOST:-dcm4chee}
       DCM4CHEE_DIMSE_PORT: ${DCM4CHEE_DIMSE_PORT:-11112}
       DCM4CHEE_MWL_AE_TITLE: ${DCM4CHEE_MWL_AE_TITLE:-WORKLIST}
+      DCM4CHEE_HL7_HOST: ${DCM4CHEE_HL7_HOST:-dcm4chee}
+      DCM4CHEE_HL7_PORT: ${DCM4CHEE_HL7_PORT:-2575}
       DCM4CHEE_DICOMWEB_BASE_URL: ${DCM4CHEE_DICOMWEB_BASE_URL:-http://dcm4chee:8080/dcm4chee-arc/aets/WORKLIST/rs}
     ports:
       - "${LAB_APP_PORT:-5000}:5000"
@@ -197,6 +199,7 @@ services:
     ports:
       - "${DCM4CHEE_HTTP_PORT:-8082}:8080"
       - "${DCM4CHEE_DICOM_PORT:-11112}:11112"
+      - "${DCM4CHEE_HL7_PORT:-2575}:2575"
     volumes:
       - dcm4chee-archive:/storage
     depends_on:
