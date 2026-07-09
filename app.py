@@ -582,6 +582,112 @@ def request_dcm4chee_mwl_create(
         raise UpstreamDcm4cheeError(f"dcm4chee request failed: {exc.reason}") from exc
 
 
+def dcm4chee_archive_rs_base_url(profile: dict[str, Any]) -> str:
+    dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
+    dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
+    mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
+    base_url = require_http_url(dicomweb.get("baseUrl"), "dicomweb.baseUrl")
+    called_ae_title = str(dimse.get("calledAETitle") or "DCM4CHEE").strip()
+    mwl_ae_title = str(mwl.get("aeTitle") or "").strip()
+    if mwl_ae_title and f"/aets/{mwl_ae_title}/rs" in base_url:
+        return base_url.replace(f"/aets/{mwl_ae_title}/rs", f"/aets/{called_ae_title}/rs")
+    return base_url
+
+
+def dcm4chee_patient_payload_from_mwl_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    patient_payload = {
+        tag: payload[tag]
+        for tag in ("00100010", "00100020", "00100021", "00100030", "00100040")
+        if tag in payload
+    }
+    if "00100020" not in patient_payload:
+        raise SimulatorValidationError("dcm4chee Patient ID is required before MWL sync.")
+    return patient_payload
+
+
+def request_dcm4chee_patient_search(
+    profile: dict[str, Any],
+    *,
+    patient_id: str,
+    issuer_of_patient_id: str,
+) -> tuple[int, str, str]:
+    base_url = dcm4chee_archive_rs_base_url(profile)
+    query = {"PatientID": patient_id}
+    if issuer_of_patient_id:
+        query["IssuerOfPatientID"] = issuer_of_patient_id
+    url = f"{base_url}/patients?{urllib.parse.urlencode(query)}"
+    headers = {"Accept": "application/dicom+json, application/json, text/plain"}
+    api_request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(api_request, timeout=30) as response:
+            response_body = response.read().decode("utf-8", errors="replace")
+            return response.status, response_body, url
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise UpstreamDcm4cheeError(
+            f"dcm4chee patient lookup returned HTTP {exc.code}: {error_body}",
+            http_status=exc.code,
+            response_body=error_body,
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise UpstreamDcm4cheeError(f"dcm4chee patient lookup failed: {exc.reason}") from exc
+
+
+def request_dcm4chee_patient_create(
+    profile: dict[str, Any],
+    patient_payload: dict[str, Any],
+) -> tuple[int, str, str]:
+    base_url = dcm4chee_archive_rs_base_url(profile)
+    url = f"{base_url}/patients"
+    body = json.dumps(patient_payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    headers = {
+        "Accept": "application/json, application/dicom+json, text/plain",
+        "Content-Type": "application/dicom+json",
+    }
+    api_request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(api_request, timeout=30) as response:
+            response_body = response.read().decode("utf-8", errors="replace")
+            return response.status, response_body, url
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise UpstreamDcm4cheeError(
+            f"dcm4chee patient create returned HTTP {exc.code}: {error_body}",
+            http_status=exc.code,
+            response_body=error_body,
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise UpstreamDcm4cheeError(f"dcm4chee patient create failed: {exc.reason}") from exc
+
+
+def ensure_dcm4chee_patient_for_mwl_payload(
+    profile: dict[str, Any],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    identifiers = {
+        "patient_id": DemoStore._dicom_first_value(payload, "00100020"),
+        "issuer_of_patient_id": DemoStore._dicom_first_value(payload, "00100021"),
+    }
+    if not identifiers["patient_id"]:
+        raise SimulatorValidationError("dcm4chee Patient ID is required before MWL sync.")
+    status, response_body, lookup_url = request_dcm4chee_patient_search(
+        profile,
+        patient_id=identifiers["patient_id"],
+        issuer_of_patient_id=identifiers["issuer_of_patient_id"],
+    )
+    if status == 200 and response_body.strip():
+        return {"status": "found", "httpStatus": status, "url": lookup_url, **identifiers}
+    patient_payload = dcm4chee_patient_payload_from_mwl_payload(payload)
+    create_status, create_body, create_url = request_dcm4chee_patient_create(profile, patient_payload)
+    return {
+        "status": "created",
+        "httpStatus": create_status,
+        "url": create_url,
+        "responseBody": create_body,
+        **identifiers,
+    }
+
+
 def request_dcm4chee_mwl_readback(
     profile: dict[str, Any],
     identifiers: dict[str, str],
@@ -911,6 +1017,45 @@ def sync_order_to_dcm4chee_mwl(
     existing_mapping = store.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
     if existing_mapping and existing_mapping.get("status") == DCM4CHEE_MWL_STATUS_CREATED:
         return existing_mapping
+    try:
+        ensure_dcm4chee_patient_for_mwl_payload(profile, payload)
+    except (UpstreamDcm4cheeError, SimulatorValidationError) as exc:
+        mapping = store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=uid_root,
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_PENDING,
+            increment_retry=existing_mapping is not None,
+        )
+        attempt = store.create_dcm4chee_mwl_attempt(
+            int(order["id"]),
+            profile,
+            uid_root=uid_root,
+            request_url=request_url,
+            request_payload=payload,
+            mapping_id=int(mapping["id"]),
+        )
+        response_body = exc.response_body if isinstance(exc, UpstreamDcm4cheeError) else ""
+        updated_attempt = store.update_dcm4chee_mwl_attempt_result(
+            int(attempt["id"]),
+            attempt_status=DCM4CHEE_MWL_STATUS_FAILED,
+            http_status=exc.http_status if isinstance(exc, UpstreamDcm4cheeError) else None,
+            response_body=response_body,
+            error_type="dcm4chee_patient_preflight_failed",
+            error_text=str(exc),
+        )
+        store.update_dcm4chee_mwl_mapping_from_attempt(
+            int(order["id"]),
+            attempt_id=int(updated_attempt["id"]),
+            sync_status=updated_attempt["status"],
+            http_status=updated_attempt["httpStatus"],
+            response_body=response_body,
+            error_type=updated_attempt["errorType"],
+            error_text=updated_attempt["error"],
+            error_payload={"responseBody": response_body} if response_body else {},
+        )
+        return updated_attempt
     if existing_mapping:
         created_but_unconfirmed = (
             int(existing_mapping.get("lastHttpStatus") or 0) in range(200, 300)

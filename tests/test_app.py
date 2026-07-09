@@ -1475,6 +1475,18 @@ class HealthcareLabApiTests(unittest.TestCase):
                     "headers": dict(request.header_items()),
                 }
             )
+            if "/patients?" in request.full_url:
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
             if method == "GET":
                 return FakeHttpResponse(
                     json.dumps(
@@ -1531,15 +1543,17 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(mwl["mapping"]["requestedProcedureId"], "RP-DCM-000001")
         self.assertEqual(mwl["mapping"]["scheduledProcedureStepId"], "SPS-DCM-000001")
         self.assertEqual(mwl["mapping"]["patientId"], "MRN-A04-001")
-        self.assertEqual(captured[0]["method"], "POST")
+        self.assertEqual(captured[0]["method"], "GET")
+        self.assertIn("/aets/DCM4CHEE/rs/patients?", captured[0]["url"])
+        self.assertEqual(captured[1]["method"], "POST")
         self.assertEqual(
-            captured[0]["url"],
+            captured[1]["url"],
             "http://127.0.0.1:8082/dcm4chee-arc/aets/WORKLIST/rs/mwlitems",
         )
-        self.assertEqual(captured[0]["headers"]["Content-type"], "application/dicom+json")
-        self.assertEqual(captured[0]["payload"]["00400100"]["Value"][0]["00400001"]["Value"], ["ECG_AP"])
-        self.assertEqual(captured[1]["method"], "GET")
-        self.assertIn("AccessionNumber=ACC-000001", captured[1]["url"])
+        self.assertEqual(captured[1]["headers"]["Content-type"], "application/dicom+json")
+        self.assertEqual(captured[1]["payload"]["00400100"]["Value"][0]["00400001"]["Value"], ["ECG_AP"])
+        self.assertEqual(captured[2]["method"], "GET")
+        self.assertIn("AccessionNumber=ACC-000001", captured[2]["url"])
 
     @patch("app.urllib.request.urlopen")
     def test_dcm4chee_sync_reuses_successful_mapping_without_duplicate_post(self, urlopen):
@@ -1548,6 +1562,18 @@ class HealthcareLabApiTests(unittest.TestCase):
         order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
 
         def fake_urlopen(request, timeout):
+            if "/patients?" in request.full_url:
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
             if request.get_method() == "GET":
                 return FakeHttpResponse(
                     json.dumps(
@@ -1575,7 +1601,7 @@ class HealthcareLabApiTests(unittest.TestCase):
             dcm4chee_profile_from_config(self.client.application.config),
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        self.assertEqual(urlopen.call_count, 2)
+        self.assertEqual(urlopen.call_count, 3)
 
         urlopen.reset_mock()
         mapping = sync_order_to_dcm4chee_mwl(
@@ -1593,14 +1619,20 @@ class HealthcareLabApiTests(unittest.TestCase):
         patient = self.create_local_patient()
         phase = {"name": "fail-create"}
         calls = []
+        mwl_gets = {"count": 0}
 
         def fake_urlopen(request, timeout):
             calls.append(request.get_method())
             if phase["name"] == "fail-create":
                 raise urllib.error.URLError("connection refused")
             if phase["name"] == "retry-success":
+                if "/patients?" in request.full_url:
+                    return FakeHttpResponse(b"", status=204)
+                if request.full_url.endswith("/patients"):
+                    return FakeHttpResponse(b'{"PatientIdentifiers":"[MRN-A04-001^^^local-dcm4chee]"}', status=200)
                 if request.get_method() == "GET":
-                    body = [] if calls.count("GET") == 1 else [
+                    mwl_gets["count"] += 1
+                    body = [] if mwl_gets["count"] == 1 else [
                         {
                             "00080050": {"vr": "SH", "Value": ["ACC-000001"]},
                             "00401001": {"vr": "SH", "Value": ["RP-000001"]},
@@ -1627,6 +1659,7 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         phase["name"] = "retry-success"
         calls.clear()
+        mwl_gets["count"] = 0
         retry = self.client.post(f"/api/orders/{order_id}/dcm4chee-sync")
 
         self.assertEqual(retry.status_code, 200)
@@ -1634,7 +1667,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertTrue(body["success"])
         self.assertEqual(body["item"]["dcm4chee"]["mwl"]["displayStatus"], "Synced")
         self.assertFalse(body["item"]["dcm4chee"]["mwl"]["retryable"])
-        self.assertEqual(calls, ["GET", "POST", "GET"])
+        self.assertEqual(calls, ["GET", "POST", "GET", "POST", "GET"])
 
         calls.clear()
         duplicate_retry = self.client.post(f"/api/orders/{order_id}/dcm4chee-sync")
@@ -1687,8 +1720,8 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         attempts = response.get_json()["items"]
-        self.assertEqual(len(attempts), 3)
-        self.assertEqual([item["operationType"] for item in attempts], ["create", "read-back", "create"])
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual([item["operationType"] for item in attempts], ["create", "create"])
         self.assertTrue(all(item["error"] for item in attempts))
 
     def test_dcm4chee_mapping_retry_reuses_stable_identifiers(self):
@@ -1785,6 +1818,18 @@ class HealthcareLabApiTests(unittest.TestCase):
         def fake_urlopen(request, timeout):
             methods.append(request.get_method())
             self.assertEqual(request.get_method(), "GET")
+            if "/patients?" in request.full_url:
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
             return FakeHttpResponse(
                 json.dumps(
                     [
@@ -1812,7 +1857,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         )
 
         self.assertEqual(result["operationType"], "read-back")
-        self.assertEqual(methods, ["GET"])
+        self.assertEqual(methods, ["GET", "GET"])
         mapping = store.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
 
@@ -1824,6 +1869,18 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         def first_urlopen(request, timeout):
             methods.append(request.get_method())
+            if "/patients?" in request.full_url:
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
             if request.get_method() == "GET":
                 raise urllib.error.URLError("read-back unavailable")
             return FakeHttpResponse(json.dumps({"created": True}).encode("utf-8"), status=200)
@@ -1832,7 +1889,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         response = self.client.post("/api/orders", json={"mode": "dicom", "patientRecordId": patient["id"]})
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(methods, ["POST", "GET"])
+        self.assertEqual(methods, ["GET", "POST", "GET"])
         item = response.get_json()["item"]
         mapping = item["dcm4chee"]["mwl"]["mapping"]
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_PENDING)
@@ -1843,6 +1900,18 @@ class HealthcareLabApiTests(unittest.TestCase):
         def retry_urlopen(request, timeout):
             methods.append(request.get_method())
             self.assertEqual(request.get_method(), "GET")
+            if "/patients?" in request.full_url:
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
             return FakeHttpResponse(
                 json.dumps(
                     [
@@ -1869,7 +1938,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         )
 
         self.assertEqual(result["operationType"], "read-back")
-        self.assertEqual(methods, ["GET"])
+        self.assertEqual(methods, ["GET", "GET"])
         mapping = store.get_dcm4chee_mwl_mapping_for_order(int(item["id"]))
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
 
@@ -1881,6 +1950,18 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         def first_urlopen(request, timeout):
             methods.append(request.get_method())
+            if "/patients?" in request.full_url:
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
             if request.get_method() == "GET":
                 return FakeHttpResponse(b"[]", status=200)
             return FakeHttpResponse(json.dumps({"created": True}).encode("utf-8"), status=200)
@@ -1889,7 +1970,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         response = self.client.post("/api/orders", json={"mode": "dicom", "patientRecordId": patient["id"]})
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(methods, ["POST", "GET"])
+        self.assertEqual(methods, ["GET", "POST", "GET"])
         item = response.get_json()["item"]
         mapping = item["dcm4chee"]["mwl"]["mapping"]
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_PENDING)
@@ -1900,6 +1981,18 @@ class HealthcareLabApiTests(unittest.TestCase):
         def retry_urlopen(request, timeout):
             methods.append(request.get_method())
             self.assertEqual(request.get_method(), "GET")
+            if "/patients?" in request.full_url:
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
             return FakeHttpResponse(
                 json.dumps(
                     [
@@ -1926,7 +2019,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         )
 
         self.assertEqual(result["operationType"], "read-back")
-        self.assertEqual(methods, ["GET"])
+        self.assertEqual(methods, ["GET", "GET"])
         mapping = store.get_dcm4chee_mwl_mapping_for_order(int(item["id"]))
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
 
@@ -1935,6 +2028,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         patient = self.create_local_patient()
 
         def fake_urlopen(request, timeout):
+            if "/patients?" in request.full_url:
+                return FakeHttpResponse(b"", status=204)
+            if request.full_url.endswith("/patients"):
+                return FakeHttpResponse(b'{"PatientIdentifiers":"[MRN-A04-001^^^local-dcm4chee]"}', status=200)
             raise urllib.error.HTTPError(
                 request.full_url,
                 404,
