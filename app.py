@@ -776,6 +776,38 @@ def verify_order_dcm4chee_mwl(
         query_criteria=query_criteria,
     )
     method = "dcm4chee-mwl-rest"
+    if (
+        str(mapping.get("status") or "").strip() == DCM4CHEE_MWL_STATUS_PATIENT_MISSING
+        or str(mapping.get("lastErrorType") or "").strip() == "patient_missing"
+    ):
+        error_text = (
+            str(mapping.get("lastError") or "").strip()
+            or "dcm4chee patient precondition is missing for this MWL order."
+        )
+        error_payload = {
+            "lastSyncStatus": mapping.get("status") or "",
+            "lastHttpStatus": mapping.get("lastHttpStatus"),
+            "lastResponseBody": mapping.get("lastResponseBody") or "",
+        }
+        updated_attempt = store.update_dcm4chee_mwl_attempt_result(
+            int(attempt["id"]),
+            attempt_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+            http_status=mapping.get("lastHttpStatus"),
+            response_body=mapping.get("lastResponseBody") or "",
+            error_type="patient_missing",
+            error_text=error_text,
+        )
+        updated_mapping = store.update_dcm4chee_mwl_verification_result(
+            int(order["id"]),
+            attempt_id=int(updated_attempt["id"]),
+            verification_status=DCM4CHEE_MWL_VERIFICATION_FAILED,
+            method=method,
+            query_criteria=query_criteria,
+            error_type="patient_missing",
+            error_text=error_text,
+            error_payload=error_payload,
+        )
+        return {"attempt": updated_attempt, "mapping": updated_mapping}
     if not diagnostics["valid"]:
         error_text = str(diagnostics.get("summary") or "dcm4chee profile is incomplete or invalid.")
         updated_attempt = store.update_dcm4chee_mwl_attempt_result(
