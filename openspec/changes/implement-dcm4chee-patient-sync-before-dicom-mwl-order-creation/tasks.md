@@ -19,10 +19,10 @@
 
 ## 4. MWL Patient Precondition
 
-- [ ] 4.1 Before dcm4chee MWL create, check the referenced Patient's dcm4chee sync status.
-- [ ] 4.2 Attempt Patient sync preflight before MWL create when the Patient is not synced.
-- [ ] 4.3 If Patient sync fails, preserve the local order and record a Patient precondition failure without POSTing MWL.
-- [ ] 4.4 Keep `patient_missing` or a specific Patient sync error visible as the root cause during MWL verify.
+- [x] 4.1 Before dcm4chee MWL create, check the referenced Patient's dcm4chee sync status.
+- [x] 4.2 Attempt Patient sync preflight before MWL create when the Patient is not synced.
+- [x] 4.3 If Patient sync fails, preserve the local order and record a Patient precondition failure without POSTing MWL.
+- [x] 4.4 Keep `patient_missing` or a specific Patient sync error visible as the root cause during MWL verify.
 
 ## 5. UI And Documentation
 

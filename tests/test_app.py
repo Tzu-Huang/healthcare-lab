@@ -1600,6 +1600,83 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("AccessionNumber=ACC-000001", captured[1]["url"])
 
     @patch("app.urllib.request.urlopen")
+    @patch("app.send_hl7_mllp_message")
+    def test_order_api_creates_dcm4chee_mwl_after_dicom_patient_sync(self, send_hl7, urlopen):
+        send_hl7.return_value = "MSH|^~\\&|DCM4CHEE|DCM4CHEE|HEALTHCARE_LAB|LAB_APP|20260709101010||ACK^A04|ACK1|P|2.3.1\rMSA|AA|DCMADT1|OK"
+        captured = []
+
+        def fake_urlopen(request, timeout):
+            captured.append(request.get_method())
+            if request.get_method() == "GET":
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "00100020": {"vr": "LO", "Value": ["MRN-DCM-MWL-001"]},
+                                "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
+                                "00080050": {"vr": "SH", "Value": ["ACC-000001"]},
+                                "00401001": {"vr": "SH", "Value": ["RP-000001"]},
+                                "0020000D": {"vr": "UI", "Value": ["1.2.826.0.1.3680043.10.543.20260708103000.1"]},
+                                "00400100": {
+                                    "vr": "SQ",
+                                    "Value": [{"00400009": {"vr": "SH", "Value": ["SPS-000001"]}}],
+                                },
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            return FakeHttpResponse(json.dumps({"created": True}).encode("utf-8"), status=200)
+
+        urlopen.side_effect = fake_urlopen
+        patient = self.client.post(
+            "/api/patients",
+            json={
+                "mode": "dicom",
+                "mrn": "MRN-DCM-MWL-001",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            },
+        ).get_json()["item"]
+
+        created = self.client.post("/api/orders", json={"mode": "dicom", "patientRecordId": patient["id"]})
+
+        self.assertEqual(created.status_code, 201)
+        mwl = created.get_json()["item"]["dcm4chee"]["mwl"]
+        self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_CREATED)
+        self.assertEqual(captured, ["POST", "GET"])
+        self.assertEqual(send_hl7.call_count, 1)
+
+    @patch("app.urllib.request.urlopen")
+    @patch("app.send_hl7_mllp_message", side_effect=OSError("connection refused"))
+    def test_order_api_blocks_dcm4chee_mwl_when_dicom_patient_sync_fails(self, send_hl7, urlopen):
+        patient = self.client.post(
+            "/api/patients",
+            json={
+                "mode": "dicom",
+                "mrn": "MRN-DCM-MWL-002",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            },
+        ).get_json()["item"]
+
+        created = self.client.post("/api/orders", json={"mode": "dicom", "patientRecordId": patient["id"]})
+
+        self.assertEqual(created.status_code, 201)
+        item = created.get_json()["item"]
+        self.assertEqual(item["protocolVersion"], "DICOM")
+        mwl = item["dcm4chee"]["mwl"]
+        self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_PATIENT_MISSING)
+        self.assertEqual(mwl["errorType"], "patient_sync_failed")
+        self.assertIn("connection refused", mwl["error"])
+        self.assertEqual(send_hl7.call_count, 2)
+        urlopen.assert_not_called()
+
+    @patch("app.urllib.request.urlopen")
     def test_dcm4chee_sync_reuses_successful_mapping_without_duplicate_post(self, urlopen):
         patient = self.create_local_patient()
         store = self.client.application.extensions["demo_store"]
