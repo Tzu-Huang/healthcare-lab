@@ -104,14 +104,28 @@ Healthcare Lab SHALL keep the local Healthcare Lab order even when dcm4chee MWL 
 - **AND** the failure reason is visible through backend response metadata or a related status endpoint
 
 ### Requirement: Patient precondition failures are explicit
-Healthcare Lab SHALL distinguish dcm4chee patient precondition failures from generic MWL creation failures.
+Healthcare Lab SHALL ensure the referenced Patient exists in dcm4chee before creating a dcm4chee MWL item, or clearly report that the Patient precondition failed.
 
-#### Scenario: dcm4chee rejects MWL creation because the patient is missing
-- **GIVEN** the dcm4chee MWL REST endpoint rejects the request because the patient does not exist
-- **WHEN** Healthcare Lab records the creation attempt
-- **THEN** the attempt status identifies the missing-patient or patient-precondition failure
-- **AND** the dcm4chee response body is retained for debugging
-- **AND** the local Healthcare Lab order is not deleted
+#### Scenario: Patient is synced before MWL create
+- **GIVEN** Healthcare Lab has a local DICOM MWL order intent
+- **WHEN** the referenced local Patient is already synced to dcm4chee
+- **THEN** Healthcare Lab may POST the MWL item to dcm4chee
+- **AND** it records normal MWL create, read-back, and verification diagnostics
+
+#### Scenario: Patient preflight sync succeeds
+- **GIVEN** Healthcare Lab has a local DICOM MWL order intent
+- **AND** the referenced local Patient is not yet synced to dcm4chee
+- **WHEN** Healthcare Lab successfully syncs the Patient during MWL preflight
+- **THEN** it may POST the MWL item to dcm4chee
+- **AND** it records both the Patient sync attempt and the MWL create attempt
+
+#### Scenario: Patient precondition fails
+- **GIVEN** Healthcare Lab has a local DICOM MWL order intent
+- **WHEN** the referenced Patient cannot be confirmed or synced in dcm4chee
+- **THEN** Healthcare Lab does not POST the MWL item
+- **AND** the local order remains available
+- **AND** the MWL sync state identifies Patient sync or Patient missing as the root cause
+- **AND** later MWL verification does not replace the Patient precondition failure with an empty-query diagnosis
 
 ### Requirement: Study Instance UID generation is configurable at runtime
 Healthcare Lab SHALL generate valid DICOM Study Instance UIDs for dcm4chee MWL orders using a configured UID root.
