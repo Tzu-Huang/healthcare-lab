@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1200" viewBox="0 0 1920 1200">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1,1 L11,6 L1,11 Z" fill="#222"/>
+    </marker>
+    <marker id="dashArrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1,1 L11,6 L1,11 Z" fill="#666"/>
+    </marker>
+    <style>
+      .title { font-family: "Segoe UI", Arial, sans-serif; font-size: 42px; font-weight: 700; fill: #111; }
+      .section { font-family: "Segoe UI", Arial, sans-serif; font-size: 30px; font-weight: 700; fill: #111; }
+      .frame-label { font-family: "Segoe UI", Arial, sans-serif; font-size: 22px; font-weight: 700; fill: #333; }
+      .node-title { font-family: "Segoe UI", Arial, sans-serif; font-size: 28px; font-weight: 700; fill: #111; }
+      .node-sub { font-family: "Segoe UI", Arial, sans-serif; font-size: 18px; font-weight: 400; fill: #333; }
+      .label { font-family: "Segoe UI", Arial, sans-serif; font-size: 18px; font-weight: 600; fill: #111; }
+      .small { font-family: "Segoe UI", Arial, sans-serif; font-size: 16px; font-weight: 400; fill: #333; }
+      .port { font-family: Consolas, "Segoe UI Mono", monospace; font-size: 18px; font-weight: 700; fill: #111; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1200" fill="#fff"/>
+  <text x="80" y="70" class="title">Healthcare Lab Simple Workflows</text>
+
+  <text x="80" y="132" class="section">OIE Workflow</text>
+  <rect x="80" y="160" width="1040" height="390" rx="10" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="110" y="195" class="frame-label">Docker Container</text>
+
+  <rect x="170" y="290" width="280" height="110" rx="8" fill="#fff" stroke="#222" stroke-width="2"/>
+  <text x="310" y="334" text-anchor="middle" class="node-title">Dashboard</text>
+  <text x="310" y="365" text-anchor="middle" class="node-sub">Healthcare Lab UI</text>
+
+  <rect x="640" y="290" width="280" height="110" rx="8" fill="#fff" stroke="#222" stroke-width="2"/>
+  <text x="780" y="334" text-anchor="middle" class="node-title">OIE</text>
+  <text x="780" y="365" text-anchor="middle" class="node-sub">HL7 routing engine</text>
+
+  <rect x="1440" y="290" width="280" height="110" rx="8" fill="#fff" stroke="#222" stroke-width="2"/>
+  <text x="1580" y="334" text-anchor="middle" class="node-title">AP</text>
+  <text x="1580" y="365" text-anchor="middle" class="node-sub">ECG AP simulator</text>
+
+  <path d="M450 315 H640" fill="none" stroke="#222" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="545" y="268" text-anchor="middle" class="label">ORM^O01</text>
+  <text x="545" y="292" text-anchor="middle" class="small">MLLP TCP</text>
+  <text x="545" y="416" text-anchor="middle" class="port">oie:6600</text>
+
+  <path d="M920 315 H1440" fill="none" stroke="#222" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="1180" y="268" text-anchor="middle" class="label">ORM^O01</text>
+  <text x="1180" y="292" text-anchor="middle" class="small">MLLP TCP</text>
+  <text x="1180" y="416" text-anchor="middle" class="port">AP:6671</text>
+
+  <path d="M1440 375 H920" fill="none" stroke="#222" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="1180" y="456" text-anchor="middle" class="label">ORU^R01 / ORU^W01</text>
+  <text x="1180" y="480" text-anchor="middle" class="small">MLLP TCP</text>
+  <text x="1180" y="504" text-anchor="middle" class="port">OIE:6661</text>
+
+  <path d="M640 375 H450" fill="none" stroke="#222" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="545" y="456" text-anchor="middle" class="label">ORU^R01 / ORU^W01</text>
+  <text x="545" y="480" text-anchor="middle" class="small">MLLP TCP</text>
+  <text x="545" y="504" text-anchor="middle" class="port">Dashboard:6665</text>
+
+  <text x="80" y="642" class="section">FHIR Workflow</text>
+  <rect x="80" y="670" width="1040" height="420" rx="10" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="110" y="705" class="frame-label">Docker Container</text>
+
+  <rect x="170" y="800" width="280" height="110" rx="8" fill="#fff" stroke="#222" stroke-width="2"/>
+  <text x="310" y="844" text-anchor="middle" class="node-title">Dashboard</text>
+  <text x="310" y="875" text-anchor="middle" class="node-sub">Healthcare Lab UI</text>
+
+  <rect x="640" y="800" width="280" height="110" rx="8" fill="#fff" stroke="#222" stroke-width="2"/>
+  <text x="780" y="844" text-anchor="middle" class="node-title">FHIR</text>
+  <text x="780" y="875" text-anchor="middle" class="node-sub">Medplum FHIR R4 API</text>
+
+  <rect x="198" y="965" width="224" height="88" rx="8" fill="#fff" stroke="#666" stroke-width="2"/>
+  <text x="310" y="1002" text-anchor="middle" class="node-title" style="font-size:24px">Local SQLite DB</text>
+  <text x="310" y="1030" text-anchor="middle" class="node-sub" style="font-size:16px">workflow ledger / audit</text>
+  <text x="310" y="1050" text-anchor="middle" class="node-sub" style="font-size:15px">no network port</text>
+
+  <rect x="1440" y="800" width="280" height="110" rx="8" fill="#fff" stroke="#222" stroke-width="2"/>
+  <text x="1580" y="844" text-anchor="middle" class="node-title">AP</text>
+  <text x="1580" y="875" text-anchor="middle" class="node-sub">ECG AP simulator</text>
+
+  <path d="M450 825 H640" fill="none" stroke="#222" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="545" y="766" text-anchor="middle" class="label">Patient / ServiceRequest / Task</text>
+  <text x="545" y="790" text-anchor="middle" class="small">FHIR R4 REST</text>
+  <text x="545" y="932" text-anchor="middle" class="port">medplum:8103</text>
+
+  <path d="M920 825 H1440" fill="none" stroke="#222" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="1180" y="766" text-anchor="middle" class="label">Task / ServiceRequest</text>
+  <text x="1180" y="790" text-anchor="middle" class="small">FHIR R4 REST</text>
+  <text x="1180" y="932" text-anchor="middle" class="port">FHIR:8103</text>
+
+  <path d="M1440 885 H920" fill="none" stroke="#222" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="1180" y="976" text-anchor="middle" class="label">DiagnosticReport / Observation</text>
+  <text x="1180" y="1000" text-anchor="middle" class="small">DocumentReference / Binary</text>
+  <text x="1180" y="1024" text-anchor="middle" class="port">FHIR:8103</text>
+
+  <path d="M640 885 H450" fill="none" stroke="#222" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="545" y="976" text-anchor="middle" class="label">DiagnosticReport / Observation</text>
+  <text x="545" y="1000" text-anchor="middle" class="small">Dashboard reads results</text>
+  <text x="545" y="1024" text-anchor="middle" class="port">medplum:8103</text>
+
+  <path d="M310 910 V965" fill="none" stroke="#666" stroke-width="2.5" stroke-dasharray="8 6" marker-end="url(#dashArrow)"/>
+  <text x="450" y="1068" text-anchor="start" class="small">local workflow state / sync status / audit / retry</text>
+</svg>

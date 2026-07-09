@@ -175,6 +175,7 @@ Medplum API server and Web UI companion.
 | OpenEMR | `8088` |
 | dcm4chee UI | `8082` |
 | dcm4chee DICOM | `11112` |
+| dcm4chee HL7 Patient sync | `2575` |
 
 Override ports with the matching variables in `docker-compose.yml`, for
 example `LAB_APP_PORT`, `OPENEMR_PORT`, or `MEDPLUM_PORT`. The Compose runtime
