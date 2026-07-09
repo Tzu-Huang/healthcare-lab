@@ -1,17 +1,19 @@
+## ADDED Requirements
+
+### Requirement: dcm4chee profile includes HL7 Patient sync settings
+Healthcare Lab SHALL store the HL7 receiver settings required by dcm4chee Patient sync workflows.
+
+#### Scenario: Profile exposes HL7 receiver values
+- **WHEN** Healthcare Lab loads the dcm4chee connection profile
+- **THEN** the profile includes HL7 receiver host and port
+- **AND** the profile includes sending application and sending facility
+- **AND** the profile includes receiving application and receiving facility
+- **AND** the profile includes the Patient assigning authority used for dcm4chee Patient IDs
+
 ## MODIFIED Requirements
 
-### Requirement: dcm4chee profile includes local archive connection settings
-Healthcare Lab SHALL provide a named dcm4chee-arc connection profile for local lab workflows.
-
-#### Scenario: Local dcm4chee profile is available
-- **WHEN** Healthcare Lab loads the local dcm4chee profile
-- **THEN** it includes the profile name, display name, and environment name
-- **AND** it includes the Web UI URL
-- **AND** it includes DIMSE host, port, called AE title, and Healthcare Lab calling AE title
-- **AND** it includes MWL AE title and default Scheduled Station AE Title
-- **AND** it includes DICOMweb endpoint values for query, retrieve, store, and MWL workflows
-- **AND** it includes HL7 receiver host, port, sending application/facility, receiving application/facility, and Patient assigning authority settings for Patient sync workflows
-- **AND** it includes auth and TLS settings needed by future secured dcm4chee deployments
+### Requirement: dcm4chee profile diagnostics report incomplete configuration
+Healthcare Lab SHALL provide backend validation or diagnostic output for the dcm4chee connection profile.
 
 #### Scenario: Local profile diagnostics report invalid required fields
 - **WHEN** a required local dcm4chee profile field is missing or invalid
