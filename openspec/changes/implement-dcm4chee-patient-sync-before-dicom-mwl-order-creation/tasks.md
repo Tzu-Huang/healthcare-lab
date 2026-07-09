@@ -26,9 +26,9 @@
 
 ## 5. UI And Documentation
 
-- [ ] 5.1 Show dcm4chee Patient sync status on the Patient page.
-- [ ] 5.2 Show Patient precondition status in the DICOM order workspace.
-- [ ] 5.3 Document the dcm4chee Patient ADT sync flow, HL7 port defaults, and why STOW-RS is not used for Patient master sync.
+- [x] 5.1 Show dcm4chee Patient sync status on the Patient page.
+- [x] 5.2 Show Patient precondition status in the DICOM order workspace.
+- [x] 5.3 Document the dcm4chee Patient ADT sync flow, HL7 port defaults, and why STOW-RS is not used for Patient master sync.
 
 ## 6. Verification
 
