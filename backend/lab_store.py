@@ -1075,6 +1075,7 @@ class DemoStore:
                     query_payload_json TEXT NOT NULL DEFAULT '{}',
                     diagnostic_payload_json TEXT NOT NULL DEFAULT '{}',
                     raw_metadata_json TEXT NOT NULL DEFAULT '{}',
+                    refresh_generation TEXT NOT NULL DEFAULT '',
                     first_seen_at TEXT NOT NULL,
                     last_refreshed_at TEXT NOT NULL,
                     created_at TEXT NOT NULL,
@@ -1193,6 +1194,12 @@ class DemoStore:
                 "local_dcm4chee_mwl_mappings",
                 "last_verification_error_payload_json",
                 "TEXT NOT NULL DEFAULT '{}'",
+            )
+            self._ensure_column(
+                connection,
+                "local_dcm4chee_result_records",
+                "refresh_generation",
+                "TEXT NOT NULL DEFAULT ''",
             )
             self._backfill_dcm4chee_mwl_mappings(connection)
             self._ensure_column(connection, "local_patient_records", "email", "TEXT NOT NULL DEFAULT ''")
@@ -3078,6 +3085,7 @@ class DemoStore:
         query_url: str = "",
         query_payload: dict[str, Any] | None = None,
         raw_metadata: dict[str, Any] | None = None,
+        refresh_generation: str = "",
     ) -> dict[str, Any]:
         profile_name, server_identity, source_ae_title = self._dcm4chee_profile_identity(profile)
         reconciliation = self.reconcile_dcm4chee_result_metadata(
@@ -3131,6 +3139,7 @@ class DemoStore:
             "query_payload_json": json.dumps(query_payload or {}, sort_keys=True),
             "diagnostic_payload_json": json.dumps(reconciliation.get("diagnostic") or {}, sort_keys=True),
             "raw_metadata_json": json.dumps(raw_metadata or metadata or {}, sort_keys=True),
+            "refresh_generation": str(refresh_generation or "").strip(),
         }
         with self.lock, self.connect() as connection:
             existing = connection.execute(
@@ -3151,6 +3160,7 @@ class DemoStore:
                         instance_retrieve_url = ?, reconciliation_status = ?, match_method = ?,
                         match_strength = ?, query_url = ?, query_payload_json = ?,
                         diagnostic_payload_json = ?, raw_metadata_json = ?,
+                        refresh_generation = ?,
                         last_refreshed_at = ?, updated_at = ?
                     WHERE id = ?
                     """,
@@ -3184,6 +3194,7 @@ class DemoStore:
                         values["query_payload_json"],
                         values["diagnostic_payload_json"],
                         values["raw_metadata_json"],
+                        values["refresh_generation"],
                         now,
                         now,
                         int(existing["id"]),
@@ -3203,8 +3214,9 @@ class DemoStore:
                         viewer_url, study_retrieve_url, series_retrieve_url, instance_retrieve_url,
                         reconciliation_status, match_method, match_strength,
                         query_url, query_payload_json, diagnostic_payload_json, raw_metadata_json,
+                        refresh_generation,
                         first_seen_at, last_refreshed_at, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         result_key,
@@ -3237,6 +3249,7 @@ class DemoStore:
                         values["query_payload_json"],
                         values["diagnostic_payload_json"],
                         values["raw_metadata_json"],
+                        values["refresh_generation"],
                         now,
                         now,
                         now,
@@ -3255,6 +3268,7 @@ class DemoStore:
         query_url: str = "",
         query_payload: dict[str, Any] | None = None,
         diagnostic_payload: dict[str, Any] | None = None,
+        refresh_generation: str = "",
     ) -> dict[str, Any]:
         profile_name, server_identity, source_ae_title = self._dcm4chee_profile_identity(profile)
         result_key = self._dcm4chee_result_key(
@@ -3264,6 +3278,7 @@ class DemoStore:
             status=status,
         )
         now = now_iso()
+        generation = str(refresh_generation or "").strip()
         diagnostic_json = json.dumps(diagnostic_payload or {}, sort_keys=True)
         query_json = json.dumps(query_payload or {}, sort_keys=True)
         with self.lock, self.connect() as connection:
@@ -3279,6 +3294,7 @@ class DemoStore:
                         profile_name = ?, server_identity = ?, source_ae_title = ?,
                         query_url = ?, query_payload_json = ?, diagnostic_payload_json = ?,
                         reconciliation_status = ?, match_method = '', match_strength = '',
+                        refresh_generation = ?,
                         last_refreshed_at = ?, updated_at = ?
                     WHERE id = ?
                     """,
@@ -3291,6 +3307,7 @@ class DemoStore:
                         query_json,
                         diagnostic_json,
                         status,
+                        generation,
                         now,
                         now,
                         int(existing["id"]),
@@ -3303,8 +3320,8 @@ class DemoStore:
                     INSERT INTO local_dcm4chee_result_records (
                         result_key, patient_record_id, profile_name, server_identity, source_ae_title,
                         reconciliation_status, query_url, query_payload_json, diagnostic_payload_json,
-                        first_seen_at, last_refreshed_at, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        refresh_generation, first_seen_at, last_refreshed_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         result_key,
@@ -3316,6 +3333,7 @@ class DemoStore:
                         query_url,
                         query_json,
                         diagnostic_json,
+                        generation,
                         now,
                         now,
                         now,
@@ -3337,6 +3355,25 @@ class DemoStore:
 
     def list_dcm4chee_results_for_patient(self, patient_record_id: int) -> list[dict[str, Any]]:
         with self.connect() as connection:
+            latest = connection.execute(
+                """
+                SELECT refresh_generation FROM local_dcm4chee_result_records
+                WHERE patient_record_id = ? AND refresh_generation != ''
+                ORDER BY last_refreshed_at DESC, id DESC
+                LIMIT 1
+                """,
+                (int(patient_record_id),),
+            ).fetchone()
+            if latest:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_dcm4chee_result_records
+                    WHERE patient_record_id = ? AND refresh_generation = ?
+                    ORDER BY last_refreshed_at DESC, id DESC
+                    """,
+                    (int(patient_record_id), latest["refresh_generation"]),
+                ).fetchall()
+                return [self._dcm4chee_result_record_dict(row) for row in rows]
             rows = connection.execute(
                 """
                 SELECT * FROM local_dcm4chee_result_records
@@ -5143,6 +5180,7 @@ class DemoStore:
             "queryPayload": DemoStore._json_value(row["query_payload_json"], {}),
             "diagnostic": DemoStore._json_value(row["diagnostic_payload_json"], {}),
             "rawMetadata": DemoStore._json_value(row["raw_metadata_json"], {}),
+            "refreshGeneration": row["refresh_generation"] if "refresh_generation" in row.keys() else "",
             "firstSeenAt": row["first_seen_at"],
             "lastRefreshedAt": row["last_refreshed_at"],
             "createdAt": row["created_at"],
@@ -5942,18 +5980,52 @@ class DemoStore:
                     """,
                     source_ids,
                 ).fetchall()
-                result_rows = connection.execute(
+                latest_generation_rows = connection.execute(
                     f"""
-                    SELECT * FROM local_dcm4chee_result_records
+                    SELECT patient_record_id, refresh_generation
+                    FROM local_dcm4chee_result_records latest
                     WHERE patient_record_id IN ({placeholders})
-                    ORDER BY last_refreshed_at DESC, id DESC
+                    AND refresh_generation != ''
+                    AND id = (
+                        SELECT id FROM local_dcm4chee_result_records sub
+                        WHERE sub.patient_record_id = latest.patient_record_id
+                        AND sub.refresh_generation != ''
+                        ORDER BY sub.last_refreshed_at DESC, sub.id DESC
+                        LIMIT 1
+                    )
                     """,
                     [int(source_id) for source_id in source_ids],
                 ).fetchall()
+                latest_generation_by_patient_id = {
+                    str(row["patient_record_id"]): row["refresh_generation"]
+                    for row in latest_generation_rows
+                }
+                if latest_generation_by_patient_id:
+                    result_rows = connection.execute(
+                        f"""
+                        SELECT * FROM local_dcm4chee_result_records
+                        WHERE patient_record_id IN ({placeholders})
+                        AND refresh_generation != ''
+                        ORDER BY last_refreshed_at DESC, id DESC
+                        """,
+                        [int(source_id) for source_id in source_ids],
+                    ).fetchall()
+                else:
+                    result_rows = connection.execute(
+                        f"""
+                        SELECT * FROM local_dcm4chee_result_records
+                        WHERE patient_record_id IN ({placeholders})
+                        ORDER BY last_refreshed_at DESC, id DESC
+                        """,
+                        [int(source_id) for source_id in source_ids],
+                    ).fetchall()
             for fhir_row in fhir_rows:
                 fhir_by_source_id[str(fhir_row["local_source_id"])] = self._fhir_workflow_record_dict(fhir_row)
             for result_row in result_rows:
                 patient_id = str(result_row["patient_record_id"])
+                latest_generation = latest_generation_by_patient_id.get(patient_id, "")
+                if latest_generation and result_row["refresh_generation"] != latest_generation:
+                    continue
                 dcm4chee_results_by_patient_id.setdefault(patient_id, []).append(
                     self._dcm4chee_result_record_dict(result_row)
                 )
