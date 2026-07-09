@@ -7,11 +7,11 @@
 
 ## 2. Backend Refresh And Query
 
-- [ ] 2.1 Add a manual dcm4chee result refresh backend operation.
-- [ ] 2.2 Query the configured dcm4chee archive DICOMweb/QIDO study, series, and instance endpoints using strongest available patient/order identifiers.
-- [ ] 2.3 Parse dcm4chee DICOM JSON responses into normalized result metadata.
-- [ ] 2.4 Generate viewer and retrieval links from the dcm4chee profile when enough identifiers are available.
-- [ ] 2.5 Preserve local orders and prior result state when dcm4chee query fails.
+- [x] 2.1 Add a manual dcm4chee result refresh backend operation.
+- [x] 2.2 Query the configured dcm4chee archive DICOMweb/QIDO study, series, and instance endpoints using strongest available patient/order identifiers.
+- [x] 2.3 Parse dcm4chee DICOM JSON responses into normalized result metadata.
+- [x] 2.4 Generate viewer and retrieval links from the dcm4chee profile when enough identifiers are available.
+- [x] 2.5 Preserve local orders and prior result state when dcm4chee query fails.
 
 ## 3. Reconciliation Logic
 
@@ -19,12 +19,12 @@
 - [x] 3.2 Match by Accession Number within profile/server namespace and validate Patient ID/Issuer.
 - [x] 3.3 Match by Requested Procedure ID plus Scheduled Procedure Step ID when Study UID/Accession are unavailable.
 - [x] 3.4 Treat weak patient/modality/time-window fallback as ambiguous unless exactly one active candidate exists.
-- [ ] 3.5 Classify no-result, wrong-patient, missing-accession, duplicate, ambiguous, unlinked, and query-failed states.
+- [x] 3.5 Classify no-result, wrong-patient, missing-accession, duplicate, ambiguous, unlinked, and query-failed states.
 
 ## 4. API / UI Surface
 
-- [ ] 4.1 Add a patient-level and/or order-level result refresh API.
-- [ ] 4.2 Expose DICOM results under patient payloads or a patient DICOM results endpoint.
+- [x] 4.1 Add a patient-level and/or order-level result refresh API.
+- [x] 4.2 Expose DICOM results under patient payloads or a patient DICOM results endpoint.
 - [ ] 4.3 Add a refresh action in the patient/order workspace.
 - [ ] 4.4 Render patient-level expandable/dropdown DICOM results grouped by matched order and unresolved diagnostics.
 - [ ] 4.5 Show identifiers, modality, timestamps, reconciliation status, and viewer/open links.

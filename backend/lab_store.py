@@ -2901,6 +2901,9 @@ class DemoStore:
             ).fetchall()
         return [self._dcm4chee_mwl_mapping_dict(row) for row in rows]
 
+    def list_dcm4chee_mwl_mappings_for_patient(self, patient_record_id: int) -> list[dict[str, Any]]:
+        return self._dcm4chee_mappings_for_patient(patient_record_id)
+
     def reconcile_dcm4chee_result_metadata(
         self,
         metadata: dict[str, str],
