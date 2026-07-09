@@ -1,9 +1,9 @@
 ## 1. Result Model And Persistence
 
-- [ ] 1.1 Add local persistence for dcm4chee result/reconciliation records separate from the canonical MWL mapping.
-- [ ] 1.2 Store study, series, and instance identifiers plus modality, timestamps, profile/server source, viewer/retrieve links, and reconciliation diagnostics.
-- [ ] 1.3 Add migration/backfill behavior that preserves existing MWL mapping and attempt data.
-- [ ] 1.4 Make repeated refresh idempotent by stable DICOM UID keys where available.
+- [x] 1.1 Add local persistence for dcm4chee result/reconciliation records separate from the canonical MWL mapping.
+- [x] 1.2 Store study, series, and instance identifiers plus modality, timestamps, profile/server source, viewer/retrieve links, and reconciliation diagnostics.
+- [x] 1.3 Add migration/backfill behavior that preserves existing MWL mapping and attempt data.
+- [x] 1.4 Make repeated refresh idempotent by stable DICOM UID keys where available.
 
 ## 2. Backend Refresh And Query
 
@@ -15,10 +15,10 @@
 
 ## 3. Reconciliation Logic
 
-- [ ] 3.1 Match by Study Instance UID first.
-- [ ] 3.2 Match by Accession Number within profile/server namespace and validate Patient ID/Issuer.
-- [ ] 3.3 Match by Requested Procedure ID plus Scheduled Procedure Step ID when Study UID/Accession are unavailable.
-- [ ] 3.4 Treat weak patient/modality/time-window fallback as ambiguous unless exactly one active candidate exists.
+- [x] 3.1 Match by Study Instance UID first.
+- [x] 3.2 Match by Accession Number within profile/server namespace and validate Patient ID/Issuer.
+- [x] 3.3 Match by Requested Procedure ID plus Scheduled Procedure Step ID when Study UID/Accession are unavailable.
+- [x] 3.4 Treat weak patient/modality/time-window fallback as ambiguous unless exactly one active candidate exists.
 - [ ] 3.5 Classify no-result, wrong-patient, missing-accession, duplicate, ambiguous, unlinked, and query-failed states.
 
 ## 4. API / UI Surface
