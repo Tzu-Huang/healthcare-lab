@@ -2214,11 +2214,17 @@ function renderDcm4cheeAttemptHistory(attempts) {
       attempt.error || "",
     ].filter(Boolean);
     item.textContent = parts.join(" | ");
-    if (attempt.requestUrl || attempt.responseBody) {
+    if (attempt.requestUrl || attempt.requestPayload || attempt.responseBody) {
       const details = document.createElement("details");
-      details.appendChild(createElement("summary", "Payload"));
+      const payloadLabel = attempt.operationType === "verify-mwl"
+        ? "MWL Query Criteria"
+        : "MWL Request Payload";
+      details.appendChild(createElement("summary", payloadLabel));
       const body = [
         attempt.requestUrl ? `URL: ${attempt.requestUrl}` : "",
+        attempt.requestPayload && Object.keys(attempt.requestPayload).length
+          ? `Request:\n${JSON.stringify(attempt.requestPayload, null, 2)}`
+          : "",
         attempt.responseBody ? `Response: ${attempt.responseBody}` : "",
       ].filter(Boolean).join("\n");
       details.appendChild(createElement("pre", body, "compact-output"));

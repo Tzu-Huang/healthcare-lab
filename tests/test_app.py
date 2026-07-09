@@ -2087,6 +2087,43 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(body["latestAttempt"]["errorType"], "mwl_empty")
 
     @patch("app.urllib.request.urlopen")
+    def test_dcm4chee_mwl_verify_keeps_patient_missing_precondition(self, urlopen):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = store.build_dcm4chee_mwl_payload(
+            order,
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+        store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+        )
+        store.update_dcm4chee_mwl_mapping_from_attempt(
+            int(order["id"]),
+            attempt_id=None,
+            sync_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+            http_status=404,
+            response_body='{"errorMessage":"Patient[id=MRN-A04-001] does not exist."}',
+            error_type="patient_missing",
+            error_text="dcm4chee returned HTTP 404: Patient does not exist.",
+        )
+
+        response = self.client.post(f"/api/orders/{order['id']}/dcm4chee-mwl-verify")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertFalse(body["success"])
+        self.assertEqual(body["verification"]["errorType"], "patient_missing")
+        self.assertEqual(body["latestAttempt"]["status"], DCM4CHEE_MWL_STATUS_PATIENT_MISSING)
+        urlopen.assert_not_called()
+
+    @patch("app.urllib.request.urlopen")
     def test_dcm4chee_mwl_verify_endpoint_records_mismatch_and_ambiguity(self, urlopen):
         patient = self.create_local_patient()
         store = self.client.application.extensions["demo_store"]

@@ -4566,6 +4566,9 @@ class DemoStore:
         mapping = mapping or {}
         status = str(mapping.get("status") or attempt.get("status") or "").strip()
         error_type = str(mapping.get("lastErrorType") or attempt.get("errorType") or "").strip()
+        error_text = str(mapping.get("lastError") or attempt.get("error") or "").strip()
+        response_body = str(mapping.get("lastResponseBody") or attempt.get("responseBody") or "").strip()
+        http_status = mapping.get("lastHttpStatus") or attempt.get("httpStatus")
         retryable = DemoStore._dcm4chee_mwl_retryable(status, error_type)
         display_status, display_state = DemoStore._dcm4chee_mwl_display_status(status, retryable)
         return {
@@ -4573,6 +4576,10 @@ class DemoStore:
             "mapping": mapping or None,
             "verification": mapping.get("verification") if mapping else None,
             "status": status,
+            "httpStatus": http_status,
+            "responseBody": response_body,
+            "errorType": error_type,
+            "error": error_text,
             "displayStatus": display_status,
             "displayState": display_state,
             "retryable": retryable,
@@ -4583,10 +4590,10 @@ class DemoStore:
                 "status": status,
                 "displayStatus": display_status,
                 "retryable": retryable,
-                "httpStatus": mapping.get("lastHttpStatus") or attempt.get("httpStatus"),
+                "httpStatus": http_status,
                 "errorType": error_type,
-                "error": mapping.get("lastError") or attempt.get("error") or "",
-                "responseBody": mapping.get("lastResponseBody") or attempt.get("responseBody") or "",
+                "error": error_text,
+                "responseBody": response_body,
                 "retryCount": mapping.get("retryCount", 0),
                 "lastSyncAt": mapping.get("lastSyncAt") or attempt.get("completedAt") or "",
                 "updatedAt": mapping.get("updatedAt") or attempt.get("updatedAt") or "",
