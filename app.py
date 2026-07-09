@@ -1067,12 +1067,14 @@ def refresh_patient_dcm4chee_results(
     refreshed: list[dict[str, Any]] = []
     queries: list[dict[str, Any]] = []
     study_uid_counts: dict[str, int] = {}
+    refresh_generation = datetime.now(timezone.utc).isoformat(timespec="microseconds")
     if not mappings:
         diagnostic = store.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient_record_id,
             profile=profile,
             status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
             diagnostic_payload={"reason": "no_local_dcm4chee_orders"},
+            refresh_generation=refresh_generation,
         )
         patient = store.get_patient_record(patient_record_id)
         return {
@@ -1081,6 +1083,7 @@ def refresh_patient_dcm4chee_results(
             "items": patient.get("dcm4chee", {}).get("dicomResults", []),
             "refreshed": [diagnostic],
             "queries": [],
+            "refreshGeneration": refresh_generation,
         }
 
     for mapping in mappings:
@@ -1094,6 +1097,7 @@ def refresh_patient_dcm4chee_results(
                 status=DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
                 query_payload=query,
                 diagnostic_payload={"reason": "profile_invalid", "error": str(exc)},
+                refresh_generation=refresh_generation,
             )
             refreshed.append(diagnostic)
             continue
@@ -1109,6 +1113,7 @@ def refresh_patient_dcm4chee_results(
                     "httpStatus": exc.http_status,
                     "responseBody": exc.response_body,
                 },
+                refresh_generation=refresh_generation,
             )
             refreshed.append(diagnostic)
             continue
@@ -1122,6 +1127,7 @@ def refresh_patient_dcm4chee_results(
                 query_url=studies_url,
                 query_payload=query,
                 diagnostic_payload={"reason": "empty_study_query", "mappingId": mapping.get("id")},
+                refresh_generation=refresh_generation,
             )
             refreshed.append(diagnostic)
             continue
@@ -1138,6 +1144,7 @@ def refresh_patient_dcm4chee_results(
                     query_url=studies_url,
                     query_payload=query,
                     raw_metadata=study_dataset,
+                    refresh_generation=refresh_generation,
                 )
             )
             if not study_uid:
@@ -1159,6 +1166,7 @@ def refresh_patient_dcm4chee_results(
                             query_url=child_url,
                             query_payload={"parentStudyInstanceUID": study_uid},
                             raw_metadata=child_dataset,
+                            refresh_generation=refresh_generation,
                         )
                     )
 
@@ -1175,6 +1183,7 @@ def refresh_patient_dcm4chee_results(
                         "studyInstanceUid": study_uid,
                         "count": count,
                     },
+                    refresh_generation=refresh_generation,
                 )
             )
     patient = store.get_patient_record(patient_record_id)
@@ -1187,6 +1196,7 @@ def refresh_patient_dcm4chee_results(
         "items": patient.get("dcm4chee", {}).get("dicomResults", []),
         "refreshed": refreshed,
         "queries": queries,
+        "refreshGeneration": refresh_generation,
     }
 
 

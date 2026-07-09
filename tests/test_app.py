@@ -2477,6 +2477,54 @@ class HealthcareLabApiTests(unittest.TestCase):
         )
 
     @patch("app.urllib.request.urlopen")
+    def test_patient_dcm4chee_result_refresh_supersedes_stale_diagnostics(self, urlopen):
+        patient = self.create_local_patient()
+        self.client.application.config["DCM4CHEE_QIDO_RS_URL"] = (
+            "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"
+        )
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = store.build_dcm4chee_mwl_payload(
+            order,
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+        mapping = store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_CREATED,
+        )
+
+        urlopen.return_value = FakeHttpResponse(b"[]", status=200)
+        empty = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
+        self.assertIn(
+            DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            {item["reconciliationStatus"] for item in empty.get_json()["items"]},
+        )
+
+        urlopen.return_value = FakeHttpResponse(
+            json.dumps(
+                [
+                    {
+                        "00100020": {"vr": "LO", "Value": [mapping["patientId"]]},
+                        "00100021": {"vr": "LO", "Value": [mapping["issuerOfPatientId"]]},
+                        "00080050": {"vr": "SH", "Value": [mapping["accessionNumber"]]},
+                        "0020000D": {"vr": "UI", "Value": [mapping["studyInstanceUid"]]},
+                    }
+                ]
+            ).encode("utf-8"),
+            status=200,
+        )
+        matched = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
+        statuses = {item["reconciliationStatus"] for item in matched.get_json()["items"]}
+
+        self.assertIn(DCM4CHEE_RESULT_STATUS_MATCHED, statuses)
+        self.assertNotIn(DCM4CHEE_RESULT_STATUS_NO_RESULT, statuses)
+
+    @patch("app.urllib.request.urlopen")
     def test_patient_dcm4chee_result_refresh_records_duplicate_study_candidates(self, urlopen):
         patient = self.create_local_patient()
         self.client.application.config["DCM4CHEE_QIDO_RS_URL"] = (
