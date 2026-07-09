@@ -172,6 +172,7 @@ defaults:
 | MWL AE title | `WORKLIST` |
 | Default Scheduled Station AE Title | `ECG_AP` |
 | DICOMweb / MWL REST base URL | `http://127.0.0.1:8082/dcm4chee-arc/aets/WORKLIST/rs` |
+| Archive QIDO/WADO/STOW URL | `http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs` |
 | Study Instance UID root | `1.2.826.0.1.3680043.10.543` |
 
 The profile also includes QIDO-RS, WADO-RS, STOW-RS, viewer-link, auth, and TLS
@@ -220,6 +221,27 @@ diagnostics. Successful verification proves which MWL item was found; failed
 verification distinguishes connectivity/profile problems, missing patient
 preconditions, empty worklist responses, identifier mismatches, and ambiguous
 matches.
+
+AP C-STORE result reconciliation is operator-triggered from the Patient page.
+Use the DICOM action for a local patient to refresh dcm4chee results. Healthcare
+Lab queries the archive QIDO-RS study, series, and instance endpoints, reconciles
+returned metadata against the PACS/MWL ledger, and stores result rows under the
+patient. The first version is intentionally manual instead of a background
+poller so operators can verify AP metadata and dcm4chee endpoint behavior before
+automating refresh.
+
+Result reconciliation expects AP to preserve the MWL/order identifiers in the
+returned DICOM result when available: Study Instance UID, Accession Number,
+Patient ID, Issuer of Patient ID, Requested Procedure ID, and Scheduled Procedure
+Step ID. Matching prefers Study Instance UID, then Accession Number in the
+profile/server namespace with patient identity validation, then Requested
+Procedure ID plus Scheduled Procedure Step ID. Weak patient/modality/time-window
+signals are recorded as ambiguous unless there is exactly one local candidate.
+
+The patient DICOM Results section shows matched and unresolved results with
+modality, timestamps, Study UID, Accession Number, viewer links, retrieve links,
+and diagnostics. Expected diagnostics include `no_result`, `wrong_patient`,
+`missing_accession`, `duplicate`, `ambiguous`, `unlinked`, and `query_failed`.
 
 The first Docker Desktop runtime scaffold for the Lab Console lives in
 [deploy/](deploy/README.md). It includes `docker-compose.yml` and the

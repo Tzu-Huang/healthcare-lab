@@ -31,16 +31,16 @@
 
 ## 5. Documentation
 
-- [ ] 5.1 Document the manual refresh workflow and why background polling is deferred.
-- [ ] 5.2 Document the archive DICOMweb query surface used for AP C-STORE results versus the MWL `WORKLIST` surface.
-- [ ] 5.3 Document expected AP metadata preservation and how mismatch diagnostics should be interpreted.
+- [x] 5.1 Document the manual refresh workflow and why background polling is deferred.
+- [x] 5.2 Document the archive DICOMweb query surface used for AP C-STORE results versus the MWL `WORKLIST` surface.
+- [x] 5.3 Document expected AP metadata preservation and how mismatch diagnostics should be interpreted.
 
 ## 6. Verification
 
-- [ ] 6.1 Add tests for successful result reconciliation by Study Instance UID.
-- [ ] 6.2 Add tests for Accession Number plus Patient ID/Issuer matching.
-- [ ] 6.3 Add tests for Requested Procedure ID plus SPS ID matching.
-- [ ] 6.4 Add tests for ambiguous, duplicate, wrong-patient, missing-accession, unlinked, no-result, and query-failed diagnostics.
-- [ ] 6.5 Add API/response contract tests for patient-level DICOM result exposure.
+- [x] 6.1 Add tests for successful result reconciliation by Study Instance UID.
+- [x] 6.2 Add tests for Accession Number plus Patient ID/Issuer matching.
+- [x] 6.3 Add tests for Requested Procedure ID plus SPS ID matching.
+- [x] 6.4 Add tests for ambiguous, duplicate, wrong-patient, missing-accession, unlinked, no-result, and query-failed diagnostics.
+- [x] 6.5 Add API/response contract tests for patient-level DICOM result exposure.
 - [x] 6.6 Add frontend coverage or static contract checks for refresh controls and expandable patient DICOM results.
 - [ ] 6.7 Run OpenSpec validation and the relevant Healthcare Lab Python test suite.

@@ -3113,6 +3113,14 @@ class HealthcareLabApiTests(unittest.TestCase):
             profile["dicomweb"]["baseUrl"],
             "http://127.0.0.1:8082/dcm4chee-arc/aets/WORKLIST/rs",
         )
+        self.assertEqual(
+            profile["dicomweb"]["qidoRsUrl"],
+            "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+        )
+        self.assertEqual(
+            profile["dicomweb"]["wadoRsUrl"],
+            "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+        )
         self.assertEqual(profile["security"]["authMode"], "none")
         self.assertFalse(profile["security"]["tlsEnabled"])
         self.assertTrue(body["diagnostics"]["valid"])

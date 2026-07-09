@@ -326,9 +326,10 @@ def dcm4chee_profile_from_config(config: dict[str, Any]) -> dict[str, Any]:
     web_ui_url = str(
         config.get("DCM4CHEE_WEB_UI_URL", "http://127.0.0.1:8082/dcm4chee-arc/ui2") or ""
     ).strip().rstrip("/")
-    qido_url = str(config.get("DCM4CHEE_QIDO_RS_URL") or dicomweb_base_url).strip().rstrip("/")
-    wado_url = str(config.get("DCM4CHEE_WADO_RS_URL") or dicomweb_base_url).strip().rstrip("/")
-    stow_url = str(config.get("DCM4CHEE_STOW_RS_URL") or dicomweb_base_url).strip().rstrip("/")
+    archive_dicomweb_base_url = f"http://127.0.0.1:8082/dcm4chee-arc/aets/{called_ae_title or 'DCM4CHEE'}/rs"
+    qido_url = str(config.get("DCM4CHEE_QIDO_RS_URL") or archive_dicomweb_base_url).strip().rstrip("/")
+    wado_url = str(config.get("DCM4CHEE_WADO_RS_URL") or archive_dicomweb_base_url).strip().rstrip("/")
+    stow_url = str(config.get("DCM4CHEE_STOW_RS_URL") or archive_dicomweb_base_url).strip().rstrip("/")
     viewer_url_template = (
         str(config.get("DCM4CHEE_VIEWER_STUDY_URL_TEMPLATE") or "").strip()
         or (f"{web_ui_url}/#/study/{{studyInstanceUid}}" if web_ui_url else "")
