@@ -68,6 +68,11 @@ DCM4CHEE_MWL_STATUS_PATIENT_MISSING = "Patient missing"
 DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES = {"patient_missing", "profile_invalid"}
 DCM4CHEE_MWL_OPERATION_CREATE = "create"
 DCM4CHEE_MWL_OPERATION_READBACK = "read-back"
+DCM4CHEE_MWL_OPERATION_VERIFY = "verify-mwl"
+DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED = "not_verified"
+DCM4CHEE_MWL_VERIFICATION_VERIFIED = "verified"
+DCM4CHEE_MWL_VERIFICATION_FAILED = "verification_failed"
+DCM4CHEE_MWL_VERIFICATION_AMBIGUOUS = "verification_ambiguous"
 DCM4CHEE_DEFAULT_UID_ROOT = "1.2.826.0.1.3680043.10.543"
 FHIR_ORDER_PROTOCOL_VERSION = "FHIR R4"
 FHIR_ORDER_MESSAGE_TYPE = "ServiceRequest"
@@ -1011,6 +1016,15 @@ class DemoStore:
                     last_error_payload_json TEXT NOT NULL DEFAULT '{}',
                     latest_request_payload_json TEXT NOT NULL DEFAULT '{}',
                     latest_readback_payload_json TEXT NOT NULL DEFAULT '{}',
+                    verification_status TEXT NOT NULL DEFAULT 'not_verified',
+                    last_verification_at TEXT NOT NULL DEFAULT '',
+                    last_verification_method TEXT NOT NULL DEFAULT '',
+                    last_verification_attempt_id INTEGER,
+                    last_verification_query_json TEXT NOT NULL DEFAULT '{}',
+                    last_verification_match_json TEXT NOT NULL DEFAULT '{}',
+                    last_verification_error_type TEXT NOT NULL DEFAULT '',
+                    last_verification_error_text TEXT NOT NULL DEFAULT '',
+                    last_verification_error_payload_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY(order_record_id) REFERENCES local_order_records(id) ON DELETE CASCADE,
@@ -1063,6 +1077,60 @@ class DemoStore:
                 "local_dcm4chee_mwl_attempts",
                 "operation_type",
                 "TEXT NOT NULL DEFAULT 'create'",
+            )
+            self._ensure_column(
+                connection,
+                "local_dcm4chee_mwl_mappings",
+                "verification_status",
+                "TEXT NOT NULL DEFAULT 'not_verified'",
+            )
+            self._ensure_column(
+                connection,
+                "local_dcm4chee_mwl_mappings",
+                "last_verification_at",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "local_dcm4chee_mwl_mappings",
+                "last_verification_method",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "local_dcm4chee_mwl_mappings",
+                "last_verification_attempt_id",
+                "INTEGER",
+            )
+            self._ensure_column(
+                connection,
+                "local_dcm4chee_mwl_mappings",
+                "last_verification_query_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
+            self._ensure_column(
+                connection,
+                "local_dcm4chee_mwl_mappings",
+                "last_verification_match_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
+            self._ensure_column(
+                connection,
+                "local_dcm4chee_mwl_mappings",
+                "last_verification_error_type",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "local_dcm4chee_mwl_mappings",
+                "last_verification_error_text",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "local_dcm4chee_mwl_mappings",
+                "last_verification_error_payload_json",
+                "TEXT NOT NULL DEFAULT '{}'",
             )
             self._backfill_dcm4chee_mwl_mappings(connection)
             self._ensure_column(connection, "local_patient_records", "email", "TEXT NOT NULL DEFAULT ''")
@@ -2348,7 +2416,32 @@ class DemoStore:
             parsed = parsed[0] if parsed and isinstance(parsed[0], dict) else {}
         if not isinstance(parsed, dict):
             return {}
-        dataset = parsed.get("attrs") if isinstance(parsed.get("attrs"), dict) else parsed
+        return cls.dcm4chee_identifiers_from_dataset(parsed)
+
+    @classmethod
+    def dcm4chee_datasets_from_response_body(cls, response_body: str) -> list[dict[str, Any]]:
+        try:
+            parsed = json.loads(response_body or "")
+        except (TypeError, ValueError):
+            return []
+        if isinstance(parsed, list):
+            values = parsed
+        else:
+            values = [parsed]
+        datasets: list[dict[str, Any]] = []
+        for value in values:
+            if not isinstance(value, dict):
+                continue
+            dataset = value.get("attrs") if isinstance(value.get("attrs"), dict) else value
+            if isinstance(dataset, dict):
+                datasets.append(dataset)
+        return datasets
+
+    @classmethod
+    def dcm4chee_identifiers_from_dataset(cls, dataset: dict[str, Any]) -> dict[str, str]:
+        dataset = dataset.get("attrs") if isinstance(dataset.get("attrs"), dict) else dataset
+        if not isinstance(dataset, dict):
+            return {}
         sps_payload = cls._dcm4chee_sps_payload(dataset)
         values = {
             "patient_id": cls._dicom_first_value(dataset, "00100020"),
@@ -2362,6 +2455,18 @@ class DemoStore:
             "scheduled_station_ae_title": cls._dicom_first_value(sps_payload, "00400001"),
         }
         return {key: value for key, value in values.items() if value}
+
+    @staticmethod
+    def dcm4chee_mwl_verification_query_from_mapping(mapping: dict[str, Any]) -> dict[str, str]:
+        query = {
+            "AccessionNumber": str(mapping.get("accessionNumber") or "").strip(),
+            "RequestedProcedureID": str(mapping.get("requestedProcedureId") or "").strip(),
+            "ScheduledProcedureStepID": str(mapping.get("scheduledProcedureStepId") or "").strip(),
+            "PatientID": str(mapping.get("patientId") or "").strip(),
+            "IssuerOfPatientID": str(mapping.get("issuerOfPatientId") or "").strip(),
+            "ScheduledStationAETitle": str(mapping.get("scheduledStationAETitle") or "").strip(),
+        }
+        return {key: value for key, value in query.items() if value}
 
     def upsert_dcm4chee_mwl_mapping(
         self,
@@ -2824,6 +2929,110 @@ class DemoStore:
                     (order_record_id,),
                 ).fetchall()
         return [self._dcm4chee_mwl_attempt_dict(row) for row in rows]
+
+    def create_dcm4chee_mwl_verification_attempt(
+        self,
+        order_record_id: int,
+        mapping: dict[str, Any],
+        *,
+        request_url: str,
+        query_criteria: dict[str, str],
+        attempt_status: str = DCM4CHEE_MWL_STATUS_PENDING,
+        error_type: str = "",
+        error_text: str = "",
+        http_status: int | None = None,
+        response_body: str = "",
+    ) -> dict[str, Any]:
+        now = now_iso()
+        with self.lock, self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO local_dcm4chee_mwl_attempts (
+                    mapping_id, operation_type, order_record_id, profile_name,
+                    server_identity, mwl_ae_title, scheduled_station_ae_title, local_dcm4chee_order_number,
+                    accession_number, requested_procedure_id,
+                    scheduled_procedure_step_id, study_instance_uid, uid_root,
+                    request_url, request_payload_json, http_status, response_body,
+                    attempt_status, error_type, error_text, attempted_at,
+                    completed_at, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(mapping["id"]) if mapping.get("id") else None,
+                    DCM4CHEE_MWL_OPERATION_VERIFY,
+                    int(order_record_id),
+                    str(mapping.get("profileName") or "").strip(),
+                    str(mapping.get("serverIdentity") or "").strip(),
+                    str(mapping.get("mwlAETitle") or "").strip(),
+                    str(mapping.get("scheduledStationAETitle") or "").strip(),
+                    str(mapping.get("localDcm4cheeOrderNumber") or "").strip(),
+                    str(mapping.get("accessionNumber") or "").strip(),
+                    str(mapping.get("requestedProcedureId") or "").strip(),
+                    str(mapping.get("scheduledProcedureStepId") or "").strip(),
+                    str(mapping.get("studyInstanceUid") or "").strip(),
+                    str(mapping.get("uidRoot") or "").strip(),
+                    request_url,
+                    json.dumps(query_criteria, sort_keys=True),
+                    http_status,
+                    response_body,
+                    attempt_status,
+                    error_type,
+                    error_text,
+                    now,
+                    now if attempt_status != DCM4CHEE_MWL_STATUS_PENDING else "",
+                    now,
+                    now,
+                ),
+            )
+            attempt_id = int(cursor.lastrowid)
+        return self.get_dcm4chee_mwl_attempt(attempt_id)
+
+    def update_dcm4chee_mwl_verification_result(
+        self,
+        order_record_id: int,
+        *,
+        attempt_id: int,
+        verification_status: str,
+        method: str,
+        query_criteria: dict[str, Any],
+        match_payload: dict[str, Any] | None = None,
+        error_type: str = "",
+        error_text: str = "",
+        error_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self.lock, self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE local_dcm4chee_mwl_mappings
+                SET verification_status = ?,
+                    last_verification_at = ?,
+                    last_verification_method = ?,
+                    last_verification_attempt_id = ?,
+                    last_verification_query_json = ?,
+                    last_verification_match_json = ?,
+                    last_verification_error_type = ?,
+                    last_verification_error_text = ?,
+                    last_verification_error_payload_json = ?,
+                    updated_at = ?
+                WHERE order_record_id = ?
+                """,
+                (
+                    verification_status,
+                    timestamp,
+                    method,
+                    int(attempt_id),
+                    json.dumps(query_criteria, sort_keys=True),
+                    json.dumps(match_payload or {}, sort_keys=True),
+                    error_type,
+                    error_text,
+                    json.dumps(error_payload or {}, sort_keys=True),
+                    timestamp,
+                    int(order_record_id),
+                ),
+            )
+        return self.get_dcm4chee_mwl_mapping_for_order(int(order_record_id))
 
     def _synced_patient_reference_for_fhir_order(self, patient_record_id: int) -> str:
         patient = self.get_patient_record(patient_record_id)
@@ -4318,6 +4527,32 @@ class DemoStore:
             "lastErrorPayload": DemoStore._json_value(row["last_error_payload_json"], {}),
             "latestRequestPayload": DemoStore._json_value(row["latest_request_payload_json"], {}),
             "latestReadbackPayload": DemoStore._json_value(row["latest_readback_payload_json"], {}),
+            "verification": {
+                "status": row["verification_status"] if "verification_status" in row.keys() else DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED,
+                "lastVerifiedAt": row["last_verification_at"] if "last_verification_at" in row.keys() else "",
+                "method": row["last_verification_method"] if "last_verification_method" in row.keys() else "",
+                "attemptId": row["last_verification_attempt_id"] if "last_verification_attempt_id" in row.keys() else None,
+                "query": DemoStore._json_value(
+                    row["last_verification_query_json"] if "last_verification_query_json" in row.keys() else "{}",
+                    {},
+                ),
+                "match": DemoStore._json_value(
+                    row["last_verification_match_json"] if "last_verification_match_json" in row.keys() else "{}",
+                    {},
+                ),
+                "errorType": row["last_verification_error_type"]
+                if "last_verification_error_type" in row.keys()
+                else "",
+                "error": row["last_verification_error_text"]
+                if "last_verification_error_text" in row.keys()
+                else "",
+                "errorPayload": DemoStore._json_value(
+                    row["last_verification_error_payload_json"]
+                    if "last_verification_error_payload_json" in row.keys()
+                    else "{}",
+                    {},
+                ),
+            },
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
         }
@@ -4336,6 +4571,7 @@ class DemoStore:
         return {
             **attempt,
             "mapping": mapping or None,
+            "verification": mapping.get("verification") if mapping else None,
             "status": status,
             "displayStatus": display_status,
             "displayState": display_state,
