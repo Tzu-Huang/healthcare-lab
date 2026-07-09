@@ -24,12 +24,14 @@ except ModuleNotFoundError:  # pragma: no cover - optional in minimal test envs
         return False
 
 from backend.lab_store import (
+    DCM4CHEE_MWL_OPERATION_CREATE,
     DCM4CHEE_MWL_OPERATION_VERIFY,
     DCM4CHEE_MWL_STATUS_CREATED,
     DCM4CHEE_MWL_STATUS_FAILED,
     DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
     DCM4CHEE_MWL_STATUS_PENDING,
     DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE,
+    DCM4CHEE_PATIENT_SYNC_OPERATION_PREFLIGHT,
     DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
     DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
     DCM4CHEE_MWL_VERIFICATION_AMBIGUOUS,
@@ -950,6 +952,54 @@ def sync_order_to_dcm4chee_mwl(
     existing_mapping = store.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
     if existing_mapping and existing_mapping.get("status") == DCM4CHEE_MWL_STATUS_CREATED:
         return existing_mapping
+    patient_record_id = int(order.get("patientRecordId") or 0)
+    patient_sync = store.get_dcm4chee_patient_sync_for_patient(patient_record_id, profile) if patient_record_id else None
+    patient = store.get_patient_record(patient_record_id) if patient_record_id else {}
+    requires_patient_sync = patient.get("protocolVersion") == "DICOM" or patient_sync is not None
+    if requires_patient_sync and (not patient_sync or patient_sync.get("status") != DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED):
+        patient_sync = sync_patient_to_dcm4chee(
+            store,
+            patient,
+            profile,
+            operation_type=DCM4CHEE_PATIENT_SYNC_OPERATION_PREFLIGHT,
+        )
+    if requires_patient_sync and (not patient_sync or patient_sync.get("status") != DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED):
+        mapping = store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=uid_root,
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+            increment_retry=existing_mapping is not None,
+        )
+        error_text = (
+            str(patient_sync.get("lastError") or "")
+            if patient_sync
+            else "dcm4chee Patient sync is required before MWL creation."
+        )
+        if not error_text:
+            error_text = "dcm4chee Patient sync is required before MWL creation."
+        attempt = store.create_dcm4chee_mwl_attempt(
+            int(order["id"]),
+            profile,
+            uid_root=uid_root,
+            request_url=request_url,
+            request_payload=payload,
+            attempt_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+            error_type="patient_sync_failed",
+            error_text=error_text,
+            operation_type=DCM4CHEE_MWL_OPERATION_CREATE,
+            mapping_id=int(mapping["id"]),
+        )
+        store.update_dcm4chee_mwl_mapping_from_attempt(
+            int(order["id"]),
+            attempt_id=int(attempt["id"]),
+            sync_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+            error_type="patient_sync_failed",
+            error_text=error_text,
+            error_payload={"patientSync": patient_sync or {}},
+        )
+        return attempt
     if existing_mapping:
         created_but_unconfirmed = (
             int(existing_mapping.get("lastHttpStatus") or 0) in range(200, 300)
