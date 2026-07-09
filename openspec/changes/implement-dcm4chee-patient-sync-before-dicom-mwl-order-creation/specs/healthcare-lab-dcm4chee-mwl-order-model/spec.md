@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: dcm4chee MWL creation requires Patient precondition handling
+### Requirement: Patient precondition failures are explicit
 Healthcare Lab SHALL ensure the referenced Patient exists in dcm4chee before creating a dcm4chee MWL item, or clearly report that the Patient precondition failed.
 
 #### Scenario: Patient is synced before MWL create
