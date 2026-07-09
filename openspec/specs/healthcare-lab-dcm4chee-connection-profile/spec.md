@@ -51,14 +51,18 @@ Healthcare Lab SHALL include auth and TLS settings in the dcm4chee profile even 
 ### Requirement: dcm4chee profile diagnostics report incomplete configuration
 Healthcare Lab SHALL provide backend validation or diagnostic output for the dcm4chee connection profile.
 
-#### Scenario: Profile is complete
-- **GIVEN** the configured dcm4chee profile includes all required local values
-- **WHEN** Healthcare Lab validates the profile
-- **THEN** the diagnostic output reports the profile as valid
-- **AND** the diagnostic output includes individual checks for identity, Web UI, DIMSE, MWL, DICOMweb, and security settings
+#### Scenario: Local profile diagnostics report invalid required fields
+- **WHEN** a required local dcm4chee profile field is missing or invalid
+- **THEN** Healthcare Lab reports the invalid field and a human-readable diagnostic message
+- **AND** Patient sync, MWL, and DICOMweb diagnostics identify their own missing or invalid settings
 
-#### Scenario: Required profile values are missing
-- **GIVEN** the configured dcm4chee profile is missing a required value
-- **WHEN** Healthcare Lab validates the profile
-- **THEN** the diagnostic output reports the profile as invalid
-- **AND** the diagnostic output identifies each missing or invalid field with a clear message
+### Requirement: dcm4chee profile includes HL7 Patient sync settings
+Healthcare Lab SHALL store the HL7 receiver settings required by dcm4chee Patient sync workflows.
+
+#### Scenario: Profile exposes HL7 receiver values
+- **WHEN** Healthcare Lab loads the dcm4chee connection profile
+- **THEN** the profile includes HL7 receiver host and port
+- **AND** the profile includes sending application and sending facility
+- **AND** the profile includes receiving application and receiving facility
+- **AND** the profile includes the Patient assigning authority used for dcm4chee Patient IDs
+

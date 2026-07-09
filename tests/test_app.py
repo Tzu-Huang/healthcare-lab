@@ -367,6 +367,64 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(item["fhir"]["sync"]["status"], "Sync failed")
         self.assertIn("base URL", item["fhir"]["sync"]["error"])
 
+    @patch("app.send_hl7_mllp_message")
+    def test_patient_api_creates_dicom_patient_and_syncs_dcm4chee(self, send_hl7):
+        send_hl7.return_value = (
+            "MSH|^~\\&|DCM4CHEE|DCM4CHEE|HEALTHCARE_LAB|LAB_APP|20260709101010||ACK^A04|ACK1|P|2.3.1"
+            "\rMSA|AA|DCMADT1|OK"
+        )
+
+        response = self.client.post(
+            "/api/patients",
+            json={
+                "mode": "dicom",
+                "mrn": "MRN-DCM-001",
+                "firstName": "Avery",
+                "middleName": "Lee",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+                "patientClass": "O",
+                "assignedLocation": "CARDIOLOGY^ROOM1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item = response.get_json()["item"]
+        dcm4chee_patient = item["dcm4chee"]["patient"]
+        self.assertEqual(dcm4chee_patient["status"], "Synced")
+        self.assertEqual(dcm4chee_patient["patientId"], "MRN-DCM-001")
+        self.assertEqual(dcm4chee_patient["issuerOfPatientId"], "local-dcm4chee")
+        self.assertEqual(dcm4chee_patient["ack"]["code"], "AA")
+        sent_payload = send_hl7.call_args.args[0]
+        self.assertIn("ADT^A04", sent_payload)
+        self.assertIn("PID|1||MRN-DCM-001^^^local-dcm4chee^MR", sent_payload)
+        self.assertEqual(send_hl7.call_args.kwargs["host"], "127.0.0.1")
+        self.assertEqual(send_hl7.call_args.kwargs["port"], 2575)
+
+    @patch("app.send_hl7_mllp_message", side_effect=OSError("connection refused"))
+    def test_patient_api_preserves_dicom_patient_when_dcm4chee_sync_fails(self, _send_hl7):
+        response = self.client.post(
+            "/api/patients",
+            json={
+                "mode": "dicom",
+                "mrn": "MRN-DCM-002",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item = response.get_json()["item"]
+        self.assertEqual(item["protocolVersion"], "DICOM")
+        dcm4chee_patient = item["dcm4chee"]["patient"]
+        self.assertEqual(dcm4chee_patient["status"], "Sync failed")
+        self.assertTrue(dcm4chee_patient["retryable"])
+        self.assertEqual(dcm4chee_patient["lastErrorType"], "dcm4chee_hl7_unreachable")
+        self.assertIn("connection refused", dcm4chee_patient["lastError"])
+
     @patch("app.urllib.request.urlopen")
     def test_patient_api_creates_fhir_patient_and_syncs_medplum(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
@@ -1540,6 +1598,84 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(captured[0]["payload"]["00400100"]["Value"][0]["00400001"]["Value"], ["ECG_AP"])
         self.assertEqual(captured[1]["method"], "GET")
         self.assertIn("AccessionNumber=ACC-000001", captured[1]["url"])
+
+    @patch("app.urllib.request.urlopen")
+    @patch("app.send_hl7_mllp_message")
+    def test_order_api_creates_dcm4chee_mwl_after_dicom_patient_sync(self, send_hl7, urlopen):
+        send_hl7.return_value = "MSH|^~\\&|DCM4CHEE|DCM4CHEE|HEALTHCARE_LAB|LAB_APP|20260709101010||ACK^A04|ACK1|P|2.3.1\rMSA|AA|DCMADT1|OK"
+        captured = []
+
+        def fake_urlopen(request, timeout):
+            captured.append(request.get_method())
+            if request.get_method() == "GET":
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "00100020": {"vr": "LO", "Value": ["MRN-DCM-MWL-001"]},
+                                "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
+                                "00080050": {"vr": "SH", "Value": ["ACC-000001"]},
+                                "00401001": {"vr": "SH", "Value": ["RP-000001"]},
+                                "0020000D": {"vr": "UI", "Value": ["1.2.826.0.1.3680043.10.543.20260708103000.1"]},
+                                "00400100": {
+                                    "vr": "SQ",
+                                    "Value": [{"00400009": {"vr": "SH", "Value": ["SPS-000001"]}}],
+                                },
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            return FakeHttpResponse(json.dumps({"created": True}).encode("utf-8"), status=200)
+
+        urlopen.side_effect = fake_urlopen
+        patient = self.client.post(
+            "/api/patients",
+            json={
+                "mode": "dicom",
+                "mrn": "MRN-DCM-MWL-001",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            },
+        ).get_json()["item"]
+
+        created = self.client.post("/api/orders", json={"mode": "dicom", "patientRecordId": patient["id"]})
+
+        self.assertEqual(created.status_code, 201)
+        mwl = created.get_json()["item"]["dcm4chee"]["mwl"]
+        self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_CREATED)
+        self.assertEqual(captured, ["POST", "GET"])
+        self.assertEqual(send_hl7.call_count, 1)
+
+    @patch("app.urllib.request.urlopen")
+    @patch("app.send_hl7_mllp_message", side_effect=OSError("connection refused"))
+    def test_order_api_blocks_dcm4chee_mwl_when_dicom_patient_sync_fails(self, send_hl7, urlopen):
+        patient = self.client.post(
+            "/api/patients",
+            json={
+                "mode": "dicom",
+                "mrn": "MRN-DCM-MWL-002",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            },
+        ).get_json()["item"]
+
+        created = self.client.post("/api/orders", json={"mode": "dicom", "patientRecordId": patient["id"]})
+
+        self.assertEqual(created.status_code, 201)
+        item = created.get_json()["item"]
+        self.assertEqual(item["protocolVersion"], "DICOM")
+        mwl = item["dcm4chee"]["mwl"]
+        self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_PATIENT_MISSING)
+        self.assertEqual(mwl["errorType"], "patient_sync_failed")
+        self.assertFalse(mwl["retryable"])
+        self.assertIn("connection refused", mwl["error"])
+        self.assertEqual(send_hl7.call_count, 2)
+        urlopen.assert_not_called()
 
     @patch("app.urllib.request.urlopen")
     def test_dcm4chee_sync_reuses_successful_mapping_without_duplicate_post(self, urlopen):
@@ -2802,6 +2938,13 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(profile["dimse"]["callingAETitle"], "HEALTHCARE_LAB")
         self.assertEqual(profile["mwl"]["aeTitle"], "WORKLIST")
         self.assertEqual(profile["mwl"]["defaultScheduledStationAETitle"], "ECG_AP")
+        self.assertEqual(profile["hl7"]["host"], "127.0.0.1")
+        self.assertEqual(profile["hl7"]["port"], 2575)
+        self.assertEqual(profile["hl7"]["sendingApplication"], "HEALTHCARE_LAB")
+        self.assertEqual(profile["hl7"]["sendingFacility"], "LAB_APP")
+        self.assertEqual(profile["hl7"]["receivingApplication"], "DCM4CHEE")
+        self.assertEqual(profile["hl7"]["receivingFacility"], "DCM4CHEE")
+        self.assertEqual(profile["hl7"]["patientAssigningAuthority"], "local-dcm4chee")
         self.assertEqual(
             profile["dicomweb"]["baseUrl"],
             "http://127.0.0.1:8082/dcm4chee-arc/aets/WORKLIST/rs",
@@ -2813,6 +2956,7 @@ class HealthcareLabApiTests(unittest.TestCase):
     def test_dcm4chee_profile_diagnostics_report_missing_values(self):
         profile = dcm4chee_profile_from_config(self.client.application.config)
         profile["dimse"]["calledAETitle"] = ""
+        profile["hl7"]["patientAssigningAuthority"] = ""
         profile["dicomweb"]["baseUrl"] = "not-a-url"
         profile["security"]["certificatePath"] = "cert.pem"
 
@@ -2821,6 +2965,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertFalse(diagnostics["valid"])
         messages = {check["field"]: check["message"] for check in diagnostics["checks"]}
         self.assertEqual(messages["dimse.calledAETitle"], "Called AE title is required.")
+        self.assertEqual(messages["hl7.patientAssigningAuthority"], "HL7 Patient assigning authority is required.")
         self.assertEqual(
             messages["dicomweb.baseUrl"],
             "dicomweb.baseUrl must start with http:// or https://.",
@@ -2840,6 +2985,7 @@ class HealthcareLabApiTests(unittest.TestCase):
                 os.environ,
                 {
                     "DCM4CHEE_DIMSE_PORT": "abc",
+                    "DCM4CHEE_HL7_PORT": "bad",
                     "DCM4CHEE_TLS_ENABLED": "maybe",
                     "DCM4CHEE_TLS_VERIFY": "sometimes",
                 },
@@ -2855,6 +3001,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(
             messages["dimse.port"],
             "DIMSE port must be an integer between 1 and 65535.",
+        )
+        self.assertEqual(
+            messages["hl7.port"],
+            "HL7 port must be an integer between 1 and 65535.",
         )
         self.assertEqual(messages["security.tlsEnabled"], "TLS enabled must be true or false.")
         self.assertEqual(messages["security.tlsVerify"], "TLS verify must be true or false.")

@@ -24,11 +24,16 @@ except ModuleNotFoundError:  # pragma: no cover - optional in minimal test envs
         return False
 
 from backend.lab_store import (
+    DCM4CHEE_MWL_OPERATION_CREATE,
     DCM4CHEE_MWL_OPERATION_VERIFY,
     DCM4CHEE_MWL_STATUS_CREATED,
     DCM4CHEE_MWL_STATUS_FAILED,
     DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
     DCM4CHEE_MWL_STATUS_PENDING,
+    DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE,
+    DCM4CHEE_PATIENT_SYNC_OPERATION_PREFLIGHT,
+    DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+    DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
     DCM4CHEE_MWL_VERIFICATION_AMBIGUOUS,
     DCM4CHEE_MWL_VERIFICATION_FAILED,
     DCM4CHEE_MWL_VERIFICATION_VERIFIED,
@@ -349,6 +354,23 @@ def dcm4chee_profile_from_config(config: dict[str, Any]) -> dict[str, Any]:
                 config.get("DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE", "ECG_AP") or ""
             ).strip(),
         },
+        "hl7": {
+            "host": str(config.get("DCM4CHEE_HL7_HOST", "127.0.0.1") or "").strip(),
+            "port": coerce_config_int(config.get("DCM4CHEE_HL7_PORT"), default=2575),
+            "sendingApplication": str(
+                config.get("DCM4CHEE_HL7_SENDING_APPLICATION", "HEALTHCARE_LAB") or ""
+            ).strip(),
+            "sendingFacility": str(config.get("DCM4CHEE_HL7_SENDING_FACILITY", "LAB_APP") or "").strip(),
+            "receivingApplication": str(
+                config.get("DCM4CHEE_HL7_RECEIVING_APPLICATION", "DCM4CHEE") or ""
+            ).strip(),
+            "receivingFacility": str(
+                config.get("DCM4CHEE_HL7_RECEIVING_FACILITY", "DCM4CHEE") or ""
+            ).strip(),
+            "patientAssigningAuthority": str(
+                config.get("DCM4CHEE_PATIENT_ASSIGNING_AUTHORITY", profile_name) or ""
+            ).strip(),
+        },
         "dicomweb": {
             "baseUrl": dicomweb_base_url,
             "qidoRsUrl": qido_url,
@@ -423,6 +445,25 @@ def validate_dcm4chee_profile(profile: dict[str, Any]) -> dict[str, Any]:
     required_text(("dimse", "callingAETitle"), "Calling AE title")
     required_text(("mwl", "aeTitle"), "MWL AE title")
     required_text(("mwl", "defaultScheduledStationAETitle"), "Default Scheduled Station AE Title")
+
+    hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
+    required_text(("hl7", "host"), "HL7 host")
+    try:
+        port = int(hl7.get("port") or 0)
+        valid_port = 1 <= port <= 65535
+    except (TypeError, ValueError):
+        valid_port = False
+    add_check(
+        "hl7_port",
+        "hl7.port",
+        valid_port,
+        "HL7 port is valid." if valid_port else "HL7 port must be an integer between 1 and 65535.",
+    )
+    required_text(("hl7", "sendingApplication"), "HL7 sending application")
+    required_text(("hl7", "sendingFacility"), "HL7 sending facility")
+    required_text(("hl7", "receivingApplication"), "HL7 receiving application")
+    required_text(("hl7", "receivingFacility"), "HL7 receiving facility")
+    required_text(("hl7", "patientAssigningAuthority"), "HL7 Patient assigning authority")
 
     dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
     for field in ("baseUrl", "qidoRsUrl", "wadoRsUrl", "stowRsUrl"):
@@ -911,6 +952,54 @@ def sync_order_to_dcm4chee_mwl(
     existing_mapping = store.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
     if existing_mapping and existing_mapping.get("status") == DCM4CHEE_MWL_STATUS_CREATED:
         return existing_mapping
+    patient_record_id = int(order.get("patientRecordId") or 0)
+    patient_sync = store.get_dcm4chee_patient_sync_for_patient(patient_record_id, profile) if patient_record_id else None
+    patient = store.get_patient_record(patient_record_id) if patient_record_id else {}
+    requires_patient_sync = patient.get("protocolVersion") == "DICOM" or patient_sync is not None
+    if requires_patient_sync and (not patient_sync or patient_sync.get("status") != DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED):
+        patient_sync = sync_patient_to_dcm4chee(
+            store,
+            patient,
+            profile,
+            operation_type=DCM4CHEE_PATIENT_SYNC_OPERATION_PREFLIGHT,
+        )
+    if requires_patient_sync and (not patient_sync or patient_sync.get("status") != DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED):
+        mapping = store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=uid_root,
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+            increment_retry=existing_mapping is not None,
+        )
+        error_text = (
+            str(patient_sync.get("lastError") or "")
+            if patient_sync
+            else "dcm4chee Patient sync is required before MWL creation."
+        )
+        if not error_text:
+            error_text = "dcm4chee Patient sync is required before MWL creation."
+        attempt = store.create_dcm4chee_mwl_attempt(
+            int(order["id"]),
+            profile,
+            uid_root=uid_root,
+            request_url=request_url,
+            request_payload=payload,
+            attempt_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+            error_type="patient_sync_failed",
+            error_text=error_text,
+            operation_type=DCM4CHEE_MWL_OPERATION_CREATE,
+            mapping_id=int(mapping["id"]),
+        )
+        store.update_dcm4chee_mwl_mapping_from_attempt(
+            int(order["id"]),
+            attempt_id=int(attempt["id"]),
+            sync_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+            error_type="patient_sync_failed",
+            error_text=error_text,
+            error_payload={"patientSync": patient_sync or {}},
+        )
+        return attempt
     if existing_mapping:
         created_but_unconfirmed = (
             int(existing_mapping.get("lastHttpStatus") or 0) in range(200, 300)
@@ -2611,6 +2700,74 @@ def send_hl7_mllp_message(
     return mllp_unframe(bytes(received)) if framing else bytes(received).decode("utf-8", errors="replace")
 
 
+def sync_patient_to_dcm4chee(
+    store: DemoStore,
+    patient: dict[str, Any],
+    profile: dict[str, Any],
+    *,
+    operation_type: str = DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE,
+    timeout_seconds: float = 10,
+) -> dict[str, Any]:
+    hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
+    host = str(hl7.get("host") or "").strip()
+    port = int(hl7.get("port") or 0)
+    request_url = f"mllp://{host}:{port}" if host and port else ""
+    event_type = "A08" if operation_type == "adt-update" else "A04"
+    payload = store.build_dcm4chee_patient_adt_payload(patient, profile, event_type=event_type)
+    sync = store.upsert_dcm4chee_patient_sync(
+        int(patient["id"]),
+        profile,
+        sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+        increment_retry=store.get_dcm4chee_patient_sync_for_patient(int(patient["id"]), profile) is not None,
+    )
+    attempt = store.create_dcm4chee_patient_sync_attempt(
+        int(patient["id"]),
+        profile,
+        patient_sync_id=int(sync["id"]),
+        operation_type=operation_type,
+        request_url=request_url,
+        request_payload=payload,
+    )
+    try:
+        response_payload = send_hl7_mllp_message(
+            payload,
+            host=host,
+            port=port,
+            timeout_seconds=timeout_seconds,
+            framing=True,
+        )
+    except (OSError, socket.timeout, TimeoutError) as exc:
+        updated_attempt = store.update_dcm4chee_patient_sync_attempt_result(
+            int(attempt["id"]),
+            attempt_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+            error_type="dcm4chee_hl7_unreachable",
+            error_text=str(exc),
+        )
+        return store.update_dcm4chee_patient_sync_from_attempt(
+            int(sync["id"]),
+            updated_attempt,
+            sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+        )
+
+    ack = parse_hl7_ack(response_payload)
+    accepted = ack.get("code") == "AA"
+    error_type = "" if accepted else "dcm4chee_hl7_rejected"
+    error_text = "" if accepted else (ack.get("text") or f"dcm4chee returned HL7 ACK {ack.get('code') or 'unknown'}.")
+    updated_attempt = store.update_dcm4chee_patient_sync_attempt_result(
+        int(attempt["id"]),
+        attempt_status=DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED if accepted else DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+        response_payload=response_payload,
+        ack=ack,
+        error_type=error_type,
+        error_text=error_text,
+    )
+    return store.update_dcm4chee_patient_sync_from_attempt(
+        int(sync["id"]),
+        updated_attempt,
+        sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED if accepted else DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+    )
+
+
 def run_gdt_bridge_smoke(app: Flask, server: dict[str, Any]) -> list[dict[str, Any]]:
     steps = [run_lab_application_check(server)]
     application_step = smoke_step("application_endpoint", steps[0][0], steps[0][1], required=False)
@@ -3224,6 +3381,28 @@ def create_app(database_path: str | None = None) -> Flask:
         "DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE",
         "ECG_AP",
     ).strip()
+    app.config["DCM4CHEE_HL7_HOST"] = os.environ.get("DCM4CHEE_HL7_HOST", "127.0.0.1").strip()
+    app.config["DCM4CHEE_HL7_PORT"] = os.environ.get("DCM4CHEE_HL7_PORT", "2575").strip()
+    app.config["DCM4CHEE_HL7_SENDING_APPLICATION"] = os.environ.get(
+        "DCM4CHEE_HL7_SENDING_APPLICATION",
+        "HEALTHCARE_LAB",
+    ).strip()
+    app.config["DCM4CHEE_HL7_SENDING_FACILITY"] = os.environ.get(
+        "DCM4CHEE_HL7_SENDING_FACILITY",
+        "LAB_APP",
+    ).strip()
+    app.config["DCM4CHEE_HL7_RECEIVING_APPLICATION"] = os.environ.get(
+        "DCM4CHEE_HL7_RECEIVING_APPLICATION",
+        "DCM4CHEE",
+    ).strip()
+    app.config["DCM4CHEE_HL7_RECEIVING_FACILITY"] = os.environ.get(
+        "DCM4CHEE_HL7_RECEIVING_FACILITY",
+        "DCM4CHEE",
+    ).strip()
+    app.config["DCM4CHEE_PATIENT_ASSIGNING_AUTHORITY"] = os.environ.get(
+        "DCM4CHEE_PATIENT_ASSIGNING_AUTHORITY",
+        app.config["DCM4CHEE_PROFILE_NAME"],
+    ).strip()
     app.config["DCM4CHEE_DICOMWEB_BASE_URL"] = os.environ.get(
         "DCM4CHEE_DICOMWEB_BASE_URL",
         f"http://127.0.0.1:8082/dcm4chee-arc/aets/{app.config['DCM4CHEE_MWL_AE_TITLE'] or 'WORKLIST'}/rs",
@@ -3341,6 +3520,13 @@ def create_app(database_path: str | None = None) -> Flask:
                         int(fhir_record["id"]),
                         error_text="Medplum FHIR base URL is required.",
                     )
+                item = store.get_patient_record(int(item["id"]))
+            elif item["protocolVersion"] == "DICOM":
+                sync_patient_to_dcm4chee(
+                    store,
+                    item,
+                    dcm4chee_profile_from_config(app.config),
+                )
                 item = store.get_patient_record(int(item["id"]))
         except SimulatorValidationError as exc:
             return error_response(str(exc), 400)

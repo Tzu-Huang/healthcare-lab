@@ -5,6 +5,10 @@ from pathlib import Path
 
 from backend.lab_store import (
     DCM4CHEE_MWL_STATUS_CREATED,
+    DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE,
+    DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+    DCM4CHEE_PATIENT_SYNC_STATUS_PENDING,
+    DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
     DemoStore,
     SimulatorValidationError,
     render_gdt_message,
@@ -204,6 +208,111 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(mapping["patientId"], "MRN-A04-001")
         self.assertEqual(attempts[0]["mappingId"], mapping["id"])
         self.assertEqual(self.store.list_order_records()[0]["id"], order["id"])
+
+    def test_dcm4chee_patient_sync_mapping_attempt_and_patient_view(self):
+        patient = self.store.create_patient_record(
+            {
+                "mode": "dicom",
+                "mrn": "MRN-DCM-001",
+                "firstName": "Avery",
+                "middleName": "Lee",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            }
+        )
+        profile = {
+            "profileName": "local-dcm4chee",
+            "dimse": {"calledAETitle": "DCM4CHEE"},
+            "hl7": {
+                "host": "dcm4chee",
+                "port": 2575,
+                "receivingApplication": "DCM4CHEE",
+                "receivingFacility": "DCM4CHEE",
+                "patientAssigningAuthority": "local-dcm4chee",
+            },
+        }
+
+        sync = self.store.upsert_dcm4chee_patient_sync(int(patient["id"]), profile)
+        attempt = self.store.create_dcm4chee_patient_sync_attempt(
+            int(patient["id"]),
+            profile,
+            patient_sync_id=int(sync["id"]),
+            operation_type=DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE,
+            request_url="mllp://dcm4chee:2575",
+            request_payload="MSH|^~\\&|...",
+        )
+        updated_attempt = self.store.update_dcm4chee_patient_sync_attempt_result(
+            int(attempt["id"]),
+            attempt_status=DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
+            response_payload="MSH|^~\\&|...\rMSA|AA|ADT1|OK",
+            ack={"code": "AA", "controlId": "ADT1", "text": "OK"},
+        )
+        updated_sync = self.store.update_dcm4chee_patient_sync_from_attempt(
+            int(sync["id"]),
+            updated_attempt,
+            sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
+        )
+        refreshed = self.store.get_patient_record(int(patient["id"]))
+        attempts = self.store.list_dcm4chee_patient_sync_attempts(int(patient["id"]))
+
+        self.assertEqual(sync["status"], DCM4CHEE_PATIENT_SYNC_STATUS_PENDING)
+        self.assertEqual(updated_sync["status"], DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED)
+        self.assertEqual(updated_sync["patientId"], "MRN-DCM-001")
+        self.assertEqual(updated_sync["issuerOfPatientId"], "local-dcm4chee")
+        self.assertEqual(updated_sync["ack"]["code"], "AA")
+        self.assertFalse(updated_sync["retryable"])
+        self.assertEqual(attempts[0]["requestUrl"], "mllp://dcm4chee:2575")
+        self.assertEqual(refreshed["dcm4chee"]["patient"]["status"], DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED)
+
+    def test_dcm4chee_patient_sync_failure_is_retryable(self):
+        patient = self.store.create_patient_record(
+            {
+                "mode": "dicom",
+                "mrn": "MRN-DCM-002",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            }
+        )
+        profile = {
+            "profileName": "local-dcm4chee",
+            "dimse": {"calledAETitle": "DCM4CHEE"},
+            "hl7": {
+                "host": "dcm4chee",
+                "port": 2575,
+                "receivingApplication": "DCM4CHEE",
+                "receivingFacility": "DCM4CHEE",
+                "patientAssigningAuthority": "local-dcm4chee",
+            },
+        }
+
+        sync = self.store.upsert_dcm4chee_patient_sync(
+            int(patient["id"]),
+            profile,
+            sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+            increment_retry=True,
+        )
+        attempt = self.store.create_dcm4chee_patient_sync_attempt(
+            int(patient["id"]),
+            profile,
+            patient_sync_id=int(sync["id"]),
+            attempt_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+            error_type="dcm4chee_hl7_unreachable",
+            error_text="connection refused",
+        )
+        updated_sync = self.store.update_dcm4chee_patient_sync_from_attempt(
+            int(sync["id"]),
+            attempt,
+            sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+        )
+
+        self.assertEqual(updated_sync["status"], DCM4CHEE_PATIENT_SYNC_STATUS_FAILED)
+        self.assertTrue(updated_sync["retryable"])
+        self.assertEqual(updated_sync["retryCount"], 1)
+        self.assertEqual(updated_sync["lastErrorType"], "dcm4chee_hl7_unreachable")
+        self.assertEqual(self.store.get_patient_record(int(patient["id"]))["id"], patient["id"])
 
     def test_local_patient_modes_generate_protocol_specific_payloads(self):
         base_payload = {
