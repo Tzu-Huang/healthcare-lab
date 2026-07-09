@@ -1329,6 +1329,41 @@ def sync_order_to_dcm4chee_mwl(
             error_payload={"patientSync": patient_sync or {}},
         )
         return attempt
+    if not requires_patient_sync:
+        try:
+            ensure_dcm4chee_patient_for_mwl_payload(profile, payload)
+        except UpstreamDcm4cheeError as exc:
+            mapping = store.upsert_dcm4chee_mwl_mapping(
+                int(order["id"]),
+                profile,
+                uid_root=uid_root,
+                request_payload=payload,
+                sync_status=DCM4CHEE_MWL_STATUS_FAILED,
+                increment_retry=existing_mapping is not None,
+            )
+            attempt = store.create_dcm4chee_mwl_attempt(
+                int(order["id"]),
+                profile,
+                uid_root=uid_root,
+                request_url=request_url,
+                request_payload=payload,
+                attempt_status=DCM4CHEE_MWL_STATUS_FAILED,
+                error_type="dcm4chee_request_failed",
+                error_text=str(exc),
+                operation_type=DCM4CHEE_MWL_OPERATION_CREATE,
+                mapping_id=int(mapping["id"]),
+            )
+            store.update_dcm4chee_mwl_mapping_from_attempt(
+                int(order["id"]),
+                attempt_id=int(attempt["id"]),
+                sync_status=DCM4CHEE_MWL_STATUS_FAILED,
+                http_status=exc.http_status,
+                response_body=exc.response_body,
+                error_type=attempt["errorType"],
+                error_text=attempt["error"],
+                error_payload={"responseBody": exc.response_body},
+            )
+            return attempt
     if existing_mapping:
         created_but_unconfirmed = (
             int(existing_mapping.get("lastHttpStatus") or 0) in range(200, 300)
