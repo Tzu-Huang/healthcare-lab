@@ -32,6 +32,11 @@ from backend.lab_store import (
     DCM4CHEE_MWL_STATUS_FAILED,
     DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
     DCM4CHEE_MWL_STATUS_PENDING,
+    DCM4CHEE_RESULT_STATUS_DUPLICATE,
+    DCM4CHEE_RESULT_STATUS_MATCHED,
+    DCM4CHEE_RESULT_STATUS_NO_RESULT,
+    DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
+    DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
     render_gdt_message,
 )
 
@@ -2306,6 +2311,202 @@ class HealthcareLabApiTests(unittest.TestCase):
         urlopen.reset_mock()
         response = self.client.post(f"/api/orders/{order['id']}/dcm4chee-mwl-verify")
         self.assertEqual(response.get_json()["verification"]["errorType"], "mwl_profile_invalid")
+
+    @patch("app.urllib.request.urlopen")
+    def test_patient_dcm4chee_result_refresh_reconciles_study_series_and_instance(self, urlopen):
+        patient = self.create_local_patient()
+        self.client.application.config["DCM4CHEE_QIDO_RS_URL"] = (
+            "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"
+        )
+        self.client.application.config["DCM4CHEE_WADO_RS_URL"] = (
+            "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"
+        )
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = store.build_dcm4chee_mwl_payload(
+            order,
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+        mapping = store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_CREATED,
+        )
+        calls = []
+
+        def fake_urlopen(request, timeout):
+            calls.append(request.full_url)
+            if request.full_url.endswith("/series"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "0020000D": {"vr": "UI", "Value": [mapping["studyInstanceUid"]]},
+                                "0020000E": {"vr": "UI", "Value": ["1.2.3.series"]},
+                                "00080060": {"vr": "CS", "Value": ["ECG"]},
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            if request.full_url.endswith("/instances"):
+                return FakeHttpResponse(
+                    json.dumps(
+                        [
+                            {
+                                "0020000D": {"vr": "UI", "Value": [mapping["studyInstanceUid"]]},
+                                "0020000E": {"vr": "UI", "Value": ["1.2.3.series"]},
+                                "00080018": {"vr": "UI", "Value": ["1.2.3.instance"]},
+                                "00080060": {"vr": "CS", "Value": ["ECG"]},
+                            }
+                        ]
+                    ).encode("utf-8"),
+                    status=200,
+                )
+            self.assertIn("/studies?", request.full_url)
+            return FakeHttpResponse(
+                json.dumps(
+                    [
+                        {
+                            "00100020": {"vr": "LO", "Value": [mapping["patientId"]]},
+                            "00100021": {"vr": "LO", "Value": [mapping["issuerOfPatientId"]]},
+                            "00080050": {"vr": "SH", "Value": [mapping["accessionNumber"]]},
+                            "00401001": {"vr": "SH", "Value": [mapping["requestedProcedureId"]]},
+                            "0020000D": {"vr": "UI", "Value": [mapping["studyInstanceUid"]]},
+                            "00080060": {"vr": "CS", "Value": ["ECG"]},
+                            "00080020": {"vr": "DA", "Value": ["20260709"]},
+                            "00080030": {"vr": "TM", "Value": ["101500"]},
+                            "00400100": {
+                                "vr": "SQ",
+                                "Value": [{"00400009": {"vr": "SH", "Value": [mapping["scheduledProcedureStepId"]]}}],
+                            },
+                        }
+                    ]
+                ).encode("utf-8"),
+                status=200,
+            )
+
+        urlopen.side_effect = fake_urlopen
+
+        response = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body["success"])
+        self.assertGreaterEqual(len(body["items"]), 3)
+        matched = [item for item in body["items"] if item["reconciliationStatus"] == DCM4CHEE_RESULT_STATUS_MATCHED]
+        self.assertTrue(matched)
+        self.assertEqual(matched[0]["orderRecordId"], order["id"])
+        self.assertIn(mapping["studyInstanceUid"], matched[0]["viewerUrl"])
+        self.assertTrue(any("/studies?" in url and "StudyInstanceUID=" in url for url in calls))
+        patient_detail = self.client.get("/api/patients").get_json()["items"][0]
+        self.assertGreaterEqual(patient_detail["dcm4chee"]["resultCount"], 3)
+
+    @patch("app.urllib.request.urlopen")
+    def test_patient_dcm4chee_result_refresh_records_diagnostics(self, urlopen):
+        patient = self.create_local_patient()
+        self.client.application.config["DCM4CHEE_QIDO_RS_URL"] = (
+            "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"
+        )
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = store.build_dcm4chee_mwl_payload(
+            order,
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+        mapping = store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_CREATED,
+        )
+
+        urlopen.return_value = FakeHttpResponse(b"[]", status=200)
+        empty = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
+        self.assertEqual(empty.status_code, 200)
+        self.assertIn(
+            DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            {item["reconciliationStatus"] for item in empty.get_json()["items"]},
+        )
+
+        urlopen.return_value = FakeHttpResponse(
+            json.dumps(
+                [
+                    {
+                        "00100020": {"vr": "LO", "Value": ["OTHER-MRN"]},
+                        "00100021": {"vr": "LO", "Value": [mapping["issuerOfPatientId"]]},
+                        "00080050": {"vr": "SH", "Value": [mapping["accessionNumber"]]},
+                        "0020000D": {"vr": "UI", "Value": ["9.9.9"]},
+                    }
+                ]
+            ).encode("utf-8"),
+            status=200,
+        )
+        wrong_patient = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
+        self.assertIn(
+            DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
+            {item["reconciliationStatus"] for item in wrong_patient.get_json()["items"]},
+        )
+
+        def query_failure(request, timeout):
+            raise urllib.error.URLError("connection refused")
+
+        urlopen.side_effect = query_failure
+        failed = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
+        self.assertEqual(failed.status_code, 200)
+        self.assertFalse(failed.get_json()["success"])
+        self.assertIn(
+            DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
+            {item["reconciliationStatus"] for item in failed.get_json()["items"]},
+        )
+
+    @patch("app.urllib.request.urlopen")
+    def test_patient_dcm4chee_result_refresh_records_duplicate_study_candidates(self, urlopen):
+        patient = self.create_local_patient()
+        self.client.application.config["DCM4CHEE_QIDO_RS_URL"] = (
+            "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"
+        )
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = store.build_dcm4chee_mwl_payload(
+            order,
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+        mapping = store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_CREATED,
+        )
+        study = {
+            "00100020": {"vr": "LO", "Value": [mapping["patientId"]]},
+            "00100021": {"vr": "LO", "Value": [mapping["issuerOfPatientId"]]},
+            "00080050": {"vr": "SH", "Value": [mapping["accessionNumber"]]},
+            "0020000D": {"vr": "UI", "Value": [mapping["studyInstanceUid"]]},
+        }
+
+        def fake_urlopen(request, timeout):
+            if request.full_url.endswith("/series") or request.full_url.endswith("/instances"):
+                return FakeHttpResponse(b"[]", status=200)
+            return FakeHttpResponse(json.dumps([study, study]).encode("utf-8"), status=200)
+
+        urlopen.side_effect = fake_urlopen
+        response = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
+
+        self.assertIn(
+            DCM4CHEE_RESULT_STATUS_DUPLICATE,
+            {item["reconciliationStatus"] for item in response.get_json()["items"]},
+        )
 
     def test_gdt_order_api_creates_and_lists_local_ecg_order_without_openemr(self):
         self.client.application.config["OPENEMR_DB_HOST"] = ""
