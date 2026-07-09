@@ -2802,6 +2802,13 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(profile["dimse"]["callingAETitle"], "HEALTHCARE_LAB")
         self.assertEqual(profile["mwl"]["aeTitle"], "WORKLIST")
         self.assertEqual(profile["mwl"]["defaultScheduledStationAETitle"], "ECG_AP")
+        self.assertEqual(profile["hl7"]["host"], "127.0.0.1")
+        self.assertEqual(profile["hl7"]["port"], 2575)
+        self.assertEqual(profile["hl7"]["sendingApplication"], "HEALTHCARE_LAB")
+        self.assertEqual(profile["hl7"]["sendingFacility"], "LAB_APP")
+        self.assertEqual(profile["hl7"]["receivingApplication"], "DCM4CHEE")
+        self.assertEqual(profile["hl7"]["receivingFacility"], "DCM4CHEE")
+        self.assertEqual(profile["hl7"]["patientAssigningAuthority"], "local-dcm4chee")
         self.assertEqual(
             profile["dicomweb"]["baseUrl"],
             "http://127.0.0.1:8082/dcm4chee-arc/aets/WORKLIST/rs",
@@ -2813,6 +2820,7 @@ class HealthcareLabApiTests(unittest.TestCase):
     def test_dcm4chee_profile_diagnostics_report_missing_values(self):
         profile = dcm4chee_profile_from_config(self.client.application.config)
         profile["dimse"]["calledAETitle"] = ""
+        profile["hl7"]["patientAssigningAuthority"] = ""
         profile["dicomweb"]["baseUrl"] = "not-a-url"
         profile["security"]["certificatePath"] = "cert.pem"
 
@@ -2821,6 +2829,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertFalse(diagnostics["valid"])
         messages = {check["field"]: check["message"] for check in diagnostics["checks"]}
         self.assertEqual(messages["dimse.calledAETitle"], "Called AE title is required.")
+        self.assertEqual(messages["hl7.patientAssigningAuthority"], "HL7 Patient assigning authority is required.")
         self.assertEqual(
             messages["dicomweb.baseUrl"],
             "dicomweb.baseUrl must start with http:// or https://.",
@@ -2840,6 +2849,7 @@ class HealthcareLabApiTests(unittest.TestCase):
                 os.environ,
                 {
                     "DCM4CHEE_DIMSE_PORT": "abc",
+                    "DCM4CHEE_HL7_PORT": "bad",
                     "DCM4CHEE_TLS_ENABLED": "maybe",
                     "DCM4CHEE_TLS_VERIFY": "sometimes",
                 },
@@ -2855,6 +2865,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(
             messages["dimse.port"],
             "DIMSE port must be an integer between 1 and 65535.",
+        )
+        self.assertEqual(
+            messages["hl7.port"],
+            "HL7 port must be an integer between 1 and 65535.",
         )
         self.assertEqual(messages["security.tlsEnabled"], "TLS enabled must be true or false.")
         self.assertEqual(messages["security.tlsVerify"], "TLS verify must be true or false.")

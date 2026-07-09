@@ -1,8 +1,8 @@
 ## 1. Connection Profile And Docker Defaults
 
-- [ ] 1.1 Add dcm4chee HL7 receiver settings to app config and `.env.example`.
-- [ ] 1.2 Expose dcm4chee HL7 port `2575` in `deploy/docker-compose.yml`.
-- [ ] 1.3 Include HL7 Patient sync settings in profile diagnostics.
+- [x] 1.1 Add dcm4chee HL7 receiver settings to app config and `.env.example`.
+- [x] 1.2 Expose dcm4chee HL7 port `2575` in `deploy/docker-compose.yml`.
+- [x] 1.3 Include HL7 Patient sync settings in profile diagnostics.
 
 ## 2. Patient Sync Data Model
 
