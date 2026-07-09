@@ -34,6 +34,16 @@ The user preference is to keep Healthcare Lab as the primary visual system while
 - Add or update frontend static tests when the ZAC-41 UI implementation lands.
 - Add grouping-helper tests if Study/Series/Instance hierarchy is implemented as a pure helper.
 
+## Code Review
+
+### Round 1 (2026-07-09)
+
+- Review source: `openspec/changes/add-dcm4chee-order-pacs-status-ui/review/2026-07-09_codex-review-r2.md`
+- Verdict: no code-review findings in the post-fix branch diff.
+- Notes: the scoped `app.py` fix restores DICOMweb Patient preflight for non-DICOM local patients before dcm4chee MWL read-back/create.
+- Verification context: OpenSpec validation passed, Python compile passed, and `python -m unittest discover -s tests` passed 141 tests.
+- Residual risk: ZAC-41 frontend implementation tasks remain pending by design.
+
 ## Follow-ups
 
 - Implement the frontend DICOM order status detail.
