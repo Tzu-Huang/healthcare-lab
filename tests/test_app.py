@@ -2312,6 +2312,15 @@ class HealthcareLabApiTests(unittest.TestCase):
         response = self.client.post(f"/api/orders/{order['id']}/dcm4chee-mwl-verify")
         self.assertEqual(response.get_json()["verification"]["errorType"], "mwl_profile_invalid")
 
+    def test_patient_dcm4chee_result_ui_hooks_are_present(self):
+        script = Path("frontend/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn("refreshPatientDcm4cheeResults", script)
+        self.assertIn("/api/patients/${patientId}/dcm4chee-results-refresh", script)
+        self.assertIn("renderPatientDcm4cheeResults", script)
+        self.assertIn("DICOM Results", script)
+        self.assertIn("dicomResults", script)
+
     @patch("app.urllib.request.urlopen")
     def test_patient_dcm4chee_result_refresh_reconciles_study_series_and_instance(self, urlopen):
         patient = self.create_local_patient()

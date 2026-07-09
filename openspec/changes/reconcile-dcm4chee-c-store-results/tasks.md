@@ -25,9 +25,9 @@
 
 - [x] 4.1 Add a patient-level and/or order-level result refresh API.
 - [x] 4.2 Expose DICOM results under patient payloads or a patient DICOM results endpoint.
-- [ ] 4.3 Add a refresh action in the patient/order workspace.
-- [ ] 4.4 Render patient-level expandable/dropdown DICOM results grouped by matched order and unresolved diagnostics.
-- [ ] 4.5 Show identifiers, modality, timestamps, reconciliation status, and viewer/open links.
+- [x] 4.3 Add a refresh action in the patient/order workspace.
+- [x] 4.4 Render patient-level expandable/dropdown DICOM results grouped by matched order and unresolved diagnostics.
+- [x] 4.5 Show identifiers, modality, timestamps, reconciliation status, and viewer/open links.
 
 ## 5. Documentation
 
@@ -42,5 +42,5 @@
 - [ ] 6.3 Add tests for Requested Procedure ID plus SPS ID matching.
 - [ ] 6.4 Add tests for ambiguous, duplicate, wrong-patient, missing-accession, unlinked, no-result, and query-failed diagnostics.
 - [ ] 6.5 Add API/response contract tests for patient-level DICOM result exposure.
-- [ ] 6.6 Add frontend coverage or static contract checks for refresh controls and expandable patient DICOM results.
+- [x] 6.6 Add frontend coverage or static contract checks for refresh controls and expandable patient DICOM results.
 - [ ] 6.7 Run OpenSpec validation and the relevant Healthcare Lab Python test suite.
