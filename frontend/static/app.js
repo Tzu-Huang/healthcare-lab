@@ -2120,8 +2120,8 @@ function renderOrderSummary(payload, patient, createdAt = "") {
     [
       ["Patient", patient?.summary?.name],
       ["MRN", patient?.summary?.mrn],
-      ["MWL AE", "DCM4CHEE"],
-      ["Station AE", "ECG_AP"],
+      ["MWL AE", mapping.mwlAETitle || mwl.mwlAETitle || "WORKLIST"],
+      ["Station AE", mapping.scheduledStationAETitle || mwl.scheduledStationAETitle || "ECG_AP"],
       ["Code", `${payload.orderCode || orderDemoPreset.orderCode}`],
       ["Requested", payload.requestedAt || "Generated on create"],
       ["Created", createdAt],
@@ -2140,6 +2140,15 @@ function renderOrderSummary(payload, patient, createdAt = "") {
         ["HTTP", mapping.lastHttpStatus || latest.httpStatus],
         ["Error Type", mapping.lastErrorType || latest.errorType],
         ["Error", mapping.lastError || latest.error],
+      ]));
+      const verification = mapping.verification || mwl.verification || {};
+      container.appendChild(dcm4cheeDetailBlock("MWL Verification", [
+        ["Status", verification.status],
+        ["Method", verification.method],
+        ["Last Verified", verification.lastVerifiedAt],
+        ["Attempt", verification.attemptId],
+        ["Error Type", verification.errorType],
+        ["Error", verification.error],
       ]));
       container.appendChild(dcm4cheeDetailBlock("Identifiers", [
         ["Study UID", mapping.studyInstanceUid || mwl.studyInstanceUid],
@@ -2333,6 +2342,7 @@ function renderOrderRecordList() {
         ].filter(Boolean).join(" | ")
       : "";
     const actionCell = rowCell("");
+    let hasAction = false;
     if (mode === "dicom" && dcm4cheeMwl.retryable) {
       const retryButton = createElement("button", "Retry", "small-button");
       retryButton.type = "button";
@@ -2340,8 +2350,20 @@ function renderOrderRecordList() {
         event.stopPropagation();
         retryDcm4cheeOrder(item.id, retryButton);
       });
-      actionCell.replaceChildren(retryButton);
-    } else {
+      actionCell.appendChild(retryButton);
+      hasAction = true;
+    }
+    if (mode === "dicom" && dcm4cheeMapping.id) {
+      const verifyButton = createElement("button", "Verify", "small-button");
+      verifyButton.type = "button";
+      verifyButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        verifyDcm4cheeOrder(item.id, verifyButton);
+      });
+      actionCell.appendChild(verifyButton);
+      hasAction = true;
+    }
+    if (!hasAction) {
       actionCell.textContent = "-";
       actionCell.className = "muted";
     }
@@ -2397,6 +2419,27 @@ async function retryDcm4cheeOrder(orderId, button) {
     await refreshOrders();
   } catch (error) {
     setStatus("order-form-status", "Retry failed", "error");
+    byId("order-payload-preview").textContent = error.message;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function verifyDcm4cheeOrder(orderId, button) {
+  if (button) button.disabled = true;
+  setStatus("order-form-status", "Verifying dcm4chee MWL...", "pending");
+  try {
+    const result = await requestJsonAllowBusinessFailure(`/api/orders/${orderId}/dcm4chee-mwl-verify`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const verification = result.verification || {};
+    const status = verification.status || "MWL verification updated";
+    setStatus("order-form-status", status, result.success ? "success" : "error");
+    selectedOrderRecordId = orderId;
+    await refreshOrders();
+  } catch (error) {
+    setStatus("order-form-status", "Verification failed", "error");
     byId("order-payload-preview").textContent = error.message;
   } finally {
     if (button) button.disabled = false;
