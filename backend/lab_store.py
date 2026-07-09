@@ -1789,6 +1789,67 @@ class DemoStore:
             "receiving_facility": str(hl7.get("receivingFacility") or "").strip(),
         }
 
+    @classmethod
+    def build_dcm4chee_patient_adt_payload(
+        cls,
+        patient: dict[str, Any],
+        profile: dict[str, Any],
+        *,
+        event_type: str = "A04",
+        timestamp: str = "",
+    ) -> str:
+        patient_fields = patient.get("patient") if isinstance(patient.get("patient"), dict) else {}
+        summary = patient.get("summary") if isinstance(patient.get("summary"), dict) else {}
+        hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
+        identifiers = cls.dcm4chee_patient_identifiers(patient, profile)
+        patient_name = "^".join(
+            _hl7_escape(str(patient_fields.get(key) or "").strip())
+            for key in ("lastName", "firstName", "middleName")
+        ).rstrip("^")
+        if not patient_name:
+            raise SimulatorValidationError("dcm4chee Patient name is required.")
+        if not identifiers["patient_id"]:
+            raise SimulatorValidationError("dcm4chee Patient ID is required.")
+        if not identifiers["issuer_of_patient_id"]:
+            raise SimulatorValidationError("dcm4chee Patient issuer is required.")
+        message_time = timestamp or hl7_timestamp()
+        normalized_event = str(event_type or "A04").strip().upper()
+        if not normalized_event.startswith("A"):
+            normalized_event = f"A{normalized_event}"
+        message_type = f"ADT^{normalized_event}"
+        control_id = f"DCMADT{message_time}{int(patient['id']):06d}"
+        visit_number = str(patient.get("visitNumber") or summary.get("visitNumber") or "").strip()
+        patient_class = str(patient.get("patientClass") or "O").strip() or "O"
+        assigned_location = str(patient.get("assignedLocation") or "").strip()
+        attending_provider = str(patient.get("attendingProvider") or "").strip()
+        account_number = str(patient.get("accountNumber") or "").strip()
+        segments = [
+            (
+                "MSH|^~\\&|"
+                f"{_hl7_escape(str(hl7.get('sendingApplication') or 'HEALTHCARE_LAB'))}|"
+                f"{_hl7_escape(str(hl7.get('sendingFacility') or 'LAB_APP'))}|"
+                f"{_hl7_escape(str(hl7.get('receivingApplication') or 'DCM4CHEE'))}|"
+                f"{_hl7_escape(str(hl7.get('receivingFacility') or 'DCM4CHEE'))}|"
+                f"{message_time}||{message_type}|{control_id}|P|2.3.1"
+            ),
+            f"EVN|{normalized_event}|{message_time}",
+            (
+                "PID|1||"
+                f"{_hl7_escape(identifiers['patient_id'])}^^^{_hl7_escape(identifiers['issuer_of_patient_id'])}^MR||"
+                f"{patient_name}||{_hl7_escape(str(patient_fields.get('dob') or summary.get('dob') or ''))}|"
+                f"{_hl7_escape(str(patient_fields.get('sex') or summary.get('sex') or ''))}|||"
+                f"{_hl7_escape_composite(str(patient_fields.get('address') or ''))}||"
+                f"{_hl7_escape(str(patient_fields.get('phone') or ''))}|||||"
+                f"{_hl7_escape(account_number)}"
+            ),
+            (
+                "PV1|1|"
+                f"{_hl7_escape(patient_class)}|{_hl7_escape_composite(assigned_location)}||||"
+                f"{_hl7_escape_composite(attending_provider)}||||||||||||{_hl7_escape(visit_number)}"
+            ),
+        ]
+        return "\r".join(segments)
+
     def upsert_dcm4chee_patient_sync(
         self,
         patient_record_id: int,

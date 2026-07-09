@@ -367,6 +367,64 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(item["fhir"]["sync"]["status"], "Sync failed")
         self.assertIn("base URL", item["fhir"]["sync"]["error"])
 
+    @patch("app.send_hl7_mllp_message")
+    def test_patient_api_creates_dicom_patient_and_syncs_dcm4chee(self, send_hl7):
+        send_hl7.return_value = (
+            "MSH|^~\\&|DCM4CHEE|DCM4CHEE|HEALTHCARE_LAB|LAB_APP|20260709101010||ACK^A04|ACK1|P|2.3.1"
+            "\rMSA|AA|DCMADT1|OK"
+        )
+
+        response = self.client.post(
+            "/api/patients",
+            json={
+                "mode": "dicom",
+                "mrn": "MRN-DCM-001",
+                "firstName": "Avery",
+                "middleName": "Lee",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+                "patientClass": "O",
+                "assignedLocation": "CARDIOLOGY^ROOM1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item = response.get_json()["item"]
+        dcm4chee_patient = item["dcm4chee"]["patient"]
+        self.assertEqual(dcm4chee_patient["status"], "Synced")
+        self.assertEqual(dcm4chee_patient["patientId"], "MRN-DCM-001")
+        self.assertEqual(dcm4chee_patient["issuerOfPatientId"], "local-dcm4chee")
+        self.assertEqual(dcm4chee_patient["ack"]["code"], "AA")
+        sent_payload = send_hl7.call_args.args[0]
+        self.assertIn("ADT^A04", sent_payload)
+        self.assertIn("PID|1||MRN-DCM-001^^^local-dcm4chee^MR", sent_payload)
+        self.assertEqual(send_hl7.call_args.kwargs["host"], "127.0.0.1")
+        self.assertEqual(send_hl7.call_args.kwargs["port"], 2575)
+
+    @patch("app.send_hl7_mllp_message", side_effect=OSError("connection refused"))
+    def test_patient_api_preserves_dicom_patient_when_dcm4chee_sync_fails(self, _send_hl7):
+        response = self.client.post(
+            "/api/patients",
+            json={
+                "mode": "dicom",
+                "mrn": "MRN-DCM-002",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item = response.get_json()["item"]
+        self.assertEqual(item["protocolVersion"], "DICOM")
+        dcm4chee_patient = item["dcm4chee"]["patient"]
+        self.assertEqual(dcm4chee_patient["status"], "Sync failed")
+        self.assertTrue(dcm4chee_patient["retryable"])
+        self.assertEqual(dcm4chee_patient["lastErrorType"], "dcm4chee_hl7_unreachable")
+        self.assertIn("connection refused", dcm4chee_patient["lastError"])
+
     @patch("app.urllib.request.urlopen")
     def test_patient_api_creates_fhir_patient_and_syncs_medplum(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
