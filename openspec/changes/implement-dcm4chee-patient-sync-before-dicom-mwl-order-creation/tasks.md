@@ -12,10 +12,10 @@
 
 ## 3. HL7 ADT Sync
 
-- [ ] 3.1 Build dcm4chee ADT Patient payloads that use the same Patient ID and issuer namespace as MWL.
-- [ ] 3.2 Add an MLLP client for sending ADT to dcm4chee and parsing ACK status.
-- [ ] 3.3 Trigger ADT sync when a local DICOM Patient is created.
-- [ ] 3.4 Preserve local Patient records and mark sync failure when dcm4chee is unreachable or rejects the ADT.
+- [x] 3.1 Build dcm4chee ADT Patient payloads that use the same Patient ID and issuer namespace as MWL.
+- [x] 3.2 Add an MLLP client for sending ADT to dcm4chee and parsing ACK status.
+- [x] 3.3 Trigger ADT sync when a local DICOM Patient is created.
+- [x] 3.4 Preserve local Patient records and mark sync failure when dcm4chee is unreachable or rejects the ADT.
 
 ## 4. MWL Patient Precondition
 

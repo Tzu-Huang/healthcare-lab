@@ -29,6 +29,9 @@ from backend.lab_store import (
     DCM4CHEE_MWL_STATUS_FAILED,
     DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
     DCM4CHEE_MWL_STATUS_PENDING,
+    DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE,
+    DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+    DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
     DCM4CHEE_MWL_VERIFICATION_AMBIGUOUS,
     DCM4CHEE_MWL_VERIFICATION_FAILED,
     DCM4CHEE_MWL_VERIFICATION_VERIFIED,
@@ -2647,6 +2650,74 @@ def send_hl7_mllp_message(
     return mllp_unframe(bytes(received)) if framing else bytes(received).decode("utf-8", errors="replace")
 
 
+def sync_patient_to_dcm4chee(
+    store: DemoStore,
+    patient: dict[str, Any],
+    profile: dict[str, Any],
+    *,
+    operation_type: str = DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE,
+    timeout_seconds: float = 10,
+) -> dict[str, Any]:
+    hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
+    host = str(hl7.get("host") or "").strip()
+    port = int(hl7.get("port") or 0)
+    request_url = f"mllp://{host}:{port}" if host and port else ""
+    event_type = "A08" if operation_type == "adt-update" else "A04"
+    payload = store.build_dcm4chee_patient_adt_payload(patient, profile, event_type=event_type)
+    sync = store.upsert_dcm4chee_patient_sync(
+        int(patient["id"]),
+        profile,
+        sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+        increment_retry=store.get_dcm4chee_patient_sync_for_patient(int(patient["id"]), profile) is not None,
+    )
+    attempt = store.create_dcm4chee_patient_sync_attempt(
+        int(patient["id"]),
+        profile,
+        patient_sync_id=int(sync["id"]),
+        operation_type=operation_type,
+        request_url=request_url,
+        request_payload=payload,
+    )
+    try:
+        response_payload = send_hl7_mllp_message(
+            payload,
+            host=host,
+            port=port,
+            timeout_seconds=timeout_seconds,
+            framing=True,
+        )
+    except (OSError, socket.timeout, TimeoutError) as exc:
+        updated_attempt = store.update_dcm4chee_patient_sync_attempt_result(
+            int(attempt["id"]),
+            attempt_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+            error_type="dcm4chee_hl7_unreachable",
+            error_text=str(exc),
+        )
+        return store.update_dcm4chee_patient_sync_from_attempt(
+            int(sync["id"]),
+            updated_attempt,
+            sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+        )
+
+    ack = parse_hl7_ack(response_payload)
+    accepted = ack.get("code") == "AA"
+    error_type = "" if accepted else "dcm4chee_hl7_rejected"
+    error_text = "" if accepted else (ack.get("text") or f"dcm4chee returned HL7 ACK {ack.get('code') or 'unknown'}.")
+    updated_attempt = store.update_dcm4chee_patient_sync_attempt_result(
+        int(attempt["id"]),
+        attempt_status=DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED if accepted else DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+        response_payload=response_payload,
+        ack=ack,
+        error_type=error_type,
+        error_text=error_text,
+    )
+    return store.update_dcm4chee_patient_sync_from_attempt(
+        int(sync["id"]),
+        updated_attempt,
+        sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED if accepted else DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
+    )
+
+
 def run_gdt_bridge_smoke(app: Flask, server: dict[str, Any]) -> list[dict[str, Any]]:
     steps = [run_lab_application_check(server)]
     application_step = smoke_step("application_endpoint", steps[0][0], steps[0][1], required=False)
@@ -3399,6 +3470,13 @@ def create_app(database_path: str | None = None) -> Flask:
                         int(fhir_record["id"]),
                         error_text="Medplum FHIR base URL is required.",
                     )
+                item = store.get_patient_record(int(item["id"]))
+            elif item["protocolVersion"] == "DICOM":
+                sync_patient_to_dcm4chee(
+                    store,
+                    item,
+                    dcm4chee_profile_from_config(app.config),
+                )
                 item = store.get_patient_record(int(item["id"]))
         except SimulatorValidationError as exc:
             return error_response(str(exc), 400)
