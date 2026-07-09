@@ -1049,6 +1049,47 @@ class DemoStore:
                     FOREIGN KEY(order_record_id) REFERENCES local_order_records(id) ON DELETE CASCADE,
                     FOREIGN KEY(last_attempt_id) REFERENCES local_dcm4chee_mwl_attempts(id) ON DELETE SET NULL
                 );
+                CREATE TABLE IF NOT EXISTS local_dcm4chee_result_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    result_key TEXT NOT NULL UNIQUE,
+                    patient_record_id INTEGER,
+                    order_record_id INTEGER,
+                    mapping_id INTEGER,
+                    profile_name TEXT NOT NULL DEFAULT '',
+                    server_identity TEXT NOT NULL DEFAULT '',
+                    source_ae_title TEXT NOT NULL DEFAULT '',
+                    study_instance_uid TEXT NOT NULL DEFAULT '',
+                    series_instance_uid TEXT NOT NULL DEFAULT '',
+                    sop_instance_uid TEXT NOT NULL DEFAULT '',
+                    accession_number TEXT NOT NULL DEFAULT '',
+                    patient_id TEXT NOT NULL DEFAULT '',
+                    issuer_of_patient_id TEXT NOT NULL DEFAULT '',
+                    requested_procedure_id TEXT NOT NULL DEFAULT '',
+                    scheduled_procedure_step_id TEXT NOT NULL DEFAULT '',
+                    modality TEXT NOT NULL DEFAULT '',
+                    study_datetime TEXT NOT NULL DEFAULT '',
+                    series_datetime TEXT NOT NULL DEFAULT '',
+                    instance_datetime TEXT NOT NULL DEFAULT '',
+                    viewer_url TEXT NOT NULL DEFAULT '',
+                    study_retrieve_url TEXT NOT NULL DEFAULT '',
+                    series_retrieve_url TEXT NOT NULL DEFAULT '',
+                    instance_retrieve_url TEXT NOT NULL DEFAULT '',
+                    reconciliation_status TEXT NOT NULL DEFAULT '',
+                    match_method TEXT NOT NULL DEFAULT '',
+                    match_strength TEXT NOT NULL DEFAULT '',
+                    query_url TEXT NOT NULL DEFAULT '',
+                    query_payload_json TEXT NOT NULL DEFAULT '{}',
+                    diagnostic_payload_json TEXT NOT NULL DEFAULT '{}',
+                    raw_metadata_json TEXT NOT NULL DEFAULT '{}',
+                    refresh_generation TEXT NOT NULL DEFAULT '',
+                    first_seen_at TEXT NOT NULL,
+                    last_refreshed_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(patient_record_id) REFERENCES local_patient_records(id) ON DELETE SET NULL,
+                    FOREIGN KEY(order_record_id) REFERENCES local_order_records(id) ON DELETE SET NULL,
+                    FOREIGN KEY(mapping_id) REFERENCES local_dcm4chee_mwl_mappings(id) ON DELETE SET NULL
+                );
                 CREATE TABLE IF NOT EXISTS local_dcm4chee_patient_syncs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     patient_record_id INTEGER NOT NULL,
@@ -1125,6 +1166,13 @@ class DemoStore:
                     profile_name, server_identity, requested_procedure_id, scheduled_procedure_step_id
                 )
                 WHERE requested_procedure_id != '' AND scheduled_procedure_step_id != '';
+                CREATE INDEX IF NOT EXISTS idx_dcm4chee_result_patient
+                ON local_dcm4chee_result_records(patient_record_id, last_refreshed_at);
+                CREATE INDEX IF NOT EXISTS idx_dcm4chee_result_mapping
+                ON local_dcm4chee_result_records(mapping_id);
+                CREATE INDEX IF NOT EXISTS idx_dcm4chee_result_generation
+                ON local_dcm4chee_result_records(patient_record_id, refresh_generation)
+                WHERE refresh_generation != '';
                 CREATE INDEX IF NOT EXISTS idx_dcm4chee_patient_sync_patient
                 ON local_dcm4chee_patient_syncs(patient_record_id);
                 CREATE INDEX IF NOT EXISTS idx_dcm4chee_patient_sync_identifier
@@ -6349,6 +6397,7 @@ class DemoStore:
         source_ids = [str(row["id"]) for row in rows]
         fhir_by_source_id: dict[str, dict[str, Any]] = {}
         dcm4chee_by_source_id: dict[str, dict[str, Any]] = {}
+        dcm4chee_results_by_source_id: dict[str, list[dict[str, Any]]] = {}
         if source_ids:
             placeholders = ", ".join("?" for _ in source_ids)
             with self.connect() as connection:
@@ -6369,17 +6418,40 @@ class DemoStore:
                     """,
                     [int(source_id) for source_id in source_ids],
                 ).fetchall()
+                dcm4chee_result_rows = connection.execute(
+                    f"""
+                    SELECT * FROM local_dcm4chee_result_records
+                    WHERE patient_record_id IN ({placeholders})
+                    ORDER BY last_refreshed_at DESC, id DESC
+                    """,
+                    [int(source_id) for source_id in source_ids],
+                ).fetchall()
             for fhir_row in fhir_rows:
                 fhir_by_source_id[str(fhir_row["local_source_id"])] = self._fhir_workflow_record_dict(fhir_row)
             for dcm4chee_row in dcm4chee_rows:
                 source_id = str(dcm4chee_row["patient_record_id"])
                 if source_id not in dcm4chee_by_source_id:
                     dcm4chee_by_source_id[source_id] = self._dcm4chee_patient_sync_dict(dcm4chee_row)
+            latest_result_generation_by_source_id: dict[str, str] = {}
+            for dcm4chee_result_row in dcm4chee_result_rows:
+                source_id = str(dcm4chee_result_row["patient_record_id"])
+                generation = str(dcm4chee_result_row["refresh_generation"] or "")
+                if generation and source_id not in latest_result_generation_by_source_id:
+                    latest_result_generation_by_source_id[source_id] = generation
+            for dcm4chee_result_row in dcm4chee_result_rows:
+                source_id = str(dcm4chee_result_row["patient_record_id"])
+                latest_generation = latest_result_generation_by_source_id.get(source_id)
+                if latest_generation and dcm4chee_result_row["refresh_generation"] != latest_generation:
+                    continue
+                dcm4chee_results_by_source_id.setdefault(source_id, []).append(
+                    self._dcm4chee_result_record_dict(dcm4chee_result_row)
+                )
         return [
             self._patient_record_dict(
                 row,
                 fhir_by_source_id.get(str(row["id"])),
                 dcm4chee_by_source_id.get(str(row["id"])),
+                dcm4chee_results_by_source_id.get(str(row["id"]), []),
             )
             for row in rows
         ]
@@ -6389,6 +6461,7 @@ class DemoStore:
         row: sqlite3.Row,
         fhir_record: dict[str, Any] | None = None,
         dcm4chee_patient_sync: dict[str, Any] | None = None,
+        dcm4chee_results: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         validation_messages = json.loads(row["validation_messages_json"] or "[]")
         dcm4chee_results = dcm4chee_results or []
@@ -6449,7 +6522,11 @@ class DemoStore:
             },
             "payload": row["payload_hl7"],
             "fhir": fhir,
-            "dcm4chee": {"patient": dcm4chee_patient_sync} if dcm4chee_patient_sync else {},
+            "dcm4chee": {
+                **({"patient": dcm4chee_patient_sync} if dcm4chee_patient_sync else {}),
+                "dicomResults": dcm4chee_results,
+                "resultCount": len(dcm4chee_results),
+            },
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
             "localOnly": True,
