@@ -5,6 +5,7 @@ import json
 import re
 import sqlite3
 import threading
+import urllib.parse
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -73,6 +74,14 @@ DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED = "not_verified"
 DCM4CHEE_MWL_VERIFICATION_VERIFIED = "verified"
 DCM4CHEE_MWL_VERIFICATION_FAILED = "verification_failed"
 DCM4CHEE_MWL_VERIFICATION_AMBIGUOUS = "verification_ambiguous"
+DCM4CHEE_RESULT_STATUS_MATCHED = "matched"
+DCM4CHEE_RESULT_STATUS_NO_RESULT = "no_result"
+DCM4CHEE_RESULT_STATUS_AMBIGUOUS = "ambiguous"
+DCM4CHEE_RESULT_STATUS_DUPLICATE = "duplicate"
+DCM4CHEE_RESULT_STATUS_WRONG_PATIENT = "wrong_patient"
+DCM4CHEE_RESULT_STATUS_MISSING_ACCESSION = "missing_accession"
+DCM4CHEE_RESULT_STATUS_UNLINKED = "unlinked"
+DCM4CHEE_RESULT_STATUS_QUERY_FAILED = "query_failed"
 DCM4CHEE_DEFAULT_UID_ROOT = "1.2.826.0.1.3680043.10.543"
 FHIR_ORDER_PROTOCOL_VERSION = "FHIR R4"
 FHIR_ORDER_MESSAGE_TYPE = "ServiceRequest"
@@ -309,6 +318,10 @@ class SimulatorValidationError(ValueError):
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def urllib_quote_safe(value: Any) -> str:
+    return urllib.parse.quote(str(value or "").strip(), safe="")
 
 
 def hl7_timestamp() -> str:
@@ -1030,6 +1043,46 @@ class DemoStore:
                     FOREIGN KEY(order_record_id) REFERENCES local_order_records(id) ON DELETE CASCADE,
                     FOREIGN KEY(last_attempt_id) REFERENCES local_dcm4chee_mwl_attempts(id) ON DELETE SET NULL
                 );
+                CREATE TABLE IF NOT EXISTS local_dcm4chee_result_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    result_key TEXT NOT NULL UNIQUE,
+                    patient_record_id INTEGER,
+                    order_record_id INTEGER,
+                    mapping_id INTEGER,
+                    profile_name TEXT NOT NULL,
+                    server_identity TEXT NOT NULL,
+                    source_ae_title TEXT NOT NULL DEFAULT '',
+                    study_instance_uid TEXT NOT NULL DEFAULT '',
+                    series_instance_uid TEXT NOT NULL DEFAULT '',
+                    sop_instance_uid TEXT NOT NULL DEFAULT '',
+                    accession_number TEXT NOT NULL DEFAULT '',
+                    patient_id TEXT NOT NULL DEFAULT '',
+                    issuer_of_patient_id TEXT NOT NULL DEFAULT '',
+                    requested_procedure_id TEXT NOT NULL DEFAULT '',
+                    scheduled_procedure_step_id TEXT NOT NULL DEFAULT '',
+                    modality TEXT NOT NULL DEFAULT '',
+                    study_datetime TEXT NOT NULL DEFAULT '',
+                    series_datetime TEXT NOT NULL DEFAULT '',
+                    instance_datetime TEXT NOT NULL DEFAULT '',
+                    viewer_url TEXT NOT NULL DEFAULT '',
+                    study_retrieve_url TEXT NOT NULL DEFAULT '',
+                    series_retrieve_url TEXT NOT NULL DEFAULT '',
+                    instance_retrieve_url TEXT NOT NULL DEFAULT '',
+                    reconciliation_status TEXT NOT NULL,
+                    match_method TEXT NOT NULL DEFAULT '',
+                    match_strength TEXT NOT NULL DEFAULT '',
+                    query_url TEXT NOT NULL DEFAULT '',
+                    query_payload_json TEXT NOT NULL DEFAULT '{}',
+                    diagnostic_payload_json TEXT NOT NULL DEFAULT '{}',
+                    raw_metadata_json TEXT NOT NULL DEFAULT '{}',
+                    first_seen_at TEXT NOT NULL,
+                    last_refreshed_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(patient_record_id) REFERENCES local_patient_records(id) ON DELETE SET NULL,
+                    FOREIGN KEY(order_record_id) REFERENCES local_order_records(id) ON DELETE SET NULL,
+                    FOREIGN KEY(mapping_id) REFERENCES local_dcm4chee_mwl_mappings(id) ON DELETE SET NULL
+                );
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_oie_result_control_id
                 ON oie_result_records(message_control_id)
                 WHERE message_control_id != '';
@@ -1054,6 +1107,15 @@ class DemoStore:
                     profile_name, server_identity, requested_procedure_id, scheduled_procedure_step_id
                 )
                 WHERE requested_procedure_id != '' AND scheduled_procedure_step_id != '';
+                CREATE INDEX IF NOT EXISTS idx_dcm4chee_result_patient
+                ON local_dcm4chee_result_records(patient_record_id, last_refreshed_at);
+                CREATE INDEX IF NOT EXISTS idx_dcm4chee_result_order
+                ON local_dcm4chee_result_records(order_record_id, last_refreshed_at);
+                CREATE INDEX IF NOT EXISTS idx_dcm4chee_result_study
+                ON local_dcm4chee_result_records(profile_name, server_identity, study_instance_uid)
+                WHERE study_instance_uid != '';
+                CREATE INDEX IF NOT EXISTS idx_dcm4chee_result_status
+                ON local_dcm4chee_result_records(reconciliation_status, last_refreshed_at);
                 """
             )
             self._ensure_column(connection, "lab_servers", "control_type", "TEXT NOT NULL DEFAULT ''")
@@ -2704,6 +2766,583 @@ class DemoStore:
                 if row:
                     return self._dcm4chee_mwl_mapping_dict(row)
         return None
+
+    @classmethod
+    def dcm4chee_result_metadata_from_dataset(cls, dataset: dict[str, Any]) -> dict[str, str]:
+        dataset = dataset.get("attrs") if isinstance(dataset.get("attrs"), dict) else dataset
+        if not isinstance(dataset, dict):
+            return {}
+        sps_payload = cls._dcm4chee_sps_payload(dataset)
+        request_attrs = cls._dicom_sequence_first(dataset, "00400275")
+        identifiers = cls.dcm4chee_identifiers_from_dataset(dataset)
+        requested_procedure_id = (
+            identifiers.get("requested_procedure_id")
+            or cls._dicom_first_value(request_attrs, "00401001")
+        )
+        scheduled_procedure_step_id = (
+            identifiers.get("scheduled_procedure_step_id")
+            or cls._dicom_first_value(request_attrs, "00400009")
+            or cls._dicom_first_value(sps_payload, "00400009")
+        )
+        return {
+            **identifiers,
+            "requested_procedure_id": requested_procedure_id,
+            "scheduled_procedure_step_id": scheduled_procedure_step_id,
+            "series_instance_uid": cls._dicom_first_value(dataset, "0020000E"),
+            "sop_instance_uid": cls._dicom_first_value(dataset, "00080018"),
+            "modality": cls._dicom_first_value(dataset, "00080060"),
+            "study_datetime": cls._dicom_datetime(dataset, "00080020", "00080030"),
+            "series_datetime": cls._dicom_datetime(dataset, "00080021", "00080031"),
+            "instance_datetime": cls._dicom_datetime(dataset, "00080012", "00080013")
+            or cls._dicom_datetime(dataset, "00080023", "00080033"),
+        }
+
+    @staticmethod
+    def _dicom_sequence_first(payload: dict[str, Any], tag: str) -> dict[str, Any]:
+        element = payload.get(tag) if isinstance(payload, dict) else None
+        if not isinstance(element, dict):
+            return {}
+        values = element.get("Value")
+        if not isinstance(values, list) or not values or not isinstance(values[0], dict):
+            return {}
+        return values[0]
+
+    @classmethod
+    def _dicom_datetime(cls, payload: dict[str, Any], date_tag: str, time_tag: str) -> str:
+        date = cls._dicom_first_value(payload, date_tag)
+        time = cls._dicom_first_value(payload, time_tag)
+        if date and time:
+            return f"{date}{time}"
+        return date or time
+
+    @staticmethod
+    def _dcm4chee_profile_identity(profile: dict[str, Any]) -> tuple[str, str, str]:
+        dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
+        mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
+        profile_name = str(profile.get("profileName") or "").strip()
+        server_identity = str(dimse.get("calledAETitle") or mwl.get("aeTitle") or "").strip()
+        source_ae_title = str(dimse.get("calledAETitle") or server_identity).strip()
+        return profile_name, server_identity, source_ae_title
+
+    @staticmethod
+    def _dcm4chee_result_key(
+        *,
+        profile_name: str,
+        server_identity: str,
+        patient_record_id: int | None = None,
+        status: str = "",
+        study_instance_uid: str = "",
+        series_instance_uid: str = "",
+        sop_instance_uid: str = "",
+        accession_number: str = "",
+        requested_procedure_id: str = "",
+        scheduled_procedure_step_id: str = "",
+    ) -> str:
+        study = str(study_instance_uid or "").strip()
+        series = str(series_instance_uid or "").strip()
+        sop = str(sop_instance_uid or "").strip()
+        if study or series or sop:
+            return "|".join(
+                [
+                    "dicom",
+                    str(profile_name or "").strip(),
+                    str(server_identity or "").strip(),
+                    study,
+                    series,
+                    sop,
+                ]
+            )
+        accession = str(accession_number or "").strip()
+        requested = str(requested_procedure_id or "").strip()
+        sps = str(scheduled_procedure_step_id or "").strip()
+        if accession or requested or sps:
+            return "|".join(
+                [
+                    "dicom-identifiers",
+                    str(profile_name or "").strip(),
+                    str(server_identity or "").strip(),
+                    accession,
+                    requested,
+                    sps,
+                ]
+            )
+        return "|".join(
+            [
+                "diagnostic",
+                str(profile_name or "").strip(),
+                str(server_identity or "").strip(),
+                str(patient_record_id or ""),
+                str(status or "").strip(),
+            ]
+        )
+
+    @staticmethod
+    def _dcm4chee_patient_matches(mapping: dict[str, Any], metadata: dict[str, str]) -> bool:
+        patient_id = str(metadata.get("patient_id") or "").strip()
+        issuer = str(metadata.get("issuer_of_patient_id") or "").strip()
+        expected_patient_id = str(mapping.get("patientId") or "").strip()
+        expected_issuer = str(mapping.get("issuerOfPatientId") or "").strip()
+        if patient_id and expected_patient_id and patient_id != expected_patient_id:
+            return False
+        if issuer and expected_issuer and issuer != expected_issuer:
+            return False
+        return True
+
+    def _dcm4chee_mappings_for_patient(self, patient_record_id: int) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT m.* FROM local_dcm4chee_mwl_mappings m
+                JOIN local_order_records o ON o.id = m.order_record_id
+                WHERE o.patient_record_id = ?
+                ORDER BY m.updated_at DESC, m.id DESC
+                """,
+                (int(patient_record_id),),
+            ).fetchall()
+        return [self._dcm4chee_mwl_mapping_dict(row) for row in rows]
+
+    def reconcile_dcm4chee_result_metadata(
+        self,
+        metadata: dict[str, str],
+        *,
+        patient_record_id: int | None = None,
+        profile_name: str = "",
+        server_identity: str = "",
+    ) -> dict[str, Any]:
+        mappings = (
+            self._dcm4chee_mappings_for_patient(int(patient_record_id))
+            if patient_record_id is not None
+            else []
+        )
+        if not mappings:
+            return {
+                "status": DCM4CHEE_RESULT_STATUS_UNLINKED,
+                "method": "",
+                "strength": "none",
+                "mapping": None,
+                "diagnostic": {"reason": "no_local_dcm4chee_mapping"},
+            }
+
+        study_uid = str(metadata.get("study_instance_uid") or "").strip()
+        accession = str(metadata.get("accession_number") or "").strip()
+        requested = str(metadata.get("requested_procedure_id") or "").strip()
+        sps = str(metadata.get("scheduled_procedure_step_id") or "").strip()
+        profile = str(profile_name or "").strip()
+        server = str(server_identity or "").strip()
+
+        def in_namespace(mapping: dict[str, Any]) -> bool:
+            return (
+                (not profile or mapping.get("profileName") == profile)
+                and (not server or mapping.get("serverIdentity") == server)
+            )
+
+        candidates: list[tuple[str, str, dict[str, Any]]] = []
+        if study_uid:
+            candidates = [
+                ("study_instance_uid", "strong", mapping)
+                for mapping in mappings
+                if str(mapping.get("studyInstanceUid") or "").strip() == study_uid
+            ]
+        if not candidates and accession:
+            same_accession = [
+                mapping
+                for mapping in mappings
+                if in_namespace(mapping)
+                and str(mapping.get("accessionNumber") or "").strip() == accession
+            ]
+            wrong_patient = [mapping for mapping in same_accession if not self._dcm4chee_patient_matches(mapping, metadata)]
+            if wrong_patient:
+                return {
+                    "status": DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
+                    "method": "accession_number",
+                    "strength": "strong",
+                    "mapping": None,
+                    "diagnostic": {
+                        "reason": "patient_identity_mismatch",
+                        "candidateMappingIds": [item["id"] for item in wrong_patient],
+                    },
+                }
+            candidates = [("accession_number", "strong", mapping) for mapping in same_accession]
+        if not candidates and requested and sps:
+            same_procedure = [
+                mapping
+                for mapping in mappings
+                if in_namespace(mapping)
+                and str(mapping.get("requestedProcedureId") or "").strip() == requested
+                and str(mapping.get("scheduledProcedureStepId") or "").strip() == sps
+            ]
+            wrong_patient = [mapping for mapping in same_procedure if not self._dcm4chee_patient_matches(mapping, metadata)]
+            if wrong_patient:
+                return {
+                    "status": DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
+                    "method": "requested_procedure_step",
+                    "strength": "strong",
+                    "mapping": None,
+                    "diagnostic": {
+                        "reason": "patient_identity_mismatch",
+                        "candidateMappingIds": [item["id"] for item in wrong_patient],
+                    },
+                }
+            candidates = [("requested_procedure_step", "strong", mapping) for mapping in same_procedure]
+        if not candidates:
+            weak_candidates = [
+                mapping
+                for mapping in mappings
+                if self._dcm4chee_patient_matches(mapping, metadata)
+            ]
+            if len(weak_candidates) == 1:
+                candidates = [("patient_identity", "weak", weak_candidates[0])]
+            elif len(weak_candidates) > 1:
+                return {
+                    "status": DCM4CHEE_RESULT_STATUS_AMBIGUOUS,
+                    "method": "patient_identity",
+                    "strength": "weak",
+                    "mapping": None,
+                    "diagnostic": {
+                        "reason": "multiple_weak_candidates",
+                        "candidateMappingIds": [item["id"] for item in weak_candidates],
+                    },
+                }
+            elif not accession:
+                return {
+                    "status": DCM4CHEE_RESULT_STATUS_MISSING_ACCESSION,
+                    "method": "",
+                    "strength": "none",
+                    "mapping": None,
+                    "diagnostic": {"reason": "missing_accession_and_no_strong_identifier"},
+                }
+            else:
+                return {
+                    "status": DCM4CHEE_RESULT_STATUS_UNLINKED,
+                    "method": "",
+                    "strength": "none",
+                    "mapping": None,
+                    "diagnostic": {"reason": "no_matching_mapping"},
+                }
+        if len(candidates) > 1:
+            return {
+                "status": DCM4CHEE_RESULT_STATUS_AMBIGUOUS,
+                "method": candidates[0][0],
+                "strength": candidates[0][1],
+                "mapping": None,
+                "diagnostic": {
+                    "reason": "multiple_strong_candidates",
+                    "candidateMappingIds": [item[2]["id"] for item in candidates],
+                },
+            }
+        method, strength, mapping = candidates[0]
+        return {
+            "status": DCM4CHEE_RESULT_STATUS_MATCHED,
+            "method": method,
+            "strength": strength,
+            "mapping": mapping,
+            "diagnostic": {"reason": "matched", "mappingId": mapping["id"]},
+        }
+
+    @staticmethod
+    def dcm4chee_result_links(profile: dict[str, Any], metadata: dict[str, str]) -> dict[str, str]:
+        dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
+        viewer = profile.get("viewer") if isinstance(profile.get("viewer"), dict) else {}
+        wado_url = str(dicomweb.get("wadoRsUrl") or dicomweb.get("baseUrl") or "").strip().rstrip("/")
+        study_uid = str(metadata.get("study_instance_uid") or "").strip()
+        series_uid = str(metadata.get("series_instance_uid") or "").strip()
+        sop_uid = str(metadata.get("sop_instance_uid") or "").strip()
+        viewer_template = str(viewer.get("studyUrlTemplate") or "").strip()
+        links = {
+            "viewer_url": "",
+            "study_retrieve_url": "",
+            "series_retrieve_url": "",
+            "instance_retrieve_url": "",
+        }
+        if study_uid and viewer_template:
+            links["viewer_url"] = viewer_template.replace("{studyInstanceUid}", urllib_quote_safe(study_uid))
+        if study_uid and wado_url:
+            study_path = f"{wado_url}/studies/{urllib_quote_safe(study_uid)}"
+            links["study_retrieve_url"] = study_path
+            if series_uid:
+                series_path = f"{study_path}/series/{urllib_quote_safe(series_uid)}"
+                links["series_retrieve_url"] = series_path
+                if sop_uid:
+                    links["instance_retrieve_url"] = f"{series_path}/instances/{urllib_quote_safe(sop_uid)}"
+        return links
+
+    def upsert_dcm4chee_result_record(
+        self,
+        metadata: dict[str, str],
+        profile: dict[str, Any],
+        *,
+        patient_record_id: int | None = None,
+        query_url: str = "",
+        query_payload: dict[str, Any] | None = None,
+        raw_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        profile_name, server_identity, source_ae_title = self._dcm4chee_profile_identity(profile)
+        reconciliation = self.reconcile_dcm4chee_result_metadata(
+            metadata,
+            patient_record_id=patient_record_id,
+            profile_name=profile_name,
+            server_identity=server_identity,
+        )
+        mapping = reconciliation.get("mapping") or {}
+        links = self.dcm4chee_result_links(profile, metadata)
+        result_key = self._dcm4chee_result_key(
+            profile_name=profile_name,
+            server_identity=server_identity,
+            patient_record_id=patient_record_id,
+            status=str(reconciliation.get("status") or ""),
+            study_instance_uid=metadata.get("study_instance_uid", ""),
+            series_instance_uid=metadata.get("series_instance_uid", ""),
+            sop_instance_uid=metadata.get("sop_instance_uid", ""),
+            accession_number=metadata.get("accession_number", ""),
+            requested_procedure_id=metadata.get("requested_procedure_id", ""),
+            scheduled_procedure_step_id=metadata.get("scheduled_procedure_step_id", ""),
+        )
+        now = now_iso()
+        values = {
+            "patient_record_id": int(patient_record_id) if patient_record_id is not None else None,
+            "order_record_id": int(mapping["orderRecordId"]) if mapping else None,
+            "mapping_id": int(mapping["id"]) if mapping else None,
+            "profile_name": profile_name,
+            "server_identity": server_identity,
+            "source_ae_title": source_ae_title,
+            "study_instance_uid": metadata.get("study_instance_uid", ""),
+            "series_instance_uid": metadata.get("series_instance_uid", ""),
+            "sop_instance_uid": metadata.get("sop_instance_uid", ""),
+            "accession_number": metadata.get("accession_number", ""),
+            "patient_id": metadata.get("patient_id", ""),
+            "issuer_of_patient_id": metadata.get("issuer_of_patient_id", ""),
+            "requested_procedure_id": metadata.get("requested_procedure_id", ""),
+            "scheduled_procedure_step_id": metadata.get("scheduled_procedure_step_id", ""),
+            "modality": metadata.get("modality", ""),
+            "study_datetime": metadata.get("study_datetime", ""),
+            "series_datetime": metadata.get("series_datetime", ""),
+            "instance_datetime": metadata.get("instance_datetime", ""),
+            "viewer_url": links["viewer_url"],
+            "study_retrieve_url": links["study_retrieve_url"],
+            "series_retrieve_url": links["series_retrieve_url"],
+            "instance_retrieve_url": links["instance_retrieve_url"],
+            "reconciliation_status": reconciliation.get("status") or DCM4CHEE_RESULT_STATUS_UNLINKED,
+            "match_method": reconciliation.get("method") or "",
+            "match_strength": reconciliation.get("strength") or "",
+            "query_url": query_url,
+            "query_payload_json": json.dumps(query_payload or {}, sort_keys=True),
+            "diagnostic_payload_json": json.dumps(reconciliation.get("diagnostic") or {}, sort_keys=True),
+            "raw_metadata_json": json.dumps(raw_metadata or metadata or {}, sort_keys=True),
+        }
+        with self.lock, self.connect() as connection:
+            existing = connection.execute(
+                "SELECT id, first_seen_at FROM local_dcm4chee_result_records WHERE result_key = ?",
+                (result_key,),
+            ).fetchone()
+            if existing:
+                connection.execute(
+                    """
+                    UPDATE local_dcm4chee_result_records
+                    SET patient_record_id = ?, order_record_id = ?, mapping_id = ?,
+                        profile_name = ?, server_identity = ?, source_ae_title = ?,
+                        study_instance_uid = ?, series_instance_uid = ?, sop_instance_uid = ?,
+                        accession_number = ?, patient_id = ?, issuer_of_patient_id = ?,
+                        requested_procedure_id = ?, scheduled_procedure_step_id = ?,
+                        modality = ?, study_datetime = ?, series_datetime = ?, instance_datetime = ?,
+                        viewer_url = ?, study_retrieve_url = ?, series_retrieve_url = ?,
+                        instance_retrieve_url = ?, reconciliation_status = ?, match_method = ?,
+                        match_strength = ?, query_url = ?, query_payload_json = ?,
+                        diagnostic_payload_json = ?, raw_metadata_json = ?,
+                        last_refreshed_at = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        values["patient_record_id"],
+                        values["order_record_id"],
+                        values["mapping_id"],
+                        values["profile_name"],
+                        values["server_identity"],
+                        values["source_ae_title"],
+                        values["study_instance_uid"],
+                        values["series_instance_uid"],
+                        values["sop_instance_uid"],
+                        values["accession_number"],
+                        values["patient_id"],
+                        values["issuer_of_patient_id"],
+                        values["requested_procedure_id"],
+                        values["scheduled_procedure_step_id"],
+                        values["modality"],
+                        values["study_datetime"],
+                        values["series_datetime"],
+                        values["instance_datetime"],
+                        values["viewer_url"],
+                        values["study_retrieve_url"],
+                        values["series_retrieve_url"],
+                        values["instance_retrieve_url"],
+                        values["reconciliation_status"],
+                        values["match_method"],
+                        values["match_strength"],
+                        values["query_url"],
+                        values["query_payload_json"],
+                        values["diagnostic_payload_json"],
+                        values["raw_metadata_json"],
+                        now,
+                        now,
+                        int(existing["id"]),
+                    ),
+                )
+                record_id = int(existing["id"])
+            else:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO local_dcm4chee_result_records (
+                        result_key, patient_record_id, order_record_id, mapping_id,
+                        profile_name, server_identity, source_ae_title,
+                        study_instance_uid, series_instance_uid, sop_instance_uid,
+                        accession_number, patient_id, issuer_of_patient_id,
+                        requested_procedure_id, scheduled_procedure_step_id,
+                        modality, study_datetime, series_datetime, instance_datetime,
+                        viewer_url, study_retrieve_url, series_retrieve_url, instance_retrieve_url,
+                        reconciliation_status, match_method, match_strength,
+                        query_url, query_payload_json, diagnostic_payload_json, raw_metadata_json,
+                        first_seen_at, last_refreshed_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        result_key,
+                        values["patient_record_id"],
+                        values["order_record_id"],
+                        values["mapping_id"],
+                        values["profile_name"],
+                        values["server_identity"],
+                        values["source_ae_title"],
+                        values["study_instance_uid"],
+                        values["series_instance_uid"],
+                        values["sop_instance_uid"],
+                        values["accession_number"],
+                        values["patient_id"],
+                        values["issuer_of_patient_id"],
+                        values["requested_procedure_id"],
+                        values["scheduled_procedure_step_id"],
+                        values["modality"],
+                        values["study_datetime"],
+                        values["series_datetime"],
+                        values["instance_datetime"],
+                        values["viewer_url"],
+                        values["study_retrieve_url"],
+                        values["series_retrieve_url"],
+                        values["instance_retrieve_url"],
+                        values["reconciliation_status"],
+                        values["match_method"],
+                        values["match_strength"],
+                        values["query_url"],
+                        values["query_payload_json"],
+                        values["diagnostic_payload_json"],
+                        values["raw_metadata_json"],
+                        now,
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+                record_id = int(cursor.lastrowid)
+        return self.get_dcm4chee_result_record(record_id)
+
+    def record_dcm4chee_result_refresh_diagnostic(
+        self,
+        *,
+        patient_record_id: int,
+        profile: dict[str, Any],
+        status: str,
+        query_url: str = "",
+        query_payload: dict[str, Any] | None = None,
+        diagnostic_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        profile_name, server_identity, source_ae_title = self._dcm4chee_profile_identity(profile)
+        result_key = self._dcm4chee_result_key(
+            profile_name=profile_name,
+            server_identity=server_identity,
+            patient_record_id=patient_record_id,
+            status=status,
+        )
+        now = now_iso()
+        diagnostic_json = json.dumps(diagnostic_payload or {}, sort_keys=True)
+        query_json = json.dumps(query_payload or {}, sort_keys=True)
+        with self.lock, self.connect() as connection:
+            existing = connection.execute(
+                "SELECT id FROM local_dcm4chee_result_records WHERE result_key = ?",
+                (result_key,),
+            ).fetchone()
+            if existing:
+                connection.execute(
+                    """
+                    UPDATE local_dcm4chee_result_records
+                    SET patient_record_id = ?, order_record_id = NULL, mapping_id = NULL,
+                        profile_name = ?, server_identity = ?, source_ae_title = ?,
+                        query_url = ?, query_payload_json = ?, diagnostic_payload_json = ?,
+                        reconciliation_status = ?, match_method = '', match_strength = '',
+                        last_refreshed_at = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        int(patient_record_id),
+                        profile_name,
+                        server_identity,
+                        source_ae_title,
+                        query_url,
+                        query_json,
+                        diagnostic_json,
+                        status,
+                        now,
+                        now,
+                        int(existing["id"]),
+                    ),
+                )
+                record_id = int(existing["id"])
+            else:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO local_dcm4chee_result_records (
+                        result_key, patient_record_id, profile_name, server_identity, source_ae_title,
+                        reconciliation_status, query_url, query_payload_json, diagnostic_payload_json,
+                        first_seen_at, last_refreshed_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        result_key,
+                        int(patient_record_id),
+                        profile_name,
+                        server_identity,
+                        source_ae_title,
+                        status,
+                        query_url,
+                        query_json,
+                        diagnostic_json,
+                        now,
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+                record_id = int(cursor.lastrowid)
+        return self.get_dcm4chee_result_record(record_id)
+
+    def get_dcm4chee_result_record(self, record_id: int) -> dict[str, Any]:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM local_dcm4chee_result_records WHERE id = ?",
+                (int(record_id),),
+            ).fetchone()
+            if not row:
+                raise KeyError(record_id)
+        return self._dcm4chee_result_record_dict(row)
+
+    def list_dcm4chee_results_for_patient(self, patient_record_id: int) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM local_dcm4chee_result_records
+                WHERE patient_record_id = ?
+                ORDER BY last_refreshed_at DESC, id DESC
+                """,
+                (int(patient_record_id),),
+            ).fetchall()
+        return [self._dcm4chee_result_record_dict(row) for row in rows]
 
     def create_dcm4chee_mwl_attempt(
         self,
@@ -4468,6 +5107,46 @@ class DemoStore:
         }
 
     @staticmethod
+    def _dcm4chee_result_record_dict(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "resultKey": row["result_key"],
+            "patientRecordId": row["patient_record_id"],
+            "orderRecordId": row["order_record_id"],
+            "mappingId": row["mapping_id"],
+            "profileName": row["profile_name"],
+            "serverIdentity": row["server_identity"],
+            "sourceAETitle": row["source_ae_title"],
+            "studyInstanceUid": row["study_instance_uid"],
+            "seriesInstanceUid": row["series_instance_uid"],
+            "sopInstanceUid": row["sop_instance_uid"],
+            "accessionNumber": row["accession_number"],
+            "patientId": row["patient_id"],
+            "issuerOfPatientId": row["issuer_of_patient_id"],
+            "requestedProcedureId": row["requested_procedure_id"],
+            "scheduledProcedureStepId": row["scheduled_procedure_step_id"],
+            "modality": row["modality"],
+            "studyDateTime": row["study_datetime"],
+            "seriesDateTime": row["series_datetime"],
+            "instanceDateTime": row["instance_datetime"],
+            "viewerUrl": row["viewer_url"],
+            "studyRetrieveUrl": row["study_retrieve_url"],
+            "seriesRetrieveUrl": row["series_retrieve_url"],
+            "instanceRetrieveUrl": row["instance_retrieve_url"],
+            "reconciliationStatus": row["reconciliation_status"],
+            "matchMethod": row["match_method"],
+            "matchStrength": row["match_strength"],
+            "queryUrl": row["query_url"],
+            "queryPayload": DemoStore._json_value(row["query_payload_json"], {}),
+            "diagnostic": DemoStore._json_value(row["diagnostic_payload_json"], {}),
+            "rawMetadata": DemoStore._json_value(row["raw_metadata_json"], {}),
+            "firstSeenAt": row["first_seen_at"],
+            "lastRefreshedAt": row["last_refreshed_at"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+
+    @staticmethod
     def _dcm4chee_mwl_attempt_dict(row: sqlite3.Row) -> dict[str, Any]:
         request_payload = DemoStore._json_value(row["request_payload_json"], {})
         return {
@@ -5247,6 +5926,7 @@ class DemoStore:
     def _patient_record_dicts_with_fhir(self, rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
         source_ids = [str(row["id"]) for row in rows]
         fhir_by_source_id: dict[str, dict[str, Any]] = {}
+        dcm4chee_results_by_patient_id: dict[str, list[dict[str, Any]]] = {}
         if source_ids:
             placeholders = ", ".join("?" for _ in source_ids)
             with self.connect() as connection:
@@ -5259,16 +5939,38 @@ class DemoStore:
                     """,
                     source_ids,
                 ).fetchall()
+                result_rows = connection.execute(
+                    f"""
+                    SELECT * FROM local_dcm4chee_result_records
+                    WHERE patient_record_id IN ({placeholders})
+                    ORDER BY last_refreshed_at DESC, id DESC
+                    """,
+                    [int(source_id) for source_id in source_ids],
+                ).fetchall()
             for fhir_row in fhir_rows:
                 fhir_by_source_id[str(fhir_row["local_source_id"])] = self._fhir_workflow_record_dict(fhir_row)
+            for result_row in result_rows:
+                patient_id = str(result_row["patient_record_id"])
+                dcm4chee_results_by_patient_id.setdefault(patient_id, []).append(
+                    self._dcm4chee_result_record_dict(result_row)
+                )
         return [
-            self._patient_record_dict(row, fhir_by_source_id.get(str(row["id"])))
+            self._patient_record_dict(
+                row,
+                fhir_by_source_id.get(str(row["id"])),
+                dcm4chee_results_by_patient_id.get(str(row["id"]), []),
+            )
             for row in rows
         ]
 
     @staticmethod
-    def _patient_record_dict(row: sqlite3.Row, fhir_record: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _patient_record_dict(
+        row: sqlite3.Row,
+        fhir_record: dict[str, Any] | None = None,
+        dcm4chee_results: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         validation_messages = json.loads(row["validation_messages_json"] or "[]")
+        dcm4chee_results = dcm4chee_results or []
         patient = {
             "mrn": row["mrn"],
             "firstName": row["first_name"],
@@ -5326,6 +6028,10 @@ class DemoStore:
             },
             "payload": row["payload_hl7"],
             "fhir": fhir,
+            "dcm4chee": {
+                "dicomResults": dcm4chee_results,
+                "resultCount": len(dcm4chee_results),
+            },
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
             "localOnly": True,

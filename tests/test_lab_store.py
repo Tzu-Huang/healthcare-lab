@@ -5,6 +5,9 @@ from pathlib import Path
 
 from backend.lab_store import (
     DCM4CHEE_MWL_STATUS_CREATED,
+    DCM4CHEE_RESULT_STATUS_MATCHED,
+    DCM4CHEE_RESULT_STATUS_MISSING_ACCESSION,
+    DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
     DemoStore,
     SimulatorValidationError,
     render_gdt_message,
@@ -204,6 +207,134 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(mapping["patientId"], "MRN-A04-001")
         self.assertEqual(attempts[0]["mappingId"], mapping["id"])
         self.assertEqual(self.store.list_order_records()[0]["id"], order["id"])
+
+    def test_dcm4chee_result_record_reconciles_by_study_uid_and_is_idempotent(self):
+        patient = self.store.create_patient_record(
+            {
+                "mrn": "MRN-A04-001",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            }
+        )
+        profile = {
+            "profileName": "local-dcm4chee",
+            "dimse": {"calledAETitle": "DCM4CHEE"},
+            "mwl": {"aeTitle": "WORKLIST", "defaultScheduledStationAETitle": "ECG_AP"},
+            "dicomweb": {
+                "baseUrl": "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+                "wadoRsUrl": "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+            },
+            "viewer": {
+                "studyUrlTemplate": "http://127.0.0.1:8082/dcm4chee-arc/ui2/#/study/{studyInstanceUid}"
+            },
+        }
+        order = self.store.create_dcm4chee_order_record(
+            {"patientRecordId": patient["id"], "requestedAt": "20260708103000"}
+        )
+        payload = self.store.build_dcm4chee_mwl_payload(order, profile)
+        mapping = self.store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_CREATED,
+        )
+        dataset = {
+            "00100020": {"vr": "LO", "Value": [mapping["patientId"]]},
+            "00100021": {"vr": "LO", "Value": [mapping["issuerOfPatientId"]]},
+            "00080050": {"vr": "SH", "Value": [mapping["accessionNumber"]]},
+            "0020000D": {"vr": "UI", "Value": [mapping["studyInstanceUid"]]},
+            "0020000E": {"vr": "UI", "Value": ["1.2.3.4.5.1"]},
+            "00080018": {"vr": "UI", "Value": ["1.2.3.4.5.1.1"]},
+            "00080060": {"vr": "CS", "Value": ["ECG"]},
+            "00080020": {"vr": "DA", "Value": ["20260709"]},
+            "00080030": {"vr": "TM", "Value": ["101500"]},
+        }
+        metadata = self.store.dcm4chee_result_metadata_from_dataset(dataset)
+
+        first = self.store.upsert_dcm4chee_result_record(
+            metadata,
+            profile,
+            patient_record_id=int(patient["id"]),
+            query_url="http://127.0.0.1/studies",
+            raw_metadata=dataset,
+        )
+        second = self.store.upsert_dcm4chee_result_record(
+            metadata,
+            profile,
+            patient_record_id=int(patient["id"]),
+            query_url="http://127.0.0.1/studies",
+            raw_metadata=dataset,
+        )
+        refreshed_patient = self.store.get_patient_record(int(patient["id"]))
+
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(second["reconciliationStatus"], DCM4CHEE_RESULT_STATUS_MATCHED)
+        self.assertEqual(second["matchMethod"], "study_instance_uid")
+        self.assertEqual(second["orderRecordId"], order["id"])
+        self.assertEqual(second["mappingId"], mapping["id"])
+        self.assertIn(mapping["studyInstanceUid"], second["viewerUrl"])
+        self.assertEqual(refreshed_patient["dcm4chee"]["resultCount"], 1)
+        self.assertEqual(
+            refreshed_patient["dcm4chee"]["dicomResults"][0]["studyInstanceUid"],
+            mapping["studyInstanceUid"],
+        )
+
+    def test_dcm4chee_result_reconciliation_flags_wrong_patient_and_missing_accession(self):
+        patient = self.store.create_patient_record(
+            {
+                "mrn": "MRN-A04-001",
+                "firstName": "Avery",
+                "lastName": "Morgan",
+                "dob": "19850412",
+                "sex": "F",
+            }
+        )
+        profile = {
+            "profileName": "local-dcm4chee",
+            "dimse": {"calledAETitle": "DCM4CHEE"},
+            "mwl": {"aeTitle": "WORKLIST", "defaultScheduledStationAETitle": "ECG_AP"},
+            "dicomweb": {"baseUrl": "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"},
+            "viewer": {},
+        }
+        order = self.store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = self.store.build_dcm4chee_mwl_payload(order, profile)
+        mapping = self.store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_CREATED,
+        )
+
+        wrong_patient = self.store.upsert_dcm4chee_result_record(
+            {
+                "accession_number": mapping["accessionNumber"],
+                "patient_id": "OTHER-MRN",
+                "issuer_of_patient_id": mapping["issuerOfPatientId"],
+                "study_instance_uid": "",
+                "series_instance_uid": "1.2.3.4.5.2",
+                "sop_instance_uid": "1.2.3.4.5.2.1",
+            },
+            profile,
+            patient_record_id=int(patient["id"]),
+        )
+        missing_accession = self.store.upsert_dcm4chee_result_record(
+            {
+                "patient_id": "UNRELATED",
+                "issuer_of_patient_id": mapping["issuerOfPatientId"],
+                "study_instance_uid": "",
+                "series_instance_uid": "1.2.3.4.5.3",
+                "sop_instance_uid": "1.2.3.4.5.3.1",
+            },
+            profile,
+            patient_record_id=int(patient["id"]),
+        )
+
+        self.assertEqual(wrong_patient["reconciliationStatus"], DCM4CHEE_RESULT_STATUS_WRONG_PATIENT)
+        self.assertEqual(wrong_patient["diagnostic"]["reason"], "patient_identity_mismatch")
+        self.assertEqual(missing_accession["reconciliationStatus"], DCM4CHEE_RESULT_STATUS_MISSING_ACCESSION)
+        self.assertEqual(missing_accession["diagnostic"]["reason"], "missing_accession_and_no_strong_identifier")
 
     def test_local_patient_modes_generate_protocol_specific_payloads(self):
         base_payload = {
