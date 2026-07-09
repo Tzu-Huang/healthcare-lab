@@ -32,9 +32,9 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Add tests for ADT payload generation and issuer alignment with MWL payload.
-- [ ] 6.2 Add tests for successful Patient sync attempt recording.
-- [ ] 6.3 Add tests for Patient sync failure preserving the local Patient.
-- [ ] 6.4 Add tests for MWL create after Patient sync succeeds.
-- [ ] 6.5 Add tests for MWL precondition failure preserving the local order without posting MWL.
-- [ ] 6.6 Run OpenSpec validation and the relevant Healthcare Lab Python test suite.
+- [x] 6.1 Add tests for ADT payload generation and issuer alignment with MWL payload.
+- [x] 6.2 Add tests for successful Patient sync attempt recording.
+- [x] 6.3 Add tests for Patient sync failure preserving the local Patient.
+- [x] 6.4 Add tests for MWL create after Patient sync succeeds.
+- [x] 6.5 Add tests for MWL precondition failure preserving the local order without posting MWL.
+- [x] 6.6 Run OpenSpec validation and the relevant Healthcare Lab Python test suite.
