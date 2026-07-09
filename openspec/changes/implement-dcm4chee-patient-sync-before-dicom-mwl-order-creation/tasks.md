@@ -6,9 +6,9 @@
 
 ## 2. Patient Sync Data Model
 
-- [ ] 2.1 Add local persistence for dcm4chee Patient sync mapping/status per local Patient/profile/server namespace.
-- [ ] 2.2 Add append-only Patient sync attempt history with HL7 payload, endpoint, ACK/error details, and timestamps.
-- [ ] 2.3 Include dcm4chee Patient sync status in Patient API responses.
+- [x] 2.1 Add local persistence for dcm4chee Patient sync mapping/status per local Patient/profile/server namespace.
+- [x] 2.2 Add append-only Patient sync attempt history with HL7 payload, endpoint, ACK/error details, and timestamps.
+- [x] 2.3 Include dcm4chee Patient sync status in Patient API responses.
 
 ## 3. HL7 ADT Sync
 
