@@ -22,7 +22,7 @@
   <text x="80" y="70" class="title">Healthcare Lab Simple Workflows</text>
 
   <text x="80" y="132" class="section">OIE Workflow</text>
-  <rect x="80" y="160" width="1120" height="390" rx="10" fill="none" stroke="#333" stroke-width="2"/>
+  <rect x="80" y="160" width="1040" height="390" rx="10" fill="none" stroke="#333" stroke-width="2"/>
   <text x="110" y="195" class="frame-label">Docker Container</text>
 
   <rect x="170" y="290" width="280" height="110" rx="8" fill="#fff" stroke="#222" stroke-width="2"/>
@@ -58,7 +58,7 @@
   <text x="545" y="504" text-anchor="middle" class="port">Dashboard:6665</text>
 
   <text x="80" y="642" class="section">FHIR Workflow</text>
-  <rect x="80" y="670" width="1120" height="420" rx="10" fill="none" stroke="#333" stroke-width="2"/>
+  <rect x="80" y="670" width="1040" height="420" rx="10" fill="none" stroke="#333" stroke-width="2"/>
   <text x="110" y="705" class="frame-label">Docker Container</text>
 
   <rect x="170" y="800" width="280" height="110" rx="8" fill="#fff" stroke="#222" stroke-width="2"/>
