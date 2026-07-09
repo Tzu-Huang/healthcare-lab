@@ -14,10 +14,15 @@ volumes:
   openemr-db:
   dcm4chee-archive:
   dcm4chee-db:
+  dcm4chee-db-data:
+  dcm4chee-ldap:
+  dcm4chee-ldap-config:
 
 services:
   lab-app:
     image: ${LAB_APP_IMAGE:-python:3.11-slim}
+    env_file:
+      - ../.env
     working_dir: /workspace
     command: >
       sh -c "python -m pip install --no-cache-dir -r requirements.txt &&
@@ -33,17 +38,15 @@ services:
       OPENEMR_DB_PASSWORD: ${OPENEMR_DB_PASSWORD:-openemr}
       OPENEMR_DB_NAME: ${OPENEMR_DB_NAME:-openemr}
       OPENEMR_GDT_PROCEDURE_CODES: ${OPENEMR_GDT_PROCEDURE_CODES:-1001}
-      # Medplum OAuth client credentials are read from .env or the operator
-      # environment. Do not put real secrets directly in this tracked file.
-      MEDPLUM_CLIENT_ID: ${MEDPLUM_CLIENT_ID:-}
-      MEDPLUM_CLIENT_SECRET: ${MEDPLUM_CLIENT_SECRET:-}
-      MEDPLUM_SCOPE: ${MEDPLUM_SCOPE:-}
-      MEDPLUM_TOKEN_URL: ${MEDPLUM_TOKEN_URL:-}
-      MEDPLUM_AUTH_GRACE_SECONDS: ${MEDPLUM_AUTH_GRACE_SECONDS:-300}
       OIE_MLLP_ORDER_HOST: ${OIE_MLLP_ORDER_HOST:-oie}
       OIE_MLLP_ORDER_PORT: ${OIE_MLLP_ORDER_PORT:-6663}
       OIE_MLLP_RESULT_HOST: ${OIE_MLLP_RESULT_HOST:-0.0.0.0}
       OIE_MLLP_RESULT_PORT: ${OIE_MLLP_RESULT_PORT:-6665}
+      DCM4CHEE_WEB_UI_URL: ${DCM4CHEE_WEB_UI_URL:-http://127.0.0.1:8082/dcm4chee-arc/ui2}
+      DCM4CHEE_DIMSE_HOST: ${DCM4CHEE_DIMSE_HOST:-dcm4chee}
+      DCM4CHEE_DIMSE_PORT: ${DCM4CHEE_DIMSE_PORT:-11112}
+      DCM4CHEE_MWL_AE_TITLE: ${DCM4CHEE_MWL_AE_TITLE:-WORKLIST}
+      DCM4CHEE_DICOMWEB_BASE_URL: ${DCM4CHEE_DICOMWEB_BASE_URL:-http://dcm4chee:8080/dcm4chee-arc/aets/WORKLIST/rs}
     ports:
       - "${LAB_APP_PORT:-5000}:5000"
     expose:
@@ -160,13 +163,24 @@ services:
       - lab
 
   dcm4chee-db:
-    image: ${DCM4CHEE_DB_IMAGE:-postgres:16-alpine}
+    image: ${DCM4CHEE_DB_IMAGE:-dcm4che/postgres-dcm4chee:16.13-35}
     environment:
       POSTGRES_DB: ${DCM4CHEE_DB_NAME:-pacsdb}
       POSTGRES_USER: ${DCM4CHEE_DB_USER:-pacs}
       POSTGRES_PASSWORD: ${DCM4CHEE_DB_PASSWORD:-pacs}
     volumes:
-      - dcm4chee-db:/var/lib/postgresql/data
+      - dcm4chee-db-data:/var/lib/postgresql/data
+    networks:
+      - lab
+
+  ldap:
+    image: ${DCM4CHEE_LDAP_IMAGE:-dcm4che/slapd-dcm4chee:2.6.13-35.0}
+    environment:
+      LDAP_ROOTPASS: ${DCM4CHEE_LDAP_ROOTPASS:-secret}
+      STORAGE_DIR: ${DCM4CHEE_STORAGE_DIR:-/storage/fs1}
+    volumes:
+      - dcm4chee-ldap:/var/lib/openldap/openldap-data
+      - dcm4chee-ldap-config:/etc/openldap/slapd.d
     networks:
       - lab
 
@@ -177,6 +191,9 @@ services:
       POSTGRES_USER: ${DCM4CHEE_DB_USER:-pacs}
       POSTGRES_PASSWORD: ${DCM4CHEE_DB_PASSWORD:-pacs}
       POSTGRES_HOST: dcm4chee-db
+      LDAP_ROOTPASS: ${DCM4CHEE_LDAP_ROOTPASS:-secret}
+      LDAP_URL: ${DCM4CHEE_LDAP_URL:-ldap://ldap:389}
+      LDAP_BASE_DN: ${DCM4CHEE_LDAP_BASE_DN:-dc=dcm4che,dc=org}
     ports:
       - "${DCM4CHEE_HTTP_PORT:-8082}:8080"
       - "${DCM4CHEE_DICOM_PORT:-11112}:11112"
@@ -184,5 +201,6 @@ services:
       - dcm4chee-archive:/storage
     depends_on:
       - dcm4chee-db
+      - ldap
     networks:
       - lab
