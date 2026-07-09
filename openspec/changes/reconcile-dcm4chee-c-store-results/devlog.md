@@ -34,6 +34,16 @@ The selected first-version workflow is explicit operator refresh. Background pol
 - Run `openspec validate reconcile-dcm4chee-c-store-results --strict`.
 - Manually verify against a live dcm4chee/AP flow before closing: create MWL order, have AP C-STORE a result, click patient refresh, confirm matched result and viewer/retrieve links.
 
+## Code Review
+
+### Round 1 (2026-07-09)
+
+Codex review found two P2 issues: stale refresh diagnostics stayed visible after later successful refresh, and archive QIDO/WADO/STOW defaults ignored the configured dcm4chee host. Both were fixed with focused commits and regression tests.
+
+### Round 2 (2026-07-09)
+
+Codex post-fix review found no blocking findings. Residual risk remains live AP-to-dcm4chee acceptance coverage because automated tests mock QIDO responses.
+
 ## Follow-ups
 
 - Add live environment acceptance coverage for real dcm4chee QIDO behavior and viewer URL behavior.
