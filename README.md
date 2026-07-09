@@ -171,13 +171,16 @@ defaults:
 | Healthcare Lab calling AE title | `HEALTHCARE_LAB` |
 | MWL AE title | `WORKLIST` |
 | Default Scheduled Station AE Title | `ECG_AP` |
+| HL7 Patient sync host / port | `127.0.0.1:2575` on host, `dcm4chee:2575` from Docker |
+| HL7 Patient assigning authority | `local-dcm4chee` |
 | DICOMweb / MWL REST base URL | `http://127.0.0.1:8082/dcm4chee-arc/aets/WORKLIST/rs` |
 | Archive QIDO/WADO/STOW URL | `http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs` |
 | Study Instance UID root | `1.2.826.0.1.3680043.10.543` |
 
-The profile also includes QIDO-RS, WADO-RS, STOW-RS, viewer-link, auth, and TLS
-fields for future MWL, verification, C-STORE reconciliation, and viewer-link
-workflows. The local default uses `DCM4CHEE_AUTH_MODE=none` and
+The profile also includes HL7 ADT, QIDO-RS, WADO-RS, STOW-RS, viewer-link,
+auth, and TLS fields for Patient sync, MWL, verification, C-STORE
+reconciliation, and viewer-link workflows. The local default uses
+`DCM4CHEE_AUTH_MODE=none` and
 `DCM4CHEE_TLS_ENABLED=false`; that is only for the local lab and is not a
 production security profile.
 
@@ -195,6 +198,14 @@ dcm4chee defaults. Healthcare Lab records the configured MWL AE and request URL
 in the PACS/MWL ledger so operators can distinguish wrong-AE failures from empty
 worklist results.
 
+Local DICOM Patient creation syncs Patient master data to dcm4chee first by
+sending HL7 `ADT^A04` over MLLP to the configured dcm4chee HL7 receiver. The
+ADT Patient ID and assigning authority match the MWL Patient ID and Issuer of
+Patient ID, so dcm4chee can accept later MWL item creation for that Patient.
+Healthcare Lab records Patient sync attempts separately from MWL attempts and
+keeps the local Patient available if the ADT sync fails. STOW-RS is reserved for
+real DICOM object upload, not for creating Patient master data.
+
 Healthcare Lab stores the local order first, then maintains a local PACS/MWL
 ledger that maps the Healthcare Lab order to dcm4chee identifiers. The canonical
 mapping stores Patient ID, Issuer of Patient ID, Accession Number, Requested
@@ -211,8 +222,10 @@ local identifiers from the mapping so later dcm4chee studies can be matched back
 to the original local order by Study Instance UID, then Accession Number, then
 Requested Procedure ID plus Scheduled Procedure Step ID. If dcm4chee rejects the
 request because the patient does not exist, the local order remains available
-and the dcm4chee MWL sync state is recorded as `Patient missing`. Full AP
-C-STORE result ingestion/display and viewer-link consumption remain future work.
+and the dcm4chee MWL sync state is recorded as `Patient missing`. If Patient ADT
+sync fails before MWL creation, Healthcare Lab does not POST the MWL item and
+keeps the Patient sync failure as the root cause. Full AP C-STORE result
+ingestion/display and viewer-link consumption remain future work.
 
 The DICOM order workspace can verify MWL queryability for a local order. The
 verification action queries dcm4chee MWL using the ledger identifiers and records
