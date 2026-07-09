@@ -3173,6 +3173,33 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertFalse(profile["security"]["tlsEnabled"])
         self.assertTrue(body["diagnostics"]["valid"])
 
+    def test_dcm4chee_profile_archive_defaults_preserve_configured_host(self):
+        self.client.application.config["DCM4CHEE_DICOMWEB_BASE_URL"] = (
+            "http://pacs.example.test:8082/dcm4chee-arc/aets/WORKLIST/rs"
+        )
+        self.client.application.config["DCM4CHEE_QIDO_RS_URL"] = ""
+        self.client.application.config["DCM4CHEE_WADO_RS_URL"] = ""
+        self.client.application.config["DCM4CHEE_STOW_RS_URL"] = ""
+
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+
+        self.assertEqual(
+            profile["dicomweb"]["baseUrl"],
+            "http://pacs.example.test:8082/dcm4chee-arc/aets/WORKLIST/rs",
+        )
+        self.assertEqual(
+            profile["dicomweb"]["qidoRsUrl"],
+            "http://pacs.example.test:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+        )
+        self.assertEqual(
+            profile["dicomweb"]["wadoRsUrl"],
+            "http://pacs.example.test:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+        )
+        self.assertEqual(
+            profile["dicomweb"]["stowRsUrl"],
+            "http://pacs.example.test:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+        )
+
     def test_dcm4chee_profile_diagnostics_report_missing_values(self):
         profile = dcm4chee_profile_from_config(self.client.application.config)
         profile["dimse"]["calledAETitle"] = ""

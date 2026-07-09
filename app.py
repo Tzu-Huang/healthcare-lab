@@ -312,6 +312,23 @@ def require_http_url(value: Any, field: str) -> str:
     return url.rstrip("/")
 
 
+def dcm4chee_archive_dicomweb_url_from_base(base_url: str, called_ae_title: str) -> str:
+    base = str(base_url or "").strip().rstrip("/")
+    ae_title = urllib.parse.quote(str(called_ae_title or "DCM4CHEE").strip() or "DCM4CHEE", safe="")
+    if not base:
+        return f"http://127.0.0.1:8082/dcm4chee-arc/aets/{ae_title}/rs"
+    parsed = urllib.parse.urlparse(base)
+    if not parsed.scheme or not parsed.netloc:
+        return f"http://127.0.0.1:8082/dcm4chee-arc/aets/{ae_title}/rs"
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if "aets" in path_parts:
+        index = path_parts.index("aets")
+        if len(path_parts) > index + 1:
+            path_parts[index + 1] = ae_title
+    archive_path = "/" + "/".join(path_parts)
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, archive_path, "", "", "")).rstrip("/")
+
+
 def dcm4chee_profile_from_config(config: dict[str, Any]) -> dict[str, Any]:
     profile_name = str(config.get("DCM4CHEE_PROFILE_NAME", DCM4CHEE_PROFILE_NAME) or "").strip()
     called_ae_title = str(config.get("DCM4CHEE_CALLED_AE_TITLE", "DCM4CHEE") or "").strip()
@@ -326,7 +343,7 @@ def dcm4chee_profile_from_config(config: dict[str, Any]) -> dict[str, Any]:
     web_ui_url = str(
         config.get("DCM4CHEE_WEB_UI_URL", "http://127.0.0.1:8082/dcm4chee-arc/ui2") or ""
     ).strip().rstrip("/")
-    archive_dicomweb_base_url = f"http://127.0.0.1:8082/dcm4chee-arc/aets/{called_ae_title or 'DCM4CHEE'}/rs"
+    archive_dicomweb_base_url = dcm4chee_archive_dicomweb_url_from_base(dicomweb_base_url, called_ae_title)
     qido_url = str(config.get("DCM4CHEE_QIDO_RS_URL") or archive_dicomweb_base_url).strip().rstrip("/")
     wado_url = str(config.get("DCM4CHEE_WADO_RS_URL") or archive_dicomweb_base_url).strip().rstrip("/")
     stow_url = str(config.get("DCM4CHEE_STOW_RS_URL") or archive_dicomweb_base_url).strip().rstrip("/")
