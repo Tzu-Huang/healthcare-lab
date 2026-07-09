@@ -66,7 +66,13 @@ DCM4CHEE_MWL_STATUS_PENDING = "Pending sync"
 DCM4CHEE_MWL_STATUS_CREATED = "Created"
 DCM4CHEE_MWL_STATUS_FAILED = "Sync failed"
 DCM4CHEE_MWL_STATUS_PATIENT_MISSING = "Patient missing"
-DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES = {"patient_missing", "profile_invalid"}
+DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES = {"patient_missing", "patient_sync_failed", "profile_invalid"}
+DCM4CHEE_PATIENT_SYNC_STATUS_PENDING = "Pending sync"
+DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED = "Synced"
+DCM4CHEE_PATIENT_SYNC_STATUS_FAILED = "Sync failed"
+DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE = "adt-create"
+DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_UPDATE = "adt-update"
+DCM4CHEE_PATIENT_SYNC_OPERATION_PREFLIGHT = "preflight"
 DCM4CHEE_MWL_OPERATION_CREATE = "create"
 DCM4CHEE_MWL_OPERATION_READBACK = "read-back"
 DCM4CHEE_MWL_OPERATION_VERIFY = "verify-mwl"
@@ -1043,46 +1049,57 @@ class DemoStore:
                     FOREIGN KEY(order_record_id) REFERENCES local_order_records(id) ON DELETE CASCADE,
                     FOREIGN KEY(last_attempt_id) REFERENCES local_dcm4chee_mwl_attempts(id) ON DELETE SET NULL
                 );
-                CREATE TABLE IF NOT EXISTS local_dcm4chee_result_records (
+                CREATE TABLE IF NOT EXISTS local_dcm4chee_patient_syncs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    result_key TEXT NOT NULL UNIQUE,
-                    patient_record_id INTEGER,
-                    order_record_id INTEGER,
-                    mapping_id INTEGER,
+                    patient_record_id INTEGER NOT NULL,
                     profile_name TEXT NOT NULL,
                     server_identity TEXT NOT NULL,
-                    source_ae_title TEXT NOT NULL DEFAULT '',
-                    study_instance_uid TEXT NOT NULL DEFAULT '',
-                    series_instance_uid TEXT NOT NULL DEFAULT '',
-                    sop_instance_uid TEXT NOT NULL DEFAULT '',
-                    accession_number TEXT NOT NULL DEFAULT '',
-                    patient_id TEXT NOT NULL DEFAULT '',
-                    issuer_of_patient_id TEXT NOT NULL DEFAULT '',
-                    requested_procedure_id TEXT NOT NULL DEFAULT '',
-                    scheduled_procedure_step_id TEXT NOT NULL DEFAULT '',
-                    modality TEXT NOT NULL DEFAULT '',
-                    study_datetime TEXT NOT NULL DEFAULT '',
-                    series_datetime TEXT NOT NULL DEFAULT '',
-                    instance_datetime TEXT NOT NULL DEFAULT '',
-                    viewer_url TEXT NOT NULL DEFAULT '',
-                    study_retrieve_url TEXT NOT NULL DEFAULT '',
-                    series_retrieve_url TEXT NOT NULL DEFAULT '',
-                    instance_retrieve_url TEXT NOT NULL DEFAULT '',
-                    reconciliation_status TEXT NOT NULL,
-                    match_method TEXT NOT NULL DEFAULT '',
-                    match_strength TEXT NOT NULL DEFAULT '',
-                    query_url TEXT NOT NULL DEFAULT '',
-                    query_payload_json TEXT NOT NULL DEFAULT '{}',
-                    diagnostic_payload_json TEXT NOT NULL DEFAULT '{}',
-                    raw_metadata_json TEXT NOT NULL DEFAULT '{}',
-                    refresh_generation TEXT NOT NULL DEFAULT '',
-                    first_seen_at TEXT NOT NULL,
-                    last_refreshed_at TEXT NOT NULL,
+                    patient_id TEXT NOT NULL,
+                    issuer_of_patient_id TEXT NOT NULL,
+                    hl7_host TEXT NOT NULL,
+                    hl7_port INTEGER NOT NULL,
+                    receiving_application TEXT NOT NULL,
+                    receiving_facility TEXT NOT NULL,
+                    sync_status TEXT NOT NULL,
+                    last_sync_at TEXT NOT NULL DEFAULT '',
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    last_attempt_id INTEGER,
+                    last_ack_code TEXT NOT NULL DEFAULT '',
+                    last_ack_control_id TEXT NOT NULL DEFAULT '',
+                    last_ack_text TEXT NOT NULL DEFAULT '',
+                    last_response_payload TEXT NOT NULL DEFAULT '',
+                    last_error_type TEXT NOT NULL DEFAULT '',
+                    last_error_text TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    FOREIGN KEY(patient_record_id) REFERENCES local_patient_records(id) ON DELETE SET NULL,
-                    FOREIGN KEY(order_record_id) REFERENCES local_order_records(id) ON DELETE SET NULL,
-                    FOREIGN KEY(mapping_id) REFERENCES local_dcm4chee_mwl_mappings(id) ON DELETE SET NULL
+                    FOREIGN KEY(patient_record_id) REFERENCES local_patient_records(id) ON DELETE CASCADE,
+                    FOREIGN KEY(last_attempt_id) REFERENCES local_dcm4chee_patient_sync_attempts(id) ON DELETE SET NULL,
+                    UNIQUE(patient_record_id, profile_name, server_identity)
+                );
+                CREATE TABLE IF NOT EXISTS local_dcm4chee_patient_sync_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    patient_sync_id INTEGER,
+                    operation_type TEXT NOT NULL,
+                    patient_record_id INTEGER NOT NULL,
+                    profile_name TEXT NOT NULL,
+                    server_identity TEXT NOT NULL,
+                    patient_id TEXT NOT NULL,
+                    issuer_of_patient_id TEXT NOT NULL,
+                    request_url TEXT NOT NULL,
+                    request_payload TEXT NOT NULL DEFAULT '',
+                    response_payload TEXT NOT NULL DEFAULT '',
+                    ack_code TEXT NOT NULL DEFAULT '',
+                    ack_control_id TEXT NOT NULL DEFAULT '',
+                    ack_text TEXT NOT NULL DEFAULT '',
+                    attempt_status TEXT NOT NULL,
+                    error_type TEXT NOT NULL DEFAULT '',
+                    error_text TEXT NOT NULL DEFAULT '',
+                    attempted_at TEXT NOT NULL,
+                    completed_at TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(patient_sync_id) REFERENCES local_dcm4chee_patient_syncs(id) ON DELETE SET NULL,
+                    FOREIGN KEY(patient_record_id) REFERENCES local_patient_records(id) ON DELETE CASCADE
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_oie_result_control_id
                 ON oie_result_records(message_control_id)
@@ -1108,15 +1125,12 @@ class DemoStore:
                     profile_name, server_identity, requested_procedure_id, scheduled_procedure_step_id
                 )
                 WHERE requested_procedure_id != '' AND scheduled_procedure_step_id != '';
-                CREATE INDEX IF NOT EXISTS idx_dcm4chee_result_patient
-                ON local_dcm4chee_result_records(patient_record_id, last_refreshed_at);
-                CREATE INDEX IF NOT EXISTS idx_dcm4chee_result_order
-                ON local_dcm4chee_result_records(order_record_id, last_refreshed_at);
-                CREATE INDEX IF NOT EXISTS idx_dcm4chee_result_study
-                ON local_dcm4chee_result_records(profile_name, server_identity, study_instance_uid)
-                WHERE study_instance_uid != '';
-                CREATE INDEX IF NOT EXISTS idx_dcm4chee_result_status
-                ON local_dcm4chee_result_records(reconciliation_status, last_refreshed_at);
+                CREATE INDEX IF NOT EXISTS idx_dcm4chee_patient_sync_patient
+                ON local_dcm4chee_patient_syncs(patient_record_id);
+                CREATE INDEX IF NOT EXISTS idx_dcm4chee_patient_sync_identifier
+                ON local_dcm4chee_patient_syncs(profile_name, server_identity, patient_id, issuer_of_patient_id);
+                CREATE INDEX IF NOT EXISTS idx_dcm4chee_patient_sync_attempt_patient
+                ON local_dcm4chee_patient_sync_attempts(patient_record_id, attempted_at);
                 """
             )
             self._ensure_column(connection, "lab_servers", "control_type", "TEXT NOT NULL DEFAULT ''")
@@ -1770,6 +1784,373 @@ class DemoStore:
             "00741202": cls._dicom_json_element("LO", worklist_label),
             "00400100": {"vr": "SQ", "Value": [sps_item]},
         }
+
+    @classmethod
+    def dcm4chee_patient_identifiers(
+        cls,
+        patient: dict[str, Any],
+        profile: dict[str, Any],
+    ) -> dict[str, str]:
+        dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
+        hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
+        summary = patient.get("summary") if isinstance(patient.get("summary"), dict) else {}
+        patient_fields = patient.get("patient") if isinstance(patient.get("patient"), dict) else {}
+        patient_id = str(summary.get("mrn") or patient_fields.get("mrn") or patient.get("mrn") or "").strip()
+        issuer = str(hl7.get("patientAssigningAuthority") or profile.get("profileName") or "HEALTHCARE_LAB").strip()
+        return {
+            "profile_name": str(profile.get("profileName") or "").strip(),
+            "server_identity": str(dimse.get("calledAETitle") or "").strip(),
+            "patient_id": patient_id,
+            "issuer_of_patient_id": issuer,
+            "hl7_host": str(hl7.get("host") or "").strip(),
+            "hl7_port": str(hl7.get("port") or "").strip(),
+            "receiving_application": str(hl7.get("receivingApplication") or "").strip(),
+            "receiving_facility": str(hl7.get("receivingFacility") or "").strip(),
+        }
+
+    @classmethod
+    def build_dcm4chee_patient_adt_payload(
+        cls,
+        patient: dict[str, Any],
+        profile: dict[str, Any],
+        *,
+        event_type: str = "A04",
+        timestamp: str = "",
+    ) -> str:
+        patient_fields = patient.get("patient") if isinstance(patient.get("patient"), dict) else {}
+        summary = patient.get("summary") if isinstance(patient.get("summary"), dict) else {}
+        hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
+        identifiers = cls.dcm4chee_patient_identifiers(patient, profile)
+        patient_name = "^".join(
+            _hl7_escape(str(patient_fields.get(key) or "").strip())
+            for key in ("lastName", "firstName", "middleName")
+        ).rstrip("^")
+        if not patient_name:
+            raise SimulatorValidationError("dcm4chee Patient name is required.")
+        if not identifiers["patient_id"]:
+            raise SimulatorValidationError("dcm4chee Patient ID is required.")
+        if not identifiers["issuer_of_patient_id"]:
+            raise SimulatorValidationError("dcm4chee Patient issuer is required.")
+        message_time = timestamp or hl7_timestamp()
+        normalized_event = str(event_type or "A04").strip().upper()
+        if not normalized_event.startswith("A"):
+            normalized_event = f"A{normalized_event}"
+        message_type = f"ADT^{normalized_event}"
+        control_id = f"DCMADT{message_time}{int(patient['id']):06d}"
+        visit_number = str(patient.get("visitNumber") or summary.get("visitNumber") or "").strip()
+        patient_class = str(patient.get("patientClass") or "O").strip() or "O"
+        assigned_location = str(patient.get("assignedLocation") or "").strip()
+        attending_provider = str(patient.get("attendingProvider") or "").strip()
+        account_number = str(patient.get("accountNumber") or "").strip()
+        segments = [
+            (
+                "MSH|^~\\&|"
+                f"{_hl7_escape(str(hl7.get('sendingApplication') or 'HEALTHCARE_LAB'))}|"
+                f"{_hl7_escape(str(hl7.get('sendingFacility') or 'LAB_APP'))}|"
+                f"{_hl7_escape(str(hl7.get('receivingApplication') or 'DCM4CHEE'))}|"
+                f"{_hl7_escape(str(hl7.get('receivingFacility') or 'DCM4CHEE'))}|"
+                f"{message_time}||{message_type}|{control_id}|P|2.3.1"
+            ),
+            f"EVN|{normalized_event}|{message_time}",
+            (
+                "PID|1||"
+                f"{_hl7_escape(identifiers['patient_id'])}^^^{_hl7_escape(identifiers['issuer_of_patient_id'])}^MR||"
+                f"{patient_name}||{_hl7_escape(str(patient_fields.get('dob') or summary.get('dob') or ''))}|"
+                f"{_hl7_escape(str(patient_fields.get('sex') or summary.get('sex') or ''))}|||"
+                f"{_hl7_escape_composite(str(patient_fields.get('address') or ''))}||"
+                f"{_hl7_escape(str(patient_fields.get('phone') or ''))}|||||"
+                f"{_hl7_escape(account_number)}"
+            ),
+            (
+                "PV1|1|"
+                f"{_hl7_escape(patient_class)}|{_hl7_escape_composite(assigned_location)}||||"
+                f"{_hl7_escape_composite(attending_provider)}||||||||||||{_hl7_escape(visit_number)}"
+            ),
+        ]
+        return "\r".join(segments)
+
+    def upsert_dcm4chee_patient_sync(
+        self,
+        patient_record_id: int,
+        profile: dict[str, Any],
+        *,
+        sync_status: str = DCM4CHEE_PATIENT_SYNC_STATUS_PENDING,
+        increment_retry: bool = False,
+    ) -> dict[str, Any]:
+        patient = self.get_patient_record(patient_record_id)
+        identifiers = self.dcm4chee_patient_identifiers(patient, profile)
+        if not identifiers["patient_id"]:
+            raise SimulatorValidationError("dcm4chee Patient ID is required.")
+        if not identifiers["issuer_of_patient_id"]:
+            raise SimulatorValidationError("dcm4chee Patient issuer is required.")
+        now = now_iso()
+        with self.lock, self.connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT * FROM local_dcm4chee_patient_syncs
+                WHERE patient_record_id = ? AND profile_name = ? AND server_identity = ?
+                """,
+                (int(patient_record_id), identifiers["profile_name"], identifiers["server_identity"]),
+            ).fetchone()
+            if existing:
+                connection.execute(
+                    """
+                    UPDATE local_dcm4chee_patient_syncs
+                    SET patient_id = ?, issuer_of_patient_id = ?, hl7_host = ?, hl7_port = ?,
+                        receiving_application = ?, receiving_facility = ?, sync_status = ?,
+                        retry_count = retry_count + ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        identifiers["patient_id"],
+                        identifiers["issuer_of_patient_id"],
+                        identifiers["hl7_host"],
+                        int(identifiers["hl7_port"] or 0),
+                        identifiers["receiving_application"],
+                        identifiers["receiving_facility"],
+                        sync_status,
+                        1 if increment_retry else 0,
+                        now,
+                        existing["id"],
+                    ),
+                )
+                sync_id = int(existing["id"])
+            else:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO local_dcm4chee_patient_syncs (
+                        patient_record_id, profile_name, server_identity, patient_id,
+                        issuer_of_patient_id, hl7_host, hl7_port, receiving_application,
+                        receiving_facility, sync_status, retry_count, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(patient_record_id),
+                        identifiers["profile_name"],
+                        identifiers["server_identity"],
+                        identifiers["patient_id"],
+                        identifiers["issuer_of_patient_id"],
+                        identifiers["hl7_host"],
+                        int(identifiers["hl7_port"] or 0),
+                        identifiers["receiving_application"],
+                        identifiers["receiving_facility"],
+                        sync_status,
+                        1 if increment_retry else 0,
+                        now,
+                        now,
+                    ),
+                )
+                sync_id = int(cursor.lastrowid)
+        return self.get_dcm4chee_patient_sync(sync_id)
+
+    def get_dcm4chee_patient_sync(self, sync_id: int) -> dict[str, Any]:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM local_dcm4chee_patient_syncs WHERE id = ?",
+                (int(sync_id),),
+            ).fetchone()
+            if not row:
+                raise KeyError(sync_id)
+        return self._dcm4chee_patient_sync_dict(row)
+
+    def get_dcm4chee_patient_sync_for_patient(
+        self,
+        patient_record_id: int,
+        profile: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            if profile:
+                identifiers = self.dcm4chee_patient_identifiers(self.get_patient_record(patient_record_id), profile)
+                row = connection.execute(
+                    """
+                    SELECT * FROM local_dcm4chee_patient_syncs
+                    WHERE patient_record_id = ? AND profile_name = ? AND server_identity = ?
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (int(patient_record_id), identifiers["profile_name"], identifiers["server_identity"]),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    SELECT * FROM local_dcm4chee_patient_syncs
+                    WHERE patient_record_id = ?
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (int(patient_record_id),),
+                ).fetchone()
+        return self._dcm4chee_patient_sync_dict(row) if row else None
+
+    def create_dcm4chee_patient_sync_attempt(
+        self,
+        patient_record_id: int,
+        profile: dict[str, Any],
+        *,
+        operation_type: str = DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE,
+        request_url: str = "",
+        request_payload: str = "",
+        attempt_status: str = DCM4CHEE_PATIENT_SYNC_STATUS_PENDING,
+        error_type: str = "",
+        error_text: str = "",
+        response_payload: str = "",
+        ack: dict[str, str] | None = None,
+        patient_sync_id: int | None = None,
+    ) -> dict[str, Any]:
+        patient = self.get_patient_record(patient_record_id)
+        identifiers = self.dcm4chee_patient_identifiers(patient, profile)
+        if patient_sync_id is None:
+            sync = self.upsert_dcm4chee_patient_sync(
+                int(patient_record_id),
+                profile,
+                sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_PENDING,
+            )
+            patient_sync_id = int(sync["id"])
+        ack = ack or {}
+        now = now_iso()
+        with self.lock, self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO local_dcm4chee_patient_sync_attempts (
+                    patient_sync_id, operation_type, patient_record_id, profile_name,
+                    server_identity, patient_id, issuer_of_patient_id, request_url,
+                    request_payload, response_payload, ack_code, ack_control_id,
+                    ack_text, attempt_status, error_type, error_text, attempted_at,
+                    completed_at, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    patient_sync_id,
+                    operation_type,
+                    int(patient_record_id),
+                    identifiers["profile_name"],
+                    identifiers["server_identity"],
+                    identifiers["patient_id"],
+                    identifiers["issuer_of_patient_id"],
+                    request_url,
+                    request_payload,
+                    response_payload,
+                    str(ack.get("code") or ""),
+                    str(ack.get("controlId") or ""),
+                    str(ack.get("text") or ""),
+                    attempt_status,
+                    error_type,
+                    error_text,
+                    now,
+                    now if attempt_status != DCM4CHEE_PATIENT_SYNC_STATUS_PENDING else "",
+                    now,
+                    now,
+                ),
+            )
+            attempt_id = int(cursor.lastrowid)
+        return self.get_dcm4chee_patient_sync_attempt(attempt_id)
+
+    def update_dcm4chee_patient_sync_attempt_result(
+        self,
+        attempt_id: int,
+        *,
+        attempt_status: str,
+        response_payload: str = "",
+        ack: dict[str, str] | None = None,
+        error_type: str = "",
+        error_text: str = "",
+    ) -> dict[str, Any]:
+        ack = ack or {}
+        now = now_iso()
+        with self.lock, self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM local_dcm4chee_patient_sync_attempts WHERE id = ?",
+                (int(attempt_id),),
+            ).fetchone()
+            if not row:
+                raise KeyError(attempt_id)
+            connection.execute(
+                """
+                UPDATE local_dcm4chee_patient_sync_attempts
+                SET response_payload = ?, ack_code = ?, ack_control_id = ?, ack_text = ?,
+                    attempt_status = ?, error_type = ?, error_text = ?, completed_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    response_payload,
+                    str(ack.get("code") or ""),
+                    str(ack.get("controlId") or ""),
+                    str(ack.get("text") or ""),
+                    attempt_status,
+                    error_type,
+                    error_text,
+                    now,
+                    now,
+                    int(attempt_id),
+                ),
+            )
+        return self.get_dcm4chee_patient_sync_attempt(attempt_id)
+
+    def update_dcm4chee_patient_sync_from_attempt(
+        self,
+        patient_sync_id: int,
+        attempt: dict[str, Any],
+        *,
+        sync_status: str,
+    ) -> dict[str, Any]:
+        now = now_iso()
+        with self.lock, self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE local_dcm4chee_patient_syncs
+                SET sync_status = ?, last_sync_at = ?, last_attempt_id = ?,
+                    last_ack_code = ?, last_ack_control_id = ?, last_ack_text = ?,
+                    last_response_payload = ?, last_error_type = ?, last_error_text = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    sync_status,
+                    now if sync_status == DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED else "",
+                    int(attempt["id"]),
+                    str((attempt.get("ack") or {}).get("code") or ""),
+                    str((attempt.get("ack") or {}).get("controlId") or ""),
+                    str((attempt.get("ack") or {}).get("text") or ""),
+                    str(attempt.get("responsePayload") or ""),
+                    str(attempt.get("errorType") or ""),
+                    str(attempt.get("error") or ""),
+                    now,
+                    int(patient_sync_id),
+                ),
+            )
+        return self.get_dcm4chee_patient_sync(int(patient_sync_id))
+
+    def get_dcm4chee_patient_sync_attempt(self, attempt_id: int) -> dict[str, Any]:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM local_dcm4chee_patient_sync_attempts WHERE id = ?",
+                (int(attempt_id),),
+            ).fetchone()
+            if not row:
+                raise KeyError(attempt_id)
+        return self._dcm4chee_patient_sync_attempt_dict(row)
+
+    def list_dcm4chee_patient_sync_attempts(self, patient_record_id: int | None = None) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            if patient_record_id is None:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_dcm4chee_patient_sync_attempts
+                    ORDER BY attempted_at DESC, id DESC
+                    """
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_dcm4chee_patient_sync_attempts
+                    WHERE patient_record_id = ?
+                    ORDER BY attempted_at DESC, id DESC
+                    """,
+                    (int(patient_record_id),),
+                ).fetchall()
+        return [self._dcm4chee_patient_sync_attempt_dict(row) for row in rows]
 
     @staticmethod
     def _clean_order_text(value: Any, field_name: str, required: bool = False) -> str:
@@ -5967,7 +6348,7 @@ class DemoStore:
     def _patient_record_dicts_with_fhir(self, rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
         source_ids = [str(row["id"]) for row in rows]
         fhir_by_source_id: dict[str, dict[str, Any]] = {}
-        dcm4chee_results_by_patient_id: dict[str, list[dict[str, Any]]] = {}
+        dcm4chee_by_source_id: dict[str, dict[str, Any]] = {}
         if source_ids:
             placeholders = ", ".join("?" for _ in source_ids)
             with self.connect() as connection:
@@ -5980,60 +6361,25 @@ class DemoStore:
                     """,
                     source_ids,
                 ).fetchall()
-                latest_generation_rows = connection.execute(
+                dcm4chee_rows = connection.execute(
                     f"""
-                    SELECT patient_record_id, refresh_generation
-                    FROM local_dcm4chee_result_records latest
+                    SELECT * FROM local_dcm4chee_patient_syncs
                     WHERE patient_record_id IN ({placeholders})
-                    AND refresh_generation != ''
-                    AND id = (
-                        SELECT id FROM local_dcm4chee_result_records sub
-                        WHERE sub.patient_record_id = latest.patient_record_id
-                        AND sub.refresh_generation != ''
-                        ORDER BY sub.last_refreshed_at DESC, sub.id DESC
-                        LIMIT 1
-                    )
+                    ORDER BY updated_at DESC, id DESC
                     """,
                     [int(source_id) for source_id in source_ids],
                 ).fetchall()
-                latest_generation_by_patient_id = {
-                    str(row["patient_record_id"]): row["refresh_generation"]
-                    for row in latest_generation_rows
-                }
-                if latest_generation_by_patient_id:
-                    result_rows = connection.execute(
-                        f"""
-                        SELECT * FROM local_dcm4chee_result_records
-                        WHERE patient_record_id IN ({placeholders})
-                        AND refresh_generation != ''
-                        ORDER BY last_refreshed_at DESC, id DESC
-                        """,
-                        [int(source_id) for source_id in source_ids],
-                    ).fetchall()
-                else:
-                    result_rows = connection.execute(
-                        f"""
-                        SELECT * FROM local_dcm4chee_result_records
-                        WHERE patient_record_id IN ({placeholders})
-                        ORDER BY last_refreshed_at DESC, id DESC
-                        """,
-                        [int(source_id) for source_id in source_ids],
-                    ).fetchall()
             for fhir_row in fhir_rows:
                 fhir_by_source_id[str(fhir_row["local_source_id"])] = self._fhir_workflow_record_dict(fhir_row)
-            for result_row in result_rows:
-                patient_id = str(result_row["patient_record_id"])
-                latest_generation = latest_generation_by_patient_id.get(patient_id, "")
-                if latest_generation and result_row["refresh_generation"] != latest_generation:
-                    continue
-                dcm4chee_results_by_patient_id.setdefault(patient_id, []).append(
-                    self._dcm4chee_result_record_dict(result_row)
-                )
+            for dcm4chee_row in dcm4chee_rows:
+                source_id = str(dcm4chee_row["patient_record_id"])
+                if source_id not in dcm4chee_by_source_id:
+                    dcm4chee_by_source_id[source_id] = self._dcm4chee_patient_sync_dict(dcm4chee_row)
         return [
             self._patient_record_dict(
                 row,
                 fhir_by_source_id.get(str(row["id"])),
-                dcm4chee_results_by_patient_id.get(str(row["id"]), []),
+                dcm4chee_by_source_id.get(str(row["id"])),
             )
             for row in rows
         ]
@@ -6042,7 +6388,7 @@ class DemoStore:
     def _patient_record_dict(
         row: sqlite3.Row,
         fhir_record: dict[str, Any] | None = None,
-        dcm4chee_results: list[dict[str, Any]] | None = None,
+        dcm4chee_patient_sync: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         validation_messages = json.loads(row["validation_messages_json"] or "[]")
         dcm4chee_results = dcm4chee_results or []
@@ -6103,13 +6449,71 @@ class DemoStore:
             },
             "payload": row["payload_hl7"],
             "fhir": fhir,
-            "dcm4chee": {
-                "dicomResults": dcm4chee_results,
-                "resultCount": len(dcm4chee_results),
-            },
+            "dcm4chee": {"patient": dcm4chee_patient_sync} if dcm4chee_patient_sync else {},
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
             "localOnly": True,
+        }
+
+    @staticmethod
+    def _dcm4chee_patient_sync_dict(row: sqlite3.Row) -> dict[str, Any]:
+        status = str(row["sync_status"] or "")
+        retryable = status in {DCM4CHEE_PATIENT_SYNC_STATUS_PENDING, DCM4CHEE_PATIENT_SYNC_STATUS_FAILED}
+        return {
+            "id": row["id"],
+            "patientRecordId": row["patient_record_id"],
+            "profileName": row["profile_name"],
+            "serverIdentity": row["server_identity"],
+            "patientId": row["patient_id"],
+            "issuerOfPatientId": row["issuer_of_patient_id"],
+            "hl7Host": row["hl7_host"],
+            "hl7Port": row["hl7_port"],
+            "receivingApplication": row["receiving_application"],
+            "receivingFacility": row["receiving_facility"],
+            "status": status,
+            "displayStatus": "Synced" if status == DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED else status,
+            "retryable": retryable,
+            "retryCount": row["retry_count"],
+            "lastAttemptId": row["last_attempt_id"],
+            "ack": {
+                "code": row["last_ack_code"],
+                "controlId": row["last_ack_control_id"],
+                "text": row["last_ack_text"],
+            },
+            "lastResponsePayload": row["last_response_payload"],
+            "lastErrorType": row["last_error_type"],
+            "lastError": row["last_error_text"],
+            "lastSyncAt": row["last_sync_at"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+
+    @staticmethod
+    def _dcm4chee_patient_sync_attempt_dict(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "patientSyncId": row["patient_sync_id"],
+            "operationType": row["operation_type"],
+            "patientRecordId": row["patient_record_id"],
+            "profileName": row["profile_name"],
+            "serverIdentity": row["server_identity"],
+            "patientId": row["patient_id"],
+            "issuerOfPatientId": row["issuer_of_patient_id"],
+            "requestUrl": row["request_url"],
+            "requestPayload": row["request_payload"],
+            "responsePayload": row["response_payload"],
+            "ack": {
+                "code": row["ack_code"],
+                "controlId": row["ack_control_id"],
+                "text": row["ack_text"],
+            },
+            "status": row["attempt_status"],
+            "errorType": row["error_type"],
+            "error": row["error_text"],
+            "attemptedAt": row["attempted_at"],
+            "completedAt": row["completed_at"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
         }
 
     @staticmethod
