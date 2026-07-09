@@ -811,7 +811,7 @@ function renderPatientValidation(messages) {
   container.appendChild(list);
 }
 
-function renderPatientSummaryFromPayload(payload, createdAt = "") {
+function renderPatientSummaryFromPayload(payload, createdAt = "", dcm4cheePatient = null) {
   const container = byId("patient-summary");
   container.replaceChildren();
   const rows = [
@@ -831,6 +831,19 @@ function renderPatientSummaryFromPayload(payload, createdAt = "") {
     item.appendChild(document.createTextNode(value || "-"));
     container.appendChild(item);
   });
+  if (dcm4cheePatient) {
+    container.appendChild(dcm4cheeDetailBlock("dcm4chee Patient", [
+      ["Status", dcm4cheePatient.displayStatus || dcm4cheePatient.status],
+      ["Retryable", dcm4cheePatient.retryable ? "Yes" : "No"],
+      ["Patient ID", dcm4cheePatient.patientId],
+      ["Issuer", dcm4cheePatient.issuerOfPatientId],
+      ["HL7", dcm4cheePatient.hl7Host && dcm4cheePatient.hl7Port ? `${dcm4cheePatient.hl7Host}:${dcm4cheePatient.hl7Port}` : ""],
+      ["ACK", dcm4cheePatient.ack?.code],
+      ["Error Type", dcm4cheePatient.lastErrorType],
+      ["Error", dcm4cheePatient.lastError],
+      ["Last Sync", dcm4cheePatient.lastSyncAt],
+    ]));
+  }
 }
 
 function refreshPatientPreview() {
@@ -861,7 +874,11 @@ function renderPatientRecordList() {
     const row = document.createElement("tr");
     const summary = item.summary || {};
     const fhir = item.fhir || null;
-    const syncStatus = fhir?.sync?.status || (item.protocolVersion === "FHIR R4" ? "Pending sync" : "-");
+    const dcm4cheePatient = item.dcm4chee?.patient || null;
+    const syncStatus = fhir?.sync?.status
+      || dcm4cheePatient?.displayStatus
+      || dcm4cheePatient?.status
+      || (item.protocolVersion === "FHIR R4" ? "Pending sync" : "-");
     const syncLabel = createElement("span", syncStatus, `status ${fhirSyncStatusClass(syncStatus)}`);
     const actionCell = document.createElement("div");
     actionCell.className = "button-row compact-actions";
@@ -885,7 +902,7 @@ function renderPatientRecordList() {
       rowCell(summary.sex),
       rowCell(summary.visitNumber),
       rowCell(syncLabel),
-      rowCell(fhir?.medplum?.reference || fhir?.sync?.error || "-"),
+      rowCell(fhir?.medplum?.reference || fhir?.sync?.error || dcm4cheePatient?.lastError || dcm4cheePatient?.issuerOfPatientId || "-"),
       rowCell(taipeiTimestamp(item.createdAt)),
       rowCell(actionCell),
     );
@@ -896,7 +913,7 @@ function renderPatientRecordList() {
         visitNumber: item.visitNumber,
         patientClass: item.patientClass,
         assignedLocation: item.assignedLocation,
-      }, item.createdAt);
+      }, item.createdAt, item.dcm4chee?.patient || null);
     });
     body.appendChild(row);
   });
@@ -932,10 +949,12 @@ async function createPatientRecord() {
       body: JSON.stringify(patientFormPayload()),
     });
     const item = result.item;
-    const syncStatus = item.fhir?.sync?.status || "";
+    const syncStatus = item.fhir?.sync?.status || item.dcm4chee?.patient?.status || "";
     setStatus(
       "patient-form-status",
-      syncStatus === "Synced" ? "FHIR patient synced" : "Local patient created",
+      syncStatus === "Synced"
+        ? (item.protocolVersion === "DICOM" ? "dcm4chee patient synced" : "FHIR patient synced")
+        : "Local patient created",
       syncStatus === "Sync failed" ? "warning" : "success",
     );
     byId("patient-payload-preview").textContent = item.payload || "";
@@ -944,7 +963,7 @@ async function createPatientRecord() {
       visitNumber: item.visitNumber,
       patientClass: item.patientClass,
       assignedLocation: item.assignedLocation,
-    }, item.createdAt);
+    }, item.createdAt, item.dcm4chee?.patient || null);
     await refreshPatients();
   } catch (error) {
     setStatus("patient-form-status", "Create failed", "error");
@@ -2117,6 +2136,9 @@ function renderOrderSummary(payload, patient, createdAt = "") {
     const mwl = dcm4chee.mwl || {};
     const mapping = mwl.mapping || {};
     const latest = mwl.latest || {};
+    const patientSync = patient?.dcm4chee?.patient || {};
+    const patientPreconditionErrorType = mapping.lastErrorType || latest.errorType || mwl.errorType || "";
+    const patientPreconditionError = mapping.lastError || latest.error || mwl.error || "";
     [
       ["Patient", patient?.summary?.name],
       ["MRN", patient?.summary?.mrn],
@@ -2132,6 +2154,16 @@ function renderOrderSummary(payload, patient, createdAt = "") {
       container.appendChild(item);
     });
     if (mwl.status || mapping.status) {
+      if (patientSync.status || patientPreconditionErrorType === "patient_sync_failed") {
+        container.appendChild(dcm4cheeDetailBlock("Patient Precondition", [
+          ["Status", patientSync.displayStatus || patientSync.status || "Patient sync failed"],
+          ["Patient ID", patientSync.patientId || mapping.patientId],
+          ["Issuer", patientSync.issuerOfPatientId || mapping.issuerOfPatientId],
+          ["Retryable", patientSync.retryable === undefined ? "" : (patientSync.retryable ? "Yes" : "No")],
+          ["Error Type", patientSync.lastErrorType || patientPreconditionErrorType],
+          ["Error", patientSync.lastError || patientPreconditionError],
+        ]));
+      }
       container.appendChild(dcm4cheeDetailBlock("Sync", [
         ["Status", mwl.displayStatus || mapping.status || mwl.status],
         ["Retryable", mwl.retryable ? "Yes" : "No"],
