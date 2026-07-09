@@ -24,7 +24,7 @@ Healthcare Lab SHALL store the DIMSE and MWL values required by future MWL order
 
 #### Scenario: Profile exposes MWL station values
 - **WHEN** Healthcare Lab loads the dcm4chee connection profile
-- **THEN** the profile includes MWL AE title `DCM4CHEE`
+- **THEN** the profile includes MWL AE title `WORKLIST`
 - **AND** the profile includes default Scheduled Station AE Title `ECG_AP`
 
 ### Requirement: dcm4chee profile includes DICOMweb and viewer endpoint values
@@ -32,7 +32,7 @@ Healthcare Lab SHALL store DICOMweb endpoint values and viewer-link configuratio
 
 #### Scenario: Profile exposes DICOMweb endpoints
 - **WHEN** Healthcare Lab loads the dcm4chee connection profile
-- **THEN** the profile includes DICOMweb base URL `http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs`
+- **THEN** the profile includes DICOMweb base URL `http://127.0.0.1:8082/dcm4chee-arc/aets/WORKLIST/rs`
 - **AND** the profile includes query endpoint configuration for QIDO-RS
 - **AND** the profile includes retrieve/view endpoint configuration for WADO-RS
 - **AND** the profile includes store endpoint configuration for STOW-RS

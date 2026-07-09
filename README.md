@@ -169,9 +169,9 @@ defaults:
 | DIMSE host / port | `127.0.0.1:11112` |
 | Called AE title | `DCM4CHEE` |
 | Healthcare Lab calling AE title | `HEALTHCARE_LAB` |
-| MWL AE title | `DCM4CHEE` |
+| MWL AE title | `WORKLIST` |
 | Default Scheduled Station AE Title | `ECG_AP` |
-| DICOMweb base URL | `http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs` |
+| DICOMweb / MWL REST base URL | `http://127.0.0.1:8082/dcm4chee-arc/aets/WORKLIST/rs` |
 | Study Instance UID root | `1.2.826.0.1.3680043.10.543` |
 
 The profile also includes QIDO-RS, WADO-RS, STOW-RS, viewer-link, auth, and TLS
@@ -180,12 +180,19 @@ workflows. The local default uses `DCM4CHEE_AUTH_MODE=none` and
 `DCM4CHEE_TLS_ENABLED=false`; that is only for the local lab and is not a
 production security profile.
 
-DICOM MWL order creation uses the dcm4chee MWL REST path:
+DICOM MWL order creation and verification use the dcm4chee MWL REST path:
 
 ```text
-POST /dcm4chee-arc/aets/{AETitle}/rs/mwlitems
+POST /dcm4chee-arc/aets/WORKLIST/rs/mwlitems
+GET /dcm4chee-arc/aets/WORKLIST/rs/mwlitems?...query...
 Content-Type: application/dicom+json
 ```
+
+The archive QIDO/WADO/STOW application is exposed by the `DCM4CHEE` web app,
+but modality worklist REST is exposed by the `WORKLIST` web app in the local
+dcm4chee defaults. Healthcare Lab records the configured MWL AE and request URL
+in the PACS/MWL ledger so operators can distinguish wrong-AE failures from empty
+worklist results.
 
 Healthcare Lab stores the local order first, then maintains a local PACS/MWL
 ledger that maps the Healthcare Lab order to dcm4chee identifiers. The canonical
@@ -205,6 +212,14 @@ Requested Procedure ID plus Scheduled Procedure Step ID. If dcm4chee rejects the
 request because the patient does not exist, the local order remains available
 and the dcm4chee MWL sync state is recorded as `Patient missing`. Full AP
 C-STORE result ingestion/display and viewer-link consumption remain future work.
+
+The DICOM order workspace can verify MWL queryability for a local order. The
+verification action queries dcm4chee MWL using the ledger identifiers and records
+the query criteria, endpoint, response status, matched identifiers, and
+diagnostics. Successful verification proves which MWL item was found; failed
+verification distinguishes connectivity/profile problems, missing patient
+preconditions, empty worklist responses, identifier mismatches, and ambiguous
+matches.
 
 The first Docker Desktop runtime scaffold for the Lab Console lives in
 [deploy/](deploy/README.md). It includes `docker-compose.yml` and the
