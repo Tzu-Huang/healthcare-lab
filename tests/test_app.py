@@ -1672,6 +1672,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         mwl = item["dcm4chee"]["mwl"]
         self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_PATIENT_MISSING)
         self.assertEqual(mwl["errorType"], "patient_sync_failed")
+        self.assertFalse(mwl["retryable"])
         self.assertIn("connection refused", mwl["error"])
         self.assertEqual(send_hl7.call_count, 2)
         urlopen.assert_not_called()
