@@ -43,4 +43,4 @@
 - [x] 6.4 Add tests for ambiguous, duplicate, wrong-patient, missing-accession, unlinked, no-result, and query-failed diagnostics.
 - [x] 6.5 Add API/response contract tests for patient-level DICOM result exposure.
 - [x] 6.6 Add frontend coverage or static contract checks for refresh controls and expandable patient DICOM results.
-- [ ] 6.7 Run OpenSpec validation and the relevant Healthcare Lab Python test suite.
+- [x] 6.7 Run OpenSpec validation and the relevant Healthcare Lab Python test suite.
