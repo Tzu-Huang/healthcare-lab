@@ -71,6 +71,13 @@ Healthcare Lab SHALL define deterministic matching precedence for reconciling AP
 - **AND** otherwise matches by `00401001 Requested Procedure ID` and `00400009 Scheduled Procedure Step ID`
 - **AND** weak fallback matching by Patient ID, issuer, Scheduled Station AE Title, modality/time window, and order status is treated as ambiguous unless exactly one active candidate exists
 
+#### Scenario: Returned DICOM result validates patient identity
+- **GIVEN** Healthcare Lab finds a result candidate by Accession Number, Requested Procedure ID, or Scheduled Procedure Step ID
+- **WHEN** the returned DICOM metadata includes Patient ID or Issuer of Patient ID
+- **THEN** Healthcare Lab compares those values with the canonical PACS/MWL ledger values
+- **AND** it does not mark the result as matched when the patient identity conflicts
+- **AND** it records a wrong-patient or identifier-mismatch diagnostic instead
+
 ### Requirement: Healthcare Lab creates dcm4chee MWL orders through MWL REST
 Healthcare Lab SHALL create dcm4chee MWL/order records from Healthcare Lab ECG orders using the selected dcm4chee connection profile and the dcm4chee MWL REST creation path.
 
@@ -196,6 +203,13 @@ Healthcare Lab SHALL provide deterministic local lookup behavior that can match 
 - **AND** otherwise matches by Accession Number within the dcm4chee profile/server namespace
 - **AND** otherwise matches by Requested Procedure ID and Scheduled Procedure Step ID
 - **AND** weak fallback matching by Patient ID, issuer, station, modality, or time window is treated as ambiguous unless exactly one active candidate exists
+
+#### Scenario: Weak result candidates remain inspectable
+- **GIVEN** Healthcare Lab queries dcm4chee and finds result candidates that cannot be matched by strong identifiers
+- **WHEN** the candidates only match by weak patient, modality, station, or time-window signals
+- **THEN** Healthcare Lab records the candidates as ambiguous or unlinked
+- **AND** it exposes the relevant candidate metadata for operator debugging
+- **AND** it does not update the local order as reconciled unless a deterministic match is established
 
 ### Requirement: dcm4chee MWL sync exposes retry and attempt APIs
 Healthcare Lab SHALL expose explicit backend APIs that allow clients to retry dcm4chee MWL sync for a local Healthcare Lab order and inspect the dcm4chee sync attempt history for that order.
