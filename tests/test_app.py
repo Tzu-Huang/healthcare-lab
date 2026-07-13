@@ -184,6 +184,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'id="start-gdt-watcher"', response.data)
         self.assertIn(b'data-nav-target="medplum-view"', response.data)
         self.assertIn(b'id="medplum-view"', response.data)
+        self.assertIn(b'<h2>Patient-Centered Console</h2>', response.data)
+        self.assertIn(b'class="lab-panel medplum-patient-panel"', response.data)
+        self.assertIn(b'class="medplum-context-column"', response.data)
+        self.assertIn(b'class="lab-panel medplum-workflow-panel"', response.data)
         self.assertIn(b'id="medplum-patient-list"', response.data)
         self.assertIn(b'id="medplum-service-request-select"', response.data)
         self.assertIn(b'id="medplum-diagnostic-report-select"', response.data)
@@ -273,6 +277,17 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("Patient-level result", script)
         self.assertIn("Live DiagnosticReport References", script)
         self.assertIn("medplumRecordMatchesPatient", script)
+        self.assertIn("let expandedMedplumPatientIds = new Set();", script)
+        self.assertIn("function medplumOrderRecordsForPatient(patient)", script)
+        self.assertIn("function medplumResultRecordsForPatient(patient)", script)
+        self.assertIn("function medplumResourceRollupTable(items, emptyText)", script)
+        self.assertIn("function medplumPatientSection(label, title, body)", script)
+        self.assertIn('toggleButton.setAttribute("aria-expanded"', script)
+        self.assertIn('event.stopPropagation();\n      if (expandedMedplumPatientIds.has(patientId))', script)
+        self.assertIn('"FHIR ORDERS"', script)
+        self.assertIn('"FHIR RESULTS"', script)
+        self.assertIn('medplumPreviewButton(item)', script)
+        self.assertIn('retryButtonForMedplumRecord(item)', script)
         self.assertIn("renderMedplumPatientList", script)
         self.assertIn("renderMedplumPatientList();\n  const patient = selectedMedplumPatient();", script)
         self.assertIn('const serviceRequests = patient ? medplumRecordsForPatient(patient, "ServiceRequest") : [];', script)
@@ -293,6 +308,14 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('id="medplum-diagnostic-report-rollup"', html)
         self.assertIn('id="medplum-diagnostic-report-status"', html)
         self.assertIn("Live Results", html)
+
+        styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
+        styles = styles_path.read_text(encoding="utf-8")
+        self.assertIn(".medplum-patient-toggle", styles)
+        self.assertIn(".medplum-patient-detail-row td", styles)
+        self.assertIn(".medplum-patient-rollup-content", styles)
+        self.assertIn(".medplum-nested-table-wrap", styles)
+        self.assertIn(".medplum-context-column", styles)
 
     def test_sidebar_views_hide_inactive_pages(self):
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
@@ -420,6 +443,35 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(duplicate.status_code, 400)
         self.assertIn("Patient MRN MRN-000001 already exists", duplicate.get_json()["error"])
         self.assertEqual(len(self.client.get("/api/patients").get_json()["items"]), 1)
+
+    def test_integration_patient_lists_filter_to_their_own_protocol(self):
+        store = self.client.application.extensions["demo_store"]
+        patients = {
+            mode: store.create_patient_record(
+                {
+                    "mode": mode,
+                    "mrn": f"MRN-{mode.upper()}",
+                    "firstName": mode,
+                    "lastName": "Patient",
+                    "dob": "19850412",
+                    "sex": "F",
+                }
+            )
+            for mode in ("hl7-v2", "fhir", "gdt", "dicom")
+        }
+        store.create_patient_fhir_workflow_record(patients["fhir"])
+
+        oie = self.client.get("/api/oie/workbench").get_json()["patients"]
+        oie_local = self.client.get("/api/oie/local-adt-patients").get_json()["items"]
+        gdt = self.client.get("/api/gdt/workbench").get_json()["patients"]
+        medplum = self.client.get("/api/fhir/inventory").get_json()["patients"]
+        dcm4chee = self.client.get("/api/patients?protocolVersion=DICOM").get_json()["items"]
+
+        self.assertEqual([item["id"] for item in oie], [patients["hl7-v2"]["id"]])
+        self.assertEqual([item["id"] for item in oie_local], [patients["hl7-v2"]["id"]])
+        self.assertEqual([item["id"] for item in gdt], [patients["gdt"]["id"]])
+        self.assertEqual([item["localSourceId"] for item in medplum], [str(patients["fhir"]["id"])])
+        self.assertEqual([item["id"] for item in dcm4chee], [patients["dicom"]["id"]])
 
     def set_medplum_base_url(self, base_url):
         store = self.client.application.extensions["demo_store"]
@@ -3195,9 +3247,12 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         written = self.client.post(f"/api/gdt/orders/{order['id']}/write-6302", json={})
         self.assertEqual(written.status_code, 200)
-        outbox_path = Path(written.get_json()["path"])
-        self.assertTrue(outbox_path.exists())
-        self.assertIn(order["localGdtOrderNumber"], outbox_path.read_text(encoding="cp1252"))
+        inbound_path = Path(written.get_json()["path"])
+        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
+        self.assertEqual(inbound_path.parent, bridge_root / "inbound")
+        self.assertTrue(inbound_path.exists())
+        self.assertIn(order["localGdtOrderNumber"], inbound_path.read_text(encoding="cp1252"))
+        inbound_path.unlink()
 
         demo = self.client.post(f"/api/gdt/orders/{order['id']}/demo-result", json={})
         self.assertEqual(demo.status_code, 201)
@@ -3206,7 +3261,6 @@ class HealthcareLabApiTests(unittest.TestCase):
             {"value": 427, "unit": "ms", "sourceTestId": "QTC"},
         )
 
-        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
         inbound = self.write_gdt_result_file(order)
 
         inbox = self.client.get("/api/gdt/bridge/inbox")
