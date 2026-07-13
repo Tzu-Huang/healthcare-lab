@@ -38,7 +38,7 @@
         <button class="sidebar-link" type="button" disabled>
           <span class="nav-icon">EM</span>openEMR
         </button>
-        <button class="sidebar-link" type="button" disabled>
+        <button class="sidebar-link" type="button" data-nav-target="dcm4chee-view">
           <span class="nav-icon">DC</span>dcm4chee
         </button>
       </nav>
@@ -539,6 +539,94 @@
               </thead>
               <tbody id="order-record-list"></tbody>
             </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="dcm4chee-view" class="app-view dcm4chee-console" aria-label="dcm4chee Console" hidden>
+        <div class="lab-console-header">
+          <div>
+            <p class="eyebrow">dcm4chee</p>
+            <h2>DICOM Order and PACS Console</h2>
+          </div>
+          <div class="lab-console-actions">
+            <button id="refresh-dcm4chee-console" type="button">Refresh</button>
+            <span id="dcm4chee-console-status" class="status neutral">Ready</span>
+          </div>
+        </div>
+
+        <section class="dcm4chee-console-grid patient-focused-grid">
+          <div class="lab-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">DICOM Patients</p>
+                <h2>Patients</h2>
+              </div>
+            </div>
+            <div class="table-wrap dcm4chee-patient-table-wrap">
+              <table class="dcm4chee-patient-table">
+                <thead>
+                  <tr><th></th><th>Patient</th><th>Sync</th><th>Orders</th><th>Results</th><th>Action</th></tr>
+                </thead>
+                <tbody id="dcm4chee-patient-list"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="lab-panel dcm4chee-selected-patient-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Selected Patient</p>
+                <h2 id="dcm4chee-selected-patient-title">No patient selected</h2>
+              </div>
+              <button id="dcm4chee-refresh-results" type="button">Refresh PACS Results</button>
+            </div>
+            <div id="dcm4chee-selected-patient-summary" class="record-detail compact-detail">
+              <p class="muted">Select a DICOM patient.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="dcm4chee-console-grid lower-grid">
+          <div class="lab-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">MWL</p>
+                <h2>DICOM Orders</h2>
+              </div>
+            </div>
+            <div class="table-wrap dcm4chee-order-table-wrap">
+              <table class="dcm4chee-order-table">
+                <thead>
+                  <tr><th>Order</th><th>Patient</th><th>Sync</th><th>MWL</th><th>Accession</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="dcm4chee-order-list"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="lab-panel dcm4chee-selected-order-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Selected Order</p>
+                <h2 id="dcm4chee-selected-order-title">No order selected</h2>
+              </div>
+            </div>
+            <div id="dcm4chee-selected-order-summary" class="record-detail compact-detail">
+              <p class="muted">Select a DICOM MWL order.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="lab-panel dcm4chee-profile-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Connection</p>
+              <h2>dcm4chee Profile Diagnostics</h2>
+            </div>
+          </div>
+          <div id="dcm4chee-profile-summary" class="record-detail compact-detail">
+            <p class="muted">Profile diagnostics load with the dcm4chee console.</p>
           </div>
         </section>
       </section>
