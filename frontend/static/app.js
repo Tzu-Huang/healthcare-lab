@@ -447,8 +447,10 @@ async function runAllChecks() {
   }
 }
 
+const GENERATED_PATIENT_MRN_LABEL = "Generated on create";
+
 const patientDemoPreset = {
-  mrn: "MRN-A04-001",
+  mrn: "",
   firstName: "Avery",
   middleName: "Lee",
   lastName: "Morgan",
@@ -612,7 +614,6 @@ function updatePatientModeFields(mode) {
 function validatePatientPayload(payload) {
   const messages = [];
   [
-    ["MRN", payload.mrn],
     ["First name", payload.firstName],
     ["Last name", payload.lastName],
     ["DOB", payload.dob],
@@ -627,6 +628,10 @@ function validatePatientPayload(payload) {
     messages.push("Sex must be M, F, O, or U.");
   }
   return messages;
+}
+
+function patientPreviewMrn(payload) {
+  return String(payload?.mrn || "").trim() || GENERATED_PATIENT_MRN_LABEL;
 }
 
 function hl7Escape(value) {
@@ -712,7 +717,7 @@ function buildPatientPreviewPayload(payload) {
   return [
     `MSH|^~\\&|HEALTHCARE_LAB|LAB_DEMO|OIE|ADT|${timestamp}||ADT^A04^ADT_A01|A04PREVIEW${timestamp}|P|2.5.1||||||UNICODE UTF-8`,
     `EVN|A04|${timestamp}`,
-    `PID|1||${hl7Escape(payload.mrn)}^^^HEALTHCARE_LAB^MR||${patientName}||${hl7Escape(payload.dob)}|${hl7Escape(payload.sex)}|||${hl7EscapeComposite(payload.address)}||${hl7Escape(payload.phone)}|||||${hl7Escape(payload.accountNumber)}`,
+    `PID|1||${hl7Escape(patientPreviewMrn(payload))}^^^HEALTHCARE_LAB^MR||${patientName}||${hl7Escape(payload.dob)}|${hl7Escape(payload.sex)}|||${hl7EscapeComposite(payload.address)}||${hl7Escape(payload.phone)}|||||${hl7Escape(payload.accountNumber)}`,
     `PV1|1|${hl7Escape(payload.patientClass || "O")}|${hl7EscapeComposite(payload.assignedLocation)}||||${hl7EscapeComposite(payload.attendingProvider)}||||||||||||${hl7Escape(visitNumber)}`,
   ].join("\r");
 }
@@ -752,7 +757,7 @@ function buildPatientFhirPreviewPayload(payload) {
     identifier: [
       {
         system: "urn:healthcare-lab:mrn",
-        value: payload.mrn,
+        value: patientPreviewMrn(payload),
       },
     ],
     name: [
@@ -811,7 +816,7 @@ function buildPatientGdtPreviewPayload(payload) {
   const records = [
     ["8315", "LABGDT"],
     ["8316", "HCLAB"],
-    ["3000", payload.mrn],
+    ["3000", patientPreviewMrn(payload)],
     ["3101", payload.lastName],
     ["3102", payload.firstName],
     ["3103", gdtBirthDate],
@@ -823,7 +828,7 @@ function buildPatientGdtPreviewPayload(payload) {
 function buildPatientDicomPreviewPayload(payload) {
   const dataset = {
     "(0010,0010) PatientName": [payload.lastName, payload.firstName, payload.middleName].filter(Boolean).join("^"),
-    "(0010,0020) PatientID": payload.mrn,
+    "(0010,0020) PatientID": patientPreviewMrn(payload),
     "(0010,0030) PatientBirthDate": payload.dob,
     "(0010,0040) PatientSex": payload.sex,
     "(0010,2154) PatientTelephoneNumbers": payload.phone,
@@ -851,7 +856,7 @@ function renderPatientSummaryFromPayload(payload, createdAt = "", dcm4cheePatien
   const container = byId("patient-summary");
   container.replaceChildren();
   const rows = [
-    ["MRN", payload.mrn],
+    ["MRN", patientPreviewMrn(payload)],
     ["Name", [payload.firstName, payload.middleName, payload.lastName].filter(Boolean).join(" ")],
     ["DOB", payload.dob],
     ["Sex", payload.sex],

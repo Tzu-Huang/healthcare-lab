@@ -203,6 +203,11 @@ class HealthcareLabApiTests(unittest.TestCase):
         app_js = Path(__file__).resolve().parents[1] / "frontend" / "static" / "app.js"
         script = app_js.read_text(encoding="utf-8")
 
+        self.assertIn('const GENERATED_PATIENT_MRN_LABEL = "Generated on create";', script)
+        self.assertIn('mrn: "",', script)
+        self.assertIn("function patientPreviewMrn(payload)", script)
+        self.assertNotIn('["MRN", payload.mrn],', script)
+        self.assertIn("patientPreviewMrn(payload)", script)
         self.assertIn("function patientStateLabel(item)", script)
         self.assertIn('syncStatus === "Synced" && /^Patient\\/[^/]+$/.test(reference) ? "OK" : "Error"', script)
         self.assertIn('syncStatus === "Synced" && dcm4cheePatient.ack?.code === "AA" ? "OK" : "Error"', script)
@@ -386,6 +391,28 @@ class HealthcareLabApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 201)
         return response.get_json()["item"]
+
+    def test_patient_api_allocates_blank_mrn_and_rejects_duplicate(self):
+        payload = {
+            "mrn": "",
+            "firstName": "Avery",
+            "lastName": "Morgan",
+            "dob": "19850412",
+            "sex": "F",
+        }
+
+        created = self.client.post("/api/patients", json=payload)
+
+        self.assertEqual(created.status_code, 201)
+        item = created.get_json()["item"]
+        self.assertEqual(item["summary"]["mrn"], "MRN-000001")
+        self.assertIn("PID|1||MRN-000001^^^HEALTHCARE_LAB^MR", item["payload"])
+
+        duplicate = self.client.post("/api/patients", json={**payload, "mrn": "MRN-000001"})
+
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertIn("Patient MRN MRN-000001 already exists", duplicate.get_json()["error"])
+        self.assertEqual(len(self.client.get("/api/patients").get_json()["items"]), 1)
 
     def set_medplum_base_url(self, base_url):
         store = self.client.application.extensions["demo_store"]

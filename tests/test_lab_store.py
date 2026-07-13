@@ -416,6 +416,35 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertIn("(0010,0010) PatientName", dicom["payload"])
         self.assertIn("Morgan^Avery^Lee", dicom["payload"])
 
+    def test_generated_mrn_propagates_across_patient_modes_and_into_order_snapshot(self):
+        base_payload = {
+            "firstName": "Avery",
+            "lastName": "Morgan",
+            "dob": "19850412",
+            "sex": "F",
+        }
+
+        hl7 = self.store.create_patient_record({**base_payload, "mode": "hl7-v2"})
+        fhir = self.store.create_patient_record({**base_payload, "mode": "fhir"})
+        gdt = self.store.create_patient_record({**base_payload, "mode": "gdt"})
+        dicom = self.store.create_patient_record({**base_payload, "mode": "dicom"})
+
+        self.assertIn("PID|1||MRN-000001^^^HEALTHCARE_LAB^MR", hl7["payload"])
+        self.assertEqual(json.loads(fhir["payload"])["identifier"][0]["value"], "MRN-000002")
+        self.assertEqual(parse_gdt_records(gdt["payload"])["3000"], "MRN-000003")
+        self.assertEqual(json.loads(dicom["payload"])["(0010,0020) PatientID"], "MRN-000004")
+
+        order = self.store.create_order_record(
+            {
+                "patientRecordId": hl7["id"],
+                "requestedAt": "20260713143000",
+                "orderingProvider": "1001^WANG^AMY",
+            }
+        )
+
+        self.assertEqual(order["summary"]["mrn"], "MRN-000001")
+        self.assertIn("PID|1||MRN-000001^^^HEALTHCARE_LAB^MR", order["payload"])
+
     def test_fhir_patient_common_fields_and_paired_ledger_metadata(self):
         patient = self.store.create_patient_record(
             {
