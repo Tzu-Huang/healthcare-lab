@@ -3933,6 +3933,17 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response("Patient record was not found.", 404)
         return jsonify(result)
 
+    @app.post("/api/dcm4chee/e2e-fixture")
+    def create_dcm4chee_e2e_fixture():
+        try:
+            result = store.create_dcm4chee_e2e_demo_fixture(
+                dcm4chee_profile_from_config(app.config),
+                uid_root=app.config["DCM4CHEE_UID_ROOT"],
+            )
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        return jsonify({"success": True, **result}), 201
+
     @app.get("/api/orders")
     def list_orders():
         return jsonify({"success": True, "items": store.list_order_records()})
@@ -4071,6 +4082,46 @@ def create_app(database_path: str | None = None) -> Flask:
                 "latestAttempt": result.get("attempt"),
             }
         )
+
+    @app.get("/api/orders/<int:order_id>/dcm4chee-e2e-evidence")
+    def get_order_dcm4chee_e2e_evidence(order_id: int):
+        try:
+            item = store.get_order_record(order_id)
+        except KeyError:
+            return error_response("Order record was not found.", 404)
+        if item["protocolVersion"] != "DICOM":
+            return error_response("Order record is not DICOM MWL mode.", 400)
+        return jsonify(
+            {
+                "success": True,
+                "evidence": store.dcm4chee_e2e_evidence_for_order(
+                    order_id,
+                    dcm4chee_profile_from_config(app.config),
+                ),
+            }
+        )
+
+    @app.post("/api/orders/<int:order_id>/dcm4chee-simulated-ap-return")
+    def create_order_dcm4chee_simulated_ap_return(order_id: int):
+        payload = request.get_json(silent=True) or {}
+        try:
+            item = store.get_order_record(order_id)
+        except KeyError:
+            return error_response("Order record was not found.", 404)
+        if item["protocolVersion"] != "DICOM":
+            return error_response("Order record is not DICOM MWL mode.", 400)
+        try:
+            result = store.create_simulated_dcm4chee_ap_return(
+                order_id,
+                dcm4chee_profile_from_config(app.config),
+                result_type=str(payload.get("type") or "both"),
+                artifact_url=str(payload.get("artifactUrl") or ""),
+                artifact_path=str(payload.get("artifactPath") or ""),
+            )
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        patient = store.get_patient_record(int(item["patientRecordId"]))
+        return jsonify({"success": True, "patient": patient, **result}), 201
 
     @app.get("/api/fhir/mappings")
     def list_fhir_mappings():

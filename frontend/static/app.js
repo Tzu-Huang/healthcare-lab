@@ -901,12 +901,16 @@ function dcm4cheeOpenButton(label, url) {
 function dcm4cheeActionsForResult(item, level = "study") {
   const actions = document.createElement("div");
   actions.className = "button-row compact-actions dcm4chee-result-actions";
+  const artifactUrl = item.artifact?.url || "";
+  const artifactPath = item.artifact?.path || "";
   const retrieveUrl = level === "instance"
     ? item.instanceRetrieveUrl
     : level === "series"
       ? item.seriesRetrieveUrl
       : item.studyRetrieveUrl;
   [
+    dcm4cheeOpenButton("Open Artifact", artifactUrl),
+    dcm4cheeCopyButton("Copy Artifact", artifactUrl || artifactPath),
     dcm4cheeOpenButton("Open Viewer", item.viewerUrl),
     dcm4cheeCopyButton("Copy Retrieve", retrieveUrl),
   ].filter(Boolean).forEach((button) => actions.appendChild(button));
@@ -1006,6 +1010,7 @@ function renderDcm4cheeSeriesDetails(series) {
     createElement("span", "Series", "dcm4chee-row-kind"),
     createElement("code", dcm4cheeFirstValue(series.records, "seriesInstanceUid") || "No Series Instance UID"),
     createElement("span", dcm4cheeFirstValue(series.records, "modality") || "-", "muted"),
+    createElement("span", dcm4cheeFirstValue(series.records, "source") || "dcm4chee", "muted"),
     createElement("span", taipeiTimestamp(dcm4cheeFirstValue(series.records, "seriesDateTime") || dcm4cheeFirstValue(series.records, "lastRefreshedAt")), "muted"),
     createElement("span", dcm4cheeDisplayStatus(series.status), `status ${dcm4cheeResultStatusClass(series.status)}`),
   );
@@ -1026,12 +1031,16 @@ function renderDcm4cheeStudyDetails(study) {
     createElement("code", dcm4cheeFirstValue(study.records, "studyInstanceUid") || "No Study Instance UID"),
     createElement("span", `Accession Number ${dcm4cheeFirstValue(study.records, "accessionNumber") || "-"}`, "muted"),
     createElement("span", dcm4cheeFirstValue(study.records, "modality") || "-", "muted"),
+    createElement("span", dcm4cheeFirstValue(study.records, "source") || "dcm4chee", "muted"),
     createElement("span", taipeiTimestamp(dcm4cheeFirstValue(study.records, "studyDateTime") || dcm4cheeFirstValue(study.records, "lastRefreshedAt")), "muted"),
     createElement("span", dcm4cheeDisplayStatus(study.status), `status ${dcm4cheeResultStatusClass(study.status)}`),
   );
   summary.appendChild(dcm4cheeActionsForResult(representative, "study"));
   details.appendChild(summary);
   const metadata = dcm4cheeDetailBlock("DICOM Fields", [
+    ["Source", dcm4cheeFirstValue(study.records, "source") || "dcm4chee"],
+    ["Artifact", dcm4cheeFirstValue(study.records, "artifact")?.label || ""],
+    ["Artifact Type", dcm4cheeFirstValue(study.records, "artifact")?.mediaType || ""],
     ["Patient ID", dcm4cheeFirstValue(study.records, "patientId")],
     ["Issuer of Patient ID", dcm4cheeFirstValue(study.records, "issuerOfPatientId")],
     ["Requested Procedure ID", dcm4cheeFirstValue(study.records, "requestedProcedureId")],
@@ -1534,6 +1543,17 @@ function renderDcm4cheeOrderActions(orderId, patientId, mwl = {}, mapping = {}) 
     refreshButton.type = "button";
     refreshButton.addEventListener("click", () => refreshPatientDcm4cheeResults(patientId, refreshButton, { orderId }));
     actions.appendChild(refreshButton);
+  }
+  if (orderId) {
+    const simulatePdfButton = createElement("button", "Simulate AP PDF", "small-button");
+    simulatePdfButton.type = "button";
+    simulatePdfButton.addEventListener("click", () => simulateDcm4cheeApReturn(orderId, simulatePdfButton, "pdf"));
+    actions.appendChild(simulatePdfButton);
+
+    const simulateDicomButton = createElement("button", "Simulate AP DICOM", "small-button");
+    simulateDicomButton.type = "button";
+    simulateDicomButton.addEventListener("click", () => simulateDcm4cheeApReturn(orderId, simulateDicomButton, "dicom"));
+    actions.appendChild(simulateDicomButton);
   }
   if (!actions.childElementCount) actions.appendChild(createElement("span", "No DICOM actions available yet.", "muted"));
   return actions;
@@ -3235,6 +3255,30 @@ async function verifyDcm4cheeOrder(orderId, button) {
     setStatus("order-form-status", "Verification failed", "error");
     setStatus("dcm4chee-console-status", error.message, "error");
     byId("order-payload-preview").textContent = error.message;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function simulateDcm4cheeApReturn(orderId, button, type = "both") {
+  if (button) button.disabled = true;
+  setStatus("order-form-status", "Recording simulated AP return...", "pending");
+  try {
+    const result = await requestJson(`/api/orders/${orderId}/dcm4chee-simulated-ap-return`, {
+      method: "POST",
+      body: JSON.stringify({ type }),
+    });
+    setStatus("order-form-status", `Simulated AP ${type.toUpperCase()} result recorded`, "success");
+    if (result.patient) {
+      const index = patientRecords.findIndex((item) => Number(item.id) === Number(result.patient.id));
+      if (index >= 0) patientRecords[index] = result.patient;
+    }
+    await refreshPatients();
+    await refreshOrders();
+    refreshDcm4cheeConsole();
+  } catch (error) {
+    setStatus("order-form-status", error.message, "error");
+    setStatus("dcm4chee-console-status", error.message, "error");
   } finally {
     if (button) button.disabled = false;
   }

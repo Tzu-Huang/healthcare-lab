@@ -1,9 +1,9 @@
 ## 1. E2E Fixture And Evidence Model
 
-- [ ] 1.1 Define a deterministic demo DICOM patient/order preset for production-like verification.
-- [ ] 1.2 Capture the identifiers used during verification: Patient ID, Issuer, Accession Number, Requested Procedure ID, Scheduled Procedure Step ID, Study Instance UID, Series Instance UID, SOP Instance UID when available, AE titles, endpoints, and timestamps.
-- [ ] 1.3 Add or reuse a verification evidence object that records step statuses for patient sync, MWL create, MWL queryability, AP return/C-STORE, result reconciliation, and UI-visible result state.
-- [ ] 1.4 Keep fixture data virtual and safe for local lab use only.
+- [x] 1.1 Define a deterministic demo DICOM patient/order preset for production-like verification.
+- [x] 1.2 Capture the identifiers used during verification: Patient ID, Issuer, Accession Number, Requested Procedure ID, Scheduled Procedure Step ID, Study Instance UID, Series Instance UID, SOP Instance UID when available, AE titles, endpoints, and timestamps.
+- [x] 1.3 Add or reuse a verification evidence object that records step statuses for patient sync, MWL create, MWL queryability, AP return/C-STORE, result reconciliation, and UI-visible result state.
+- [x] 1.4 Keep fixture data virtual and safe for local lab use only.
 
 ## 2. Production-Like Workflow Verification
 
@@ -15,19 +15,19 @@
 
 ## 3. Simulated AP Return Fixture
 
-- [ ] 3.1 Add a repeatable simulated AP-return path for a DICOM order.
-- [ ] 3.2 Support a PDF artifact return record with artifact URL/path, media type, role, order identifiers, and display metadata.
-- [ ] 3.3 Support DICOM-style result metadata or object record with Study/Series/SOP UIDs, modality, patient/order identifiers, and viewer/retrieve metadata when available.
-- [ ] 3.4 Ensure simulated AP-return records reconcile or display through the same patient/order DICOM result surface used by live results where practical.
-- [ ] 3.5 Prevent simulated fixtures from being confused with live dcm4chee evidence by labeling source/mode clearly.
+- [x] 3.1 Add a repeatable simulated AP-return path for a DICOM order.
+- [x] 3.2 Support a PDF artifact return record with artifact URL/path, media type, role, order identifiers, and display metadata.
+- [x] 3.3 Support DICOM-style result metadata or object record with Study/Series/SOP UIDs, modality, patient/order identifiers, and viewer/retrieve metadata when available.
+- [x] 3.4 Ensure simulated AP-return records reconcile or display through the same patient/order DICOM result surface used by live results where practical.
+- [x] 3.5 Prevent simulated fixtures from being confused with live dcm4chee evidence by labeling source/mode clearly.
 
 ## 4. UI Verification
 
-- [ ] 4.1 Show AP-returned result status in the DICOM patient/order workspace.
-- [ ] 4.2 Show PDF artifact link/open metadata for simulated or live PDF-style AP returns.
-- [ ] 4.3 Show DICOM Study/Series/Instance hierarchy and identifiers for simulated or live DICOM-style AP returns.
-- [ ] 4.4 Show matched order and reconciliation status without requiring raw JSON inspection.
-- [ ] 4.5 Keep raw diagnostic/evidence details available for troubleshooting.
+- [x] 4.1 Show AP-returned result status in the DICOM patient/order workspace.
+- [x] 4.2 Show PDF artifact link/open metadata for simulated or live PDF-style AP returns.
+- [x] 4.3 Show DICOM Study/Series/Instance hierarchy and identifiers for simulated or live DICOM-style AP returns.
+- [x] 4.4 Show matched order and reconciliation status without requiring raw JSON inspection.
+- [x] 4.5 Keep raw diagnostic/evidence details available for troubleshooting.
 
 ## 5. Operator SOP
 
@@ -40,11 +40,11 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Add automated tests for demo fixture creation and evidence shape.
-- [ ] 6.2 Add automated tests for simulated PDF AP-return display/exposure.
-- [ ] 6.3 Add automated tests for simulated DICOM metadata AP-return display/exposure.
-- [ ] 6.4 Add API/response contract tests for E2E verification evidence and AP-return status.
-- [ ] 6.5 Add frontend static or helper tests for AP-return result UI hooks.
-- [ ] 6.6 Run OpenSpec validation.
+- [x] 6.1 Add automated tests for demo fixture creation and evidence shape.
+- [x] 6.2 Add automated tests for simulated PDF AP-return display/exposure.
+- [x] 6.3 Add automated tests for simulated DICOM metadata AP-return display/exposure.
+- [x] 6.4 Add API/response contract tests for E2E verification evidence and AP-return status.
+- [x] 6.5 Add frontend static or helper tests for AP-return result UI hooks.
+- [x] 6.6 Run OpenSpec validation.
 - [ ] 6.7 Run the relevant Healthcare Lab Python test suite.
 - [ ] 6.8 Execute or document manual live AP/dcm4chee production-like verification with exact identifiers.
