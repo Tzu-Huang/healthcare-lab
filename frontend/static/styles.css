@@ -397,6 +397,20 @@ button.danger:hover {
   overflow-x: auto;
 }
 
+.patient-local-table-wrap,
+.order-local-table-wrap {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.patient-local-table-wrap thead th,
+.order-local-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fffef9;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -1747,6 +1761,7 @@ body {
 .page-shell {
   width: auto;
   max-width: none;
+  min-width: 0;
   margin: 0;
   padding: 0 36px 32px;
 }
@@ -1947,6 +1962,140 @@ body {
   display: grid;
   grid-template-columns: minmax(360px, 0.85fr) minmax(0, 1.6fr);
   gap: 20px;
+}
+
+.oie-console-grid.patient-focused-grid {
+  grid-template-columns: minmax(560px, 1.45fr) minmax(340px, 0.55fr);
+  align-items: stretch;
+}
+
+.oie-patient-table-wrap {
+  height: 560px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+.oie-patient-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #ffffff;
+}
+
+.oie-patient-table th:first-child,
+.oie-patient-table td:first-child {
+  width: 38px;
+}
+
+.oie-patient-table th:nth-child(5),
+.oie-patient-table th:nth-child(6),
+.oie-patient-table td:nth-child(5),
+.oie-patient-table td:nth-child(6) {
+  width: 72px;
+  text-align: right;
+}
+
+.oie-patient-toggle {
+  min-width: 24px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #405068;
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.oie-patient-toggle:hover {
+  background: transparent;
+  color: #1d4ed8;
+}
+
+.oie-patient-detail-row td {
+  padding: 14px;
+  background: #ffffff;
+}
+
+.oie-patient-rollup-content {
+  display: grid;
+  gap: 18px;
+}
+
+.oie-patient-section {
+  display: grid;
+  gap: 8px;
+}
+
+.oie-patient-section-heading {
+  margin-bottom: 0;
+}
+
+.oie-patient-section h3,
+.oie-selected-order-bar h3,
+.oie-preview-heading h3 {
+  margin: 0;
+  color: #13233a;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.oie-nested-table {
+  width: auto;
+  min-width: 100%;
+  table-layout: auto;
+}
+
+.oie-nested-table th,
+.oie-nested-table td {
+  white-space: nowrap;
+}
+
+.oie-nested-table th:last-child,
+.oie-nested-table td:last-child {
+  width: 1%;
+  text-align: right;
+}
+
+.oie-transmission-panel {
+  min-height: 560px;
+}
+
+.oie-send-connection-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.oie-send-connection-grid .checkbox-row {
+  align-self: end;
+  min-height: 39px;
+  margin: 0;
+}
+
+.oie-selected-order-bar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ui-line);
+}
+
+.oie-selected-order-bar button {
+  flex: 0 0 auto;
+}
+
+.oie-preview-heading {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ui-line);
+}
+
+.oie-preview-output {
+  min-height: 132px;
+  max-height: 220px;
+  overflow: auto;
 }
 
 .gdt-console {
@@ -2431,6 +2580,7 @@ button.primary:hover,
   }
 
   .oie-console-grid,
+  .oie-console-grid.patient-focused-grid,
   .gdt-console-grid,
   .gdt-console-grid.patient-focused-grid,
   .gdt-console-grid.lower-grid {
@@ -2494,7 +2644,31 @@ button.primary:hover,
 
   .sidebar-nav {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .oie-patient-panel,
+  .oie-transmission-panel {
+    min-width: 0;
+  }
+
+  .oie-patient-table-wrap {
+    height: 440px;
+    max-height: 440px;
+  }
+
+  .oie-send-connection-grid,
+  .oie-connection-grid {
     grid-template-columns: 1fr;
+  }
+
+  .oie-selected-order-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .oie-selected-order-bar button {
+    width: 100%;
   }
 
   th,

@@ -103,7 +103,7 @@ Healthcare Lab SHALL expose local OIE connection settings for manual order sendi
 - **WHEN** the OIE page is loaded
 - **THEN** the connection settings include host, port, timeout, and MLLP framing
 - **AND** the default host is `localhost`
-- **AND** the default port is `6663`
+- **AND** the default port is `6600`
 
 ### Requirement: OIE-to-AP routing remains external configuration
 

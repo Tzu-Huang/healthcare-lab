@@ -305,8 +305,8 @@ For **HL7 v2.5.1** orders:
 
 Use **OIE** to inspect local Patient ADT inventory and local Order ORM
 inventory. The Order inventory can send one selected ORM message to the
-configured OIE MLLP endpoint, defaulting to `localhost:6663` for direct local
-Flask runs and `oie:6663` in the Docker Compose lab, and stores the returned ACK
+configured OIE MLLP endpoint, defaulting to `localhost:6600` for direct local
+Flask runs and `oie:6600` in the Docker Compose lab, and stores the returned ACK
 code (`AA`, `AE`, or `AR`) or transport error.
 
 OIE-to-AP routing is intentionally outside this app scope. Configure downstream

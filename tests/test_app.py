@@ -138,8 +138,26 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn(b'id="protocol-mode"', response.data)
         self.assertIn(b'id="lab-console-view"', response.data)
         self.assertIn(b'id="patient-mode"', response.data)
+        self.assertIn(b'class="table-wrap patient-local-table-wrap"', response.data)
+        self.assertIn(b"<th>State</th><th>Created</th>", response.data)
+        self.assertNotIn(b"<th>FHIR Sync</th>", response.data)
+        self.assertNotIn(
+            b"<th>ID</th><th>Mode</th><th>MRN</th><th>Name</th><th>DOB</th><th>Sex</th><th>Visit</th>"
+            b"<th>FHIR Sync</th><th>Medplum</th><th>Created</th><th>Action</th>",
+            response.data,
+        )
         self.assertIn(b'id="order-view"', response.data)
         self.assertIn(b'id="order-payload-preview"', response.data)
+        self.assertIn(b'class="table-wrap order-local-table-wrap"', response.data)
+        self.assertIn(
+            b"<th>Order</th><th>Mode</th><th>MRN</th><th>Name</th><th>Code</th><th>Status</th><th>Created (Taipei)</th>",
+            response.data,
+        )
+        self.assertNotIn(
+            b"<th>Order</th><th>MRN</th><th>Name</th><th>Code</th><th>Status</th>"
+            b"<th>Requested</th><th>Created</th><th>Actions</th>",
+            response.data,
+        )
         self.assertIn(b'<option value="fhir">FHIR</option>', response.data)
         self.assertIn(b'id="fhir-resource-type" value="ServiceRequest"', response.data)
         self.assertIn(b'id="fhir-service-request-id"', response.data)
@@ -150,7 +168,13 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'<option value="gdt">GDT ECG</option>', response.data)
         self.assertIn(b'id="create-gdt-patient"', response.data)
         self.assertIn(b'id="gdt-test-code" value="8402=EKG01"', response.data)
-        self.assertIn(b'id="oie-order-list"', response.data)
+        self.assertIn(b'class="table-wrap oie-patient-table-wrap"', response.data)
+        self.assertIn(b'class="lab-panel oie-transmission-panel"', response.data)
+        self.assertIn(b'class="compact-output oie-preview-output"', response.data)
+        self.assertIn(b'id="oie-selected-order-title"', response.data)
+        self.assertIn(b'id="send-selected-oie-order"', response.data)
+        self.assertIn(b'Host / IP<input id="oie-send-host"', response.data)
+        self.assertNotIn(b'id="oie-order-list"', response.data)
         self.assertIn(b'id="gdt-view"', response.data)
         self.assertIn(b'id="gdt-inbox-list"', response.data)
         self.assertIn(b'id="gdt-patient-list"', response.data)
@@ -179,6 +203,35 @@ class HealthcareLabApiTests(unittest.TestCase):
         app_js = Path(__file__).resolve().parents[1] / "frontend" / "static" / "app.js"
         script = app_js.read_text(encoding="utf-8")
 
+        self.assertIn("function patientStateLabel(item)", script)
+        self.assertIn('syncStatus === "Synced" && /^Patient\\/[^/]+$/.test(reference) ? "OK" : "Error"', script)
+        self.assertIn('syncStatus === "Synced" && dcm4cheePatient.ack?.code === "AA" ? "OK" : "Error"', script)
+        self.assertIn('return messages.length ? "Error" : "OK";', script)
+        self.assertNotIn('return "Created";', script)
+        self.assertIn("function orderStateLabel(item, mode)", script)
+        self.assertIn("function orderModeLabel(item, mode)", script)
+        self.assertIn("function orderRecordMode(item)", script)
+        self.assertIn("let expandedOiePatientIds = new Set();", script)
+        self.assertIn("function oiePatientSection(label, title, body)", script)
+        self.assertIn("function renderOieTransmission(item)", script)
+        self.assertIn('byId("send-selected-oie-order").addEventListener', script)
+        self.assertIn("const ORDER_PATIENT_PROTOCOL_BY_MODE", script)
+        self.assertIn("const ORDER_PATIENT_LABEL_BY_MODE", script)
+        self.assertIn('"hl7-v251": "HL7 v2.5.1"', script)
+        self.assertIn('"hl7-v251": "HL7 v2"', script)
+        self.assertIn("function orderPatientRecordsForMode(mode = currentOrderMode())", script)
+        self.assertIn("return patientRecords.filter((item) => item.protocolVersion === protocolVersion);", script)
+        self.assertIn("const records = orderPatientRecordsForMode(mode);", script)
+        self.assertIn("Create a ${orderPatientModeLabel(mode)} patient first", script)
+        self.assertIn("const records = [...orderRecords, ...gdtOrderRecords]", script)
+        self.assertIn('requestJson("/api/orders")', script)
+        self.assertIn('requestJson("/api/gdt/orders")', script)
+        self.assertIn('return "HL7 v2";', script)
+        self.assertIn('rowCell(orderModeLabel(item, rowMode))', script)
+        self.assertIn('rowCell(taipeiTimestamp(item.createdAt))', script)
+        self.assertIn('statusLabel === "Accepted" ? "success" : "error"', script)
+        self.assertIn('return status === "Created" ? "Accepted" : "Error";', script)
+        self.assertIn('["error", "rejected", "transport error"].includes(status) ? "Error" : "Accepted"', script)
         self.assertIn('service.id === "openemr-gdt"', script)
         self.assertIn("ECG Order", script)
         self.assertIn('"/api/gdt/orders"', script)
@@ -221,7 +274,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("FHIR order code is required.", script)
         self.assertIn('payload.mode !== "fhir" && payload.requestedAt', script)
         self.assertIn("serviceRequest", script)
-        self.assertIn("Task:", script)
+        self.assertNotIn("Task:", script)
 
         template = Path(__file__).resolve().parents[1] / "frontend" / "templates" / "index.html"
         html = template.read_text(encoding="utf-8")
@@ -234,6 +287,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         styles = styles_path.read_text(encoding="utf-8")
         self.assertIn(".app-view[hidden]", styles)
         self.assertIn("display: none", styles)
+        self.assertIn(".patient-local-table-wrap", styles)
+        self.assertIn(".order-local-table-wrap", styles)
+        self.assertIn("max-height: 360px", styles)
+        self.assertIn("overflow: auto", styles)
 
     def test_only_healthcare_lab_routes_are_registered(self):
         routes = {rule.rule for rule in self.client.application.url_map.iter_rules()}
@@ -3262,7 +3319,7 @@ class HealthcareLabApiTests(unittest.TestCase):
     def test_oie_send_order_uses_configured_default_endpoint(self, send_message):
         self.client.application.config.update(
             OIE_MLLP_ORDER_HOST="oie",
-            OIE_MLLP_ORDER_PORT=6663,
+            OIE_MLLP_ORDER_PORT=6600,
         )
         patient = self.create_local_patient()
         order = self.client.post("/api/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
@@ -3279,7 +3336,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         send_message.assert_called_once()
         self.assertEqual(send_message.call_args.kwargs["host"], "oie")
-        self.assertEqual(send_message.call_args.kwargs["port"], 6663)
+        self.assertEqual(send_message.call_args.kwargs["port"], 6600)
 
     @patch("app.send_hl7_mllp_message", side_effect=OSError("connection refused"))
     def test_oie_send_order_records_transport_error(self, _send_message):

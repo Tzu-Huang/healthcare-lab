@@ -169,7 +169,7 @@ Medplum API server and Web UI companion.
 | OIE HTTPS | `10443` |
 | OIE inbound MLLP | container network `6671` |
 | OIE result listener | host `6661` |
-| OIE order listener | host `6663` |
+| OIE order listener | host `6600` |
 | Medplum FHIR/API | `8103` |
 | Medplum Web UI | `3000` |
 | OpenEMR | `8088` |
