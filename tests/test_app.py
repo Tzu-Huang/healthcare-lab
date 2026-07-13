@@ -2926,6 +2926,40 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(second, "2026-07-13T06:44:12.000000+00:00-generation-b")
         self.assertNotEqual(first, second)
 
+    @patch("backend.lab_store.now_iso", return_value="2026-07-13T15:30:00+08:00")
+    def test_dcm4chee_result_refresh_run_order_supersedes_updated_lower_id_row(self, _now_iso):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            refresh_generation="generation-1",
+        )
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
+            refresh_generation="generation-2",
+        )
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            refresh_generation="generation-3",
+        )
+
+        direct_results = store.list_dcm4chee_results_for_patient(patient["id"])
+        aggregated_results = store.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"]
+
+        for results in (direct_results, aggregated_results):
+            self.assertEqual(
+                [(item["reconciliationStatus"], item["refreshGeneration"]) for item in results],
+                [(DCM4CHEE_RESULT_STATUS_NO_RESULT, "generation-3")],
+            )
+
     @patch("app.urllib.request.urlopen")
     def test_patient_dcm4chee_result_refresh_supersedes_stale_diagnostics(self, urlopen):
         patient = self.create_local_patient()
