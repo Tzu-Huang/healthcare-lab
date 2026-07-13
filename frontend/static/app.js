@@ -1017,25 +1017,31 @@ function dcm4cheeFirstValue(records, field) {
   return records.map((item) => item?.[field]).find((value) => value !== null && value !== undefined && value !== "") || "";
 }
 
-function renderDcm4cheeInstanceTable(records) {
-  const { wrap, tbody } = compactTable(
-    ["SOP Instance UID", "Modality", "Instance Date/Time", "Status", "Actions"],
-    records.length ? "" : "No instance-level DICOM metadata for this series.",
-    5,
-  );
-  wrap.classList.add("dcm4chee-nested-table-wrap");
-  records.forEach((item) => {
+function renderDcm4cheeResultTable(headers, rows, className = "") {
+  const { wrap, tbody } = dcm4cheeNestedTable(headers);
+  wrap.classList.add("dcm4chee-result-table-wrap");
+  if (className) wrap.classList.add(className);
+  rows.forEach((values) => {
     const row = document.createElement("tr");
-    row.append(
-      rowCell(item.sopInstanceUid || "-"),
-      rowCell(item.modality || "-"),
-      rowCell(taipeiTimestamp(item.instanceDateTime || item.lastRefreshedAt)),
-      rowCell(createElement("span", dcm4cheeDisplayStatus(item.reconciliationStatus), `status ${dcm4cheeResultStatusClass(item.reconciliationStatus)}`)),
-      rowCell(dcm4cheeActionsForResult(item, "instance")),
-    );
+    values.forEach((value) => row.appendChild(rowCell(value === null || value === undefined || value === "" ? "-" : value)));
     tbody.appendChild(row);
   });
   return wrap;
+}
+
+function renderDcm4cheeInstanceTable(records) {
+  if (!records.length) return createElement("p", "No instance-level DICOM metadata for this series.", "muted dcm4chee-empty-result");
+  return renderDcm4cheeResultTable(
+    ["SOP Instance UID", "Modality", "Instance Date/Time", "Status", "Actions"],
+    records.map((item) => [
+      item.sopInstanceUid,
+      item.modality,
+      taipeiTimestamp(item.instanceDateTime || item.lastRefreshedAt),
+      createElement("span", dcm4cheeDisplayStatus(item.reconciliationStatus), `status ${dcm4cheeResultStatusClass(item.reconciliationStatus)}`),
+      dcm4cheeActionsForResult(item, "instance"),
+    ]),
+    "dcm4chee-instance-table-wrap",
+  );
 }
 
 function renderDcm4cheeSeriesDetails(series) {
@@ -1046,13 +1052,21 @@ function renderDcm4cheeSeriesDetails(series) {
   summary.append(
     createElement("span", "Series", "dcm4chee-row-kind"),
     createElement("code", dcm4cheeFirstValue(series.records, "seriesInstanceUid") || "No Series Instance UID"),
-    createElement("span", dcm4cheeFirstValue(series.records, "modality") || "-", "muted"),
-    createElement("span", dcm4cheeFirstValue(series.records, "source") || "dcm4chee", "muted"),
-    createElement("span", taipeiTimestamp(dcm4cheeFirstValue(series.records, "seriesDateTime") || dcm4cheeFirstValue(series.records, "lastRefreshedAt")), "muted"),
     createElement("span", dcm4cheeDisplayStatus(series.status), `status ${dcm4cheeResultStatusClass(series.status)}`),
   );
-  summary.appendChild(dcm4cheeActionsForResult(representative, "series"));
   details.appendChild(summary);
+  details.appendChild(renderDcm4cheeResultTable(
+    ["Series Instance UID", "Modality", "Source", "Series Date/Time", "Status", "Actions"],
+    [[
+      dcm4cheeFirstValue(series.records, "seriesInstanceUid"),
+      dcm4cheeFirstValue(series.records, "modality"),
+      dcm4cheeFirstValue(series.records, "source") || "dcm4chee",
+      taipeiTimestamp(dcm4cheeFirstValue(series.records, "seriesDateTime") || dcm4cheeFirstValue(series.records, "lastRefreshedAt")),
+      createElement("span", dcm4cheeDisplayStatus(series.status), `status ${dcm4cheeResultStatusClass(series.status)}`),
+      dcm4cheeActionsForResult(representative, "series"),
+    ]],
+    "dcm4chee-series-table-wrap",
+  ));
   details.appendChild(renderDcm4cheeInstanceTable(series.instances));
   return details;
 }
@@ -1066,25 +1080,28 @@ function renderDcm4cheeStudyDetails(study) {
   summary.append(
     createElement("span", "Study", "dcm4chee-row-kind"),
     createElement("code", dcm4cheeFirstValue(study.records, "studyInstanceUid") || "No Study Instance UID"),
-    createElement("span", `Accession Number ${dcm4cheeFirstValue(study.records, "accessionNumber") || "-"}`, "muted"),
-    createElement("span", dcm4cheeFirstValue(study.records, "modality") || "-", "muted"),
-    createElement("span", dcm4cheeFirstValue(study.records, "source") || "dcm4chee", "muted"),
-    createElement("span", taipeiTimestamp(dcm4cheeFirstValue(study.records, "studyDateTime") || dcm4cheeFirstValue(study.records, "lastRefreshedAt")), "muted"),
     createElement("span", dcm4cheeDisplayStatus(study.status), `status ${dcm4cheeResultStatusClass(study.status)}`),
   );
-  summary.appendChild(dcm4cheeActionsForResult(representative, "study"));
   details.appendChild(summary);
-  const metadata = dcm4cheeDetailBlock("DICOM Fields", [
-    ["Source", dcm4cheeFirstValue(study.records, "source") || "dcm4chee"],
-    ["Artifact", dcm4cheeFirstValue(study.records, "artifact")?.label || ""],
-    ["Artifact Type", dcm4cheeFirstValue(study.records, "artifact")?.mediaType || ""],
-    ["Patient ID", dcm4cheeFirstValue(study.records, "patientId")],
-    ["Issuer of Patient ID", dcm4cheeFirstValue(study.records, "issuerOfPatientId")],
-    ["Requested Procedure ID", dcm4cheeFirstValue(study.records, "requestedProcedureId")],
-    ["Scheduled Procedure Step ID", dcm4cheeFirstValue(study.records, "scheduledProcedureStepId")],
-  ]);
-  metadata.classList.add("dcm4chee-browser-metadata");
-  details.appendChild(metadata);
+  const diagnostic = dcm4cheeFirstValue(study.records, "error")
+    || dcm4cheeFirstValue(study.records, "errorType")
+    || dcm4cheeFirstValue(study.records, "message");
+  details.appendChild(renderDcm4cheeResultTable(
+    ["Accession Number", "Study Instance UID", "Modality", "Patient ID", "Issuer of Patient ID", "Requested Procedure ID", "Scheduled Procedure Step ID", "Study Date/Time", "Diagnostic", "Actions"],
+    [[
+      dcm4cheeFirstValue(study.records, "accessionNumber"),
+      dcm4cheeFirstValue(study.records, "studyInstanceUid"),
+      dcm4cheeFirstValue(study.records, "modality"),
+      dcm4cheeFirstValue(study.records, "patientId"),
+      dcm4cheeFirstValue(study.records, "issuerOfPatientId"),
+      dcm4cheeFirstValue(study.records, "requestedProcedureId"),
+      dcm4cheeFirstValue(study.records, "scheduledProcedureStepId"),
+      taipeiTimestamp(dcm4cheeFirstValue(study.records, "studyDateTime") || dcm4cheeFirstValue(study.records, "lastRefreshedAt")),
+      diagnostic,
+      dcm4cheeActionsForResult(representative, "study"),
+    ]],
+    "dcm4chee-study-table-wrap",
+  ));
   study.series.forEach((series) => details.appendChild(renderDcm4cheeSeriesDetails(series)));
   return details;
 }
@@ -1107,7 +1124,7 @@ function renderDcm4cheeResultGroup(group) {
 function renderPatientDcm4cheeResults(container, patient) {
   const results = patient?.dcm4chee?.dicomResults || [];
   const section = document.createElement("details");
-  section.className = "detail-block raw-details dcm4chee-result-browser";
+  section.className = "detail-block dcm4chee-result-browser";
   section.open = Boolean(results.length);
   const summary = document.createElement("summary");
   summary.append(
@@ -1127,7 +1144,7 @@ function renderPatientDcm4cheeResults(container, patient) {
 
 function renderDcm4cheeResultsBrowser(container, results = [], emptyText = "No refreshed dcm4chee results.") {
   const section = document.createElement("details");
-  section.className = "detail-block raw-details dcm4chee-result-browser";
+  section.className = "detail-block dcm4chee-result-browser";
   section.open = Boolean(results.length);
   const summary = document.createElement("summary");
   summary.appendChild(document.createTextNode(`DICOM Results (${results.length})`));
@@ -1212,6 +1229,20 @@ function dcm4cheeOrderActionButtons(order) {
   const actions = createElement("div", "", "button-row compact-actions");
   const mwl = order?.dcm4chee?.mwl || {};
   const mapping = mwl.mapping || {};
+  const inspectButton = createElement("button", "Inspect", "small-button");
+  inspectButton.type = "button";
+  inspectButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    selectDcm4cheeOrder(order.id);
+  });
+  actions.appendChild(inspectButton);
+  const sendButton = createElement("button", "Send", "small-button");
+  sendButton.type = "button";
+  sendButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    sendDcm4cheeOrder(order.id, sendButton);
+  });
+  actions.appendChild(sendButton);
   if (mwl.retryable) {
     const retryButton = createElement("button", "Retry", "small-button");
     retryButton.type = "button";
@@ -1230,7 +1261,6 @@ function dcm4cheeOrderActionButtons(order) {
     });
     actions.appendChild(verifyButton);
   }
-  if (!actions.childElementCount) actions.appendChild(createElement("span", "-", "muted"));
   return actions;
 }
 
@@ -1409,7 +1439,7 @@ function renderDcm4cheePatientList() {
   if (!patients.length) {
     const row = document.createElement("tr");
     const cell = rowCell("No local DICOM patients yet. Create a DICOM Patient from the Patient workspace.");
-    cell.colSpan = 6;
+    cell.colSpan = 7;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
@@ -1440,21 +1470,17 @@ function renderDcm4cheePatientList() {
     );
     toggleButton.addEventListener("click", (event) => {
       event.stopPropagation();
-      selectedDcm4cheePatientId = patient.id;
       if (expandedDcm4cheePatientIds.has(patientId)) {
         expandedDcm4cheePatientIds.delete(patientId);
       } else {
         expandedDcm4cheePatientIds.add(patientId);
       }
-      const patientOrders = dcm4cheeConsoleOrders(patient.id);
-      if (!patientOrders.some((item) => Number(item.id) === Number(selectedDcm4cheeOrderId))) {
-        selectedDcm4cheeOrderId = patientOrders[0]?.id || null;
-      }
       renderDcm4cheeConsole();
     });
     row.append(
       rowCell(toggleButton),
-      rowCell(dcm4cheePatientLabel(patient)),
+      rowCell(patient.summary?.mrn || "-"),
+      rowCell(patient.summary?.name || "Unnamed patient"),
       rowCell(createElement("span", sync.displayStatus || sync.status || "Local only", `status ${dcm4cheeWorkflowStatusClass(sync.displayStatus || sync.status)}`)),
       rowCell(orders.length),
       rowCell(resultCount),
@@ -1467,7 +1493,7 @@ function renderDcm4cheePatientList() {
       const detailRow = document.createElement("tr");
       detailRow.className = "dcm4chee-patient-detail-row";
       const detailCell = document.createElement("td");
-      detailCell.colSpan = 6;
+      detailCell.colSpan = 7;
       const content = document.createElement("div");
       content.className = "dcm4chee-patient-rollup-content";
       content.append(
@@ -1506,7 +1532,7 @@ function renderDcm4cheeSelectedPatient() {
     ["Patient ID", sync.patientId],
     ["Issuer", sync.issuerOfPatientId],
   ]));
-  container.appendChild(dcm4cheeDetailBlock("dcm4chee Patient Sync", [
+  const syncCard = dcm4cheeDetailBlock("dcm4chee Patient Sync", [
     ["Status", sync.displayStatus || sync.status || "Local only"],
     ["Retryable", sync.retryable === undefined ? "" : (sync.retryable ? "Yes" : "No")],
     ["HL7", sync.hl7Host && sync.hl7Port ? `${sync.hl7Host}:${sync.hl7Port}` : ""],
@@ -1514,41 +1540,9 @@ function renderDcm4cheeSelectedPatient() {
     ["Last Sync", sync.lastSyncAt],
     ["Error Type", sync.lastErrorType],
     ["Error", sync.lastError],
-  ]));
-  renderDcm4cheeResultsBrowser(container, patient.dcm4chee?.dicomResults || [], "No refreshed dcm4chee results for this patient.");
-}
-
-function renderDcm4cheeOrderList() {
-  const body = byId("dcm4chee-order-list");
-  if (!body) return;
-  body.replaceChildren();
-  const orders = dcm4cheeConsoleOrders();
-  if (!orders.length) {
-    const row = document.createElement("tr");
-    const cell = rowCell("No DICOM MWL orders for the selected patient.");
-    cell.colSpan = 6;
-    cell.className = "muted";
-    row.appendChild(cell);
-    body.appendChild(row);
-    return;
-  }
-  orders.forEach((order) => {
-    const patient = dcm4cheeOrderPatient(order);
-    const mwl = order.dcm4chee?.mwl || {};
-    const mapping = mwl.mapping || {};
-    const row = document.createElement("tr");
-    row.className = Number(order.id) === Number(selectedDcm4cheeOrderId) ? "selected-row" : "";
-    row.append(
-      rowCell(dcm4cheeOrderLabel(order)),
-      rowCell(patient?.summary?.name || order.summary?.name || "-"),
-      rowCell(createElement("span", dcm4cheeOrderStatus(order), `status ${dcm4cheeWorkflowStatusClass(dcm4cheeOrderStatus(order))}`)),
-      rowCell(createElement("span", dcm4cheeOrderVerificationStatus(order), `status ${dcm4cheeWorkflowStatusClass(dcm4cheeOrderVerificationStatus(order))}`)),
-      rowCell(mapping.accessionNumber || mwl.accessionNumber || "-"),
-      rowCell(dcm4cheeOrderActionButtons(order)),
-    );
-    row.addEventListener("click", () => selectDcm4cheeOrder(order.id));
-    body.appendChild(row);
-  });
+  ]);
+  syncCard.classList.add("dcm4chee-patient-sync-card");
+  container.appendChild(syncCard);
 }
 
 function renderDcm4cheeSelectedOrder() {
@@ -1651,7 +1645,6 @@ function renderDcm4cheeConsole() {
   renderDcm4cheeSelectors();
   renderDcm4cheePatientList();
   renderDcm4cheeSelectedPatient();
-  renderDcm4cheeOrderList();
   renderDcm4cheeSelectedOrder();
   renderDcm4cheePreview();
   renderDcm4cheeProfileSummary();
