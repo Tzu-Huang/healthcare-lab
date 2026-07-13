@@ -1390,6 +1390,10 @@ tr.selected-row {
   gap: 10px;
 }
 
+.dcm4chee-workflow-panel .dcm4chee-workflow-strip {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .dcm4chee-workspace {
   display: grid;
   gap: 20px;
@@ -1465,8 +1469,25 @@ tr.selected-row {
   min-height: 560px;
 }
 
+.dcm4chee-workflow-panel .record-detail.compact-detail {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dcm4chee-workflow-panel .record-detail > *,
+.dcm4chee-workflow-panel .detail-list,
+.dcm4chee-workflow-panel .detail-list dd {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.dcm4chee-workflow-panel .detail-list dd {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .dcm4chee-patient-table {
-  table-layout: auto;
+  width: 100%;
+  table-layout: fixed;
   min-width: 100%;
 }
 
@@ -1507,8 +1528,11 @@ tr.selected-row {
 }
 
 .dcm4chee-patient-detail-row td {
+  width: 100%;
+  max-width: 0;
   padding: 14px;
   background: #ffffff;
+  overflow: hidden;
 }
 
 .dcm4chee-patient-rollup-content {
@@ -1523,6 +1547,13 @@ tr.selected-row {
   min-width: 0;
 }
 
+.dcm4chee-patient-section > * {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 .dcm4chee-patient-section-heading {
   margin-bottom: 0;
 }
@@ -1535,7 +1566,9 @@ tr.selected-row {
 }
 
 .dcm4chee-patient-detail-row .dcm4chee-nested-table-wrap {
+  width: 100%;
   margin: 0;
+  max-width: 100%;
 }
 
 .dcm4chee-nested-table {
@@ -1571,6 +1604,7 @@ tr.selected-row {
 
 .dcm4chee-workflow-step {
   display: grid;
+  min-width: 0;
   gap: 8px;
   min-height: 76px;
   padding: 12px;
@@ -1599,9 +1633,23 @@ tr.selected-row {
   background: #ffffff;
 }
 
+.dcm4chee-result-browser-viewport {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
 .dcm4chee-result-browser {
   display: grid;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .dcm4chee-result-group {
@@ -1611,6 +1659,10 @@ tr.selected-row {
   border-radius: 8px;
   background: #ffffff;
   overflow: hidden;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .dcm4chee-result-group > summary,
@@ -1632,6 +1684,11 @@ tr.selected-row {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #ffffff;
+  width: calc(100% - 24px);
+  min-width: 0;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .dcm4chee-browser-row > summary {
@@ -1645,6 +1702,7 @@ tr.selected-row {
 
 .dcm4chee-browser-row code,
 .dcm4chee-browser-metadata dd {
+  min-width: 0;
   overflow-wrap: anywhere;
   font-size: 12px;
 }
@@ -1655,8 +1713,12 @@ tr.selected-row {
 }
 
 .dcm4chee-nested-table-wrap {
+  width: calc(100% - 24px);
   margin: 0 12px 12px;
   max-width: calc(100% - 24px);
+  min-width: 0;
+  box-sizing: border-box;
+  contain: inline-size;
   overflow-x: auto;
 }
 
