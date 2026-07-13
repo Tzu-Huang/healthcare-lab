@@ -7,6 +7,7 @@ import time
 import unittest
 import urllib.error
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app import (
@@ -19,6 +20,7 @@ from app import (
     dashboard_action_for_group,
     derive_lab_overall_status,
     dcm4chee_profile_from_config,
+    dcm4chee_result_refresh_generation,
     import_gdt_bridge_files,
     parse_hl7_ack,
     parse_oru_summary,
@@ -2904,6 +2906,26 @@ class HealthcareLabApiTests(unittest.TestCase):
             {item["reconciliationStatus"] for item in failed.get_json()["items"]},
         )
 
+    @patch("app.uuid.uuid4")
+    @patch("app.datetime")
+    def test_dcm4chee_result_refresh_generation_is_unique_when_clock_does_not_advance(
+        self,
+        datetime_mock,
+        uuid4_mock,
+    ):
+        datetime_mock.now.return_value.isoformat.return_value = "2026-07-13T06:44:12.000000+00:00"
+        uuid4_mock.side_effect = [
+            SimpleNamespace(hex="generation-a"),
+            SimpleNamespace(hex="generation-b"),
+        ]
+
+        first = dcm4chee_result_refresh_generation()
+        second = dcm4chee_result_refresh_generation()
+
+        self.assertEqual(first, "2026-07-13T06:44:12.000000+00:00-generation-a")
+        self.assertEqual(second, "2026-07-13T06:44:12.000000+00:00-generation-b")
+        self.assertNotEqual(first, second)
+
     @patch("app.urllib.request.urlopen")
     def test_patient_dcm4chee_result_refresh_supersedes_stale_diagnostics(self, urlopen):
         patient = self.create_local_patient()
@@ -2928,9 +2950,10 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         urlopen.return_value = FakeHttpResponse(b"[]", status=200)
         empty = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
+        empty_body = empty.get_json()
         self.assertIn(
             DCM4CHEE_RESULT_STATUS_NO_RESULT,
-            {item["reconciliationStatus"] for item in empty.get_json()["items"]},
+            {item["reconciliationStatus"] for item in empty_body["items"]},
         )
 
         urlopen.return_value = FakeHttpResponse(
@@ -2947,8 +2970,10 @@ class HealthcareLabApiTests(unittest.TestCase):
             status=200,
         )
         matched = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
-        statuses = {item["reconciliationStatus"] for item in matched.get_json()["items"]}
+        matched_body = matched.get_json()
+        statuses = {item["reconciliationStatus"] for item in matched_body["items"]}
 
+        self.assertNotEqual(empty_body["refreshGeneration"], matched_body["refreshGeneration"])
         self.assertIn(DCM4CHEE_RESULT_STATUS_MATCHED, statuses)
         self.assertNotIn(DCM4CHEE_RESULT_STATUS_NO_RESULT, statuses)
 
