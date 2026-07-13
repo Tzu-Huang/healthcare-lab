@@ -143,7 +143,7 @@
         <div class="lab-console-header">
           <div>
             <p class="eyebrow">Patient</p>
-            <h2 id="patient-mode-title">HL7 v2.3.1 ADT A04</h2>
+            <h2 id="patient-mode-title">HL7 v2.5.1 ADT A04</h2>
           </div>
           <div class="lab-console-actions">
             <button id="load-patient-demo" type="button">Demo Preset</button>
@@ -233,7 +233,7 @@
             </div>
             <button id="copy-patient-payload" type="button">Copy Payload</button>
           </div>
-          <pre id="patient-payload-preview" class="compact-output">Fill the Patient form to preview an HL7 v2.3.1 ADT A04 payload.</pre>
+          <pre id="patient-payload-preview" class="compact-output">Fill the Patient form to preview an HL7 v2.5.1 ADT A04 payload.</pre>
         </section>
 
         <section class="lab-panel">
@@ -353,7 +353,7 @@
         <div class="lab-console-header">
           <div>
             <p class="eyebrow">Order</p>
-            <h2 id="order-mode-title">HL7 v2.3.1 ORM O01</h2>
+            <h2 id="order-mode-title">HL7 v2.5.1 ORM O01</h2>
           </div>
           <div class="lab-console-actions">
             <button id="load-order-demo" type="button">Demo Preset</button>
@@ -372,8 +372,7 @@
             <div class="form-grid">
               <label>Mode
                 <select id="order-protocol">
-                  <option value="hl7-v231">HL7 v2.3.1</option>
-                  <option value="hl7-v251" disabled>HL7 v2.5.1</option>
+                  <option value="hl7-v251">HL7 v2.5.1</option>
                   <option value="fhir">FHIR</option>
                   <option value="gdt">GDT ECG</option>
                   <option value="dicom">DICOM MWL</option>
@@ -382,7 +381,7 @@
               <label>Patient
                 <select id="order-patient"></select>
               </label>
-              <label data-order-mode-field="hl7-v231">Priority
+              <label data-order-mode-field="hl7-v251">Priority
                 <select id="order-priority">
                   <option value="R">Routine</option>
                   <option value="S">Stat</option>
@@ -391,8 +390,8 @@
               </label>
               <label>Requested Time<input id="order-requested-at" placeholder="YYYYMMDDHHMMSS"></label>
               <label>Ordering Provider<input id="order-provider" value="1001^WANG^AMY"></label>
-              <label data-order-mode-field="hl7-v231">Order Code<input id="order-code" value="ECG12"></label>
-              <label data-order-mode-field="hl7-v231">Alternate Code<input id="order-alternate-code" value="93000"></label>
+              <label data-order-mode-field="hl7-v251">Order Code<input id="order-code" value="ECG12"></label>
+              <label data-order-mode-field="hl7-v251">Alternate Code<input id="order-alternate-code" value="93000"></label>
               <label data-order-mode-field="gdt">GDT Test Type<input id="gdt-test-code" value="8402=EKG01" readonly></label>
               <label data-order-mode-field="gdt">Attachment URL<input id="gdt-attachment-url" placeholder="http://localhost/reports/ecg.pdf"></label>
               <label class="full-width-field">Clinical Indication<input id="order-indication" placeholder="Chest pain evaluation"></label>
@@ -521,7 +520,7 @@
             </div>
             <button id="copy-order-payload" type="button">Copy Payload</button>
           </div>
-          <pre id="order-payload-preview" class="compact-output">Select a local patient to preview an HL7 v2.3.1 ORM O01 payload.</pre>
+          <pre id="order-payload-preview" class="compact-output">Select a local patient to preview an HL7 v2.5.1 ORM O01 payload.</pre>
         </section>
 
         <section class="lab-panel">

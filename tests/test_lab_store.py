@@ -152,7 +152,8 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(order["visitId"], patient["visitNumber"])
         self.assertEqual(order["accountNumber"], "ACC-ORD-000001")
         self.assertIn("MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|", order["payload"])
-        self.assertIn("ORM^O01", order["payload"])
+        self.assertIn("ORM^O01^ORM_O01", order["payload"])
+        self.assertIn("|P|2.5.1||||||UNICODE UTF-8", order["payload"])
         self.assertIn("PID|1||MRN-A04-001^^^HEALTHCARE_LAB^MR", order["payload"])
         self.assertIn("PV1|1|O|CARDIOLOGY^ROOM1", order["payload"])
         self.assertIn("ORC|NW|ORD-000001", order["payload"])
@@ -917,7 +918,7 @@ class HealthcareLabStoreTests(unittest.TestCase):
             ack_code="AA",
             ack_control_id="ORM1",
             ack_text="OK",
-            ack_payload="MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD||ACK^O01|ACK1|P|2.3.1\rMSA|AA|ORM1|OK",
+            ack_payload="MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD||ACK^O01^ACK|ACK1|P|2.5.1||||||UNICODE UTF-8\rMSA|AA|ORM1|OK",
         )
         self.assertEqual(accepted["ack"]["code"], "AA")
         self.assertEqual(accepted["status"], "Accepted")
