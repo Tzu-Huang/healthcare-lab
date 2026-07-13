@@ -10,19 +10,19 @@
 - [x] 2.1 Render each expanded Patient's Orders in an inline structured table with existing send, retry, verify, preview, and inspection actions where applicable.
 - [x] 2.2 Render each expanded Patient's DICOM Results as structured DICOM-field tables, preserving Study/Series/Instance hierarchy and unresolved diagnostic rows.
 - [x] 2.3 Remove normal-path raw object or JSON printing from the DICOM Result presentation while retaining operator-readable missing-value and diagnostic handling.
-- [ ] 2.4 Confirm order/result actions do not unintentionally toggle disclosure or select the wrong Patient.
+- [x] 2.4 Confirm order/result actions do not unintentionally toggle disclosure or select the wrong Patient.
 
 ## 3. Layout And Responsive Behavior
 
 - [x] 3.1 Increase the usable Patient list width and height to match the OIE-style workspace proportions at desktop widths.
 - [x] 3.2 Constrain `dcm4chee Patient Sync` fields with reflow and long-value wrapping for endpoint, timestamp, Error Type, and Error content.
 - [x] 3.3 Keep any unavoidable wide DICOM table scrolling inside its local table wrapper and prevent page-level horizontal overflow.
-- [ ] 3.4 Verify Patient list, preview, expanded tables, workflow controls, and sync card reflow at the repository's supported responsive breakpoints.
+- [x] 3.4 Verify Patient list, preview, expanded tables, workflow controls, and sync card reflow at the repository's supported responsive breakpoints.
 
 ## 4. Verification
 
 - [x] 4.1 Update frontend contract tests for the dominant Patient workspace, separate preview placement, disclosure hooks, and removal of `MWL Selected Patient Orders`.
 - [x] 4.2 Add or update tests that assert structured DICOM Result fields are rendered without raw object/JSON output.
 - [x] 4.3 Add or update tests for sync-card containment and selection-versus-disclosure behavior using the available test tooling.
-- [ ] 4.4 Run the relevant Python test suite and frontend syntax or browser checks available in the repository.
-- [ ] 4.5 Run strict OpenSpec validation and record verification evidence in the change workflow.
+- [x] 4.4 Run the relevant Python test suite and frontend syntax or browser checks available in the repository.
+- [x] 4.5 Run strict OpenSpec validation and record verification evidence in the change workflow.

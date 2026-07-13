@@ -1143,6 +1143,7 @@ function renderPatientDcm4cheeResults(container, patient) {
 }
 
 function renderDcm4cheeResultsBrowser(container, results = [], emptyText = "No refreshed dcm4chee results.") {
+  const viewport = createElement("div", "", "dcm4chee-result-browser-viewport");
   const section = document.createElement("details");
   section.className = "detail-block dcm4chee-result-browser";
   section.open = Boolean(results.length);
@@ -1151,13 +1152,15 @@ function renderDcm4cheeResultsBrowser(container, results = [], emptyText = "No r
   section.appendChild(summary);
   if (!results.length) {
     section.appendChild(createElement("p", emptyText, "muted"));
-    container.appendChild(section);
+    viewport.appendChild(section);
+    container.appendChild(viewport);
     return;
   }
   groupDcm4cheeResultsForBrowser(results).forEach((group) => {
     section.appendChild(renderDcm4cheeResultGroup(group));
   });
-  container.appendChild(section);
+  viewport.appendChild(section);
+  container.appendChild(viewport);
 }
 
 function renderPatientSummaryFromRecord(item) {
