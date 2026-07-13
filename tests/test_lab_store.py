@@ -40,6 +40,62 @@ class HealthcareLabStoreTests(unittest.TestCase):
     def tearDown(self):
         self.directory.cleanup()
 
+    @staticmethod
+    def patient_payload(**overrides):
+        payload = {
+            "firstName": "Avery",
+            "middleName": "Lee",
+            "lastName": "Morgan",
+            "dob": "19850412",
+            "sex": "F",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_patient_mrn_sequence_allocates_persists_and_does_not_reuse_deleted_values(self):
+        first = self.store.create_patient_record(self.patient_payload())
+        second = self.store.create_patient_record(self.patient_payload(firstName="Blake"))
+
+        self.assertEqual(first["summary"]["mrn"], "MRN-000001")
+        self.assertEqual(second["summary"]["mrn"], "MRN-000002")
+
+        with self.store.connect() as connection:
+            connection.execute("DELETE FROM local_patient_records WHERE id = ?", (second["id"],))
+
+        reopened = DemoStore(self.store.path)
+        third = reopened.create_patient_record(self.patient_payload(firstName="Casey"))
+
+        self.assertEqual(third["summary"]["mrn"], "MRN-000003")
+
+    def test_patient_mrn_sequence_skips_explicit_collision(self):
+        manual = self.store.create_patient_record(
+            self.patient_payload(mrn="MRN-000001", firstName="Manual")
+        )
+        generated = self.store.create_patient_record(self.patient_payload(firstName="Generated"))
+
+        self.assertEqual(manual["summary"]["mrn"], "MRN-000001")
+        self.assertEqual(generated["summary"]["mrn"], "MRN-000002")
+
+    def test_duplicate_explicit_mrn_is_rejected_without_patient_side_effects(self):
+        created = self.store.create_patient_record(self.patient_payload(mrn="EXTERNAL-001"))
+
+        with self.assertRaisesRegex(
+            SimulatorValidationError,
+            "Patient MRN EXTERNAL-001 already exists",
+        ):
+            self.store.create_patient_record(
+                self.patient_payload(mrn=" EXTERNAL-001 ", firstName="Duplicate")
+            )
+
+        records = self.store.list_patient_records()
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["id"], created["id"])
+        with self.store.connect() as connection:
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM local_fhir_workflow_records").fetchone()[0],
+                0,
+            )
+
     def test_lab_server_operation_metadata_is_seeded_non_destructively(self):
         oie = next(item for item in self.store.list_lab_servers() if item["name"] == "OIE")
         self.assertEqual(oie["operation"]["controlType"], "docker-compose")
@@ -149,7 +205,10 @@ class HealthcareLabStoreTests(unittest.TestCase):
 
         self.assertEqual(order["status"], "Ready to send")
         self.assertEqual(order["localOrderNumber"], "ORD-000001")
+        self.assertEqual(order["visitNumber"], patient["visitNumber"])
         self.assertEqual(order["visitId"], patient["visitNumber"])
+        self.assertEqual(order["summary"]["visitNumber"], patient["visitNumber"])
+        self.assertEqual(order["summary"]["visitId"], patient["visitNumber"])
         self.assertEqual(order["accountNumber"], "ACC-ORD-000001")
         self.assertIn("MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|", order["payload"])
         self.assertIn("ORM^O01^ORM_O01", order["payload"])
@@ -359,6 +418,35 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(dicom["messageType"], "Patient Module")
         self.assertIn("(0010,0010) PatientName", dicom["payload"])
         self.assertIn("Morgan^Avery^Lee", dicom["payload"])
+
+    def test_generated_mrn_propagates_across_patient_modes_and_into_order_snapshot(self):
+        base_payload = {
+            "firstName": "Avery",
+            "lastName": "Morgan",
+            "dob": "19850412",
+            "sex": "F",
+        }
+
+        hl7 = self.store.create_patient_record({**base_payload, "mode": "hl7-v2"})
+        fhir = self.store.create_patient_record({**base_payload, "mode": "fhir"})
+        gdt = self.store.create_patient_record({**base_payload, "mode": "gdt"})
+        dicom = self.store.create_patient_record({**base_payload, "mode": "dicom"})
+
+        self.assertIn("PID|1||MRN-000001^^^HEALTHCARE_LAB^MR", hl7["payload"])
+        self.assertEqual(json.loads(fhir["payload"])["identifier"][0]["value"], "MRN-000002")
+        self.assertEqual(parse_gdt_records(gdt["payload"])["3000"], "MRN-000003")
+        self.assertEqual(json.loads(dicom["payload"])["(0010,0020) PatientID"], "MRN-000004")
+
+        order = self.store.create_order_record(
+            {
+                "patientRecordId": hl7["id"],
+                "requestedAt": "20260713143000",
+                "orderingProvider": "1001^WANG^AMY",
+            }
+        )
+
+        self.assertEqual(order["summary"]["mrn"], "MRN-000001")
+        self.assertIn("PID|1||MRN-000001^^^HEALTHCARE_LAB^MR", order["payload"])
 
     def test_fhir_patient_common_fields_and_paired_ledger_metadata(self):
         patient = self.store.create_patient_record(

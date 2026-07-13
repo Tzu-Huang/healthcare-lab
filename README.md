@@ -273,6 +273,16 @@ The first Docker Desktop runtime scaffold for the Lab Console lives in
 Use **Patient** to create local virtual patient records for the supported
 workflow modes:
 
+- Leave MRN blank to allocate the next persistent demo identifier in sequence,
+  starting at `MRN-000001`. The preview shows `Generated on create` until the
+  Patient is saved; the browser does not predict or reserve an identifier.
+- Enter an MRN explicitly when an integration test needs an upstream identifier.
+  New Patient records cannot reuse an exact MRN already present in the local
+  demo database.
+- The automatic sequence survives application restarts and does not reuse an
+  identifier after Patient deletion. Recreating the demo database resets the
+  sequence.
+
 - **HL7 v2.5.1:** previews an `ADT^A04` payload for the local OIE workflow.
 - **FHIR R4:** previews a FHIR `Patient`, stores the local Patient first, then
   creates or updates the paired FHIR workflow ledger record and attempts Medplum
@@ -302,12 +312,20 @@ For **HL7 v2.5.1** orders:
   `OBR`.
 - Orders are stored in the local SQLite demo database with status, raw ORM
   payload, and later ACK/send details.
+- Identifier mappings are `PID-3` for MRN, `PV1-19` for Visit Number, and
+  `ORC-2` / `OBR-2` for the placer Order ID. `PV1-1` remains the PV1 segment
+  Set ID and is not the Visit Number.
+- Local Orders displays Order ID, mode, MRN, Visit Number, patient name, code,
+  status, and Order Created At using an unambiguous Taipei timestamp.
 
 Use **OIE** to inspect local Patient ADT inventory and local Order ORM
 inventory. The Order inventory can send one selected ORM message to the
-configured OIE MLLP endpoint, defaulting to `localhost:6663` for direct local
-Flask runs and `oie:6663` in the Docker Compose lab, and stores the returned ACK
+configured OIE MLLP endpoint, defaulting to `localhost:6600` for direct local
+Flask runs and `oie:6600` in the Docker Compose lab, and stores the returned ACK
 code (`AA`, `AE`, or `AR`) or transport error.
+Patient-scoped OIE Order rows retain the same Order ID, MRN, Visit Number, code,
+status, and creation context, with ACK and sent time added for transmission
+operations.
 
 OIE-to-AP routing is intentionally outside this app scope. Configure downstream
 channels inside OIE when an integration demo needs received ORM messages routed
@@ -603,6 +621,9 @@ node --check frontend\static\app.js
 ## Demo Limitations
 
 - SQLite is demo persistence, not a production message queue.
+- MRN uniqueness is enforced for new exact identifier values inside one local
+  demo database. Existing duplicate demo rows are not silently renumbered, and
+  enterprise assigning-authority or MPI reconciliation is out of scope.
 - MRN matching uses ECG `patient.mrn == HL7 PID-3` without assigning authority
   or order-ID matching.
 - Current patient-name reconciliation is incomplete. Returned names may not yet
