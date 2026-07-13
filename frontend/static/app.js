@@ -1017,6 +1017,16 @@ function dcm4cheeFirstValue(records, field) {
   return records.map((item) => item?.[field]).find((value) => value !== null && value !== undefined && value !== "") || "";
 }
 
+function dcm4cheeFirstArtifact(records) {
+  return records
+    .map((item) => item?.artifact)
+    .find((artifact) => (
+      artifact
+      && typeof artifact === "object"
+      && (artifact.label || artifact.mediaType || artifact.url || artifact.path || artifact.role)
+    )) || {};
+}
+
 function renderDcm4cheeResultTable(headers, rows, className = "") {
   const { wrap, tbody } = dcm4cheeNestedTable(headers);
   wrap.classList.add("dcm4chee-result-table-wrap");
@@ -1083,11 +1093,12 @@ function renderDcm4cheeStudyDetails(study) {
     createElement("span", dcm4cheeDisplayStatus(study.status), `status ${dcm4cheeResultStatusClass(study.status)}`),
   );
   details.appendChild(summary);
+  const artifact = dcm4cheeFirstArtifact(study.records);
   const diagnostic = dcm4cheeFirstValue(study.records, "error")
     || dcm4cheeFirstValue(study.records, "errorType")
     || dcm4cheeFirstValue(study.records, "message");
   details.appendChild(renderDcm4cheeResultTable(
-    ["Accession Number", "Study Instance UID", "Modality", "Patient ID", "Issuer of Patient ID", "Requested Procedure ID", "Scheduled Procedure Step ID", "Study Date/Time", "Diagnostic", "Actions"],
+    ["Accession Number", "Study Instance UID", "Modality", "Patient ID", "Issuer of Patient ID", "Requested Procedure ID", "Scheduled Procedure Step ID", "Study Date/Time", "Artifact", "Artifact Type", "Artifact Location", "Diagnostic", "Actions"],
     [[
       dcm4cheeFirstValue(study.records, "accessionNumber"),
       dcm4cheeFirstValue(study.records, "studyInstanceUid"),
@@ -1097,8 +1108,11 @@ function renderDcm4cheeStudyDetails(study) {
       dcm4cheeFirstValue(study.records, "requestedProcedureId"),
       dcm4cheeFirstValue(study.records, "scheduledProcedureStepId"),
       taipeiTimestamp(dcm4cheeFirstValue(study.records, "studyDateTime") || dcm4cheeFirstValue(study.records, "lastRefreshedAt")),
+      artifact.label || artifact.role,
+      artifact.mediaType,
+      artifact.url || artifact.path,
       diagnostic,
-      dcm4cheeActionsForResult(representative, "study"),
+      dcm4cheeActionsForResult({ ...representative, artifact }, "study"),
     ]],
     "dcm4chee-study-table-wrap",
   ));
