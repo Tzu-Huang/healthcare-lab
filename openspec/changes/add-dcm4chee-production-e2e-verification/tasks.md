@@ -7,11 +7,11 @@
 
 ## 2. Production-Like Workflow Verification
 
-- [ ] 2.1 Verify Healthcare Lab creates the dcm4chee patient precondition and MWL/order automatically from the demo patient/order.
-- [ ] 2.2 Verify the order is queryable from the configured dcm4chee MWL surface.
-- [ ] 2.3 Define the live AP handoff values required for MWL query and C-STORE result return.
+- [x] 2.1 Verify Healthcare Lab creates the dcm4chee patient precondition and MWL/order automatically from the demo patient/order.
+- [x] 2.2 Verify the order is queryable from the configured dcm4chee MWL surface.
+- [x] 2.3 Define the live AP handoff values required for MWL query and C-STORE result return.
 - [ ] 2.4 Verify Healthcare Lab can refresh/reconcile returned dcm4chee results after AP C-STORE.
-- [ ] 2.5 Ensure failures preserve useful diagnostics without deleting local patient/order/evidence state.
+- [x] 2.5 Ensure failures preserve useful diagnostics without deleting local patient/order/evidence state.
 
 ## 3. Simulated AP Return Fixture
 
@@ -31,12 +31,12 @@
 
 ## 5. Operator SOP
 
-- [ ] 5.1 Document service startup and smoke checks for Healthcare Lab and dcm4chee.
-- [ ] 5.2 Document required ports, AE titles, endpoints, and the `WORKLIST` versus `DCM4CHEE` DICOMweb distinction.
-- [ ] 5.3 Document the full live AP production-like verification path.
-- [ ] 5.4 Document the simulated AP-return PDF/DICOM fixture path for frontend verification.
-- [ ] 5.5 Document expected identifiers and where operators should record or inspect them.
-- [ ] 5.6 Document troubleshooting for patient precondition, MWL visibility, C-STORE return, reconciliation, and UI display failures.
+- [x] 5.1 Document service startup and smoke checks for Healthcare Lab and dcm4chee.
+- [x] 5.2 Document required ports, AE titles, endpoints, and the `WORKLIST` versus `DCM4CHEE` DICOMweb distinction.
+- [x] 5.3 Document the full live AP production-like verification path.
+- [x] 5.4 Document the simulated AP-return PDF/DICOM fixture path for frontend verification.
+- [x] 5.5 Document expected identifiers and where operators should record or inspect them.
+- [x] 5.6 Document troubleshooting for patient precondition, MWL visibility, C-STORE return, reconciliation, and UI display failures.
 
 ## 6. Verification
 
@@ -46,5 +46,5 @@
 - [x] 6.4 Add API/response contract tests for E2E verification evidence and AP-return status.
 - [x] 6.5 Add frontend static or helper tests for AP-return result UI hooks.
 - [x] 6.6 Run OpenSpec validation.
-- [ ] 6.7 Run the relevant Healthcare Lab Python test suite.
-- [ ] 6.8 Execute or document manual live AP/dcm4chee production-like verification with exact identifiers.
+- [x] 6.7 Run the relevant Healthcare Lab Python test suite.
+- [x] 6.8 Execute or document manual live AP/dcm4chee production-like verification with exact identifiers.
