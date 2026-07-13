@@ -758,6 +758,10 @@ class DemoStore:
                     completed_at TEXT NOT NULL,
                     FOREIGN KEY(server_id) REFERENCES lab_servers(id) ON DELETE SET NULL
                 );
+                CREATE TABLE IF NOT EXISTS local_identifier_sequences (
+                    name TEXT PRIMARY KEY,
+                    next_value INTEGER NOT NULL CHECK(next_value > 0)
+                );
                 CREATE TABLE IF NOT EXISTS local_patient_records (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     local_patient_number TEXT NOT NULL UNIQUE,
@@ -1353,7 +1357,25 @@ class DemoStore:
                 "sync_started_at",
                 "TEXT NOT NULL DEFAULT ''",
             )
+            self._seed_patient_mrn_sequence(connection)
             self._seed_lab_servers(connection)
+
+    @staticmethod
+    def _seed_patient_mrn_sequence(connection: sqlite3.Connection) -> None:
+        highest_existing = 0
+        for row in connection.execute("SELECT mrn FROM local_patient_records"):
+            match = re.fullmatch(r"MRN-(\d+)", str(row["mrn"] or ""))
+            if match:
+                highest_existing = max(highest_existing, int(match.group(1)))
+        connection.execute(
+            """
+            INSERT INTO local_identifier_sequences (name, next_value)
+            VALUES ('patient_mrn', ?)
+            ON CONFLICT(name) DO UPDATE SET
+                next_value = MAX(local_identifier_sequences.next_value, excluded.next_value)
+            """,
+            (highest_existing + 1,),
+        )
 
     @staticmethod
     def _clean_patient_text(value: Any, field_name: str, required: bool = False) -> str:
@@ -1390,6 +1412,28 @@ class DemoStore:
         return f"VISIT-{record_id:06d}"
 
     @staticmethod
+    def _next_patient_mrn(connection: sqlite3.Connection) -> str:
+        while True:
+            row = connection.execute(
+                "SELECT next_value FROM local_identifier_sequences WHERE name = 'patient_mrn'"
+            ).fetchone()
+            if not row:
+                DemoStore._seed_patient_mrn_sequence(connection)
+                continue
+            value = int(row["next_value"])
+            connection.execute(
+                "UPDATE local_identifier_sequences SET next_value = ? WHERE name = 'patient_mrn'",
+                (value + 1,),
+            )
+            candidate = f"MRN-{value:06d}"
+            duplicate = connection.execute(
+                "SELECT 1 FROM local_patient_records WHERE mrn = ? LIMIT 1",
+                (candidate,),
+            ).fetchone()
+            if not duplicate:
+                return candidate
+
+    @staticmethod
     def _normalize_patient_mode(payload: dict[str, Any]) -> str:
         mode = str(payload.get("mode", payload.get("protocolMode", "hl7-v2"))).strip().lower()
         aliases = {
@@ -1422,7 +1466,7 @@ class DemoStore:
             raise SimulatorValidationError("Patient payload must be a JSON object.")
         return {
             "mode": self._normalize_patient_mode(payload),
-            "mrn": self._clean_patient_text(payload.get("mrn"), "mrn", required=True),
+            "mrn": self._clean_patient_text(payload.get("mrn"), "mrn"),
             "first_name": self._clean_patient_text(payload.get("firstName"), "firstName", required=True),
             "last_name": self._clean_patient_text(payload.get("lastName"), "lastName", required=True),
             "middle_name": self._clean_patient_text(payload.get("middleName"), "middleName"),
@@ -1617,6 +1661,13 @@ class DemoStore:
         timestamp = now_iso()
         hl7_time = hl7_timestamp()
         with self.lock, self.connect() as connection:
+            values["mrn"] = values["mrn"] or self._next_patient_mrn(connection)
+            duplicate = connection.execute(
+                "SELECT 1 FROM local_patient_records WHERE mrn = ? LIMIT 1",
+                (values["mrn"],),
+            ).fetchone()
+            if duplicate:
+                raise SimulatorValidationError(f"Patient MRN {values['mrn']} already exists.")
             cursor = connection.execute(
                 """
                 INSERT INTO local_patient_records (

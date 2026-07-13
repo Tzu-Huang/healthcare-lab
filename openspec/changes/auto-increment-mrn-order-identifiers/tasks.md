@@ -1,8 +1,8 @@
 ## 1. Persisted MRN Allocation
 
-- [ ] 1.1 Add a non-destructive SQLite migration for a named local identifier sequence and initialize the MRN sequence for new and existing demo databases.
-- [ ] 1.2 Implement transactional allocation of `MRN-` identifiers with minimum six-digit padding, monotonic restart behavior, and collision skipping.
-- [ ] 1.3 Update Patient validation and creation to accept blank MRN, preserve explicit MRN values, and reject exact duplicates before payload creation or downstream sync.
+- [x] 1.1 Add a non-destructive SQLite migration for a named local identifier sequence and initialize the MRN sequence for new and existing demo databases.
+- [x] 1.2 Implement transactional allocation of `MRN-` identifiers with minimum six-digit padding, monotonic restart behavior, and collision skipping.
+- [x] 1.3 Update Patient validation and creation to accept blank MRN, preserve explicit MRN values, and reject exact duplicates before payload creation or downstream sync.
 
 ## 2. Patient Preset and Protocol Propagation
 
@@ -18,7 +18,7 @@
 
 ## 4. Verification and Documentation
 
-- [ ] 4.1 Add store tests for fresh allocation, restart persistence, deletion non-reuse, manual MRNs, collision skipping, and duplicate rejection without side effects.
+- [x] 4.1 Add store tests for fresh allocation, restart persistence, deletion non-reuse, manual MRNs, collision skipping, and duplicate rejection without side effects.
 - [ ] 4.2 Add API and frontend contract tests for blank-MRN creation, generated preview behavior, protocol propagation, and both order-table column sets.
 - [ ] 4.3 Update user-facing documentation with automatic MRN behavior, identifier formats, uniqueness scope, and the PID-3/PV1-19/ORC-2/OBR-2 mappings.
 - [ ] 4.4 Run the complete test suite and OpenSpec validation, recording any environment-dependent verification separately.

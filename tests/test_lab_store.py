@@ -40,6 +40,62 @@ class HealthcareLabStoreTests(unittest.TestCase):
     def tearDown(self):
         self.directory.cleanup()
 
+    @staticmethod
+    def patient_payload(**overrides):
+        payload = {
+            "firstName": "Avery",
+            "middleName": "Lee",
+            "lastName": "Morgan",
+            "dob": "19850412",
+            "sex": "F",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_patient_mrn_sequence_allocates_persists_and_does_not_reuse_deleted_values(self):
+        first = self.store.create_patient_record(self.patient_payload())
+        second = self.store.create_patient_record(self.patient_payload(firstName="Blake"))
+
+        self.assertEqual(first["summary"]["mrn"], "MRN-000001")
+        self.assertEqual(second["summary"]["mrn"], "MRN-000002")
+
+        with self.store.connect() as connection:
+            connection.execute("DELETE FROM local_patient_records WHERE id = ?", (second["id"],))
+
+        reopened = DemoStore(self.store.path)
+        third = reopened.create_patient_record(self.patient_payload(firstName="Casey"))
+
+        self.assertEqual(third["summary"]["mrn"], "MRN-000003")
+
+    def test_patient_mrn_sequence_skips_explicit_collision(self):
+        manual = self.store.create_patient_record(
+            self.patient_payload(mrn="MRN-000001", firstName="Manual")
+        )
+        generated = self.store.create_patient_record(self.patient_payload(firstName="Generated"))
+
+        self.assertEqual(manual["summary"]["mrn"], "MRN-000001")
+        self.assertEqual(generated["summary"]["mrn"], "MRN-000002")
+
+    def test_duplicate_explicit_mrn_is_rejected_without_patient_side_effects(self):
+        created = self.store.create_patient_record(self.patient_payload(mrn="EXTERNAL-001"))
+
+        with self.assertRaisesRegex(
+            SimulatorValidationError,
+            "Patient MRN EXTERNAL-001 already exists",
+        ):
+            self.store.create_patient_record(
+                self.patient_payload(mrn=" EXTERNAL-001 ", firstName="Duplicate")
+            )
+
+        records = self.store.list_patient_records()
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["id"], created["id"])
+        with self.store.connect() as connection:
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM local_fhir_workflow_records").fetchone()[0],
+                0,
+            )
+
     def test_lab_server_operation_metadata_is_seeded_non_destructively(self):
         oie = next(item for item in self.store.list_lab_servers() if item["name"] == "OIE")
         self.assertEqual(oie["operation"]["controlType"], "docker-compose")
