@@ -115,6 +115,13 @@ class HealthcareLabApiTests(unittest.TestCase):
             MEDPLUM_CLIENT_SECRET="demo-secret",
             MEDPLUM_SCOPE="openid",
             MEDPLUM_TOKEN_URL="",
+            OIE_MLLP_ORDER_HOST="localhost",
+            DCM4CHEE_DIMSE_HOST="127.0.0.1",
+            DCM4CHEE_HL7_HOST="127.0.0.1",
+            DCM4CHEE_DICOMWEB_BASE_URL="http://127.0.0.1:8082/dcm4chee-arc/aets/WORKLIST/rs",
+            DCM4CHEE_QIDO_RS_URL="http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+            DCM4CHEE_WADO_RS_URL="http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+            DCM4CHEE_STOW_RS_URL="http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
         )
         self.client = app.test_client()
 
@@ -2449,13 +2456,49 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(response.get_json()["verification"]["errorType"], "mwl_profile_invalid")
 
     def test_patient_dcm4chee_result_ui_hooks_are_present(self):
+        template = Path("frontend/templates/index.html").read_text(encoding="utf-8")
         script = Path("frontend/static/app.js").read_text(encoding="utf-8")
 
+        self.assertIn('data-nav-target="dcm4chee-view"', template)
+        self.assertIn('id="dcm4chee-view"', template)
+        self.assertNotIn('type="button" disabled>\n          <span class="nav-icon">DC</span>dcm4chee', template)
+        self.assertIn("dcm4chee-patient-list", template)
+        self.assertIn("dcm4chee-order-list", template)
+        self.assertIn("dcm4chee-profile-summary", template)
         self.assertIn("refreshPatientDcm4cheeResults", script)
         self.assertIn("/api/patients/${patientId}/dcm4chee-results-refresh", script)
+        self.assertIn("refreshDcm4cheeConsole", script)
+        self.assertIn("/api/dcm4chee/profile/diagnostics", script)
+        self.assertIn("renderDcm4cheeConsole", script)
+        self.assertIn("patientIdsWithDicomOrders", script)
+        self.assertIn("renderDcm4cheeSelectedPatient", script)
+        self.assertIn("renderDcm4cheeSelectedOrder", script)
         self.assertIn("renderPatientDcm4cheeResults", script)
         self.assertIn("DICOM Results", script)
         self.assertIn("dicomResults", script)
+        self.assertIn("groupDcm4cheeResultsForBrowser", script)
+        self.assertIn("renderDcm4cheeStudyDetails", script)
+        self.assertIn("renderDcm4cheeSeriesDetails", script)
+        self.assertIn("renderDcm4cheeInstanceTable", script)
+        self.assertIn("Study Instance UID", script)
+        self.assertIn("Series Instance UID", script)
+        self.assertIn("SOP Instance UID", script)
+        self.assertIn("Accession Number", script)
+        self.assertIn("Issuer of Patient ID", script)
+        self.assertIn("Open Viewer", script)
+        self.assertIn("Copy Retrieve", script)
+        self.assertIn("Refresh PACS Results", script)
+        self.assertIn("MWL Sync", script)
+        self.assertIn("MWL Queryable", script)
+        self.assertIn("AP C-STORE Result", script)
+        self.assertIn("Reconciliation", script)
+
+        styles = Path("frontend/static/styles.css").read_text(encoding="utf-8")
+        self.assertIn(".dcm4chee-workflow-strip", styles)
+        self.assertIn(".dcm4chee-console-grid", styles)
+        self.assertIn(".dcm4chee-result-browser", styles)
+        self.assertIn(".dcm4chee-browser-row", styles)
+        self.assertIn(".dcm4chee-nested-table-wrap", styles)
 
     @patch("app.urllib.request.urlopen")
     def test_patient_dcm4chee_result_refresh_reconciles_study_series_and_instance(self, urlopen):
