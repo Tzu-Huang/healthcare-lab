@@ -224,8 +224,7 @@ Requested Procedure ID plus Scheduled Procedure Step ID. If dcm4chee rejects the
 request because the patient does not exist, the local order remains available
 and the dcm4chee MWL sync state is recorded as `Patient missing`. If Patient ADT
 sync fails before MWL creation, Healthcare Lab does not POST the MWL item and
-keeps the Patient sync failure as the root cause. Full AP C-STORE result
-ingestion/display and viewer-link consumption remain future work.
+keeps the Patient sync failure as the root cause.
 
 The DICOM order workspace can verify MWL queryability for a local order. The
 verification action queries dcm4chee MWL using the ledger identifiers and records
@@ -255,6 +254,14 @@ The patient DICOM Results section shows matched and unresolved results with
 modality, timestamps, Study UID, Accession Number, viewer links, retrieve links,
 and diagnostics. Expected diagnostics include `no_result`, `wrong_patient`,
 `missing_accession`, `duplicate`, `ambiguous`, `unlinked`, and `query_failed`.
+
+For repeatable production-like verification, use the SOP in
+[docs/dcm4chee-production-e2e-verification.md](docs/dcm4chee-production-e2e-verification.md).
+It covers live AP C-STORE verification and simulated AP PDF/DICOM return
+fixtures. The simulated path records AP-returned result rows with source
+`simulated_ap_return` so the Healthcare Lab UI can prove PDF artifact display,
+DICOM Study/Series/Instance display, and reconciliation status without waiting
+for a live AP run.
 
 The first Docker Desktop runtime scaffold for the Lab Console lives in
 [deploy/](deploy/README.md). It includes `docker-compose.yml` and the
