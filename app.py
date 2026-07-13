@@ -4517,7 +4517,7 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response("GDT order was not found.", 404)
         bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-        target = bridge_dirs["outbox"] / f"gdtin_{item['localGdtOrderNumber']}_{timestamp}.gdt"
+        target = bridge_dirs["inbound"] / f"gdtin_{item['localGdtOrderNumber']}_{timestamp}.gdt"
         temp_path = target.with_suffix(".tmp")
         try:
             temp_path.write_bytes(item["rawGdtText"].encode("cp1252"))

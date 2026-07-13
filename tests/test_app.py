@@ -3247,9 +3247,12 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         written = self.client.post(f"/api/gdt/orders/{order['id']}/write-6302", json={})
         self.assertEqual(written.status_code, 200)
-        outbox_path = Path(written.get_json()["path"])
-        self.assertTrue(outbox_path.exists())
-        self.assertIn(order["localGdtOrderNumber"], outbox_path.read_text(encoding="cp1252"))
+        inbound_path = Path(written.get_json()["path"])
+        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
+        self.assertEqual(inbound_path.parent, bridge_root / "inbound")
+        self.assertTrue(inbound_path.exists())
+        self.assertIn(order["localGdtOrderNumber"], inbound_path.read_text(encoding="cp1252"))
+        inbound_path.unlink()
 
         demo = self.client.post(f"/api/gdt/orders/{order['id']}/demo-result", json={})
         self.assertEqual(demo.status_code, 201)
@@ -3258,7 +3261,6 @@ class HealthcareLabApiTests(unittest.TestCase):
             {"value": 427, "unit": "ms", "sourceTestId": "QTC"},
         )
 
-        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
         inbound = self.write_gdt_result_file(order)
 
         inbox = self.client.get("/api/gdt/bridge/inbox")
