@@ -93,11 +93,11 @@ Healthcare Lab SHALL display local status for dashboard-created GDT ECG orders w
 
 ### Requirement: Existing HL7 ORM order flow remains intact
 
-Healthcare Lab SHALL preserve the existing HL7 v2.3.1 ORM order creation and OIE send workflow while adding the GDT ECG order path.
+Healthcare Lab SHALL preserve the existing HL7 v2.5.1 ORM order creation and OIE send workflow while adding the GDT ECG order path.
 
 #### Scenario: User creates an HL7 order
 
-- **WHEN** the user selects HL7 v2.3.1 order mode
+- **WHEN** the user selects HL7 v2.5.1 order mode
 - **THEN** Healthcare Lab continues to create an `ORM^O01` payload with `MSH`, `PID`, `PV1`, `ORC`, and `OBR`
 - **AND** existing OIE local order send behavior remains available
 

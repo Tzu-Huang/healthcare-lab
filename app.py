@@ -46,6 +46,7 @@ from backend.lab_store import (
     LAB_HEALTH_STATUSES,
     LAB_SERVER_PROTOCOLS,
     LAB_SERVER_TYPES,
+    HL7_V2_MSH_SUFFIX,
     FHIR_SYNC_STATUS_FAILED,
     FHIR_SYNC_STATUS_PENDING,
     FHIR_SYNC_STATUS_SYNCED,
@@ -2420,6 +2421,11 @@ def _first_component(value: str) -> str:
     return str(value or "").split("^", 1)[0].strip()
 
 
+def _hl7_message_code(value: str) -> str:
+    components = str(value or "").split("^")
+    return "^".join(part.strip() for part in components[:2] if part.strip())
+
+
 def parse_oru_summary(payload: str) -> dict[str, str]:
     segments = _hl7_segments(payload)
     if not segments or segments[0][0] != "MSH":
@@ -2434,7 +2440,7 @@ def parse_oru_summary(payload: str) -> dict[str, str]:
     for fields in segments:
         segment_id = fields[0]
         if segment_id == "MSH":
-            summary["messageType"] = fields[8].strip() if len(fields) > 8 else ""
+            summary["messageType"] = _hl7_message_code(fields[8] if len(fields) > 8 else "")
             summary["messageControlId"] = fields[9].strip() if len(fields) > 9 else ""
         elif segment_id == "PID":
             summary["patientMrn"] = _first_component(fields[3] if len(fields) > 3 else "")
@@ -2464,18 +2470,23 @@ def build_hl7_ack(
     control_id = message_control_id
     if not control_id and len(inbound_msh) > 9:
         control_id = inbound_msh[9].strip()
+    inbound_message = inbound_msh[8] if len(inbound_msh) > 8 else ""
+    inbound_components = str(inbound_message or "").split("^")
+    ack_trigger = inbound_components[1].strip() if len(inbound_components) > 1 and inbound_components[1].strip() else "R01"
     ack_time = hl7_message_timestamp()
     ack_control_id = f"ACK{ack_time}"
-    return "\r".join(
-        [
-            (
-                "MSH|^~\\&|"
-                f"{sending_app}|{sending_facility}|{receiving_app}|{receiving_facility}|"
-                f"{ack_time}||ACK^R01|{ack_control_id}|P|2.3.1"
-            ),
-            f"MSA|{code}|{control_id}|{text}",
-        ]
-    )
+    segments = [
+        (
+            "MSH|^~\\&|"
+            f"{sending_app}|{sending_facility}|{receiving_app}|{receiving_facility}|"
+            f"{ack_time}||ACK^{ack_trigger}^ACK|{ack_control_id}|P|{HL7_V2_MSH_SUFFIX}"
+        ),
+        f"MSA|{code}|{control_id}|{text}",
+    ]
+    if code in {"AE", "AR", "CE", "CR"}:
+        error_code = "200^Unsupported message type^HL70357" if code in {"AR", "CR"} else "102^Data type error^HL70357"
+        segments.append(f"ERR||MSH^1^9^1^1|{error_code}|E")
+    return "\r".join(segments)
 
 
 def accept_oie_result_payload(store: DemoStore, payload: str) -> tuple[str, dict[str, Any], int]:
@@ -3933,6 +3944,17 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response("Patient record was not found.", 404)
         return jsonify(result)
 
+    @app.post("/api/dcm4chee/e2e-fixture")
+    def create_dcm4chee_e2e_fixture():
+        try:
+            result = store.create_dcm4chee_e2e_demo_fixture(
+                dcm4chee_profile_from_config(app.config),
+                uid_root=app.config["DCM4CHEE_UID_ROOT"],
+            )
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        return jsonify({"success": True, **result}), 201
+
     @app.get("/api/orders")
     def list_orders():
         return jsonify({"success": True, "items": store.list_order_records()})
@@ -4071,6 +4093,46 @@ def create_app(database_path: str | None = None) -> Flask:
                 "latestAttempt": result.get("attempt"),
             }
         )
+
+    @app.get("/api/orders/<int:order_id>/dcm4chee-e2e-evidence")
+    def get_order_dcm4chee_e2e_evidence(order_id: int):
+        try:
+            item = store.get_order_record(order_id)
+        except KeyError:
+            return error_response("Order record was not found.", 404)
+        if item["protocolVersion"] != "DICOM":
+            return error_response("Order record is not DICOM MWL mode.", 400)
+        return jsonify(
+            {
+                "success": True,
+                "evidence": store.dcm4chee_e2e_evidence_for_order(
+                    order_id,
+                    dcm4chee_profile_from_config(app.config),
+                ),
+            }
+        )
+
+    @app.post("/api/orders/<int:order_id>/dcm4chee-simulated-ap-return")
+    def create_order_dcm4chee_simulated_ap_return(order_id: int):
+        payload = request.get_json(silent=True) or {}
+        try:
+            item = store.get_order_record(order_id)
+        except KeyError:
+            return error_response("Order record was not found.", 404)
+        if item["protocolVersion"] != "DICOM":
+            return error_response("Order record is not DICOM MWL mode.", 400)
+        try:
+            result = store.create_simulated_dcm4chee_ap_return(
+                order_id,
+                dcm4chee_profile_from_config(app.config),
+                result_type=str(payload.get("type") or "both"),
+                artifact_url=str(payload.get("artifactUrl") or ""),
+                artifact_path=str(payload.get("artifactPath") or ""),
+            )
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        patient = store.get_patient_record(int(item["patientRecordId"]))
+        return jsonify({"success": True, "patient": patient, **result}), 201
 
     @app.get("/api/fhir/mappings")
     def list_fhir_mappings():
