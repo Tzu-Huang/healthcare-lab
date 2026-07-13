@@ -3820,7 +3820,11 @@ class DemoStore:
         result_type = str(result_type or "both").strip().lower()
         if result_type not in {"both", "pdf", "dicom"}:
             raise SimulatorValidationError("Simulated AP return type must be pdf, dicom, or both.")
-        generation = f"simulated-ap-return-{now_iso()}"
+        generation = (
+            self.latest_simulated_dcm4chee_ap_return_generation(int(order_record_id))
+            if result_type in {"pdf", "dicom"}
+            else ""
+        ) or f"simulated-ap-return-{now_iso()}"
         base_metadata = {
             "study_instance_uid": str(mapping.get("studyInstanceUid") or ""),
             "accession_number": str(mapping.get("accessionNumber") or ""),
@@ -3889,6 +3893,21 @@ class DemoStore:
             "evidence": self.dcm4chee_e2e_evidence_for_order(int(order_record_id), profile),
             "refreshGeneration": generation,
         }
+
+    def latest_simulated_dcm4chee_ap_return_generation(self, order_record_id: int) -> str:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT refresh_generation FROM local_dcm4chee_result_records
+                WHERE order_record_id = ?
+                AND refresh_generation LIKE 'simulated-ap-return-%'
+                AND query_url LIKE 'simulated://ap-return/%'
+                ORDER BY last_refreshed_at DESC, id DESC
+                LIMIT 1
+                """,
+                (int(order_record_id),),
+            ).fetchone()
+        return str(row["refresh_generation"] or "").strip() if row else ""
 
     def record_dcm4chee_result_refresh_diagnostic(
         self,
