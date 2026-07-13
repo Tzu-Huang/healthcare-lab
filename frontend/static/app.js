@@ -67,9 +67,9 @@ const DASHBOARD_RESOURCE_CONTAINERS = [
 
 const PATIENT_MODE_CONFIG = {
   "hl7-v2": {
-    title: "HL7 v2.3.1 ADT A04",
+    title: "HL7 v2.5.1 ADT A04",
     payloadTitle: "MSH, EVN, PID, PV1",
-    emptyPreview: "Complete required Patient fields to preview an HL7 v2.3.1 ADT A04 payload.",
+    emptyPreview: "Complete required Patient fields to preview an HL7 v2.5.1 ADT A04 payload.",
   },
   fhir: {
     title: "FHIR R4 Patient",
@@ -89,10 +89,10 @@ const PATIENT_MODE_CONFIG = {
 };
 
 const ORDER_MODE_CONFIG = {
-  "hl7-v231": {
-    title: "HL7 v2.3.1 ORM O01",
+  "hl7-v251": {
+    title: "HL7 v2.5.1 ORM O01",
     payloadTitle: "MSH, PID, PV1, ORC, OBR",
-    emptyPreview: "Select a local patient to preview an HL7 v2.3.1 ORM O01 payload.",
+    emptyPreview: "Select a local patient to preview an HL7 v2.5.1 ORM O01 payload.",
     createLabel: "Create Order",
   },
   fhir: {
@@ -186,7 +186,7 @@ function setActiveView(viewId) {
 
 function currentOrderMode() {
   const selector = byId("order-protocol");
-  return ORDER_MODE_CONFIG[selector?.value] ? selector.value : "hl7-v231";
+  return ORDER_MODE_CONFIG[selector?.value] ? selector.value : "hl7-v251";
 }
 
 function updateOrderModeFields() {
@@ -679,7 +679,7 @@ function buildPatientPreviewPayload(payload) {
     .filter(Boolean)
     .join("^");
   return [
-    `MSH|^~\\&|HEALTHCARE_LAB|LAB_DEMO|OIE|ADT|${timestamp}||ADT^A04|A04PREVIEW${timestamp}|P|2.3.1`,
+    `MSH|^~\\&|HEALTHCARE_LAB|LAB_DEMO|OIE|ADT|${timestamp}||ADT^A04^ADT_A01|A04PREVIEW${timestamp}|P|2.5.1||||||UNICODE UTF-8`,
     `EVN|A04|${timestamp}`,
     `PID|1||${hl7Escape(payload.mrn)}^^^HEALTHCARE_LAB^MR||${patientName}||${hl7Escape(payload.dob)}|${hl7Escape(payload.sex)}|||${hl7EscapeComposite(payload.address)}||${hl7Escape(payload.phone)}|||||${hl7Escape(payload.accountNumber)}`,
     `PV1|1|${hl7Escape(payload.patientClass || "O")}|${hl7EscapeComposite(payload.assignedLocation)}||||${hl7EscapeComposite(payload.attendingProvider)}||||||||||||${hl7Escape(visitNumber)}`,
@@ -901,12 +901,16 @@ function dcm4cheeOpenButton(label, url) {
 function dcm4cheeActionsForResult(item, level = "study") {
   const actions = document.createElement("div");
   actions.className = "button-row compact-actions dcm4chee-result-actions";
+  const artifactUrl = item.artifact?.url || "";
+  const artifactPath = item.artifact?.path || "";
   const retrieveUrl = level === "instance"
     ? item.instanceRetrieveUrl
     : level === "series"
       ? item.seriesRetrieveUrl
       : item.studyRetrieveUrl;
   [
+    dcm4cheeOpenButton("Open Artifact", artifactUrl),
+    dcm4cheeCopyButton("Copy Artifact", artifactUrl || artifactPath),
     dcm4cheeOpenButton("Open Viewer", item.viewerUrl),
     dcm4cheeCopyButton("Copy Retrieve", retrieveUrl),
   ].filter(Boolean).forEach((button) => actions.appendChild(button));
@@ -1006,6 +1010,7 @@ function renderDcm4cheeSeriesDetails(series) {
     createElement("span", "Series", "dcm4chee-row-kind"),
     createElement("code", dcm4cheeFirstValue(series.records, "seriesInstanceUid") || "No Series Instance UID"),
     createElement("span", dcm4cheeFirstValue(series.records, "modality") || "-", "muted"),
+    createElement("span", dcm4cheeFirstValue(series.records, "source") || "dcm4chee", "muted"),
     createElement("span", taipeiTimestamp(dcm4cheeFirstValue(series.records, "seriesDateTime") || dcm4cheeFirstValue(series.records, "lastRefreshedAt")), "muted"),
     createElement("span", dcm4cheeDisplayStatus(series.status), `status ${dcm4cheeResultStatusClass(series.status)}`),
   );
@@ -1026,12 +1031,16 @@ function renderDcm4cheeStudyDetails(study) {
     createElement("code", dcm4cheeFirstValue(study.records, "studyInstanceUid") || "No Study Instance UID"),
     createElement("span", `Accession Number ${dcm4cheeFirstValue(study.records, "accessionNumber") || "-"}`, "muted"),
     createElement("span", dcm4cheeFirstValue(study.records, "modality") || "-", "muted"),
+    createElement("span", dcm4cheeFirstValue(study.records, "source") || "dcm4chee", "muted"),
     createElement("span", taipeiTimestamp(dcm4cheeFirstValue(study.records, "studyDateTime") || dcm4cheeFirstValue(study.records, "lastRefreshedAt")), "muted"),
     createElement("span", dcm4cheeDisplayStatus(study.status), `status ${dcm4cheeResultStatusClass(study.status)}`),
   );
   summary.appendChild(dcm4cheeActionsForResult(representative, "study"));
   details.appendChild(summary);
   const metadata = dcm4cheeDetailBlock("DICOM Fields", [
+    ["Source", dcm4cheeFirstValue(study.records, "source") || "dcm4chee"],
+    ["Artifact", dcm4cheeFirstValue(study.records, "artifact")?.label || ""],
+    ["Artifact Type", dcm4cheeFirstValue(study.records, "artifact")?.mediaType || ""],
     ["Patient ID", dcm4cheeFirstValue(study.records, "patientId")],
     ["Issuer of Patient ID", dcm4cheeFirstValue(study.records, "issuerOfPatientId")],
     ["Requested Procedure ID", dcm4cheeFirstValue(study.records, "requestedProcedureId")],
@@ -1534,6 +1543,17 @@ function renderDcm4cheeOrderActions(orderId, patientId, mwl = {}, mapping = {}) 
     refreshButton.type = "button";
     refreshButton.addEventListener("click", () => refreshPatientDcm4cheeResults(patientId, refreshButton, { orderId }));
     actions.appendChild(refreshButton);
+  }
+  if (orderId) {
+    const simulatePdfButton = createElement("button", "Simulate AP PDF", "small-button");
+    simulatePdfButton.type = "button";
+    simulatePdfButton.addEventListener("click", () => simulateDcm4cheeApReturn(orderId, simulatePdfButton, "pdf"));
+    actions.appendChild(simulatePdfButton);
+
+    const simulateDicomButton = createElement("button", "Simulate AP DICOM", "small-button");
+    simulateDicomButton.type = "button";
+    simulateDicomButton.addEventListener("click", () => simulateDcm4cheeApReturn(orderId, simulateDicomButton, "dicom"));
+    actions.appendChild(simulateDicomButton);
   }
   if (!actions.childElementCount) actions.appendChild(createElement("span", "No DICOM actions available yet.", "muted"));
   return actions;
@@ -2623,7 +2643,7 @@ function validateOrderPayload(payload) {
       messages.push("FHIR Order requires a synced FHIR Patient.");
     }
   }
-  if (payload.mode === "hl7-v231") {
+  if (payload.mode === "hl7-v251") {
     if (!payload.orderingProvider) messages.push("Ordering provider is required.");
     if (!payload.orderCode) messages.push("Order code is required.");
     if (!payload.alternateCode) messages.push("Alternate code is required.");
@@ -2813,7 +2833,7 @@ function buildOrderPreviewPayload(payload, patient) {
     orderDemoPreset.alternateCodeSystem,
   ].map(hl7Escape).join("^");
   return [
-    `MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|${timestamp}||ORM^O01|ORMPREVIEW${timestamp}|P|2.3.1`,
+    `MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|${timestamp}||ORM^O01^ORM_O01|ORMPREVIEW${timestamp}|P|2.5.1||||||UNICODE UTF-8`,
     `PID|1||${hl7Escape(summary.mrn)}^^^HEALTHCARE_LAB^MR||${patientName}||${hl7Escape(summary.dob)}|${hl7Escape(summary.sex)}|||||||||||${hl7Escape(orderAccountNumber(patient))}`,
     `PV1|1|${hl7Escape(patient?.patientClass || "O")}|${hl7EscapeComposite(patient?.assignedLocation || "")}||||${hl7EscapeComposite(payload.orderingProvider)}||||||||||||${hl7Escape(orderVisitId(patient))}`,
     `ORC|NW|${orderNumber}|||||^^^${hl7Escape(requestedAt)}^${hl7Escape(payload.priority)}||${timestamp}|||${hl7EscapeComposite(payload.orderingProvider)}`,
@@ -3235,6 +3255,30 @@ async function verifyDcm4cheeOrder(orderId, button) {
     setStatus("order-form-status", "Verification failed", "error");
     setStatus("dcm4chee-console-status", error.message, "error");
     byId("order-payload-preview").textContent = error.message;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function simulateDcm4cheeApReturn(orderId, button, type = "both") {
+  if (button) button.disabled = true;
+  setStatus("order-form-status", "Recording simulated AP return...", "pending");
+  try {
+    const result = await requestJson(`/api/orders/${orderId}/dcm4chee-simulated-ap-return`, {
+      method: "POST",
+      body: JSON.stringify({ type }),
+    });
+    setStatus("order-form-status", `Simulated AP ${type.toUpperCase()} result recorded`, "success");
+    if (result.patient) {
+      const index = patientRecords.findIndex((item) => Number(item.id) === Number(result.patient.id));
+      if (index >= 0) patientRecords[index] = result.patient;
+    }
+    await refreshPatients();
+    await refreshOrders();
+    refreshDcm4cheeConsole();
+  } catch (error) {
+    setStatus("order-form-status", error.message, "error");
+    setStatus("dcm4chee-console-status", error.message, "error");
   } finally {
     if (button) button.disabled = false;
   }

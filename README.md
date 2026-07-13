@@ -89,7 +89,7 @@ The recommended hospital-side simulator is
 - Healthcare Interoperability Lab Console first screen for managed service
   health visibility, editable server registry, server detail, Run Check, and a
   Servers / Settings Port Matrix.
-- Patient page with HL7 v2.3.1, FHIR R4, GDT 2.1, and DICOM preview modes.
+- Patient page with HL7 v2.5.1, FHIR R4, GDT 2.1, and DICOM preview modes.
 - FHIR Patient creation through a local-first Medplum sync flow, including
   common demographics, contact/address fields, sync status display, and retry.
 - Local FHIR workflow ledger for `Patient`, `ServiceRequest`, `Task`,
@@ -224,8 +224,7 @@ Requested Procedure ID plus Scheduled Procedure Step ID. If dcm4chee rejects the
 request because the patient does not exist, the local order remains available
 and the dcm4chee MWL sync state is recorded as `Patient missing`. If Patient ADT
 sync fails before MWL creation, Healthcare Lab does not POST the MWL item and
-keeps the Patient sync failure as the root cause. Full AP C-STORE result
-ingestion/display and viewer-link consumption remain future work.
+keeps the Patient sync failure as the root cause.
 
 The DICOM order workspace can verify MWL queryability for a local order. The
 verification action queries dcm4chee MWL using the ledger identifiers and records
@@ -256,6 +255,14 @@ modality, timestamps, Study UID, Accession Number, viewer links, retrieve links,
 and diagnostics. Expected diagnostics include `no_result`, `wrong_patient`,
 `missing_accession`, `duplicate`, `ambiguous`, `unlinked`, and `query_failed`.
 
+For repeatable production-like verification, use the SOP in
+[docs/dcm4chee-production-e2e-verification.md](docs/dcm4chee-production-e2e-verification.md).
+It covers live AP C-STORE verification and simulated AP PDF/DICOM return
+fixtures. The simulated path records AP-returned result rows with source
+`simulated_ap_return` so the Healthcare Lab UI can prove PDF artifact display,
+DICOM Study/Series/Instance display, and reconciliation status without waiting
+for a live AP run.
+
 The first Docker Desktop runtime scaffold for the Lab Console lives in
 [deploy/](deploy/README.md). It includes `docker-compose.yml` and the
 `deploy/lab.ps1` wrapper for local `status`, `start`, `stop`, `restart`,
@@ -266,7 +273,7 @@ The first Docker Desktop runtime scaffold for the Lab Console lives in
 Use **Patient** to create local virtual patient records for the supported
 workflow modes:
 
-- **HL7 v2.3.1:** previews an `ADT^A04` payload for the local OIE workflow.
+- **HL7 v2.5.1:** previews an `ADT^A04` payload for the local OIE workflow.
 - **FHIR R4:** previews a FHIR `Patient`, stores the local Patient first, then
   creates or updates the paired FHIR workflow ledger record and attempts Medplum
   sync.
@@ -288,9 +295,9 @@ focused on managed server health and operations, while **Patient**, **Order**,
 Use **Order** to create a local 12-lead ECG order from an existing local Patient
 record.
 
-For **HL7 v2.3.1** orders:
+For **HL7 v2.5.1** orders:
 
-- HL7 v2.3.1 is enabled for the MVP.
+- HL7 v2.5.1 is enabled for the MVP.
 - The generated `ORM^O01` preview includes `MSH`, `PID`, `PV1`, `ORC`, and
   `OBR`.
 - Orders are stored in the local SQLite demo database with status, raw ORM
@@ -319,7 +326,7 @@ For **FHIR R4** orders:
   for both the `ServiceRequest` and generated `Task`.
 
 GDT order creation is handled through the GDT workflow and bridge contract.
-HL7 v2.5.1 and DICOM order modes remain future work.
+DICOM order mode remains future work.
 
 ## Medplum Console
 
@@ -530,7 +537,7 @@ To send a hospital-side test message:
 4. Paste the following virtual patient message and send it:
 
 ```hl7
-MSH|^~\&|HOSPITAL||ECG_AP||20260602150000||ADT^A04|ADT002|P|2.5.1
+MSH|^~\&|HOSPITAL||ECG_AP||20260602150000||ADT^A04^ADT_A01|ADT002|P|2.5.1||||||UNICODE UTF-8
 PID|1||QT_Athlete_003_Borderline2||Brooks^Caleb||20100228|M
 ```
 

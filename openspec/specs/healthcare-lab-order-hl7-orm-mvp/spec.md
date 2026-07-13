@@ -1,17 +1,17 @@
 # healthcare-lab-order-hl7-orm-mvp Specification
 
 ## Purpose
-Define Healthcare Lab's local HL7 v2.3.1 ECG order workflow, including order creation, stable ORM payload persistence, OIE order inventory, configurable MLLP send, ACK/result recording, and the boundary that downstream OIE-to-AP routing remains external OIE channel configuration.
+Define Healthcare Lab's local HL7 v2.5.1 ECG order workflow, including order creation, stable ORM payload persistence, OIE order inventory, configurable MLLP send, ACK/result recording, and the boundary that downstream OIE-to-AP routing remains external OIE channel configuration.
 ## Requirements
-### Requirement: Order page exposes HL7 v2.3.1 ECG order creation
+### Requirement: Order page exposes HL7 v2.5.1 ECG order creation
 
-Healthcare Lab SHALL provide an Order page workflow for creating local 12-lead ECG orders using HL7 v2.3.1.
+Healthcare Lab SHALL provide an Order page workflow for creating local 12-lead ECG orders using HL7 v2.5.1.
 
-#### Scenario: HL7 v2.3.1 is the enabled order protocol
+#### Scenario: HL7 v2.5.1 is the enabled order protocol
 
 - **WHEN** a user opens the Order page protocol selector
-- **THEN** HL7 v2.3.1 is available for order creation
-- **AND** HL7 v2.5.1, FHIR, GDT, and DICOM are shown as disabled future modes
+- **THEN** HL7 v2.5.1 is available for order creation
+- **AND** FHIR, GDT, and DICOM are shown according to their current implementation status
 
 #### Scenario: User prepares a 12-lead ECG order
 
@@ -21,7 +21,7 @@ Healthcare Lab SHALL provide an Order page workflow for creating local 12-lead E
 
 ### Requirement: Local order creation persists a stable ORM payload
 
-Healthcare Lab SHALL persist local ECG order records and their generated HL7 v2.3.1 `ORM^O01` payloads in SQLite.
+Healthcare Lab SHALL persist local ECG order records and their generated HL7 v2.5.1 `ORM^O01` payloads in SQLite.
 
 #### Scenario: User creates a valid local ECG order
 
@@ -39,15 +39,15 @@ Healthcare Lab SHALL persist local ECG order records and their generated HL7 v2.
 
 ### Requirement: ORM preview uses the MVP segment baseline
 
-Healthcare Lab SHALL generate and display an HL7 v2.3.1 `ORM^O01` preview containing the MVP segment baseline.
+Healthcare Lab SHALL generate and display an HL7 v2.5.1 `ORM^O01` preview containing the MVP segment baseline.
 
 #### Scenario: User previews an order payload
 
 - **WHEN** the Order page has enough valid patient and order data to preview a payload
 - **THEN** the preview includes `MSH`, `PID`, `PV1`, `ORC`, and `OBR` segments
 - **AND** `MSH` identifies `HEALTHCARE_LAB|DASHBOARD` as sender and `OIE|HL7LAB` as receiver
-- **AND** `MSH-9` is `ORM^O01`
-- **AND** `MSH-12` is `2.3.1`
+- **AND** `MSH-9` is `ORM^O01^ORM_O01`
+- **AND** `MSH-12` is `2.5.1`
 
 #### Scenario: User selects the 12-lead ECG preset
 

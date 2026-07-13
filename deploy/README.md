@@ -177,6 +177,12 @@ Medplum API server and Web UI companion.
 | dcm4chee DICOM | `11112` |
 | dcm4chee HL7 Patient sync | `2575` |
 
+For the full Healthcare Lab -> dcm4chee MWL -> AP -> C-STORE -> Healthcare Lab
+verification procedure, see
+[`docs/dcm4chee-production-e2e-verification.md`](../docs/dcm4chee-production-e2e-verification.md).
+That SOP also covers the simulated AP PDF/DICOM return path used to verify the
+Healthcare Lab frontend without a live AP.
+
 Override ports with the matching variables in `docker-compose.yml`, for
 example `LAB_APP_PORT`, `OPENEMR_PORT`, or `MEDPLUM_PORT`. The Compose runtime
 maps the host `LAB_APP_PORT` to the lab app container port and sets
