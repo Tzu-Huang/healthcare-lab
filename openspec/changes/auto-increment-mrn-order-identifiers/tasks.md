@@ -20,5 +20,5 @@
 
 - [x] 4.1 Add store tests for fresh allocation, restart persistence, deletion non-reuse, manual MRNs, collision skipping, and duplicate rejection without side effects.
 - [x] 4.2 Add API and frontend contract tests for blank-MRN creation, generated preview behavior, protocol propagation, and both order-table column sets.
-- [ ] 4.3 Update user-facing documentation with automatic MRN behavior, identifier formats, uniqueness scope, and the PID-3/PV1-19/ORC-2/OBR-2 mappings.
-- [ ] 4.4 Run the complete test suite and OpenSpec validation, recording any environment-dependent verification separately.
+- [x] 4.3 Update user-facing documentation with automatic MRN behavior, identifier formats, uniqueness scope, and the PID-3/PV1-19/ORC-2/OBR-2 mappings.
+- [x] 4.4 Run the complete test suite and OpenSpec validation, recording any environment-dependent verification separately.
