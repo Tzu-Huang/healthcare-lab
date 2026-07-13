@@ -36,17 +36,20 @@ from backend.gdt_adapter import (
 )
 
 OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES = ("1001",)
-PATIENT_PROTOCOL_VERSION = "2.3.1"
+HL7_V2_VERSION = "2.5.1"
+HL7_V2_CHARSET = "UNICODE UTF-8"
+HL7_V2_MSH_SUFFIX = f"{HL7_V2_VERSION}||||||{HL7_V2_CHARSET}"
+PATIENT_PROTOCOL_VERSION = HL7_V2_VERSION
 PATIENT_MESSAGE_TYPE = "ADT^A04"
 PATIENT_MODES = {
-    "hl7-v2": {"protocol": "HL7 v2.3.1", "message_type": "ADT^A04"},
+    "hl7-v2": {"protocol": "HL7 v2.5.1", "message_type": "ADT^A04"},
     "fhir": {"protocol": "FHIR R4", "message_type": "Patient"},
     "gdt": {"protocol": "GDT 2.1", "message_type": "6301"},
     "dicom": {"protocol": "DICOM", "message_type": "Patient Module"},
 }
 PATIENT_CLASS_DEFAULT = "O"
 GDT_PATIENT_SEX_CODES = {"M": "1", "F": "2"}
-ORDER_PROTOCOL_VERSION = "2.3.1"
+ORDER_PROTOCOL_VERSION = HL7_V2_VERSION
 ORDER_MESSAGE_TYPE = "ORM^O01"
 ORDER_STATUS_READY = "Ready to send"
 ORDER_STATUS_ACCEPTED = "Accepted"
@@ -1392,8 +1395,8 @@ class DemoStore:
         aliases = {
             "hl7": "hl7-v2",
             "hl7v2": "hl7-v2",
-            "hl7-v2.3.1": "hl7-v2",
-            "hl7-v231": "hl7-v2",
+            "hl7-v2.5.1": "hl7-v2",
+            "hl7-v251": "hl7-v2",
             "fhir-r4": "fhir",
             "gdt-2.1": "gdt",
             "dicom-patient": "dicom",
@@ -1464,7 +1467,7 @@ class DemoStore:
         ).rstrip("^")
         control_id = f"A04{timestamp}{record_id:06d}"
         segments = [
-            f"MSH|^~\\&|HEALTHCARE_LAB|LAB_DEMO|OIE|ADT|{timestamp}||ADT^A04|{control_id}|P|2.3.1",
+            f"MSH|^~\\&|HEALTHCARE_LAB|LAB_DEMO|OIE|ADT|{timestamp}||ADT^A04^ADT_A01|{control_id}|P|{HL7_V2_MSH_SUFFIX}",
             f"EVN|A04|{timestamp}",
             (
                 "PID|1||"
@@ -1885,6 +1888,7 @@ class DemoStore:
         if not normalized_event.startswith("A"):
             normalized_event = f"A{normalized_event}"
         message_type = f"ADT^{normalized_event}"
+        message_structure = "ADT_A01"
         control_id = f"DCMADT{message_time}{int(patient['id']):06d}"
         visit_number = str(patient.get("visitNumber") or summary.get("visitNumber") or "").strip()
         patient_class = str(patient.get("patientClass") or "O").strip() or "O"
@@ -1898,7 +1902,7 @@ class DemoStore:
                 f"{_hl7_escape(str(hl7.get('sendingFacility') or 'LAB_APP'))}|"
                 f"{_hl7_escape(str(hl7.get('receivingApplication') or 'DCM4CHEE'))}|"
                 f"{_hl7_escape(str(hl7.get('receivingFacility') or 'DCM4CHEE'))}|"
-                f"{message_time}||{message_type}|{control_id}|P|2.3.1"
+                f"{message_time}||{message_type}^{message_structure}|{control_id}|P|{HL7_V2_MSH_SUFFIX}"
             ),
             f"EVN|{normalized_event}|{message_time}",
             (
@@ -2472,7 +2476,7 @@ class DemoStore:
         )
         control_id = f"ORM{timestamp}{record_id:06d}"
         segments = [
-            f"MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|{timestamp}||ORM^O01|{control_id}|P|2.3.1",
+            f"MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|{timestamp}||ORM^O01^ORM_O01|{control_id}|P|{HL7_V2_MSH_SUFFIX}",
             (
                 "PID|1||"
                 f"{_hl7_escape(values['mrn'])}^^^HEALTHCARE_LAB^MR||"

@@ -217,7 +217,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("medplum-related-row", script)
         self.assertIn("buildFhirOrderPreviewPayload", script)
         self.assertIn("FHIR Order requires a synced FHIR Patient", script)
-        self.assertIn('payload.mode === "hl7-v231"', script)
+        self.assertIn('payload.mode === "hl7-v251"', script)
         self.assertIn("FHIR order code is required.", script)
         self.assertIn('payload.mode !== "fhir" && payload.requestedAt', script)
         self.assertIn("serviceRequest", script)
@@ -353,7 +353,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         item = created.get_json()["item"]
         self.assertEqual(item["status"], "Ready to send")
         self.assertEqual(item["messageType"], "ORM^O01")
-        self.assertIn("ORM^O01", item["payload"])
+        self.assertIn("ORM^O01^ORM_O01", item["payload"])
+        self.assertIn("|P|2.5.1||||||UNICODE UTF-8", item["payload"])
         self.assertIn("MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|", item["payload"])
 
         listed = self.client.get("/api/oie/local-orders")
@@ -386,7 +387,7 @@ class HealthcareLabApiTests(unittest.TestCase):
     @patch("app.send_hl7_mllp_message")
     def test_patient_api_creates_dicom_patient_and_syncs_dcm4chee(self, send_hl7):
         send_hl7.return_value = (
-            "MSH|^~\\&|DCM4CHEE|DCM4CHEE|HEALTHCARE_LAB|LAB_APP|20260709101010||ACK^A04|ACK1|P|2.3.1"
+            "MSH|^~\\&|DCM4CHEE|DCM4CHEE|HEALTHCARE_LAB|LAB_APP|20260709101010||ACK^A04^ACK|ACK1|P|2.5.1||||||UNICODE UTF-8"
             "\rMSA|AA|DCMADT1|OK"
         )
 
@@ -413,7 +414,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(dcm4chee_patient["issuerOfPatientId"], "local-dcm4chee")
         self.assertEqual(dcm4chee_patient["ack"]["code"], "AA")
         sent_payload = send_hl7.call_args.args[0]
-        self.assertIn("ADT^A04", sent_payload)
+        self.assertIn("ADT^A04^ADT_A01", sent_payload)
+        self.assertIn("|P|2.5.1||||||UNICODE UTF-8", sent_payload)
         self.assertIn("PID|1||MRN-DCM-001^^^local-dcm4chee^MR", sent_payload)
         self.assertEqual(send_hl7.call_args.kwargs["host"], "127.0.0.1")
         self.assertEqual(send_hl7.call_args.kwargs["port"], 2575)
@@ -1632,7 +1634,7 @@ class HealthcareLabApiTests(unittest.TestCase):
     @patch("app.urllib.request.urlopen")
     @patch("app.send_hl7_mllp_message")
     def test_order_api_creates_dcm4chee_mwl_after_dicom_patient_sync(self, send_hl7, urlopen):
-        send_hl7.return_value = "MSH|^~\\&|DCM4CHEE|DCM4CHEE|HEALTHCARE_LAB|LAB_APP|20260709101010||ACK^A04|ACK1|P|2.3.1\rMSA|AA|DCMADT1|OK"
+        send_hl7.return_value = "MSH|^~\\&|DCM4CHEE|DCM4CHEE|HEALTHCARE_LAB|LAB_APP|20260709101010||ACK^A04^ACK|ACK1|P|2.5.1||||||UNICODE UTF-8\rMSA|AA|DCMADT1|OK"
         captured = []
 
         def fake_urlopen(request, timeout):
@@ -3134,7 +3136,7 @@ class HealthcareLabApiTests(unittest.TestCase):
 
     def test_parse_hl7_ack_extracts_msa_fields(self):
         ack = parse_hl7_ack(
-            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD||ACK^O01|ACK1|P|2.3.1\r"
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD||ACK^O01^ACK|ACK1|P|2.5.1||||||UNICODE UTF-8\r"
             "MSA|AE|ORM123|Application error"
         )
 
@@ -3144,7 +3146,7 @@ class HealthcareLabApiTests(unittest.TestCase):
 
     def test_parse_oru_summary_extracts_matching_fields(self):
         parsed = parse_oru_summary(
-            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^R01|ORU1|P|2.3.1\r"
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^R01^ORU_R01|ORU1|P|2.5.1||||||UNICODE UTF-8\r"
             "PID|1||MRN-A04-001^^^HEALTHCARE_LAB^MR||Morgan^Avery\r"
             "OBR|1|ORD-000001|FILL-1|ECG12^12 Lead ECG"
         )
@@ -3159,7 +3161,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         patient = self.create_local_patient()
         order = self.client.post("/api/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
         payload = (
-            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^R01|ORU1|P|2.3.1\r"
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^R01^ORU_R01|ORU1|P|2.5.1||||||UNICODE UTF-8\r"
             "PID|1||MRN-A04-001^^^HEALTHCARE_LAB^MR||Morgan^Avery\r"
             f"OBR|1|{order['localOrderNumber']}||ECG12^12 Lead ECG"
         )
@@ -3169,6 +3171,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.get_json()
         self.assertIn("MSA|AA|ORU1", body["ack"])
+        self.assertIn("ACK^R01^ACK", body["ack"])
+        self.assertIn("|P|2.5.1||||||UNICODE UTF-8", body["ack"])
         self.assertEqual(body["item"]["matchStatus"], "order-matched")
         self.assertEqual(body["item"]["matchedOrderRecordId"], order["id"])
 
@@ -3179,7 +3183,7 @@ class HealthcareLabApiTests(unittest.TestCase):
 
     def test_oie_result_api_keeps_unknown_patient_unmatched(self):
         payload = (
-            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^W01|ORU2|P|2.3.1\r"
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^W01^ORU_W01|ORU2|P|2.5.1||||||UNICODE UTF-8\r"
             "PID|1||UNKNOWN^^^HEALTHCARE_LAB^MR||Patient^Unknown\r"
             "OBR|1|ORD-404||ECG12^12 Lead ECG"
         )
@@ -3194,7 +3198,7 @@ class HealthcareLabApiTests(unittest.TestCase):
 
     def test_oie_result_api_rejects_unsupported_message_with_failure_ack(self):
         payload = (
-            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ADT^A04|BAD1|P|2.3.1\r"
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ADT^A04^ADT_A01|BAD1|P|2.5.1||||||UNICODE UTF-8\r"
             "PID|1||MRN-A04-001^^^HEALTHCARE_LAB^MR"
         )
 
@@ -3204,6 +3208,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         body = response.get_json()
         self.assertFalse(body["success"])
         self.assertIn("MSA|AR|BAD1", body["ack"])
+        self.assertIn("ACK^A04^ACK", body["ack"])
+        self.assertIn("ERR||MSH^1^9^1^1|200^Unsupported message type^HL70357|E", body["ack"])
 
     def test_oie_result_listener_status_defaults_to_port_6665(self):
         response = self.client.get("/api/oie/result-listener/status")
@@ -3236,7 +3242,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         patient = self.create_local_patient()
         order = self.client.post("/api/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
         send_message.return_value = (
-            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD||ACK^O01|ACK1|P|2.3.1\r"
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD||ACK^O01^ACK|ACK1|P|2.5.1||||||UNICODE UTF-8\r"
             "MSA|AA|ORM123|OK"
         )
 
@@ -3261,7 +3267,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         patient = self.create_local_patient()
         order = self.client.post("/api/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
         send_message.return_value = (
-            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD||ACK^O01|ACK1|P|2.3.1\r"
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD||ACK^O01^ACK|ACK1|P|2.5.1||||||UNICODE UTF-8\r"
             "MSA|AA|ORM123|OK"
         )
 

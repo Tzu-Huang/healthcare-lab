@@ -67,9 +67,9 @@ const DASHBOARD_RESOURCE_CONTAINERS = [
 
 const PATIENT_MODE_CONFIG = {
   "hl7-v2": {
-    title: "HL7 v2.3.1 ADT A04",
+    title: "HL7 v2.5.1 ADT A04",
     payloadTitle: "MSH, EVN, PID, PV1",
-    emptyPreview: "Complete required Patient fields to preview an HL7 v2.3.1 ADT A04 payload.",
+    emptyPreview: "Complete required Patient fields to preview an HL7 v2.5.1 ADT A04 payload.",
   },
   fhir: {
     title: "FHIR R4 Patient",
@@ -89,10 +89,10 @@ const PATIENT_MODE_CONFIG = {
 };
 
 const ORDER_MODE_CONFIG = {
-  "hl7-v231": {
-    title: "HL7 v2.3.1 ORM O01",
+  "hl7-v251": {
+    title: "HL7 v2.5.1 ORM O01",
     payloadTitle: "MSH, PID, PV1, ORC, OBR",
-    emptyPreview: "Select a local patient to preview an HL7 v2.3.1 ORM O01 payload.",
+    emptyPreview: "Select a local patient to preview an HL7 v2.5.1 ORM O01 payload.",
     createLabel: "Create Order",
   },
   fhir: {
@@ -186,7 +186,7 @@ function setActiveView(viewId) {
 
 function currentOrderMode() {
   const selector = byId("order-protocol");
-  return ORDER_MODE_CONFIG[selector?.value] ? selector.value : "hl7-v231";
+  return ORDER_MODE_CONFIG[selector?.value] ? selector.value : "hl7-v251";
 }
 
 function updateOrderModeFields() {
@@ -679,7 +679,7 @@ function buildPatientPreviewPayload(payload) {
     .filter(Boolean)
     .join("^");
   return [
-    `MSH|^~\\&|HEALTHCARE_LAB|LAB_DEMO|OIE|ADT|${timestamp}||ADT^A04|A04PREVIEW${timestamp}|P|2.3.1`,
+    `MSH|^~\\&|HEALTHCARE_LAB|LAB_DEMO|OIE|ADT|${timestamp}||ADT^A04^ADT_A01|A04PREVIEW${timestamp}|P|2.5.1||||||UNICODE UTF-8`,
     `EVN|A04|${timestamp}`,
     `PID|1||${hl7Escape(payload.mrn)}^^^HEALTHCARE_LAB^MR||${patientName}||${hl7Escape(payload.dob)}|${hl7Escape(payload.sex)}|||${hl7EscapeComposite(payload.address)}||${hl7Escape(payload.phone)}|||||${hl7Escape(payload.accountNumber)}`,
     `PV1|1|${hl7Escape(payload.patientClass || "O")}|${hl7EscapeComposite(payload.assignedLocation)}||||${hl7EscapeComposite(payload.attendingProvider)}||||||||||||${hl7Escape(visitNumber)}`,
@@ -2643,7 +2643,7 @@ function validateOrderPayload(payload) {
       messages.push("FHIR Order requires a synced FHIR Patient.");
     }
   }
-  if (payload.mode === "hl7-v231") {
+  if (payload.mode === "hl7-v251") {
     if (!payload.orderingProvider) messages.push("Ordering provider is required.");
     if (!payload.orderCode) messages.push("Order code is required.");
     if (!payload.alternateCode) messages.push("Alternate code is required.");
@@ -2833,7 +2833,7 @@ function buildOrderPreviewPayload(payload, patient) {
     orderDemoPreset.alternateCodeSystem,
   ].map(hl7Escape).join("^");
   return [
-    `MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|${timestamp}||ORM^O01|ORMPREVIEW${timestamp}|P|2.3.1`,
+    `MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|${timestamp}||ORM^O01^ORM_O01|ORMPREVIEW${timestamp}|P|2.5.1||||||UNICODE UTF-8`,
     `PID|1||${hl7Escape(summary.mrn)}^^^HEALTHCARE_LAB^MR||${patientName}||${hl7Escape(summary.dob)}|${hl7Escape(summary.sex)}|||||||||||${hl7Escape(orderAccountNumber(patient))}`,
     `PV1|1|${hl7Escape(patient?.patientClass || "O")}|${hl7EscapeComposite(patient?.assignedLocation || "")}||||${hl7EscapeComposite(payload.orderingProvider)}||||||||||||${hl7Escape(orderVisitId(patient))}`,
     `ORC|NW|${orderNumber}|||||^^^${hl7Escape(requestedAt)}^${hl7Escape(payload.priority)}||${timestamp}|||${hl7EscapeComposite(payload.orderingProvider)}`,
