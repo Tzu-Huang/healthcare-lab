@@ -1133,6 +1133,7 @@ def refresh_patient_dcm4chee_results(
     queries: list[dict[str, Any]] = []
     study_uid_counts: dict[str, int] = {}
     refresh_generation = dcm4chee_result_refresh_generation()
+    store.begin_dcm4chee_result_refresh(patient_record_id, refresh_generation)
     if not mappings:
         diagnostic = store.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient_record_id,
