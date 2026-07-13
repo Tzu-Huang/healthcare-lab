@@ -7,6 +7,7 @@ let patientRecords = [];
 let orderRecords = [];
 let gdtOrderRecords = [];
 let selectedOrderRecordId = null;
+let selectedOrderRecordKey = "";
 let dcm4cheeProfileDiagnostics = null;
 let selectedDcm4cheePatientId = null;
 let selectedDcm4cheeOrderId = null;
@@ -19,6 +20,8 @@ let selectedGdtPatientRawPreview = { patientId: null, payload: "" };
 let oieInventory = [];
 let oieUnmatchedResults = [];
 let selectedOiePatientId = null;
+let selectedOieOrderId = null;
+let expandedOiePatientIds = new Set();
 let selectedOiePayload = "";
 let medplumInventory = [];
 let medplumPatients = [];
@@ -115,6 +118,20 @@ const ORDER_MODE_CONFIG = {
   },
 };
 
+const ORDER_PATIENT_PROTOCOL_BY_MODE = {
+  "hl7-v251": "HL7 v2.5.1",
+  fhir: "FHIR R4",
+  gdt: "GDT 2.1",
+  dicom: "DICOM",
+};
+
+const ORDER_PATIENT_LABEL_BY_MODE = {
+  "hl7-v251": "HL7 v2",
+  fhir: "FHIR R4",
+  gdt: "GDT",
+  dicom: "DICOM",
+};
+
 function setStatus(id, message, state = "neutral") {
   const element = byId(id);
   if (!element) return;
@@ -189,6 +206,19 @@ function currentOrderMode() {
   return ORDER_MODE_CONFIG[selector?.value] ? selector.value : "hl7-v251";
 }
 
+function orderPatientProtocolForMode(mode = currentOrderMode()) {
+  return ORDER_PATIENT_PROTOCOL_BY_MODE[mode] || ORDER_PATIENT_PROTOCOL_BY_MODE["hl7-v251"];
+}
+
+function orderPatientModeLabel(mode = currentOrderMode()) {
+  return ORDER_PATIENT_LABEL_BY_MODE[mode] || ORDER_PATIENT_LABEL_BY_MODE["hl7-v251"];
+}
+
+function orderPatientRecordsForMode(mode = currentOrderMode()) {
+  const protocolVersion = orderPatientProtocolForMode(mode);
+  return patientRecords.filter((item) => item.protocolVersion === protocolVersion);
+}
+
 function updateOrderModeFields() {
   const mode = currentOrderMode();
   const config = ORDER_MODE_CONFIG[mode];
@@ -200,6 +230,7 @@ function updateOrderModeFields() {
     const modes = String(element.dataset.orderModeField || "").split(/\s+/);
     element.hidden = !modes.includes(mode);
   });
+  renderOrderPatientOptions();
   const subject = byId("fhir-subject-reference");
   if (subject) subject.value = selectedOrderPatientReference();
 }
@@ -416,8 +447,10 @@ async function runAllChecks() {
   }
 }
 
+const GENERATED_PATIENT_MRN_LABEL = "Generated on create";
+
 const patientDemoPreset = {
-  mrn: "MRN-A04-001",
+  mrn: "",
   firstName: "Avery",
   middleName: "Lee",
   lastName: "Morgan",
@@ -581,7 +614,6 @@ function updatePatientModeFields(mode) {
 function validatePatientPayload(payload) {
   const messages = [];
   [
-    ["MRN", payload.mrn],
     ["First name", payload.firstName],
     ["Last name", payload.lastName],
     ["DOB", payload.dob],
@@ -596,6 +628,10 @@ function validatePatientPayload(payload) {
     messages.push("Sex must be M, F, O, or U.");
   }
   return messages;
+}
+
+function patientPreviewMrn(payload) {
+  return String(payload?.mrn || "").trim() || GENERATED_PATIENT_MRN_LABEL;
 }
 
 function hl7Escape(value) {
@@ -681,7 +717,7 @@ function buildPatientPreviewPayload(payload) {
   return [
     `MSH|^~\\&|HEALTHCARE_LAB|LAB_DEMO|OIE|ADT|${timestamp}||ADT^A04^ADT_A01|A04PREVIEW${timestamp}|P|2.5.1||||||UNICODE UTF-8`,
     `EVN|A04|${timestamp}`,
-    `PID|1||${hl7Escape(payload.mrn)}^^^HEALTHCARE_LAB^MR||${patientName}||${hl7Escape(payload.dob)}|${hl7Escape(payload.sex)}|||${hl7EscapeComposite(payload.address)}||${hl7Escape(payload.phone)}|||||${hl7Escape(payload.accountNumber)}`,
+    `PID|1||${hl7Escape(patientPreviewMrn(payload))}^^^HEALTHCARE_LAB^MR||${patientName}||${hl7Escape(payload.dob)}|${hl7Escape(payload.sex)}|||${hl7EscapeComposite(payload.address)}||${hl7Escape(payload.phone)}|||||${hl7Escape(payload.accountNumber)}`,
     `PV1|1|${hl7Escape(payload.patientClass || "O")}|${hl7EscapeComposite(payload.assignedLocation)}||||${hl7EscapeComposite(payload.attendingProvider)}||||||||||||${hl7Escape(visitNumber)}`,
   ].join("\r");
 }
@@ -721,7 +757,7 @@ function buildPatientFhirPreviewPayload(payload) {
     identifier: [
       {
         system: "urn:healthcare-lab:mrn",
-        value: payload.mrn,
+        value: patientPreviewMrn(payload),
       },
     ],
     name: [
@@ -780,7 +816,7 @@ function buildPatientGdtPreviewPayload(payload) {
   const records = [
     ["8315", "LABGDT"],
     ["8316", "HCLAB"],
-    ["3000", payload.mrn],
+    ["3000", patientPreviewMrn(payload)],
     ["3101", payload.lastName],
     ["3102", payload.firstName],
     ["3103", gdtBirthDate],
@@ -792,7 +828,7 @@ function buildPatientGdtPreviewPayload(payload) {
 function buildPatientDicomPreviewPayload(payload) {
   const dataset = {
     "(0010,0010) PatientName": [payload.lastName, payload.firstName, payload.middleName].filter(Boolean).join("^"),
-    "(0010,0020) PatientID": payload.mrn,
+    "(0010,0020) PatientID": patientPreviewMrn(payload),
     "(0010,0030) PatientBirthDate": payload.dob,
     "(0010,0040) PatientSex": payload.sex,
     "(0010,2154) PatientTelephoneNumbers": payload.phone,
@@ -820,7 +856,7 @@ function renderPatientSummaryFromPayload(payload, createdAt = "", dcm4cheePatien
   const container = byId("patient-summary");
   container.replaceChildren();
   const rows = [
-    ["MRN", payload.mrn],
+    ["MRN", patientPreviewMrn(payload)],
     ["Name", [payload.firstName, payload.middleName, payload.lastName].filter(Boolean).join(" ")],
     ["DOB", payload.dob],
     ["Sex", payload.sex],
@@ -1577,7 +1613,7 @@ function renderPatientRecordList() {
   if (!patientRecords.length) {
     const row = document.createElement("tr");
     const cell = rowCell("No local patients created yet.");
-    cell.colSpan = 11;
+    cell.colSpan = 9;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
@@ -1588,29 +1624,8 @@ function renderPatientRecordList() {
     const summary = item.summary || {};
     const fhir = item.fhir || null;
     const dcm4cheePatient = item.dcm4chee?.patient || null;
-    const syncStatus = fhir?.sync?.status
-      || dcm4cheePatient?.displayStatus
-      || dcm4cheePatient?.status
-      || (item.protocolVersion === "FHIR R4" ? "Pending sync" : "-");
-    const syncLabel = createElement("span", syncStatus, `status ${fhirSyncStatusClass(syncStatus)}`);
-    const actionCell = document.createElement("div");
-    actionCell.className = "button-row compact-actions";
-    if (item.protocolVersion === "FHIR R4" && fhir?.recordId && syncStatus !== "Synced") {
-      const retryButton = createElement("button", "Retry", "");
-      retryButton.type = "button";
-      retryButton.addEventListener("click", (event) => {
-        event.stopPropagation();
-        retryPatientFhirSync(item.id, retryButton);
-      });
-      actionCell.appendChild(retryButton);
-    }
-    const dcmRefreshButton = createElement("button", "DICOM", "");
-    dcmRefreshButton.type = "button";
-    dcmRefreshButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      refreshPatientDcm4cheeResults(item.id, dcmRefreshButton);
-    });
-    actionCell.appendChild(dcmRefreshButton);
+    const stateLabel = patientStateLabel(item);
+    const stateClass = stateLabel === "OK" ? "success" : stateLabel === "Error" ? "error" : "neutral";
     row.append(
       rowCell(item.localPatientNumber || item.id),
       rowCell(item.protocolVersion),
@@ -1619,10 +1634,8 @@ function renderPatientRecordList() {
       rowCell(summary.dob),
       rowCell(summary.sex),
       rowCell(summary.visitNumber),
-      rowCell(syncLabel),
-      rowCell(fhir?.medplum?.reference || fhir?.sync?.error || dcm4cheePatient?.lastError || dcm4cheePatient?.issuerOfPatientId || "-"),
+      rowCell(createElement("span", stateLabel, `status ${stateClass}`)),
       rowCell(taipeiTimestamp(item.createdAt)),
-      rowCell(actionCell),
     );
     row.addEventListener("click", () => {
       byId("patient-payload-preview").textContent = item.payload || "";
@@ -1630,6 +1643,23 @@ function renderPatientRecordList() {
     });
     body.appendChild(row);
   });
+}
+
+function patientStateLabel(item) {
+  if (item.protocolVersion === "FHIR R4") {
+    const fhir = item.fhir || {};
+    const syncStatus = fhir.sync?.status || "";
+    const reference = fhir.medplum?.reference || "";
+    return syncStatus === "Synced" && /^Patient\/[^/]+$/.test(reference) ? "OK" : "Error";
+  }
+  if (item.protocolVersion === "DICOM") {
+    const dcm4cheePatient = item.dcm4chee?.patient || {};
+    const syncStatus = dcm4cheePatient.displayStatus || dcm4cheePatient.status || "";
+    return syncStatus === "Synced" && dcm4cheePatient.ack?.code === "AA" ? "OK" : "Error";
+  }
+  const validation = item.validation || {};
+  const messages = Array.isArray(validation.messages) ? validation.messages : [];
+  return messages.length ? "Error" : "OK";
 }
 
 function fhirSyncStatusClass(status) {
@@ -2610,6 +2640,8 @@ function renderOrderPatientOptions() {
   const selector = byId("order-patient");
   if (!selector) return;
   const current = selector.value;
+  const mode = currentOrderMode();
+  const records = orderPatientRecordsForMode(mode);
   selector.replaceChildren();
   if (!patientRecords.length) {
     const option = document.createElement("option");
@@ -2619,8 +2651,16 @@ function renderOrderPatientOptions() {
     selector.disabled = true;
     return;
   }
+  if (!records.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = `Create a ${orderPatientModeLabel(mode)} patient first`;
+    selector.appendChild(option);
+    selector.disabled = true;
+    return;
+  }
   selector.disabled = false;
-  patientRecords.forEach((item) => {
+  records.forEach((item) => {
     const option = document.createElement("option");
     option.value = item.id;
     option.textContent = `${item.summary?.mrn || item.id} - ${item.summary?.name || "Patient"}`;
@@ -3053,6 +3093,7 @@ function selectedOrderPayloadPreview(item, mode) {
 
 function selectOrderRecord(item, mode) {
   selectedOrderRecordId = item.id;
+  selectedOrderRecordKey = orderListKey(item);
   const summary = item.summary || {};
   const selectedPatient = patientRecords.find((patient) => Number(patient.id) === Number(item.patientRecordId));
   byId("order-payload-preview").textContent = selectedOrderPayloadPreview(item, mode);
@@ -3093,28 +3134,15 @@ function refreshOrderPreview() {
 
 function renderOrderRecordList() {
   const body = byId("order-record-list");
-  const mode = currentOrderMode();
-  const records = mode === "gdt"
-    ? gdtOrderRecords
-    : orderRecords.filter((item) => (
-      mode === "fhir"
-        ? item.protocolVersion === "FHIR R4"
-        : mode === "dicom"
-          ? item.protocolVersion === "DICOM"
-          : item.protocolVersion !== "FHIR R4" && item.protocolVersion !== "DICOM"
-    ));
+  const records = [...orderRecords, ...gdtOrderRecords].sort((left, right) => {
+    const rightTime = new Date(right.createdAt || 0).getTime();
+    const leftTime = new Date(left.createdAt || 0).getTime();
+    return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
+  });
   body.replaceChildren();
   if (!records.length) {
     const row = document.createElement("tr");
-    const cell = rowCell(
-      mode === "gdt"
-        ? "No local GDT ECG orders created yet."
-        : mode === "fhir"
-          ? "No local FHIR ECG orders created yet."
-          : mode === "dicom"
-            ? "No local DICOM MWL orders created yet."
-            : "No local orders created yet.",
-    );
+    const cell = rowCell("No local orders created yet.");
     cell.colSpan = 8;
     cell.className = "muted";
     row.appendChild(cell);
@@ -3124,90 +3152,82 @@ function renderOrderRecordList() {
   records.forEach((item) => {
     const row = document.createElement("tr");
     const summary = item.summary || {};
-    const orderNumber = mode === "gdt" ? item.localGdtOrderNumber : item.localOrderNumber;
-    const orderCode = mode === "gdt" ? summary.testCode : summary.orderCode;
-    const fhir = item.fhir || {};
-    const dcm4cheeMwl = item.dcm4chee?.mwl || {};
-    const dcm4cheeMapping = dcm4cheeMwl.mapping || {};
-    const fhirStatus = mode === "fhir"
-      ? [
-        `SR: ${fhir.serviceRequest?.sync?.status || "-"}`,
-        `Task: ${fhir.task?.sync?.status || "-"}`,
-      ].join(" / ")
-      : mode === "dicom"
-        ? dcm4cheeMwl.displayStatus || dcm4cheeMapping.status || dcm4cheeMwl.status || item.status
-      : item.status;
-    const fhirMedplum = mode === "fhir"
-      ? [
-        fhir.serviceRequest?.medplum?.reference || fhir.serviceRequest?.sync?.error || "",
-        fhir.task?.medplum?.reference || fhir.task?.sync?.error || "",
-      ].filter(Boolean).join(" | ")
-      : mode === "dicom"
-        ? [
-          dcm4cheeMapping.studyInstanceUid || dcm4cheeMwl.studyInstanceUid || "",
-          dcm4cheeMapping.accessionNumber || "",
-          dcm4cheeMwl.error || "",
-        ].filter(Boolean).join(" | ")
-      : "";
-    const actionCell = rowCell("");
-    let hasAction = false;
-    if (mode === "dicom" && dcm4cheeMwl.retryable) {
-      const retryButton = createElement("button", "Retry", "small-button");
-      retryButton.type = "button";
-      retryButton.addEventListener("click", (event) => {
-        event.stopPropagation();
-        retryDcm4cheeOrder(item.id, retryButton);
-      });
-      actionCell.appendChild(retryButton);
-      hasAction = true;
-    }
-    if (mode === "dicom" && dcm4cheeMapping.id) {
-      const verifyButton = createElement("button", "Verify", "small-button");
-      verifyButton.type = "button";
-      verifyButton.addEventListener("click", (event) => {
-        event.stopPropagation();
-        verifyDcm4cheeOrder(item.id, verifyButton);
-      });
-      actionCell.appendChild(verifyButton);
-      hasAction = true;
-    }
-    if (!hasAction) {
-      actionCell.textContent = "-";
-      actionCell.className = "muted";
-    }
+    const rowMode = orderRecordMode(item);
+    const orderNumber = rowMode === "gdt" ? item.localGdtOrderNumber : item.localOrderNumber;
+    const orderCode = rowMode === "gdt" ? summary.testCode : summary.orderCode;
+    const statusLabel = orderStateLabel(item, rowMode);
+    const statusClass = statusLabel === "Accepted" ? "success" : "error";
     row.append(
       rowCell(orderNumber || item.id),
+      rowCell(orderModeLabel(item, rowMode)),
       rowCell(summary.mrn),
+      rowCell(orderVisitNumber(item)),
       rowCell(summary.name),
       rowCell(orderCode),
-      rowCell(fhirMedplum ? `${fhirStatus} (${fhirMedplum})` : fhirStatus),
-      rowCell(item.requestedAt),
-      rowCell(item.createdAt),
-      actionCell,
+      rowCell(createElement("span", statusLabel, `status ${statusClass}`)),
+      rowCell(taipeiTimestamp(item.createdAt)),
     );
-    row.addEventListener("click", () => selectOrderRecord(item, mode));
+    row.addEventListener("click", () => selectOrderRecord(item, rowMode));
     body.appendChild(row);
   });
 }
 
+function orderVisitNumber(item) {
+  const summary = item?.summary || {};
+  return summary.visitNumber || summary.visitId || item?.visitNumber || item?.visitId || "-";
+}
+
+function orderRecordMode(item) {
+  if (item.protocolVersion === "FHIR R4") return "fhir";
+  if (item.protocolVersion === "GDT 2.1") return "gdt";
+  if (item.protocolVersion === "DICOM") return "dicom";
+  return "hl7-v251";
+}
+
+function orderListKey(item) {
+  return `${orderRecordMode(item)}:${item.id}`;
+}
+
+function orderModeLabel(item, mode) {
+  if (mode === "fhir" || item.protocolVersion === "FHIR R4") return "FHIR";
+  if (mode === "gdt" || item.protocolVersion === "GDT 2.1") return "GDT";
+  if (mode === "dicom" || item.protocolVersion === "DICOM") return "DICOM";
+  return "HL7 v2";
+}
+
+function orderStateLabel(item, mode) {
+  if (mode === "fhir") {
+    const serviceRequest = item.fhir?.serviceRequest || {};
+    const task = item.fhir?.task || {};
+    const serviceRequestReference = serviceRequest.medplum?.reference || "";
+    const taskReference = task.medplum?.reference || "";
+    return serviceRequest.sync?.status === "Synced"
+      && task.sync?.status === "Synced"
+      && /^ServiceRequest\/[^/]+$/.test(serviceRequestReference)
+      && /^Task\/[^/]+$/.test(taskReference)
+      ? "Accepted"
+      : "Error";
+  }
+  if (mode === "dicom") {
+    const mwl = item.dcm4chee?.mwl || {};
+    const status = mwl.mapping?.status || mwl.status || mwl.displayStatus || "";
+    return status === "Created" ? "Accepted" : "Error";
+  }
+  const status = String(item.status || "").toLowerCase();
+  return ["error", "rejected", "transport error"].includes(status) ? "Error" : "Accepted";
+}
+
 async function refreshOrders() {
   try {
-    if (currentOrderMode() === "gdt") {
-      const result = await requestJson("/api/gdt/orders");
-      gdtOrderRecords = result.items || [];
-    } else {
-      const result = await requestJson("/api/orders");
-      orderRecords = result.items || [];
-    }
+    const [ordersResult, gdtOrdersResult] = await Promise.all([
+      requestJson("/api/orders"),
+      requestJson("/api/gdt/orders"),
+    ]);
+    orderRecords = ordersResult.items || [];
+    gdtOrderRecords = gdtOrdersResult.items || [];
     renderOrderRecordList();
-    const selectedMode = currentOrderMode();
-    const selected = orderRecords.find((item) => {
-      if (item.id !== selectedOrderRecordId) return false;
-      if (selectedMode === "fhir") return item.protocolVersion === "FHIR R4";
-      if (selectedMode === "dicom") return item.protocolVersion === "DICOM";
-      return item.protocolVersion !== "FHIR R4" && item.protocolVersion !== "DICOM";
-    });
-    if (selected && selectedMode !== "gdt") selectOrderRecord(selected, selectedMode);
+    const selected = [...orderRecords, ...gdtOrderRecords].find((item) => orderListKey(item) === selectedOrderRecordKey);
+    if (selected) selectOrderRecord(selected, orderRecordMode(selected));
   } catch (error) {
     setStatus("order-form-status", "Refresh failed", "error");
   }
@@ -3361,11 +3381,12 @@ function renderOieInventory() {
   if (!oieInventory.length) {
     const row = document.createElement("tr");
     const cell = rowCell("No local ADT patients have been created.");
-    cell.colSpan = 5;
+    cell.colSpan = 6;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
     selectedOiePatientId = null;
+    selectedOieOrderId = null;
     byId("oie-selected-patient-title").textContent = "No patient selected";
     byId("oie-payload-preview").textContent = "Create a local Patient A04 record to inspect it here.";
     return;
@@ -3374,9 +3395,32 @@ function renderOieInventory() {
     selectedOiePatientId = oieInventory[0].id;
   }
   oieInventory.forEach((item) => {
+    const patientId = Number(item.id);
     const row = document.createElement("tr");
+    row.className = "oie-patient-row";
     row.classList.toggle("selected-row", Number(item.id) === Number(selectedOiePatientId));
     const summary = item.summary || {};
+    const toggleButton = createElement(
+      "button",
+      expandedOiePatientIds.has(patientId) ? "v" : ">",
+      "oie-patient-toggle",
+    );
+    toggleButton.type = "button";
+    toggleButton.setAttribute(
+      "aria-label",
+      expandedOiePatientIds.has(patientId) ? "Collapse patient orders and results" : "Expand patient orders and results",
+    );
+    toggleButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectedOiePatientId = item.id;
+      if (expandedOiePatientIds.has(patientId)) {
+        expandedOiePatientIds.delete(patientId);
+      } else {
+        expandedOiePatientIds.add(patientId);
+      }
+      renderOieInventory();
+      renderSelectedOiePatient();
+    });
     const selectPayload = () => {
       selectedOiePatientId = item.id;
       selectedOiePayload = item.payload || "";
@@ -3390,6 +3434,7 @@ function renderOieInventory() {
       renderSelectedOiePatient();
     };
     row.append(
+      rowCell(toggleButton),
       rowCell(summary.mrn),
       rowCell(summary.name),
       rowCell(taipeiTimestamp(item.createdAt)),
@@ -3398,6 +3443,22 @@ function renderOieInventory() {
     );
     row.addEventListener("click", selectPayload);
     body.appendChild(row);
+
+    if (expandedOiePatientIds.has(patientId)) {
+      const detailRow = document.createElement("tr");
+      detailRow.className = "oie-patient-detail-row";
+      const detailCell = document.createElement("td");
+      detailCell.colSpan = 6;
+      const content = document.createElement("div");
+      content.className = "oie-patient-rollup-content";
+      content.append(
+        oiePatientSection("ORM", "Orders", renderOieOrders(item.orders || [])),
+        oiePatientSection("ORU", "Results", renderOieResults(item.results || [])),
+      );
+      detailCell.appendChild(content);
+      detailRow.appendChild(detailCell);
+      body.appendChild(detailRow);
+    }
   });
 }
 
@@ -3419,80 +3480,116 @@ function renderOiePreviewSummary(kind, rows) {
 
 function renderSelectedOiePatient() {
   const patient = selectedOiePatient();
+  const summary = patient?.summary || {};
   byId("oie-selected-patient-title").textContent = patient
-    ? `${patient.summary?.mrn || patient.id} - ${patient.summary?.name || "Patient"}`
+    ? `${summary.mrn || patient.id} - ${summary.name || "Patient"}`
     : "No patient selected";
-  renderOieOrders(patient?.orders || []);
-  renderOieResults(patient?.results || []);
+  const container = byId("oie-selected-patient-summary");
+  container.replaceChildren();
+  if (!patient) {
+    container.appendChild(createElement("p", "Select a patient and expand Orders or Results.", "muted"));
+    selectedOieOrderId = null;
+    renderOieTransmission(null);
+    return;
+  }
+  [
+    ["MRN", summary.mrn],
+    ["Name", summary.name],
+    ["Orders", patient.orderCount ?? 0],
+    ["Results", patient.resultCount ?? 0],
+  ].forEach(([label, value]) => {
+    const item = document.createElement("p");
+    item.appendChild(createElement("strong", `${label}: `));
+    item.appendChild(document.createTextNode(String(value ?? "-")));
+    container.appendChild(item);
+  });
+  const orders = patient.orders || [];
+  let order = orders.find((item) => Number(item.id) === Number(selectedOieOrderId)) || null;
+  if (!order && orders.length) {
+    order = orders[0];
+    selectedOieOrderId = order.id;
+  } else if (!order) {
+    selectedOieOrderId = null;
+  }
+  renderOieTransmission(order);
 }
 
 function renderOieOrders(orders) {
-  const body = byId("oie-order-list");
-  body.replaceChildren();
+  const { wrap, tbody } = oieNestedTable([
+    "Order ID",
+    "MRN",
+    "Visit Number",
+    "Code",
+    "Status",
+    "Created At (Taipei)",
+    "ACK",
+    "Sent",
+    "Action",
+  ]);
   if (!orders.length) {
     const row = document.createElement("tr");
     const cell = rowCell("No local ORM O01 orders for this patient.");
-    cell.colSpan = 7;
+    cell.colSpan = 9;
     cell.className = "muted";
     row.appendChild(cell);
-    body.appendChild(row);
-    return;
+    tbody.appendChild(row);
+    return wrap;
   }
   orders.forEach((item) => {
     const row = document.createElement("tr");
+    row.classList.toggle("selected-row", Number(item.id) === Number(selectedOieOrderId));
     const summary = item.summary || {};
-    const previewButton = createElement("button", "Preview", "small-button");
-    previewButton.type = "button";
-    const sendButton = createElement("button", "Send", "small-button");
-    sendButton.type = "button";
-    previewButton.addEventListener("click", (event) => {
+    const selectButton = createElement("button", "Select", "small-button");
+    selectButton.type = "button";
+    selectButton.addEventListener("click", (event) => {
       event.stopPropagation();
       selectOieOrder(item);
     });
-    sendButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      sendOieOrder(item.id, sendButton);
-    });
-    const actions = document.createElement("div");
-    actions.className = "button-row compact-actions";
-    actions.append(previewButton, sendButton);
     row.append(
       rowCell(item.localOrderNumber || item.id),
+      rowCell(summary.mrn),
+      rowCell(orderVisitNumber(item)),
       rowCell(summary.orderCode),
-      rowCell(item.priority),
       rowCell(item.status || "Ready to send"),
+      rowCell(taipeiTimestamp(item.createdAt)),
       rowCell(item.ack?.code || item.transportError || "-"),
       rowCell(taipeiTimestamp(item.lastSentAt)),
-      rowCell(actions),
+      rowCell(selectButton),
     );
     row.addEventListener("click", () => selectOieOrder(item));
-    body.appendChild(row);
+    tbody.appendChild(row);
   });
+  return wrap;
 }
 
 function selectOieOrder(item) {
+  selectedOieOrderId = item.id;
   selectedOiePayload = item.payload || "";
   byId("oie-payload-preview").textContent = selectedOiePayload;
   byId("oie-ack-preview").textContent = ackPreviewText(item);
+  renderOieTransmission(item);
   renderOiePreviewSummary("ORM", [
-    ["Order", item.localOrderNumber],
+    ["Order ID", item.localOrderNumber],
+    ["MRN", item.summary?.mrn],
+    ["Visit Number", orderVisitNumber(item)],
     ["Code", item.summary?.orderCode],
     ["Status", item.status],
+    ["Created At", taipeiTimestamp(item.createdAt)],
     ["ACK", item.ack?.code || item.transportError || "-"],
   ]);
+  renderOieInventory();
 }
 
 function renderOieResults(results) {
-  const body = byId("oie-result-list");
-  body.replaceChildren();
+  const { wrap, tbody } = oieNestedTable(["Type", "Matched Order", "Status", "Received", "Action"]);
   if (!results.length) {
     const row = document.createElement("tr");
     const cell = rowCell("No ORU results for this patient.");
     cell.colSpan = 5;
     cell.className = "muted";
     row.appendChild(cell);
-    body.appendChild(row);
-    return;
+    tbody.appendChild(row);
+    return wrap;
   }
   results.forEach((item) => {
     const row = document.createElement("tr");
@@ -3510,7 +3607,61 @@ function renderOieResults(results) {
       rowCell(previewButton),
     );
     row.addEventListener("click", () => selectOieResult(item));
-    body.appendChild(row);
+    tbody.appendChild(row);
+  });
+  return wrap;
+}
+
+function oiePatientSection(label, title, body) {
+  const section = document.createElement("section");
+  section.className = "oie-patient-section";
+  const heading = document.createElement("div");
+  heading.className = "compact-heading oie-patient-section-heading";
+  const text = document.createElement("div");
+  text.appendChild(createElement("p", label, "eyebrow"));
+  text.appendChild(createElement("h3", title));
+  heading.appendChild(text);
+  section.append(heading, body);
+  return section;
+}
+
+function oieNestedTable(headers) {
+  const wrap = document.createElement("div");
+  wrap.className = "table-wrap oie-nested-table-wrap";
+  const table = document.createElement("table");
+  table.className = "oie-nested-table";
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  headers.forEach((header) => headRow.appendChild(createElement("th", header)));
+  thead.appendChild(headRow);
+  const tbody = document.createElement("tbody");
+  table.append(thead, tbody);
+  wrap.appendChild(table);
+  return { wrap, tbody };
+}
+
+function renderOieTransmission(item) {
+  const title = byId("oie-selected-order-title");
+  const summary = byId("oie-selected-order-summary");
+  const sendButton = byId("send-selected-oie-order");
+  summary.replaceChildren();
+  sendButton.disabled = !item;
+  if (!item) {
+    title.textContent = "No order selected";
+    summary.appendChild(createElement("p", "Choose an order from an expanded patient row.", "muted"));
+    return;
+  }
+  title.textContent = String(item.localOrderNumber || item.id);
+  [
+    ["Code", item.summary?.orderCode],
+    ["Priority", item.priority],
+    ["Status", item.status || "Ready to send"],
+    ["Last ACK", item.ack?.code || item.transportError || "-"],
+  ].forEach(([label, value]) => {
+    const row = document.createElement("p");
+    row.appendChild(createElement("strong", `${label}: `));
+    row.appendChild(document.createTextNode(String(value ?? "-")));
+    summary.appendChild(row);
   });
 }
 
@@ -3587,6 +3738,7 @@ async function refreshOieInventory() {
 async function sendOieOrder(orderId, button) {
   button.disabled = true;
   setStatus("oie-inventory-status", "Sending order...", "pending");
+  setStatus("oie-send-status", "Sending...", "pending");
   const payload = {
     host: byId("oie-send-host").value.trim(),
     port: Number(byId("oie-send-port").value || 0),
@@ -3608,14 +3760,16 @@ async function sendOieOrder(orderId, button) {
       throw new Error(result.error || response.statusText || "Send failed");
     }
     setStatus("oie-inventory-status", "Order sent", "success");
+    setStatus("oie-send-status", "Sent", "success");
   } catch (error) {
     setStatus("oie-inventory-status", "Send failed", "error");
+    setStatus("oie-send-status", "Send failed", "error");
     if (!byId("oie-ack-preview").textContent.trim()) {
       byId("oie-ack-preview").textContent = error.message;
     }
   } finally {
-    button.disabled = false;
     await refreshOieInventory();
+    button.disabled = !selectedOieOrderId;
   }
 }
 
@@ -4239,6 +4393,9 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("refresh-dcm4chee-console").addEventListener("click", refreshDcm4cheeConsole);
   byId("refresh-oie-inventory").addEventListener("click", refreshOieInventory);
   byId("copy-oie-payload").addEventListener("click", () => copyTextFromElement("oie-payload-preview"));
+  byId("send-selected-oie-order").addEventListener("click", () => {
+    if (selectedOieOrderId) sendOieOrder(selectedOieOrderId, byId("send-selected-oie-order"));
+  });
   byId("start-oie-listener").addEventListener("click", startOieListener);
   byId("stop-oie-listener").addEventListener("click", stopOieListener);
   byId("refresh-gdt-console").addEventListener("click", refreshGdtConsole);

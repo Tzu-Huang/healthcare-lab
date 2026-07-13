@@ -3734,7 +3734,7 @@ def create_app(database_path: str | None = None) -> Flask:
         )
     )
     app.config["OIE_MLLP_ORDER_HOST"] = os.environ.get("OIE_MLLP_ORDER_HOST", "localhost").strip() or "localhost"
-    app.config["OIE_MLLP_ORDER_PORT"] = int(os.environ.get("OIE_MLLP_ORDER_PORT", "6663"))
+    app.config["OIE_MLLP_ORDER_PORT"] = int(os.environ.get("OIE_MLLP_ORDER_PORT", "6600"))
     app.config["OIE_MLLP_RESULT_HOST"] = os.environ.get("OIE_MLLP_RESULT_HOST", "0.0.0.0").strip() or "0.0.0.0"
     app.config["OIE_MLLP_RESULT_PORT"] = int(os.environ.get("OIE_MLLP_RESULT_PORT", "6665"))
     app.config["DCM4CHEE_PROFILE_NAME"] = os.environ.get("DCM4CHEE_PROFILE_NAME", DCM4CHEE_PROFILE_NAME).strip()
