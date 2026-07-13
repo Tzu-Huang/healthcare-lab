@@ -184,6 +184,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'id="start-gdt-watcher"', response.data)
         self.assertIn(b'data-nav-target="medplum-view"', response.data)
         self.assertIn(b'id="medplum-view"', response.data)
+        self.assertIn(b'<h2>Patient-Centered Console</h2>', response.data)
+        self.assertIn(b'class="lab-panel medplum-patient-panel"', response.data)
+        self.assertIn(b'class="medplum-context-column"', response.data)
+        self.assertIn(b'class="lab-panel medplum-workflow-panel"', response.data)
         self.assertIn(b'id="medplum-patient-list"', response.data)
         self.assertIn(b'id="medplum-service-request-select"', response.data)
         self.assertIn(b'id="medplum-diagnostic-report-select"', response.data)
@@ -273,6 +277,17 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("Patient-level result", script)
         self.assertIn("Live DiagnosticReport References", script)
         self.assertIn("medplumRecordMatchesPatient", script)
+        self.assertIn("let expandedMedplumPatientIds = new Set();", script)
+        self.assertIn("function medplumOrderRecordsForPatient(patient)", script)
+        self.assertIn("function medplumResultRecordsForPatient(patient)", script)
+        self.assertIn("function medplumResourceRollupTable(items, emptyText)", script)
+        self.assertIn("function medplumPatientSection(label, title, body)", script)
+        self.assertIn('toggleButton.setAttribute("aria-expanded"', script)
+        self.assertIn('event.stopPropagation();\n      if (expandedMedplumPatientIds.has(patientId))', script)
+        self.assertIn('"FHIR ORDERS"', script)
+        self.assertIn('"FHIR RESULTS"', script)
+        self.assertIn('medplumPreviewButton(item)', script)
+        self.assertIn('retryButtonForMedplumRecord(item)', script)
         self.assertIn("renderMedplumPatientList", script)
         self.assertIn("renderMedplumPatientList();\n  const patient = selectedMedplumPatient();", script)
         self.assertIn('const serviceRequests = patient ? medplumRecordsForPatient(patient, "ServiceRequest") : [];', script)
@@ -293,6 +308,14 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('id="medplum-diagnostic-report-rollup"', html)
         self.assertIn('id="medplum-diagnostic-report-status"', html)
         self.assertIn("Live Results", html)
+
+        styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
+        styles = styles_path.read_text(encoding="utf-8")
+        self.assertIn(".medplum-patient-toggle", styles)
+        self.assertIn(".medplum-patient-detail-row td", styles)
+        self.assertIn(".medplum-patient-rollup-content", styles)
+        self.assertIn(".medplum-nested-table-wrap", styles)
+        self.assertIn(".medplum-context-column", styles)
 
     def test_sidebar_views_hide_inactive_pages(self):
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
