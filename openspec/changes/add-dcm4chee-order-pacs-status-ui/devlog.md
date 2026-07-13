@@ -52,6 +52,13 @@ The user preference is to keep Healthcare Lab as the primary visual system while
 - Verification context: JS syntax check passed, `python -m unittest tests.test_app` passed 109 tests, and OpenSpec strict validation passed.
 - Residual risk: static frontend tests do not execute browser DOM expansion behavior or a live dcm4chee/AP refresh workflow.
 
+### Round 3 (2026-07-13)
+
+- Review source: `openspec/changes/add-dcm4chee-order-pacs-status-ui/review/2026-07-13_codex-review.md`
+- Verdict: one P2 code-review finding.
+- Finding: the dcm4chee console patient seed can omit DICOM MWL orders created for non-DICOM local patients, hiding supported order/result status from the new sidebar console.
+- Verification context: latest `/dev-test` passed Docker full suite, JS syntax, OpenSpec strict validation, dcm4chee diagnostics, and Docker-served HTML marker checks.
+
 ## Follow-ups
 
 - Implement the frontend DICOM order status detail.

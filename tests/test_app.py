@@ -2470,6 +2470,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("refreshDcm4cheeConsole", script)
         self.assertIn("/api/dcm4chee/profile/diagnostics", script)
         self.assertIn("renderDcm4cheeConsole", script)
+        self.assertIn("patientIdsWithDicomOrders", script)
         self.assertIn("renderDcm4cheeSelectedPatient", script)
         self.assertIn("renderDcm4cheeSelectedOrder", script)
         self.assertIn("renderPatientDcm4cheeResults", script)
