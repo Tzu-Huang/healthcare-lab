@@ -10,6 +10,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1116,6 +1117,11 @@ def dcm4chee_merge_result_metadata(
     return merged
 
 
+def dcm4chee_result_refresh_generation() -> str:
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+    return f"{timestamp}-{uuid.uuid4().hex}"
+
+
 def refresh_patient_dcm4chee_results(
     store: DemoStore,
     patient_record_id: int,
@@ -1126,7 +1132,8 @@ def refresh_patient_dcm4chee_results(
     refreshed: list[dict[str, Any]] = []
     queries: list[dict[str, Any]] = []
     study_uid_counts: dict[str, int] = {}
-    refresh_generation = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+    refresh_generation = dcm4chee_result_refresh_generation()
+    store.begin_dcm4chee_result_refresh(patient_record_id, refresh_generation)
     if not mappings:
         diagnostic = store.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient_record_id,
@@ -1135,6 +1142,7 @@ def refresh_patient_dcm4chee_results(
             diagnostic_payload={"reason": "no_local_dcm4chee_orders"},
             refresh_generation=refresh_generation,
         )
+        store.complete_dcm4chee_result_refresh(patient_record_id, refresh_generation)
         patient = store.get_patient_record(patient_record_id)
         return {
             "success": True,
@@ -1245,6 +1253,7 @@ def refresh_patient_dcm4chee_results(
                     refresh_generation=refresh_generation,
                 )
             )
+    store.complete_dcm4chee_result_refresh(patient_record_id, refresh_generation)
     patient = store.get_patient_record(patient_record_id)
     return {
         "success": not any(

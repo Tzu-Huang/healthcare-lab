@@ -7,6 +7,7 @@ import time
 import unittest
 import urllib.error
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app import (
@@ -19,6 +20,7 @@ from app import (
     dashboard_action_for_group,
     derive_lab_overall_status,
     dcm4chee_profile_from_config,
+    dcm4chee_result_refresh_generation,
     import_gdt_bridge_files,
     parse_hl7_ack,
     parse_oru_summary,
@@ -2559,14 +2561,50 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('data-nav-target="dcm4chee-view"', template)
         self.assertIn('id="dcm4chee-view"', template)
         self.assertNotIn('type="button" disabled>\n          <span class="nav-icon">DC</span>dcm4chee', template)
+        self.assertIn('class="app-view dcm4chee-workspace"', template)
+        self.assertIn('class="lab-panel dcm4chee-patient-panel"', template)
+        self.assertIn('class="lab-panel dcm4chee-workflow-panel"', template)
+        self.assertIn("Patient-Centered Console", template)
+        self.assertNotIn('class="dcm4chee-console-grid lower-grid"', template)
         self.assertIn("dcm4chee-patient-list", template)
-        self.assertIn("dcm4chee-order-list", template)
+        self.assertNotIn("dcm4chee-order-list", template)
+        self.assertNotIn("Selected Patient Orders", template)
+        self.assertEqual(template.count('id="dcm4chee-selected-patient-summary"'), 1)
+        self.assertLess(
+            template.index('id="dcm4chee-patient-list"'),
+            template.index('id="dcm4chee-selected-patient-summary"'),
+        )
+        self.assertIn("dcm4chee-patient-select", template)
+        self.assertIn("dcm4chee-order-select", template)
+        self.assertIn("dcm4chee-payload-preview", template)
+        self.assertIn("send-dcm4chee-order", template)
         self.assertIn("dcm4chee-profile-summary", template)
         self.assertIn("refreshPatientDcm4cheeResults", script)
         self.assertIn("/api/patients/${patientId}/dcm4chee-results-refresh", script)
         self.assertIn("refreshDcm4cheeConsole", script)
         self.assertIn("/api/dcm4chee/profile/diagnostics", script)
         self.assertIn("renderDcm4cheeConsole", script)
+        self.assertIn("renderDcm4cheeSelectors", script)
+        self.assertIn("renderDcm4cheePreview", script)
+        self.assertIn("sendDcm4cheeOrder", script)
+        self.assertIn("let expandedDcm4cheePatientIds = new Set();", script)
+        self.assertIn('createElement("button", "V", "dcm4chee-patient-toggle")', script)
+        self.assertIn("renderDcm4cheeExpandedOrders", script)
+        self.assertIn("renderDcm4cheeExpandedResults", script)
+        self.assertIn("renderDcm4cheeResultTable", script)
+        self.assertIn("function dcm4cheeFirstArtifact(records)", script)
+        self.assertIn("const artifact = dcm4cheeFirstArtifact(study.records);", script)
+        self.assertIn('"Artifact", "Artifact Type", "Artifact Location"', script)
+        self.assertIn('dcm4cheeActionsForResult({ ...representative, artifact }, "study")', script)
+        self.assertIn('"dcm4chee-study-table-wrap"', script)
+        self.assertIn('"dcm4chee-series-table-wrap"', script)
+        self.assertNotIn('section.className = "detail-block raw-details dcm4chee-result-browser"', script)
+        toggle_start = script.index('toggleButton.addEventListener("click"')
+        toggle_end = script.index("renderDcm4cheeConsole();", toggle_start)
+        toggle_handler = script[toggle_start:toggle_end]
+        self.assertNotIn("selectedDcm4cheePatientId", toggle_handler)
+        self.assertIn('row.addEventListener("click", () => selectDcm4cheePatient(patient.id))', script)
+        self.assertIn('byId("send-dcm4chee-order").addEventListener', script)
         self.assertIn("patientIdsWithDicomOrders", script)
         self.assertIn("renderDcm4cheeSelectedPatient", script)
         self.assertIn("renderDcm4cheeSelectedOrder", script)
@@ -2598,7 +2636,18 @@ class HealthcareLabApiTests(unittest.TestCase):
         styles = Path("frontend/static/styles.css").read_text(encoding="utf-8")
         self.assertIn(".dcm4chee-workflow-strip", styles)
         self.assertIn(".dcm4chee-console-grid", styles)
+        self.assertIn(".dcm4chee-workflow-panel", styles)
+        self.assertIn(".dcm4chee-selected-order-bar", styles)
+        self.assertIn(".dcm4chee-patient-toggle", styles)
+        self.assertIn(".dcm4chee-patient-detail-row", styles)
+        self.assertIn(".dcm4chee-patient-rollup-content", styles)
+        self.assertIn(".dcm4chee-patient-preview", styles)
+        self.assertIn(".dcm4chee-patient-sync-card dd", styles)
+        self.assertIn("overflow-wrap: anywhere", styles)
+        self.assertIn("height: 560px", styles)
         self.assertIn(".dcm4chee-result-browser", styles)
+        self.assertIn(".dcm4chee-result-table-wrap", styles)
+        self.assertIn(".dcm4chee-study-table-wrap table", styles)
         self.assertIn(".dcm4chee-browser-row", styles)
         self.assertIn(".dcm4chee-nested-table-wrap", styles)
 
@@ -2688,6 +2737,14 @@ class HealthcareLabApiTests(unittest.TestCase):
             f"/api/orders/{order['id']}/dcm4chee-simulated-ap-return",
             json={"type": "pdf", "artifactUrl": "http://localhost/reports/zac-42.pdf"},
         )
+        store.begin_dcm4chee_result_refresh(patient["id"], "intervening-refresh")
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            refresh_generation="intervening-refresh",
+        )
+        store.complete_dcm4chee_result_refresh(patient["id"], "intervening-refresh")
         dicom = self.client.post(
             f"/api/orders/{order['id']}/dcm4chee-simulated-ap-return",
             json={"type": "dicom"},
@@ -2857,6 +2914,115 @@ class HealthcareLabApiTests(unittest.TestCase):
             {item["reconciliationStatus"] for item in failed.get_json()["items"]},
         )
 
+    @patch("app.uuid.uuid4")
+    @patch("app.datetime")
+    def test_dcm4chee_result_refresh_generation_is_unique_when_clock_does_not_advance(
+        self,
+        datetime_mock,
+        uuid4_mock,
+    ):
+        datetime_mock.now.return_value.isoformat.return_value = "2026-07-13T06:44:12.000000+00:00"
+        uuid4_mock.side_effect = [
+            SimpleNamespace(hex="generation-a"),
+            SimpleNamespace(hex="generation-b"),
+        ]
+
+        first = dcm4chee_result_refresh_generation()
+        second = dcm4chee_result_refresh_generation()
+
+        self.assertEqual(first, "2026-07-13T06:44:12.000000+00:00-generation-a")
+        self.assertEqual(second, "2026-07-13T06:44:12.000000+00:00-generation-b")
+        self.assertNotEqual(first, second)
+
+    @patch("backend.lab_store.now_iso", return_value="2026-07-13T15:30:00+08:00")
+    def test_dcm4chee_result_refresh_run_order_supersedes_updated_lower_id_row(self, _now_iso):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            refresh_generation="generation-1",
+        )
+        store.complete_dcm4chee_result_refresh(patient["id"], "generation-1")
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
+            refresh_generation="generation-2",
+        )
+        store.complete_dcm4chee_result_refresh(patient["id"], "generation-2")
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            refresh_generation="generation-3",
+        )
+        store.complete_dcm4chee_result_refresh(patient["id"], "generation-3")
+
+        direct_results = store.list_dcm4chee_results_for_patient(patient["id"])
+        aggregated_results = store.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"]
+
+        for results in (direct_results, aggregated_results):
+            self.assertEqual(
+                [(item["reconciliationStatus"], item["refreshGeneration"]) for item in results],
+                [(DCM4CHEE_RESULT_STATUS_NO_RESULT, "generation-3")],
+            )
+
+    def test_dcm4chee_result_refresh_publishes_only_completed_snapshots(self):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+
+        store.begin_dcm4chee_result_refresh(patient["id"], "generation-0")
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            refresh_generation="generation-0",
+        )
+        store.complete_dcm4chee_result_refresh(patient["id"], "generation-0")
+
+        store.begin_dcm4chee_result_refresh(patient["id"], "generation-1")
+        for results in (
+            store.list_dcm4chee_results_for_patient(patient["id"]),
+            store.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"],
+        ):
+            self.assertEqual([item["refreshGeneration"] for item in results], ["generation-0"])
+
+        store.begin_dcm4chee_result_refresh(patient["id"], "generation-2")
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            refresh_generation="generation-2",
+        )
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            refresh_generation="generation-1",
+        )
+        store.complete_dcm4chee_result_refresh(patient["id"], "generation-1")
+
+        self.assertEqual(
+            [item["refreshGeneration"] for item in store.list_dcm4chee_results_for_patient(patient["id"])],
+            ["generation-0"],
+        )
+
+        store.complete_dcm4chee_result_refresh(patient["id"], "generation-2")
+
+        for results in (
+            store.list_dcm4chee_results_for_patient(patient["id"]),
+            store.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"],
+        ):
+            self.assertEqual(
+                [(item["reconciliationStatus"], item["refreshGeneration"]) for item in results],
+                [(DCM4CHEE_RESULT_STATUS_NO_RESULT, "generation-2")],
+            )
+
     @patch("app.urllib.request.urlopen")
     def test_patient_dcm4chee_result_refresh_supersedes_stale_diagnostics(self, urlopen):
         patient = self.create_local_patient()
@@ -2881,9 +3047,10 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         urlopen.return_value = FakeHttpResponse(b"[]", status=200)
         empty = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
+        empty_body = empty.get_json()
         self.assertIn(
             DCM4CHEE_RESULT_STATUS_NO_RESULT,
-            {item["reconciliationStatus"] for item in empty.get_json()["items"]},
+            {item["reconciliationStatus"] for item in empty_body["items"]},
         )
 
         urlopen.return_value = FakeHttpResponse(
@@ -2900,8 +3067,10 @@ class HealthcareLabApiTests(unittest.TestCase):
             status=200,
         )
         matched = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
-        statuses = {item["reconciliationStatus"] for item in matched.get_json()["items"]}
+        matched_body = matched.get_json()
+        statuses = {item["reconciliationStatus"] for item in matched_body["items"]}
 
+        self.assertNotEqual(empty_body["refreshGeneration"], matched_body["refreshGeneration"])
         self.assertIn(DCM4CHEE_RESULT_STATUS_MATCHED, statuses)
         self.assertNotIn(DCM4CHEE_RESULT_STATUS_NO_RESULT, statuses)
 
