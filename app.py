@@ -3882,7 +3882,8 @@ def create_app(database_path: str | None = None) -> Flask:
 
     @app.get("/api/patients")
     def list_patients():
-        return jsonify({"success": True, "items": store.list_patient_records()})
+        protocol_version = str(request.args.get("protocolVersion") or "").strip()
+        return jsonify({"success": True, "items": store.list_patient_records(protocol_version)})
 
     @app.post("/api/patients")
     def create_patient():

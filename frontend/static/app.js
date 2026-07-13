@@ -1671,7 +1671,7 @@ async function refreshDcm4cheeConsole() {
   setStatus("dcm4chee-console-status", "Refreshing...", "pending");
   try {
     const [patientsResult, ordersResult, diagnosticsResult] = await Promise.all([
-      requestJson("/api/patients"),
+      requestJson("/api/patients?protocolVersion=DICOM"),
       requestJson("/api/orders"),
       requestJson("/api/dcm4chee/profile/diagnostics"),
     ]);

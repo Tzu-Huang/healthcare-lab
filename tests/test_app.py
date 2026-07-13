@@ -421,6 +421,35 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("Patient MRN MRN-000001 already exists", duplicate.get_json()["error"])
         self.assertEqual(len(self.client.get("/api/patients").get_json()["items"]), 1)
 
+    def test_integration_patient_lists_filter_to_their_own_protocol(self):
+        store = self.client.application.extensions["demo_store"]
+        patients = {
+            mode: store.create_patient_record(
+                {
+                    "mode": mode,
+                    "mrn": f"MRN-{mode.upper()}",
+                    "firstName": mode,
+                    "lastName": "Patient",
+                    "dob": "19850412",
+                    "sex": "F",
+                }
+            )
+            for mode in ("hl7-v2", "fhir", "gdt", "dicom")
+        }
+        store.create_patient_fhir_workflow_record(patients["fhir"])
+
+        oie = self.client.get("/api/oie/workbench").get_json()["patients"]
+        oie_local = self.client.get("/api/oie/local-adt-patients").get_json()["items"]
+        gdt = self.client.get("/api/gdt/workbench").get_json()["patients"]
+        medplum = self.client.get("/api/fhir/inventory").get_json()["patients"]
+        dcm4chee = self.client.get("/api/patients?protocolVersion=DICOM").get_json()["items"]
+
+        self.assertEqual([item["id"] for item in oie], [patients["hl7-v2"]["id"]])
+        self.assertEqual([item["id"] for item in oie_local], [patients["hl7-v2"]["id"]])
+        self.assertEqual([item["id"] for item in gdt], [patients["gdt"]["id"]])
+        self.assertEqual([item["localSourceId"] for item in medplum], [str(patients["fhir"]["id"])])
+        self.assertEqual([item["id"] for item in dcm4chee], [patients["dicom"]["id"]])
+
     def set_medplum_base_url(self, base_url):
         store = self.client.application.extensions["demo_store"]
         medplum = next(item for item in store.list_lab_servers() if item["name"] == "Medplum")
