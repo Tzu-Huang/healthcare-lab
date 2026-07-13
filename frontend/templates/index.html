@@ -35,9 +35,6 @@
         <button class="sidebar-link" type="button" data-nav-target="medplum-view">
           <span class="nav-icon">MP</span>Medplum
         </button>
-        <button class="sidebar-link" type="button" disabled>
-          <span class="nav-icon">EM</span>openEMR
-        </button>
         <button class="sidebar-link" type="button" data-nav-target="dcm4chee-view">
           <span class="nav-icon">DC</span>dcm4chee
         </button>
@@ -542,11 +539,11 @@
         </section>
       </section>
 
-      <section id="dcm4chee-view" class="app-view dcm4chee-console" aria-label="dcm4chee Console" hidden>
+      <section id="dcm4chee-view" class="app-view dcm4chee-workspace" aria-label="dcm4chee Console" hidden>
         <div class="lab-console-header">
           <div>
             <p class="eyebrow">dcm4chee</p>
-            <h2>DICOM Order and PACS Console</h2>
+            <h2>Patient-Centered Console</h2>
           </div>
           <div class="lab-console-actions">
             <button id="refresh-dcm4chee-console" type="button">Refresh</button>
@@ -555,10 +552,10 @@
         </div>
 
         <section class="dcm4chee-console-grid patient-focused-grid">
-          <div class="lab-panel">
+          <div class="lab-panel dcm4chee-patient-panel">
             <div class="section-heading compact-heading">
               <div>
-                <p class="eyebrow">DICOM Patients</p>
+                <p class="eyebrow">DICOM</p>
                 <h2>Patients</h2>
               </div>
             </div>
@@ -570,28 +567,10 @@
                 <tbody id="dcm4chee-patient-list"></tbody>
               </table>
             </div>
-          </div>
-
-          <div class="lab-panel dcm4chee-selected-patient-panel">
-            <div class="section-heading compact-heading">
-              <div>
-                <p class="eyebrow">Selected Patient</p>
-                <h2 id="dcm4chee-selected-patient-title">No patient selected</h2>
-              </div>
-              <button id="dcm4chee-refresh-results" type="button">Refresh PACS Results</button>
-            </div>
-            <div id="dcm4chee-selected-patient-summary" class="record-detail compact-detail">
-              <p class="muted">Select a DICOM patient.</p>
-            </div>
-          </div>
-        </section>
-
-        <section class="dcm4chee-console-grid lower-grid">
-          <div class="lab-panel">
-            <div class="section-heading compact-heading">
+            <div class="section-heading compact-heading dcm4chee-orders-heading">
               <div>
                 <p class="eyebrow">MWL</p>
-                <h2>DICOM Orders</h2>
+                <h3>Selected Patient Orders</h3>
               </div>
             </div>
             <div class="table-wrap dcm4chee-order-table-wrap">
@@ -602,17 +581,54 @@
                 <tbody id="dcm4chee-order-list"></tbody>
               </table>
             </div>
+            <div class="section-heading compact-heading dcm4chee-preview-heading">
+              <div>
+                <p class="eyebrow">Selected Message</p>
+                <h3>DICOM MWL Preview</h3>
+              </div>
+              <button id="copy-dcm4chee-payload" type="button">Copy Preview</button>
+            </div>
+            <div id="dcm4chee-preview-summary" class="record-detail compact-detail">
+              <p class="muted">Select a DICOM MWL order to inspect its payload.</p>
+            </div>
+            <pre id="dcm4chee-payload-preview" class="compact-output dcm4chee-preview-output">Select a DICOM MWL order to preview its DICOM JSON payload.</pre>
           </div>
 
-          <div class="lab-panel dcm4chee-selected-order-panel">
+          <div class="lab-panel dcm4chee-workflow-panel">
             <div class="section-heading compact-heading">
               <div>
-                <p class="eyebrow">Selected Order</p>
-                <h2 id="dcm4chee-selected-order-title">No order selected</h2>
+                <p class="eyebrow">Order Transmission</p>
+                <h2>Send to dcm4chee</h2>
               </div>
+              <span id="dcm4chee-send-status" class="status neutral">Ready</span>
+            </div>
+            <div class="form-grid dcm4chee-send-selection-grid">
+              <label>Patient
+                <select id="dcm4chee-patient-select"></select>
+              </label>
+              <label>Order
+                <select id="dcm4chee-order-select"></select>
+              </label>
+            </div>
+            <div class="section-heading compact-heading dcm4chee-selected-patient-heading">
+              <div>
+                <p class="eyebrow">Selected Patient</p>
+                <h3 id="dcm4chee-selected-patient-title">No patient selected</h3>
+              </div>
+              <button id="dcm4chee-refresh-results" type="button">Refresh PACS Results</button>
+            </div>
+            <div id="dcm4chee-selected-patient-summary" class="record-detail compact-detail">
+              <p class="muted">Select a DICOM patient.</p>
+            </div>
+            <div class="dcm4chee-selected-order-bar">
+              <div>
+                <p class="eyebrow">Selected Order</p>
+                <h3 id="dcm4chee-selected-order-title">No order selected</h3>
+              </div>
+              <button id="send-dcm4chee-order" class="primary" type="button" disabled>Send Order</button>
             </div>
             <div id="dcm4chee-selected-order-summary" class="record-detail compact-detail">
-              <p class="muted">Select a DICOM MWL order.</p>
+              <p class="muted">Choose an order from the selected patient.</p>
             </div>
           </div>
         </section>
