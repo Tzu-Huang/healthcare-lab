@@ -562,36 +562,21 @@
             <div class="table-wrap dcm4chee-patient-table-wrap">
               <table class="dcm4chee-patient-table">
                 <thead>
-                  <tr><th></th><th>Patient</th><th>Sync</th><th>Orders</th><th>Results</th><th>Action</th></tr>
+                  <tr><th></th><th>MRN</th><th>Name</th><th>Sync</th><th>Orders</th><th>Results</th><th>Action</th></tr>
                 </thead>
                 <tbody id="dcm4chee-patient-list"></tbody>
               </table>
             </div>
-            <div class="section-heading compact-heading dcm4chee-orders-heading">
+            <div class="section-heading compact-heading dcm4chee-patient-preview-heading">
               <div>
-                <p class="eyebrow">MWL</p>
-                <h3>Selected Patient Orders</h3>
+                <p class="eyebrow">Selected Patient</p>
+                <h3 id="dcm4chee-selected-patient-title">No patient selected</h3>
               </div>
+              <button id="dcm4chee-refresh-results" type="button">Refresh PACS Results</button>
             </div>
-            <div class="table-wrap dcm4chee-order-table-wrap">
-              <table class="dcm4chee-order-table">
-                <thead>
-                  <tr><th>Order</th><th>Patient</th><th>Sync</th><th>MWL</th><th>Accession</th><th>Actions</th></tr>
-                </thead>
-                <tbody id="dcm4chee-order-list"></tbody>
-              </table>
+            <div id="dcm4chee-selected-patient-summary" class="record-detail compact-detail dcm4chee-patient-preview">
+              <p class="muted">Select a DICOM patient.</p>
             </div>
-            <div class="section-heading compact-heading dcm4chee-preview-heading">
-              <div>
-                <p class="eyebrow">Selected Message</p>
-                <h3>DICOM MWL Preview</h3>
-              </div>
-              <button id="copy-dcm4chee-payload" type="button">Copy Preview</button>
-            </div>
-            <div id="dcm4chee-preview-summary" class="record-detail compact-detail">
-              <p class="muted">Select a DICOM MWL order to inspect its payload.</p>
-            </div>
-            <pre id="dcm4chee-payload-preview" class="compact-output dcm4chee-preview-output">Select a DICOM MWL order to preview its DICOM JSON payload.</pre>
           </div>
 
           <div class="lab-panel dcm4chee-workflow-panel">
@@ -610,16 +595,6 @@
                 <select id="dcm4chee-order-select"></select>
               </label>
             </div>
-            <div class="section-heading compact-heading dcm4chee-selected-patient-heading">
-              <div>
-                <p class="eyebrow">Selected Patient</p>
-                <h3 id="dcm4chee-selected-patient-title">No patient selected</h3>
-              </div>
-              <button id="dcm4chee-refresh-results" type="button">Refresh PACS Results</button>
-            </div>
-            <div id="dcm4chee-selected-patient-summary" class="record-detail compact-detail">
-              <p class="muted">Select a DICOM patient.</p>
-            </div>
             <div class="dcm4chee-selected-order-bar">
               <div>
                 <p class="eyebrow">Selected Order</p>
@@ -630,6 +605,17 @@
             <div id="dcm4chee-selected-order-summary" class="record-detail compact-detail">
               <p class="muted">Choose an order from the selected patient.</p>
             </div>
+            <div class="section-heading compact-heading dcm4chee-preview-heading">
+              <div>
+                <p class="eyebrow">Selected Order</p>
+                <h3>DICOM MWL Payload</h3>
+              </div>
+              <button id="copy-dcm4chee-payload" type="button">Copy Payload</button>
+            </div>
+            <div id="dcm4chee-preview-summary" class="record-detail compact-detail">
+              <p class="muted">Select a DICOM MWL order to inspect its payload.</p>
+            </div>
+            <pre id="dcm4chee-payload-preview" class="compact-output dcm4chee-preview-output">Select a DICOM MWL order to preview its DICOM JSON payload.</pre>
           </div>
         </section>
 
