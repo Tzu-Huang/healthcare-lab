@@ -2573,6 +2573,42 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(evidence.status_code, 200)
         self.assertEqual(evidence.get_json()["evidence"]["steps"]["resultReconciliation"], DCM4CHEE_RESULT_STATUS_MATCHED)
 
+    def test_dcm4chee_simulated_ap_return_sequence_keeps_pdf_and_dicom_visible(self):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = store.build_dcm4chee_mwl_payload(
+            order,
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+        store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_CREATED,
+        )
+
+        pdf = self.client.post(
+            f"/api/orders/{order['id']}/dcm4chee-simulated-ap-return",
+            json={"type": "pdf", "artifactUrl": "http://localhost/reports/zac-42.pdf"},
+        )
+        dicom = self.client.post(
+            f"/api/orders/{order['id']}/dcm4chee-simulated-ap-return",
+            json={"type": "dicom"},
+        )
+
+        self.assertEqual(pdf.status_code, 201)
+        self.assertEqual(dicom.status_code, 201)
+        self.assertEqual(pdf.get_json()["refreshGeneration"], dicom.get_json()["refreshGeneration"])
+        patient_detail = self.client.get("/api/patients").get_json()["items"][0]
+        results = patient_detail["dcm4chee"]["dicomResults"]
+        self.assertEqual(patient_detail["dcm4chee"]["resultCount"], 2)
+        self.assertEqual({item["sourceType"] for item in results}, {"pdf", "dicom"})
+        self.assertTrue(any(item["artifact"].get("mediaType") == "application/pdf" for item in results))
+
     @patch("app.urllib.request.urlopen")
     def test_patient_dcm4chee_result_refresh_reconciles_study_series_and_instance(self, urlopen):
         patient = self.create_local_patient()
