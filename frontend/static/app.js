@@ -29,6 +29,7 @@ let medplumPatients = [];
 let medplumResourceTypes = [];
 let selectedMedplumRecordId = null;
 let selectedMedplumPatientId = null;
+let expandedMedplumPatientIds = new Set();
 let selectedMedplumLiveReportReference = "";
 let selectedMedplumLiveRelatedReference = "";
 let medplumDiagnosticReports = {
@@ -1966,10 +1967,24 @@ function medplumSourceLabel(source) {
 }
 
 function medplumPatientLabel(patient) {
-  return patient?.summary?.primary
+  const record = medplumPatientInventoryRecord(patient);
+  return record?.summary?.primary
+    || patient?.summary?.primary
     || patient?.identifier?.value
     || patient?.localFhirRecordNumber
     || `FHIR-${patient?.id}`;
+}
+
+function medplumPatientInventoryRecord(patient) {
+  if (!patient) return null;
+  return medplumInventory.find((item) => (
+    item.resourceType === "Patient" && Number(item.id) === Number(patient.id)
+  )) || null;
+}
+
+function medplumPatientMrn(patient) {
+  const record = medplumPatientInventoryRecord(patient);
+  return record?.summary?.secondary || patient?.identifier?.value || "-";
 }
 
 function medplumTimestamp(value) {
@@ -2007,6 +2022,20 @@ function selectedMedplumPatientReference(patient = selectedMedplumPatient()) {
 function medplumRecordsForPatient(patient, resourceType = "") {
   return medplumInventory.filter((item) => (
     (!resourceType || item.resourceType === resourceType)
+    && medplumRecordMatchesPatient(item, patient)
+  ));
+}
+
+function medplumOrderRecordsForPatient(patient) {
+  return medplumInventory.filter((item) => (
+    ["ServiceRequest", "Task"].includes(item.resourceType)
+    && medplumRecordMatchesPatient(item, patient)
+  ));
+}
+
+function medplumResultRecordsForPatient(patient) {
+  return medplumInventory.filter((item) => (
+    ["DiagnosticReport", "Observation", "DocumentReference"].includes(item.resourceType)
     && medplumRecordMatchesPatient(item, patient)
   ));
 }
@@ -2108,6 +2137,67 @@ function retryButtonForMedplumRecord(item) {
   return retryButton;
 }
 
+function medplumPreviewButton(item, label = "Preview") {
+  const button = createElement("button", label, "small-button");
+  button.type = "button";
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    loadMedplumPreview(item.id);
+  });
+  return button;
+}
+
+function medplumResourceRollupTable(items, emptyText) {
+  const wrap = createElement("div", "", "table-wrap medplum-nested-table-wrap");
+  const table = createElement("table", "", "medplum-nested-table");
+  const thead = document.createElement("thead");
+  const header = document.createElement("tr");
+  ["Type", "Resource", "Status", "Reference", "Updated", "Action"].forEach((label) => {
+    header.appendChild(createElement("th", label));
+  });
+  thead.appendChild(header);
+  const tbody = document.createElement("tbody");
+  if (!items.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell(emptyText);
+    cell.colSpan = 6;
+    cell.className = "muted";
+    row.appendChild(cell);
+    tbody.appendChild(row);
+  }
+  items.forEach((item) => {
+    const actions = createElement("div", "", "button-row compact-actions");
+    actions.appendChild(medplumPreviewButton(item));
+    const retryButton = retryButtonForMedplumRecord(item);
+    if (retryButton) actions.appendChild(retryButton);
+    const status = item.sync?.status || item.summary?.status || "-";
+    const row = document.createElement("tr");
+    row.append(
+      rowCell(item.resourceType),
+      rowCell(item.summary?.primary || item.localFhirRecordNumber || `FHIR-${item.id}`),
+      rowCell(createElement("span", status, `status ${fhirSyncStatusClass(status)}`)),
+      rowCell(medplumRecordReference(item) || item.localFhirRecordNumber || "-"),
+      rowCell(medplumTimestamp(item.updatedAt)),
+      rowCell(actions),
+    );
+    row.addEventListener("click", () => loadMedplumPreview(item.id));
+    tbody.appendChild(row);
+  });
+  table.append(thead, tbody);
+  wrap.appendChild(table);
+  return wrap;
+}
+
+function medplumPatientSection(label, title, body) {
+  const section = createElement("section", "", "medplum-patient-section");
+  const heading = createElement("div", "", "compact-heading medplum-patient-section-heading");
+  const text = document.createElement("div");
+  text.append(createElement("p", label, "eyebrow"), createElement("h3", title));
+  heading.appendChild(text);
+  section.append(heading, body);
+  return section;
+}
+
 function renderMedplumPatientList() {
   const body = byId("medplum-patient-list");
   const visible = filteredMedplumPatients();
@@ -2115,33 +2205,79 @@ function renderMedplumPatientList() {
   if (!visible.length) {
     const row = document.createElement("tr");
     const cell = rowCell("No FHIR Patients match the current filter.");
-    cell.colSpan = 6;
+    cell.colSpan = 7;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
     return;
   }
   visible.forEach((patient) => {
-    const serviceRequests = medplumRecordsForPatient(patient, "ServiceRequest");
+    const patientId = Number(patient.id);
+    const patientRecord = medplumPatientInventoryRecord(patient) || patient;
+    const orders = medplumOrderRecordsForPatient(patient);
+    const localResults = medplumResultRecordsForPatient(patient);
     const liveReports = medplumLiveReportsForPatient(patient);
-    const reports = liveReports.length ? liveReports : medplumRecordsForPatient(patient, "DiagnosticReport");
+    const resultCount = liveReports.length
+      ? liveReports.length + localResults.filter((item) => item.resourceType !== "DiagnosticReport").length
+      : localResults.length;
     const status = patient.sync?.status || "-";
     const actions = document.createElement("div");
     actions.className = "button-row compact-actions";
-    const retryButton = retryButtonForMedplumRecord(patient);
-    actions.appendChild(retryButton || createElement("span", "-", "muted"));
+    actions.appendChild(medplumPreviewButton(patientRecord));
+    const retryButton = retryButtonForMedplumRecord(patientRecord);
+    if (retryButton) actions.appendChild(retryButton);
+    const toggleButton = createElement(
+      "button",
+      expandedMedplumPatientIds.has(patientId) ? "v" : ">",
+      "medplum-patient-toggle",
+    );
+    toggleButton.type = "button";
+    toggleButton.setAttribute("aria-expanded", String(expandedMedplumPatientIds.has(patientId)));
+    toggleButton.setAttribute(
+      "aria-label",
+      expandedMedplumPatientIds.has(patientId) ? "Collapse Patient Orders and Results" : "Expand Patient Orders and Results",
+    );
+    toggleButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (expandedMedplumPatientIds.has(patientId)) expandedMedplumPatientIds.delete(patientId);
+      else expandedMedplumPatientIds.add(patientId);
+      renderMedplumPatientList();
+    });
     const row = document.createElement("tr");
-    row.className = Number(patient.id) === Number(selectedMedplumPatientId) ? "selected-row" : "";
+    row.className = patientId === Number(selectedMedplumPatientId) ? "selected-row medplum-patient-row" : "medplum-patient-row";
     row.append(
-      rowCell(createElement("span", "", "row-selector-dot")),
+      rowCell(toggleButton),
+      rowCell(medplumPatientMrn(patient)),
       rowCell(medplumPatientLabel(patient)),
       rowCell(createElement("span", status, `status ${fhirSyncStatusClass(status)}`)),
-      rowCell(serviceRequests.length),
-      rowCell(reports.length),
+      rowCell(orders.length),
+      rowCell(resultCount),
       rowCell(actions),
     );
     row.addEventListener("click", () => selectMedplumPatient(patient.id));
     body.appendChild(row);
+
+    if (expandedMedplumPatientIds.has(patientId)) {
+      const detailRow = createElement("tr", "", "medplum-patient-detail-row");
+      const detailCell = document.createElement("td");
+      detailCell.colSpan = 7;
+      const content = createElement("div", "", "medplum-patient-rollup-content");
+      content.append(
+        medplumPatientSection(
+          "FHIR ORDERS",
+          "ServiceRequest & Task",
+          medplumResourceRollupTable(orders, "No FHIR Orders for this Patient."),
+        ),
+        medplumPatientSection(
+          "FHIR RESULTS",
+          "DiagnosticReport, Observation & DocumentReference",
+          medplumResourceRollupTable(localResults, "No local FHIR Results for this Patient."),
+        ),
+      );
+      detailCell.appendChild(content);
+      detailRow.appendChild(detailCell);
+      body.appendChild(detailRow);
+    }
   });
 }
 
@@ -2155,11 +2291,12 @@ function renderMedplumPatientSummary(patient) {
     container.appendChild(createElement("p", "Select a FHIR patient.", "muted"));
     return;
   }
+  const record = medplumPatientInventoryRecord(patient) || patient;
   [
-    ["Reference", medplumRecordReference(patient) || "-"],
+    ["MRN", medplumPatientMrn(patient)],
     ["Sync", patient.sync?.status || "-"],
-    ["Medplum", patient.medplum?.reference || patient.sync?.error || "-"],
-    ["Updated", medplumTimestamp(patient.updatedAt)],
+    ["Medplum", medplumRecordReference(record) || patient.sync?.error || "-"],
+    ["Updated", medplumTimestamp(record.updatedAt)],
   ].forEach(([label, value]) => {
     const block = createElement("div", "", "detail-block");
     block.append(createElement("h3", label));
