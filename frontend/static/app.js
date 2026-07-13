@@ -1108,7 +1108,16 @@ function renderPatientSummaryFromRecord(item) {
 }
 
 function dcm4cheeConsolePatients() {
-  return patientRecords.filter((item) => item.protocolVersion === "DICOM" || item.dcm4chee?.patient);
+  const patientIdsWithDicomOrders = new Set(
+    orderRecords
+      .filter((item) => item.protocolVersion === "DICOM" && item.patientRecordId)
+      .map((item) => Number(item.patientRecordId)),
+  );
+  return patientRecords.filter((item) => (
+    item.protocolVersion === "DICOM"
+    || item.dcm4chee?.patient
+    || patientIdsWithDicomOrders.has(Number(item.id))
+  ));
 }
 
 function dcm4cheeConsoleOrders(patientId = selectedDcm4cheePatientId) {
