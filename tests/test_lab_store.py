@@ -205,7 +205,10 @@ class HealthcareLabStoreTests(unittest.TestCase):
 
         self.assertEqual(order["status"], "Ready to send")
         self.assertEqual(order["localOrderNumber"], "ORD-000001")
+        self.assertEqual(order["visitNumber"], patient["visitNumber"])
         self.assertEqual(order["visitId"], patient["visitNumber"])
+        self.assertEqual(order["summary"]["visitNumber"], patient["visitNumber"])
+        self.assertEqual(order["summary"]["visitId"], patient["visitNumber"])
         self.assertEqual(order["accountNumber"], "ACC-ORD-000001")
         self.assertIn("MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|", order["payload"])
         self.assertIn("ORM^O01^ORM_O01", order["payload"])
