@@ -256,7 +256,7 @@
         <div class="lab-console-header">
           <div>
             <p class="eyebrow">Medplum</p>
-            <h2>FHIR Patient Console</h2>
+            <h2>Patient-Centered Console</h2>
           </div>
           <div class="lab-console-actions">
             <button id="refresh-medplum-inventory" type="button">Refresh</button>
@@ -265,7 +265,7 @@
         </div>
 
         <section class="medplum-console-grid patient-focused-grid">
-          <div class="lab-panel">
+          <div class="lab-panel medplum-patient-panel">
             <div class="section-heading compact-heading">
               <div>
                 <p class="eyebrow">Patients</p>
@@ -282,52 +282,63 @@
             <div class="table-wrap medplum-patient-table-wrap">
               <table class="medplum-patient-table">
                 <thead>
-                  <tr><th></th><th>Patient</th><th>Status</th><th>Orders</th><th>Reports</th><th>Action</th></tr>
+                  <tr><th></th><th>MRN</th><th>Name</th><th>Sync</th><th>Orders</th><th>Results</th><th>Action</th></tr>
                 </thead>
                 <tbody id="medplum-patient-list"></tbody>
               </table>
             </div>
           </div>
 
-          <div class="lab-panel medplum-selected-patient-panel">
-            <div class="section-heading compact-heading">
-              <div>
-                <p class="eyebrow">Selected Patient</p>
-                <h2 id="medplum-selected-patient-title">No patient selected</h2>
-              </div>
-            </div>
-            <div id="medplum-selected-patient-summary" class="record-detail compact-detail">
-              <p class="muted">Select a FHIR patient.</p>
-            </div>
-            <div class="form-grid medplum-workflow-controls">
-              <label>ServiceRequest
-                <select id="medplum-service-request-select"></select>
-              </label>
-              <label>DiagnosticReport
-                <select id="medplum-diagnostic-report-select"></select>
-              </label>
-            </div>
-            <section class="medplum-diagnostic-report-section">
+          <div class="medplum-context-column">
+            <div class="lab-panel medplum-selected-patient-panel">
               <div class="section-heading compact-heading">
                 <div>
-                  <p class="eyebrow">DiagnosticReports</p>
-                  <h2>Live Results</h2>
+                  <p class="eyebrow">Selected Patient</p>
+                  <h2 id="medplum-selected-patient-title">No patient selected</h2>
                 </div>
-                <span id="medplum-diagnostic-report-status" class="status neutral">Ready</span>
               </div>
-              <div id="medplum-diagnostic-report-rollup" class="medplum-diagnostic-report-rollup">
-                <p class="muted">Select a synced FHIR patient to fetch live Medplum DiagnosticReports.</p>
+              <div id="medplum-selected-patient-summary" class="record-detail compact-detail">
+                <p class="muted">Select a FHIR patient.</p>
               </div>
-            </section>
-            <section class="medplum-related-section">
+            </div>
+
+            <div class="lab-panel medplum-workflow-panel">
               <div class="section-heading compact-heading">
                 <div>
                   <p class="eyebrow">Workflow</p>
-                  <h2>Related Resources</h2>
+                  <h2>Orders &amp; Results</h2>
                 </div>
               </div>
-              <div id="medplum-related-resources" class="medplum-related-list"></div>
-            </section>
+              <div class="form-grid medplum-workflow-controls">
+                <label>ServiceRequest
+                  <select id="medplum-service-request-select"></select>
+                </label>
+                <label>DiagnosticReport
+                  <select id="medplum-diagnostic-report-select"></select>
+                </label>
+              </div>
+              <section class="medplum-diagnostic-report-section">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <p class="eyebrow">DiagnosticReports</p>
+                    <h3>Live Results</h3>
+                  </div>
+                  <span id="medplum-diagnostic-report-status" class="status neutral">Ready</span>
+                </div>
+                <div id="medplum-diagnostic-report-rollup" class="medplum-diagnostic-report-rollup">
+                  <p class="muted">Select a synced FHIR patient to fetch live Medplum DiagnosticReports.</p>
+                </div>
+              </section>
+              <section class="medplum-related-section">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <p class="eyebrow">Resources</p>
+                    <h3>Related Resources</h3>
+                  </div>
+                </div>
+                <div id="medplum-related-resources" class="medplum-related-list"></div>
+              </section>
+            </div>
           </div>
         </section>
 

@@ -1757,14 +1757,24 @@ class DemoStore:
             )
         return self.get_patient_record(record_id)
 
-    def list_patient_records(self) -> list[dict[str, Any]]:
+    def list_patient_records(self, protocol_version: str = "") -> list[dict[str, Any]]:
         with self.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT * FROM local_patient_records
-                ORDER BY created_at DESC, id DESC
-                """
-            ).fetchall()
+            if protocol_version:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_patient_records
+                    WHERE protocol_version = ?
+                    ORDER BY created_at DESC, id DESC
+                    """,
+                    (protocol_version,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_patient_records
+                    ORDER BY created_at DESC, id DESC
+                    """
+                ).fetchall()
         return self._patient_record_dicts_with_fhir(rows)
 
     def get_patient_record(self, record_id: int) -> dict[str, Any]:
@@ -1791,7 +1801,7 @@ class DemoStore:
         )
 
     def list_oie_local_adt_inventory(self) -> list[dict[str, Any]]:
-        return self.list_patient_records()
+        return self.list_patient_records(PATIENT_MODES["hl7-v2"]["protocol"])
 
     @staticmethod
     def _order_record_number(record_id: int) -> str:
@@ -4824,14 +4834,24 @@ class DemoStore:
             }
         )
 
-    def list_order_records(self) -> list[dict[str, Any]]:
+    def list_order_records(self, protocol_version: str = "") -> list[dict[str, Any]]:
         with self.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT * FROM local_order_records
-                ORDER BY created_at DESC, id DESC
-                """
-            ).fetchall()
+            if protocol_version:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_order_records
+                    WHERE protocol_version = ?
+                    ORDER BY created_at DESC, id DESC
+                    """,
+                    (protocol_version,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM local_order_records
+                    ORDER BY created_at DESC, id DESC
+                    """
+                ).fetchall()
         return self._order_record_dicts_with_fhir(rows)
 
     def get_order_record(self, record_id: int) -> dict[str, Any]:
@@ -4885,7 +4905,7 @@ class DemoStore:
         return self.get_order_record(record_id)
 
     def list_oie_local_order_inventory(self) -> list[dict[str, Any]]:
-        return self.list_order_records()
+        return self.list_order_records(ORDER_PROTOCOL_VERSION)
 
     @staticmethod
     def _gdt_order_record_number(record_id: int) -> str:
@@ -5842,18 +5862,18 @@ class DemoStore:
                 patient_row = connection.execute(
                     """
                     SELECT * FROM local_patient_records
-                    WHERE mrn = ?
+                    WHERE mrn = ? AND protocol_version = ?
                     ORDER BY id DESC
                     LIMIT 1
                     """,
-                    (patient_mrn,),
+                    (patient_mrn, PATIENT_MODES["hl7-v2"]["protocol"]),
                 ).fetchone()
             order_row = None
             if patient_row and (placer_order_number or filler_order_number):
                 order_row = connection.execute(
                     """
                     SELECT * FROM local_order_records
-                    WHERE patient_record_id = ?
+                    WHERE patient_record_id = ? AND protocol_version = ?
                       AND (
                         (? != '' AND placer_order_number = ?)
                         OR (? != '' AND filler_order_number = ?)
@@ -5864,6 +5884,7 @@ class DemoStore:
                     """,
                     (
                         patient_row["id"],
+                        ORDER_PROTOCOL_VERSION,
                         placer_order_number,
                         placer_order_number,
                         filler_order_number,
@@ -5942,17 +5963,18 @@ class DemoStore:
         return [self._result_record_dict(row) for row in rows]
 
     def list_oie_workbench(self) -> dict[str, Any]:
-        patients = self.list_patient_records()
-        orders = self.list_order_records()
+        patients = self.list_patient_records(PATIENT_MODES["hl7-v2"]["protocol"])
+        orders = self.list_order_records(ORDER_PROTOCOL_VERSION)
         results = self.list_oie_results()
         orders_by_patient: dict[int, list[dict[str, Any]]] = {}
         results_by_patient: dict[int, list[dict[str, Any]]] = {}
         unmatched_results: list[dict[str, Any]] = []
         for order in orders:
             orders_by_patient.setdefault(int(order["patientRecordId"]), []).append(order)
+        visible_patient_ids = {int(patient["id"]) for patient in patients}
         for result in results:
             patient_id = result.get("matchedPatientRecordId")
-            if patient_id:
+            if patient_id and int(patient_id) in visible_patient_ids:
                 results_by_patient.setdefault(int(patient_id), []).append(result)
             else:
                 unmatched_results.append(result)

@@ -96,6 +96,33 @@ class HealthcareLabStoreTests(unittest.TestCase):
                 0,
             )
 
+    def test_patient_protocol_filter_and_workbenches_keep_protocol_boundaries(self):
+        hl7_patient = self.store.create_patient_record(
+            self.patient_payload(mrn="MRN-HL7", mode="hl7-v2")
+        )
+        self.store.create_patient_record(self.patient_payload(mrn="MRN-FHIR", mode="fhir"))
+        gdt_patient = self.store.create_patient_record(
+            self.patient_payload(mrn="MRN-GDT", mode="gdt")
+        )
+        self.store.create_patient_record(self.patient_payload(mrn="MRN-DICOM", mode="dicom"))
+
+        self.assertEqual(
+            [item["id"] for item in self.store.list_patient_records("HL7 v2.5.1")],
+            [hl7_patient["id"]],
+        )
+        self.assertEqual(
+            [item["id"] for item in self.store.list_oie_local_adt_inventory()],
+            [hl7_patient["id"]],
+        )
+        self.assertEqual(
+            [item["id"] for item in self.store.list_oie_workbench()["patients"]],
+            [hl7_patient["id"]],
+        )
+        self.assertEqual(
+            [item["id"] for item in self.store.list_gdt_workbench()["patients"]],
+            [gdt_patient["id"]],
+        )
+
     def test_lab_server_operation_metadata_is_seeded_non_destructively(self):
         oie = next(item for item in self.store.list_lab_servers() if item["name"] == "OIE")
         self.assertEqual(oie["operation"]["controlType"], "docker-compose")
