@@ -3143,7 +3143,7 @@ function renderOrderRecordList() {
   if (!records.length) {
     const row = document.createElement("tr");
     const cell = rowCell("No local orders created yet.");
-    cell.colSpan = 7;
+    cell.colSpan = 8;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
@@ -3161,6 +3161,7 @@ function renderOrderRecordList() {
       rowCell(orderNumber || item.id),
       rowCell(orderModeLabel(item, rowMode)),
       rowCell(summary.mrn),
+      rowCell(orderVisitNumber(item)),
       rowCell(summary.name),
       rowCell(orderCode),
       rowCell(createElement("span", statusLabel, `status ${statusClass}`)),
@@ -3169,6 +3170,11 @@ function renderOrderRecordList() {
     row.addEventListener("click", () => selectOrderRecord(item, rowMode));
     body.appendChild(row);
   });
+}
+
+function orderVisitNumber(item) {
+  const summary = item?.summary || {};
+  return summary.visitNumber || summary.visitId || item?.visitNumber || item?.visitId || "-";
 }
 
 function orderRecordMode(item) {
@@ -3509,11 +3515,21 @@ function renderSelectedOiePatient() {
 }
 
 function renderOieOrders(orders) {
-  const { wrap, tbody } = oieNestedTable(["Order", "Code", "Status", "ACK", "Sent", "Action"]);
+  const { wrap, tbody } = oieNestedTable([
+    "Order ID",
+    "MRN",
+    "Visit Number",
+    "Code",
+    "Status",
+    "Created At (Taipei)",
+    "ACK",
+    "Sent",
+    "Action",
+  ]);
   if (!orders.length) {
     const row = document.createElement("tr");
     const cell = rowCell("No local ORM O01 orders for this patient.");
-    cell.colSpan = 6;
+    cell.colSpan = 9;
     cell.className = "muted";
     row.appendChild(cell);
     tbody.appendChild(row);
@@ -3531,8 +3547,11 @@ function renderOieOrders(orders) {
     });
     row.append(
       rowCell(item.localOrderNumber || item.id),
+      rowCell(summary.mrn),
+      rowCell(orderVisitNumber(item)),
       rowCell(summary.orderCode),
       rowCell(item.status || "Ready to send"),
+      rowCell(taipeiTimestamp(item.createdAt)),
       rowCell(item.ack?.code || item.transportError || "-"),
       rowCell(taipeiTimestamp(item.lastSentAt)),
       rowCell(selectButton),
@@ -3550,9 +3569,12 @@ function selectOieOrder(item) {
   byId("oie-ack-preview").textContent = ackPreviewText(item);
   renderOieTransmission(item);
   renderOiePreviewSummary("ORM", [
-    ["Order", item.localOrderNumber],
+    ["Order ID", item.localOrderNumber],
+    ["MRN", item.summary?.mrn],
+    ["Visit Number", orderVisitNumber(item)],
     ["Code", item.summary?.orderCode],
     ["Status", item.status],
+    ["Created At", taipeiTimestamp(item.createdAt)],
     ["ACK", item.ack?.code || item.transportError || "-"],
   ]);
   renderOieInventory();

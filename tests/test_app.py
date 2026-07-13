@@ -150,7 +150,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'id="order-payload-preview"', response.data)
         self.assertIn(b'class="table-wrap order-local-table-wrap"', response.data)
         self.assertIn(
-            b"<th>Order</th><th>Mode</th><th>MRN</th><th>Name</th><th>Code</th><th>Status</th><th>Created (Taipei)</th>",
+            b"<th>Order ID</th><th>Mode</th><th>MRN</th><th>Visit Number</th><th>Name</th><th>Code</th><th>Status</th><th>Created At (Taipei)</th>",
             response.data,
         )
         self.assertNotIn(
@@ -216,6 +216,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("function orderStateLabel(item, mode)", script)
         self.assertIn("function orderModeLabel(item, mode)", script)
         self.assertIn("function orderRecordMode(item)", script)
+        self.assertIn("function orderVisitNumber(item)", script)
         self.assertIn("let expandedOiePatientIds = new Set();", script)
         self.assertIn("function oiePatientSection(label, title, body)", script)
         self.assertIn("function renderOieTransmission(item)", script)
@@ -233,7 +234,11 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('requestJson("/api/gdt/orders")', script)
         self.assertIn('return "HL7 v2";', script)
         self.assertIn('rowCell(orderModeLabel(item, rowMode))', script)
+        self.assertIn('rowCell(orderVisitNumber(item))', script)
         self.assertIn('rowCell(taipeiTimestamp(item.createdAt))', script)
+        self.assertIn('"Order ID",', script)
+        self.assertIn('"Visit Number",', script)
+        self.assertIn('"Created At (Taipei)",', script)
         self.assertIn('statusLabel === "Accepted" ? "success" : "error"', script)
         self.assertIn('return status === "Created" ? "Accepted" : "Error";', script)
         self.assertIn('["error", "rejected", "transport error"].includes(status) ? "Error" : "Accepted"', script)
@@ -437,6 +442,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         item = created.get_json()["item"]
         self.assertEqual(item["status"], "Ready to send")
         self.assertEqual(item["messageType"], "ORM^O01")
+        self.assertEqual(item["visitNumber"], item["visitId"])
+        self.assertEqual(item["summary"]["visitNumber"], item["summary"]["visitId"])
         self.assertIn("ORM^O01^ORM_O01", item["payload"])
         self.assertIn("|P|2.5.1||||||UNICODE UTF-8", item["payload"])
         self.assertIn("MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|", item["payload"])
