@@ -36,6 +36,7 @@ from backend.lab_store import (
     DCM4CHEE_RESULT_STATUS_MATCHED,
     DCM4CHEE_RESULT_STATUS_NO_RESULT,
     DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
+    DCM4CHEE_RESULT_SOURCE_SIMULATED_AP,
     DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
     render_gdt_message,
 )
@@ -271,6 +272,9 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("/api/gdt/bridge/inbox", routes)
         self.assertIn("/api/gdt/bridge/import", routes)
         self.assertIn("/api/orders/<int:order_id>/dcm4chee-mwl-verify", routes)
+        self.assertIn("/api/dcm4chee/e2e-fixture", routes)
+        self.assertIn("/api/orders/<int:order_id>/dcm4chee-e2e-evidence", routes)
+        self.assertIn("/api/orders/<int:order_id>/dcm4chee-simulated-ap-return", routes)
 
     def test_gdt_bridge_config_api_updates_shared_folder_path(self):
         target = Path(self.temp_dir.name) / "custom-gdt-bridge"
@@ -2488,6 +2492,11 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("Open Viewer", script)
         self.assertIn("Copy Retrieve", script)
         self.assertIn("Refresh PACS Results", script)
+        self.assertIn("Simulate AP PDF", script)
+        self.assertIn("Simulate AP DICOM", script)
+        self.assertIn("/api/orders/${orderId}/dcm4chee-simulated-ap-return", script)
+        self.assertIn("Open Artifact", script)
+        self.assertIn("Copy Artifact", script)
         self.assertIn("MWL Sync", script)
         self.assertIn("MWL Queryable", script)
         self.assertIn("AP C-STORE Result", script)
@@ -2499,6 +2508,70 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(".dcm4chee-result-browser", styles)
         self.assertIn(".dcm4chee-browser-row", styles)
         self.assertIn(".dcm4chee-nested-table-wrap", styles)
+
+    def test_dcm4chee_e2e_fixture_api_creates_demo_patient_order_and_evidence(self):
+        response = self.client.post("/api/dcm4chee/e2e-fixture", json={})
+
+        self.assertEqual(response.status_code, 201)
+        body = response.get_json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["patient"]["summary"]["mrn"], "MRN-DCM-E2E-001")
+        self.assertEqual(body["order"]["protocolVersion"], "DICOM")
+        evidence = body["evidence"]
+        self.assertEqual(evidence["mode"], "dcm4chee-production-like-e2e")
+        self.assertEqual(evidence["identifiers"]["patientId"], "MRN-DCM-E2E-001")
+        self.assertEqual(evidence["identifiers"]["issuerOfPatientId"], "local-dcm4chee")
+        self.assertEqual(evidence["aeTitles"]["mwlAETitle"], "WORKLIST")
+        self.assertIn("/mwlitems", evidence["endpoints"]["mwlRestUrl"])
+        self.assertEqual(evidence["steps"]["apReturn"], "not_recorded")
+
+    def test_dcm4chee_simulated_ap_return_records_pdf_and_dicom_results(self):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = store.build_dcm4chee_mwl_payload(
+            order,
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+        )
+        mapping = store.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_CREATED,
+        )
+
+        response = self.client.post(
+            f"/api/orders/{order['id']}/dcm4chee-simulated-ap-return",
+            json={"type": "both", "artifactUrl": "http://localhost/reports/zac-42.pdf"},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.get_json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["evidence"]["steps"]["apReturn"], "recorded")
+        self.assertTrue(body["evidence"]["steps"]["uiVisibleResult"])
+        self.assertEqual(body["evidence"]["identifiers"]["studyInstanceUid"], mapping["studyInstanceUid"])
+        items = body["items"]
+        self.assertEqual(len(items), 2)
+        self.assertEqual({item["source"] for item in items}, {DCM4CHEE_RESULT_SOURCE_SIMULATED_AP})
+        self.assertIn(DCM4CHEE_RESULT_STATUS_MATCHED, {item["reconciliationStatus"] for item in items})
+        pdf = next(item for item in items if item["sourceType"] == "pdf")
+        self.assertEqual(pdf["artifact"]["url"], "http://localhost/reports/zac-42.pdf")
+        self.assertEqual(pdf["artifact"]["mediaType"], "application/pdf")
+
+        patient_detail = self.client.get("/api/patients").get_json()["items"][0]
+        self.assertEqual(patient_detail["dcm4chee"]["resultCount"], 2)
+        self.assertEqual(
+            {item["source"] for item in patient_detail["dcm4chee"]["dicomResults"]},
+            {DCM4CHEE_RESULT_SOURCE_SIMULATED_AP},
+        )
+
+        evidence = self.client.get(f"/api/orders/{order['id']}/dcm4chee-e2e-evidence")
+        self.assertEqual(evidence.status_code, 200)
+        self.assertEqual(evidence.get_json()["evidence"]["steps"]["resultReconciliation"], DCM4CHEE_RESULT_STATUS_MATCHED)
 
     @patch("app.urllib.request.urlopen")
     def test_patient_dcm4chee_result_refresh_reconciles_study_series_and_instance(self, urlopen):

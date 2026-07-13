@@ -88,6 +88,7 @@ DCM4CHEE_RESULT_STATUS_WRONG_PATIENT = "wrong_patient"
 DCM4CHEE_RESULT_STATUS_MISSING_ACCESSION = "missing_accession"
 DCM4CHEE_RESULT_STATUS_UNLINKED = "unlinked"
 DCM4CHEE_RESULT_STATUS_QUERY_FAILED = "query_failed"
+DCM4CHEE_RESULT_SOURCE_SIMULATED_AP = "simulated_ap_return"
 DCM4CHEE_DEFAULT_UID_ROOT = "1.2.826.0.1.3680043.10.543"
 FHIR_ORDER_PROTOCOL_VERSION = "FHIR R4"
 FHIR_ORDER_MESSAGE_TYPE = "ServiceRequest"
@@ -3688,6 +3689,207 @@ class DemoStore:
                 record_id = int(cursor.lastrowid)
         return self.get_dcm4chee_result_record(record_id)
 
+    @staticmethod
+    def dcm4chee_e2e_demo_patient_payload() -> dict[str, Any]:
+        return {
+            "mode": "dicom",
+            "mrn": "MRN-DCM-E2E-001",
+            "firstName": "Avery",
+            "middleName": "Lee",
+            "lastName": "Morgan",
+            "dob": "19850412",
+            "sex": "F",
+            "patientClass": "O",
+            "assignedLocation": "CARDIOLOGY^ROOM1",
+            "visitNumber": "VISIT-DCM-E2E-001",
+        }
+
+    @staticmethod
+    def dcm4chee_e2e_demo_order_payload(patient_record_id: int) -> dict[str, Any]:
+        return {
+            "mode": "dicom",
+            "patientRecordId": int(patient_record_id),
+            "requestedAt": "20260713103000",
+            "orderingProvider": ORDER_DEFAULT_PROVIDER,
+            "orderCode": ORDER_DEFAULT_CODE,
+            "orderCodeText": ORDER_DEFAULT_TEXT,
+            "clinicalIndication": "ZAC-42 production-like dcm4chee E2E verification fixture",
+        }
+
+    def create_dcm4chee_e2e_demo_fixture(
+        self,
+        profile: dict[str, Any],
+        *,
+        uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT,
+    ) -> dict[str, Any]:
+        patient = self.create_patient_record(self.dcm4chee_e2e_demo_patient_payload())
+        order = self.create_dcm4chee_order_record(self.dcm4chee_e2e_demo_order_payload(int(patient["id"])))
+        payload = self.build_dcm4chee_mwl_payload(order, profile, uid_root=uid_root)
+        mapping = self.upsert_dcm4chee_mwl_mapping(
+            int(order["id"]),
+            profile,
+            uid_root=uid_root,
+            request_payload=payload,
+            sync_status=DCM4CHEE_MWL_STATUS_PENDING,
+        )
+        patient = self.get_patient_record(int(patient["id"]))
+        order = self.get_order_record(int(order["id"]))
+        return {
+            "patient": patient,
+            "order": order,
+            "mapping": mapping,
+            "evidence": self.dcm4chee_e2e_evidence_for_order(int(order["id"]), profile),
+        }
+
+    def dcm4chee_e2e_evidence_for_order(self, order_record_id: int, profile: dict[str, Any]) -> dict[str, Any]:
+        order = self.get_order_record(int(order_record_id))
+        patient = self.get_patient_record(int(order["patientRecordId"]))
+        mapping = self.get_dcm4chee_mwl_mapping_for_order(int(order_record_id)) or {}
+        patient_sync = self.get_dcm4chee_patient_sync_for_patient(int(patient["id"]), profile)
+        results = self.list_dcm4chee_results_for_patient(int(patient["id"]))
+        order_results = [
+            item for item in results
+            if str(item.get("orderRecordId") or "") == str(order_record_id)
+            or (mapping.get("studyInstanceUid") and item.get("studyInstanceUid") == mapping.get("studyInstanceUid"))
+            or (mapping.get("accessionNumber") and item.get("accessionNumber") == mapping.get("accessionNumber"))
+        ]
+        dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
+        mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
+        dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
+        verification = mapping.get("verification") if isinstance(mapping.get("verification"), dict) else {}
+        return {
+            "mode": "dcm4chee-production-like-e2e",
+            "patientRecordId": patient["id"],
+            "orderRecordId": order["id"],
+            "profileName": profile.get("profileName", ""),
+            "identifiers": {
+                "patientId": mapping.get("patientId") or (patient.get("summary") or {}).get("mrn", ""),
+                "issuerOfPatientId": mapping.get("issuerOfPatientId") or profile.get("profileName", ""),
+                "accessionNumber": mapping.get("accessionNumber", ""),
+                "requestedProcedureId": mapping.get("requestedProcedureId", ""),
+                "scheduledProcedureStepId": mapping.get("scheduledProcedureStepId", ""),
+                "studyInstanceUid": mapping.get("studyInstanceUid", ""),
+                "seriesInstanceUid": next((item.get("seriesInstanceUid") for item in order_results if item.get("seriesInstanceUid")), ""),
+                "sopInstanceUid": next((item.get("sopInstanceUid") for item in order_results if item.get("sopInstanceUid")), ""),
+            },
+            "aeTitles": {
+                "archiveCalledAETitle": dimse.get("calledAETitle", ""),
+                "healthcareLabCallingAETitle": dimse.get("callingAETitle", ""),
+                "mwlAETitle": mwl.get("aeTitle", ""),
+                "scheduledStationAETitle": mapping.get("scheduledStationAETitle") or mwl.get("defaultScheduledStationAETitle", ""),
+            },
+            "endpoints": {
+                "mwlRestUrl": f"{str(dicomweb.get('baseUrl') or '').rstrip('/')}/mwlitems" if dicomweb.get("baseUrl") else "",
+                "qidoRsUrl": dicomweb.get("qidoRsUrl", ""),
+                "wadoRsUrl": dicomweb.get("wadoRsUrl", ""),
+                "webUiUrl": profile.get("webUiUrl", ""),
+            },
+            "steps": {
+                "patientPrecondition": (patient_sync or {}).get("status") or "not_synced",
+                "mwlCreate": mapping.get("status") or "not_created",
+                "mwlQueryable": verification.get("status") or DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED,
+                "apReturn": "recorded" if order_results else "not_recorded",
+                "resultReconciliation": next((item.get("reconciliationStatus") for item in order_results if item.get("reconciliationStatus")), DCM4CHEE_RESULT_STATUS_NO_RESULT),
+                "uiVisibleResult": bool(order_results),
+            },
+            "results": order_results,
+            "generatedAt": now_iso(),
+        }
+
+    def create_simulated_dcm4chee_ap_return(
+        self,
+        order_record_id: int,
+        profile: dict[str, Any],
+        *,
+        result_type: str = "both",
+        artifact_url: str = "",
+        artifact_path: str = "",
+    ) -> dict[str, Any]:
+        order = self.get_order_record(int(order_record_id))
+        if order.get("protocolVersion") != DCM4CHEE_ORDER_PROTOCOL_VERSION:
+            raise SimulatorValidationError("Order record is not DICOM MWL mode.")
+        mapping = self.get_dcm4chee_mwl_mapping_for_order(int(order_record_id))
+        if not mapping:
+            payload = self.build_dcm4chee_mwl_payload(order, profile)
+            mapping = self.upsert_dcm4chee_mwl_mapping(
+                int(order_record_id),
+                profile,
+                request_payload=payload,
+                sync_status=DCM4CHEE_MWL_STATUS_PENDING,
+            )
+        result_type = str(result_type or "both").strip().lower()
+        if result_type not in {"both", "pdf", "dicom"}:
+            raise SimulatorValidationError("Simulated AP return type must be pdf, dicom, or both.")
+        generation = f"simulated-ap-return-{now_iso()}"
+        base_metadata = {
+            "study_instance_uid": str(mapping.get("studyInstanceUid") or ""),
+            "accession_number": str(mapping.get("accessionNumber") or ""),
+            "patient_id": str(mapping.get("patientId") or ""),
+            "issuer_of_patient_id": str(mapping.get("issuerOfPatientId") or ""),
+            "requested_procedure_id": str(mapping.get("requestedProcedureId") or ""),
+            "scheduled_procedure_step_id": str(mapping.get("scheduledProcedureStepId") or ""),
+            "modality": "ECG",
+            "study_datetime": "20260713104500",
+        }
+        created: list[dict[str, Any]] = []
+        if result_type in {"both", "dicom"}:
+            metadata = {
+                **base_metadata,
+                "series_instance_uid": f"{base_metadata['study_instance_uid']}.1",
+                "sop_instance_uid": f"{base_metadata['study_instance_uid']}.1.1",
+                "series_datetime": "20260713104600",
+                "instance_datetime": "20260713104630",
+            }
+            created.append(
+                self.upsert_dcm4chee_result_record(
+                    metadata,
+                    profile,
+                    patient_record_id=int(order["patientRecordId"]),
+                    query_url="simulated://ap-return/dicom",
+                    query_payload={"source": DCM4CHEE_RESULT_SOURCE_SIMULATED_AP, "type": "dicom"},
+                    raw_metadata={"source": DCM4CHEE_RESULT_SOURCE_SIMULATED_AP, "type": "dicom", "metadata": metadata},
+                    refresh_generation=generation,
+                )
+            )
+        if result_type in {"both", "pdf"}:
+            url = artifact_url or "http://localhost/reports/dcm4chee-simulated-ecg-report.pdf"
+            path = artifact_path or "reports/dcm4chee-simulated-ecg-report.pdf"
+            metadata = {
+                **base_metadata,
+                "series_instance_uid": f"{base_metadata['study_instance_uid']}.9001",
+                "sop_instance_uid": f"{base_metadata['study_instance_uid']}.9001.1",
+                "modality": "DOC",
+                "series_datetime": "20260713104700",
+                "instance_datetime": "20260713104730",
+            }
+            created.append(
+                self.upsert_dcm4chee_result_record(
+                    metadata,
+                    profile,
+                    patient_record_id=int(order["patientRecordId"]),
+                    query_url="simulated://ap-return/pdf",
+                    query_payload={"source": DCM4CHEE_RESULT_SOURCE_SIMULATED_AP, "type": "pdf"},
+                    raw_metadata={
+                        "source": DCM4CHEE_RESULT_SOURCE_SIMULATED_AP,
+                        "type": "pdf",
+                        "metadata": metadata,
+                        "artifact": {
+                            "label": "Simulated AP ECG PDF",
+                            "mediaType": "application/pdf",
+                            "url": url,
+                            "path": path,
+                            "role": "ap-return-report",
+                        },
+                    },
+                    refresh_generation=generation,
+                )
+            )
+        return {
+            "items": created,
+            "evidence": self.dcm4chee_e2e_evidence_for_order(int(order_record_id), profile),
+            "refreshGeneration": generation,
+        }
+
     def record_dcm4chee_result_refresh_diagnostic(
         self,
         *,
@@ -5577,6 +5779,9 @@ class DemoStore:
 
     @staticmethod
     def _dcm4chee_result_record_dict(row: sqlite3.Row) -> dict[str, Any]:
+        raw_metadata = DemoStore._json_value(row["raw_metadata_json"], {})
+        diagnostic = DemoStore._json_value(row["diagnostic_payload_json"], {})
+        artifact = raw_metadata.get("artifact") if isinstance(raw_metadata.get("artifact"), dict) else {}
         return {
             "id": row["id"],
             "resultKey": row["result_key"],
@@ -5607,8 +5812,11 @@ class DemoStore:
             "matchStrength": row["match_strength"],
             "queryUrl": row["query_url"],
             "queryPayload": DemoStore._json_value(row["query_payload_json"], {}),
-            "diagnostic": DemoStore._json_value(row["diagnostic_payload_json"], {}),
-            "rawMetadata": DemoStore._json_value(row["raw_metadata_json"], {}),
+            "diagnostic": diagnostic,
+            "rawMetadata": raw_metadata,
+            "source": raw_metadata.get("source", "") if isinstance(raw_metadata, dict) else "",
+            "sourceType": raw_metadata.get("type", "") if isinstance(raw_metadata, dict) else "",
+            "artifact": artifact,
             "refreshGeneration": row["refresh_generation"] if "refresh_generation" in row.keys() else "",
             "firstSeenAt": row["first_seen_at"],
             "lastRefreshedAt": row["last_refreshed_at"],
