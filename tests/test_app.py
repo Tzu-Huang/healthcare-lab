@@ -115,6 +115,13 @@ class HealthcareLabApiTests(unittest.TestCase):
             MEDPLUM_CLIENT_SECRET="demo-secret",
             MEDPLUM_SCOPE="openid",
             MEDPLUM_TOKEN_URL="",
+            OIE_MLLP_ORDER_HOST="localhost",
+            DCM4CHEE_DIMSE_HOST="127.0.0.1",
+            DCM4CHEE_HL7_HOST="127.0.0.1",
+            DCM4CHEE_DICOMWEB_BASE_URL="http://127.0.0.1:8082/dcm4chee-arc/aets/WORKLIST/rs",
+            DCM4CHEE_QIDO_RS_URL="http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+            DCM4CHEE_WADO_RS_URL="http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
+            DCM4CHEE_STOW_RS_URL="http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
         )
         self.client = app.test_client()
 
@@ -2449,10 +2456,22 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(response.get_json()["verification"]["errorType"], "mwl_profile_invalid")
 
     def test_patient_dcm4chee_result_ui_hooks_are_present(self):
+        template = Path("frontend/templates/index.html").read_text(encoding="utf-8")
         script = Path("frontend/static/app.js").read_text(encoding="utf-8")
 
+        self.assertIn('data-nav-target="dcm4chee-view"', template)
+        self.assertIn('id="dcm4chee-view"', template)
+        self.assertNotIn('type="button" disabled>\n          <span class="nav-icon">DC</span>dcm4chee', template)
+        self.assertIn("dcm4chee-patient-list", template)
+        self.assertIn("dcm4chee-order-list", template)
+        self.assertIn("dcm4chee-profile-summary", template)
         self.assertIn("refreshPatientDcm4cheeResults", script)
         self.assertIn("/api/patients/${patientId}/dcm4chee-results-refresh", script)
+        self.assertIn("refreshDcm4cheeConsole", script)
+        self.assertIn("/api/dcm4chee/profile/diagnostics", script)
+        self.assertIn("renderDcm4cheeConsole", script)
+        self.assertIn("renderDcm4cheeSelectedPatient", script)
+        self.assertIn("renderDcm4cheeSelectedOrder", script)
         self.assertIn("renderPatientDcm4cheeResults", script)
         self.assertIn("DICOM Results", script)
         self.assertIn("dicomResults", script)
@@ -2475,6 +2494,7 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         styles = Path("frontend/static/styles.css").read_text(encoding="utf-8")
         self.assertIn(".dcm4chee-workflow-strip", styles)
+        self.assertIn(".dcm4chee-console-grid", styles)
         self.assertIn(".dcm4chee-result-browser", styles)
         self.assertIn(".dcm4chee-browser-row", styles)
         self.assertIn(".dcm4chee-nested-table-wrap", styles)

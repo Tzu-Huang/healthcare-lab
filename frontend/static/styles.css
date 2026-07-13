@@ -1376,6 +1376,31 @@ tr.selected-row {
   gap: 10px;
 }
 
+.dcm4chee-console-grid.patient-focused-grid {
+  grid-template-columns: minmax(340px, 0.78fr) minmax(0, 1.22fr);
+}
+
+.dcm4chee-console-grid.lower-grid {
+  grid-template-columns: minmax(420px, 0.9fr) minmax(0, 1.1fr);
+}
+
+.dcm4chee-selected-patient-panel,
+.dcm4chee-selected-order-panel,
+.dcm4chee-profile-panel {
+  min-width: 0;
+}
+
+.dcm4chee-patient-table,
+.dcm4chee-order-table {
+  table-layout: auto;
+  min-width: 100%;
+}
+
+.dcm4chee-patient-table td:nth-child(2),
+.dcm4chee-order-table td:nth-child(5) {
+  overflow-wrap: anywhere;
+}
+
 .dcm4chee-workflow-step {
   display: grid;
   gap: 8px;
@@ -1472,6 +1497,25 @@ tr.selected-row {
 
 .dcm4chee-result-actions {
   justify-content: flex-end;
+}
+
+.dcm4chee-diagnostic-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.dcm4chee-diagnostic-check {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.dcm4chee-diagnostic-check p {
+  margin: 0;
 }
 
 .gdt-primary-actions {

@@ -7,6 +7,9 @@ let patientRecords = [];
 let orderRecords = [];
 let gdtOrderRecords = [];
 let selectedOrderRecordId = null;
+let dcm4cheeProfileDiagnostics = null;
+let selectedDcm4cheePatientId = null;
+let selectedDcm4cheeOrderId = null;
 let gdtWorkbench = { patients: [], bridgeInbox: [] };
 let gdtBridgeConfig = null;
 let selectedGdtPatientId = null;
@@ -43,6 +46,7 @@ const VIEW_TITLES = {
   "patient-view": "Patient",
   "medplum-view": "Medplum",
   "order-view": "Order",
+  "dcm4chee-view": "dcm4chee",
   "oie-view": "OIE",
   "gdt-view": "GDT",
 };
@@ -175,6 +179,7 @@ function setActiveView(viewId) {
   }
   if (viewId === "medplum-view") refreshMedplumInventory();
   if (viewId === "order-view") refreshOrderWorkspace();
+  if (viewId === "dcm4chee-view") refreshDcm4cheeConsole();
   if (viewId === "oie-view") refreshOieInventory();
   if (viewId === "gdt-view") refreshGdtConsole();
 }
@@ -1074,6 +1079,24 @@ function renderPatientDcm4cheeResults(container, patient) {
   container.appendChild(section);
 }
 
+function renderDcm4cheeResultsBrowser(container, results = [], emptyText = "No refreshed dcm4chee results.") {
+  const section = document.createElement("details");
+  section.className = "detail-block raw-details dcm4chee-result-browser";
+  section.open = Boolean(results.length);
+  const summary = document.createElement("summary");
+  summary.appendChild(document.createTextNode(`DICOM Results (${results.length})`));
+  section.appendChild(summary);
+  if (!results.length) {
+    section.appendChild(createElement("p", emptyText, "muted"));
+    container.appendChild(section);
+    return;
+  }
+  groupDcm4cheeResultsForBrowser(results).forEach((group) => {
+    section.appendChild(renderDcm4cheeResultGroup(group));
+  });
+  container.appendChild(section);
+}
+
 function renderPatientSummaryFromRecord(item) {
   renderPatientSummaryFromPayload({
     ...(item.patient || {}),
@@ -1083,6 +1106,347 @@ function renderPatientSummaryFromRecord(item) {
   }, item.createdAt);
   renderPatientDcm4cheeResults(byId("patient-summary"), item);
 }
+
+function dcm4cheeConsolePatients() {
+  return patientRecords.filter((item) => item.protocolVersion === "DICOM" || item.dcm4chee?.patient);
+}
+
+function dcm4cheeConsoleOrders(patientId = selectedDcm4cheePatientId) {
+  return orderRecords.filter((item) => (
+    item.protocolVersion === "DICOM"
+    && (!patientId || Number(item.patientRecordId) === Number(patientId))
+  ));
+}
+
+function selectedDcm4cheePatient() {
+  const selectedId = Number(selectedDcm4cheePatientId || 0);
+  return dcm4cheeConsolePatients().find((item) => Number(item.id) === selectedId) || null;
+}
+
+function selectedDcm4cheeOrder() {
+  const selectedId = Number(selectedDcm4cheeOrderId || 0);
+  return orderRecords.find((item) => item.protocolVersion === "DICOM" && Number(item.id) === selectedId) || null;
+}
+
+function dcm4cheePatientLabel(patient) {
+  return patient?.summary?.name || patient?.summary?.mrn || `Patient ${patient?.id}`;
+}
+
+function dcm4cheeOrderLabel(order) {
+  return order?.localOrderNumber || `Order ${order?.id}`;
+}
+
+function dcm4cheeOrderPatient(order) {
+  return patientRecords.find((patient) => Number(patient.id) === Number(order?.patientRecordId)) || null;
+}
+
+function dcm4cheeOrderStatus(order) {
+  const mwl = order?.dcm4chee?.mwl || {};
+  const mapping = mwl.mapping || {};
+  return mwl.displayStatus || mapping.status || mwl.status || order?.status || "Not synced";
+}
+
+function dcm4cheeOrderVerificationStatus(order) {
+  const mwl = order?.dcm4chee?.mwl || {};
+  const mapping = mwl.mapping || {};
+  const verification = mapping.verification || mwl.verification || {};
+  return verification.status || "Not verified";
+}
+
+function dcm4cheeOrderActionButtons(order) {
+  const actions = createElement("div", "", "button-row compact-actions");
+  const mwl = order?.dcm4chee?.mwl || {};
+  const mapping = mwl.mapping || {};
+  if (mwl.retryable) {
+    const retryButton = createElement("button", "Retry", "small-button");
+    retryButton.type = "button";
+    retryButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      retryDcm4cheeOrder(order.id, retryButton);
+    });
+    actions.appendChild(retryButton);
+  }
+  if (mapping.id) {
+    const verifyButton = createElement("button", "Verify", "small-button");
+    verifyButton.type = "button";
+    verifyButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      verifyDcm4cheeOrder(order.id, verifyButton);
+    });
+    actions.appendChild(verifyButton);
+  }
+  if (!actions.childElementCount) actions.appendChild(createElement("span", "-", "muted"));
+  return actions;
+}
+
+function selectDcm4cheePatient(patientId) {
+  selectedDcm4cheePatientId = patientId;
+  const patientOrders = dcm4cheeConsoleOrders(patientId);
+  if (!patientOrders.some((item) => Number(item.id) === Number(selectedDcm4cheeOrderId))) {
+    selectedDcm4cheeOrderId = patientOrders[0]?.id || null;
+  }
+  renderDcm4cheeConsole();
+}
+
+function selectDcm4cheeOrder(orderId) {
+  selectedDcm4cheeOrderId = orderId;
+  const order = selectedDcm4cheeOrder();
+  if (order?.patientRecordId) selectedDcm4cheePatientId = order.patientRecordId;
+  renderDcm4cheeConsole();
+  if (orderId) loadDcm4cheeAttemptHistory(orderId, "dcm4chee-console-attempt-history");
+}
+
+function ensureDcm4cheeSelection() {
+  const patients = dcm4cheeConsolePatients();
+  if (!patients.length) {
+    selectedDcm4cheePatientId = null;
+    selectedDcm4cheeOrderId = null;
+    return;
+  }
+  if (!selectedDcm4cheePatientId || !patients.some((item) => Number(item.id) === Number(selectedDcm4cheePatientId))) {
+    selectedDcm4cheePatientId = patients[0].id;
+  }
+  const orders = dcm4cheeConsoleOrders(selectedDcm4cheePatientId);
+  if (!orders.some((item) => Number(item.id) === Number(selectedDcm4cheeOrderId))) {
+    selectedDcm4cheeOrderId = orders[0]?.id || null;
+  }
+}
+
+function renderDcm4cheePatientList() {
+  const body = byId("dcm4chee-patient-list");
+  if (!body) return;
+  body.replaceChildren();
+  const patients = dcm4cheeConsolePatients();
+  if (!patients.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell("No local DICOM patients yet. Create a DICOM Patient from the Patient workspace.");
+    cell.colSpan = 6;
+    cell.className = "muted";
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  patients.forEach((patient) => {
+    const sync = patient.dcm4chee?.patient || {};
+    const orders = dcm4cheeConsoleOrders(patient.id);
+    const resultCount = patient.dcm4chee?.resultCount ?? (patient.dcm4chee?.dicomResults || []).length;
+    const actions = createElement("div", "", "button-row compact-actions");
+    const refreshButton = createElement("button", "Refresh", "small-button");
+    refreshButton.type = "button";
+    refreshButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      refreshPatientDcm4cheeResults(patient.id, refreshButton);
+    });
+    actions.appendChild(refreshButton);
+    const row = document.createElement("tr");
+    row.className = Number(patient.id) === Number(selectedDcm4cheePatientId) ? "selected-row" : "";
+    row.append(
+      rowCell(createElement("span", "", "row-selector-dot")),
+      rowCell(dcm4cheePatientLabel(patient)),
+      rowCell(createElement("span", sync.displayStatus || sync.status || "Local only", `status ${dcm4cheeWorkflowStatusClass(sync.displayStatus || sync.status)}`)),
+      rowCell(orders.length),
+      rowCell(resultCount),
+      rowCell(actions),
+    );
+    row.addEventListener("click", () => selectDcm4cheePatient(patient.id));
+    body.appendChild(row);
+  });
+}
+
+function renderDcm4cheeSelectedPatient() {
+  const patient = selectedDcm4cheePatient();
+  const title = byId("dcm4chee-selected-patient-title");
+  const container = byId("dcm4chee-selected-patient-summary");
+  const refreshButton = byId("dcm4chee-refresh-results");
+  if (!title || !container || !refreshButton) return;
+  title.textContent = patient ? dcm4cheePatientLabel(patient) : "No patient selected";
+  refreshButton.disabled = !patient;
+  refreshButton.onclick = () => {
+    if (patient) refreshPatientDcm4cheeResults(patient.id, refreshButton);
+  };
+  container.replaceChildren();
+  if (!patient) {
+    container.appendChild(createElement("p", "Select a DICOM patient.", "muted"));
+    return;
+  }
+  const sync = patient.dcm4chee?.patient || {};
+  container.appendChild(dcm4cheeDetailBlock("Patient", [
+    ["MRN", patient.summary?.mrn],
+    ["Name", patient.summary?.name],
+    ["DOB", patient.summary?.dob],
+    ["Sex", patient.summary?.sex],
+    ["Patient ID", sync.patientId],
+    ["Issuer", sync.issuerOfPatientId],
+  ]));
+  container.appendChild(dcm4cheeDetailBlock("dcm4chee Patient Sync", [
+    ["Status", sync.displayStatus || sync.status || "Local only"],
+    ["Retryable", sync.retryable === undefined ? "" : (sync.retryable ? "Yes" : "No")],
+    ["HL7", sync.hl7Host && sync.hl7Port ? `${sync.hl7Host}:${sync.hl7Port}` : ""],
+    ["ACK", sync.ack?.code],
+    ["Last Sync", sync.lastSyncAt],
+    ["Error Type", sync.lastErrorType],
+    ["Error", sync.lastError],
+  ]));
+  renderDcm4cheeResultsBrowser(container, patient.dcm4chee?.dicomResults || [], "No refreshed dcm4chee results for this patient.");
+}
+
+function renderDcm4cheeOrderList() {
+  const body = byId("dcm4chee-order-list");
+  if (!body) return;
+  body.replaceChildren();
+  const orders = dcm4cheeConsoleOrders();
+  if (!orders.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell("No DICOM MWL orders for the selected patient.");
+    cell.colSpan = 6;
+    cell.className = "muted";
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  orders.forEach((order) => {
+    const patient = dcm4cheeOrderPatient(order);
+    const mwl = order.dcm4chee?.mwl || {};
+    const mapping = mwl.mapping || {};
+    const row = document.createElement("tr");
+    row.className = Number(order.id) === Number(selectedDcm4cheeOrderId) ? "selected-row" : "";
+    row.append(
+      rowCell(dcm4cheeOrderLabel(order)),
+      rowCell(patient?.summary?.name || order.summary?.name || "-"),
+      rowCell(createElement("span", dcm4cheeOrderStatus(order), `status ${dcm4cheeWorkflowStatusClass(dcm4cheeOrderStatus(order))}`)),
+      rowCell(createElement("span", dcm4cheeOrderVerificationStatus(order), `status ${dcm4cheeWorkflowStatusClass(dcm4cheeOrderVerificationStatus(order))}`)),
+      rowCell(mapping.accessionNumber || mwl.accessionNumber || "-"),
+      rowCell(dcm4cheeOrderActionButtons(order)),
+    );
+    row.addEventListener("click", () => selectDcm4cheeOrder(order.id));
+    body.appendChild(row);
+  });
+}
+
+function renderDcm4cheeSelectedOrder() {
+  const order = selectedDcm4cheeOrder();
+  const title = byId("dcm4chee-selected-order-title");
+  const container = byId("dcm4chee-selected-order-summary");
+  if (!title || !container) return;
+  title.textContent = order ? dcm4cheeOrderLabel(order) : "No order selected";
+  container.replaceChildren();
+  if (!order) {
+    container.appendChild(createElement("p", "Select a DICOM MWL order.", "muted"));
+    return;
+  }
+  const patient = dcm4cheeOrderPatient(order) || selectedDcm4cheePatient();
+  const mwl = order.dcm4chee?.mwl || {};
+  const mapping = mwl.mapping || {};
+  const latest = mwl.latest || {};
+  const verification = mapping.verification || mwl.verification || {};
+  const orderResults = dcm4cheeOrderResultRecords(patient, mapping, order.id);
+  container.appendChild(renderDcm4cheeWorkflowStrip(dcm4cheeWorkflowSummary(mwl, mapping, patient, order.id)));
+  container.appendChild(renderDcm4cheeOrderActions(order.id, patient?.id || order.patientRecordId, mwl, mapping));
+  container.appendChild(dcm4cheeDetailBlock("Order", [
+    ["Patient", patient?.summary?.name || order.summary?.name],
+    ["MRN", patient?.summary?.mrn || order.summary?.mrn],
+    ["Order", dcm4cheeOrderLabel(order)],
+    ["Code", order.summary?.orderCode || order.orderCode],
+    ["Requested", order.requestedAt],
+    ["Created", order.createdAt],
+  ]));
+  container.appendChild(dcm4cheeDetailBlock("MWL Sync", [
+    ["Status", mwl.displayStatus || mapping.status || mwl.status],
+    ["Retryable", mwl.retryable ? "Yes" : "No"],
+    ["Retry Count", mapping.retryCount ?? latest.retryCount ?? 0],
+    ["Last Sync", mapping.lastSyncAt || latest.lastSyncAt],
+    ["HTTP", mapping.lastHttpStatus || latest.httpStatus],
+    ["Error Type", mapping.lastErrorType || latest.errorType],
+    ["Error", mapping.lastError || latest.error],
+  ]));
+  container.appendChild(dcm4cheeDetailBlock("MWL Verification", [
+    ["Status", verification.status],
+    ["Method", verification.method],
+    ["Last Verified", verification.lastVerifiedAt],
+    ["Attempt", verification.attemptId],
+    ["Error Type", verification.errorType],
+    ["Error", verification.error],
+  ]));
+  container.appendChild(dcm4cheeDetailBlock("Identifiers", [
+    ["Study Instance UID", mapping.studyInstanceUid || mwl.studyInstanceUid],
+    ["Accession Number", mapping.accessionNumber || mwl.accessionNumber],
+    ["Requested Procedure ID", mapping.requestedProcedureId || mwl.requestedProcedureId],
+    ["Scheduled Procedure Step ID", mapping.scheduledProcedureStepId || mwl.scheduledProcedureStepId],
+    ["Scheduled Station AE Title", mapping.scheduledStationAETitle || mwl.scheduledStationAETitle],
+    ["MWL AE", mapping.mwlAETitle || mwl.mwlAETitle],
+    ["Patient ID", mapping.patientId],
+    ["Issuer of Patient ID", mapping.issuerOfPatientId],
+  ]));
+  renderDcm4cheeResultsBrowser(container, orderResults, "No refreshed PACS result rows matched this order.");
+  const history = createElement("div", "", "detail-block raw-details");
+  history.id = "dcm4chee-console-attempt-history";
+  history.appendChild(createElement("h3", "dcm4chee Attempts"));
+  history.appendChild(createElement("p", "Loading attempt history...", "muted"));
+  container.appendChild(history);
+  loadDcm4cheeAttemptHistory(order.id, "dcm4chee-console-attempt-history");
+}
+
+function renderDcm4cheeProfileSummary() {
+  const container = byId("dcm4chee-profile-summary");
+  if (!container) return;
+  container.replaceChildren();
+  if (!dcm4cheeProfileDiagnostics) {
+    container.appendChild(createElement("p", "Profile diagnostics are not loaded.", "muted"));
+    return;
+  }
+  container.appendChild(dcm4cheeDetailBlock("Profile", [
+    ["Profile", dcm4cheeProfileDiagnostics.profileName],
+    ["Status", dcm4cheeProfileDiagnostics.valid ? "Valid" : "Needs attention"],
+    ["Summary", dcm4cheeProfileDiagnostics.summary],
+  ]));
+  const checks = dcm4cheeProfileDiagnostics.checks || [];
+  if (checks.length) {
+    const list = createElement("div", "", "dcm4chee-diagnostic-checks full-width");
+    checks.forEach((check) => {
+      const healthy = check.status === "Healthy";
+      const item = createElement("div", "", "dcm4chee-diagnostic-check");
+      item.append(
+        createElement("strong", check.field || check.name || "Check"),
+        createElement("span", check.status || (healthy ? "Healthy" : "Down"), `status ${healthy ? "success" : "error"}`),
+        createElement("p", check.message || "-", "muted"),
+      );
+      list.appendChild(item);
+    });
+    container.appendChild(list);
+  }
+}
+
+function renderDcm4cheeConsole() {
+  ensureDcm4cheeSelection();
+  renderDcm4cheePatientList();
+  renderDcm4cheeSelectedPatient();
+  renderDcm4cheeOrderList();
+  renderDcm4cheeSelectedOrder();
+  renderDcm4cheeProfileSummary();
+}
+
+async function refreshDcm4cheeConsole() {
+  setStatus("dcm4chee-console-status", "Refreshing...", "pending");
+  try {
+    const [patientsResult, ordersResult, diagnosticsResult] = await Promise.all([
+      requestJson("/api/patients"),
+      requestJson("/api/orders"),
+      requestJson("/api/dcm4chee/profile/diagnostics"),
+    ]);
+    patientRecords = patientsResult.items || [];
+    orderRecords = ordersResult.items || [];
+    dcm4cheeProfileDiagnostics = diagnosticsResult;
+    renderDcm4cheeConsole();
+    setStatus(
+      "dcm4chee-console-status",
+      diagnosticsResult.valid ? "dcm4chee ready" : "Profile needs attention",
+      diagnosticsResult.valid ? "success" : "warning",
+    );
+  } catch (error) {
+    setStatus("dcm4chee-console-status", error.message, "error");
+  }
+}
+
 
 function dcm4cheeOrderResultRecords(patient, mapping = {}, orderId = "") {
   const results = patient?.dcm4chee?.dicomResults || [];
@@ -1323,9 +1687,11 @@ async function refreshPatientDcm4cheeResults(patientId, button, options = {}) {
     });
     const patient = result.patient || {};
     patientRecords = patientRecords.map((item) => Number(item.id) === Number(patient.id) ? patient : item);
+    selectedDcm4cheePatientId = patient.id || selectedDcm4cheePatientId;
     renderPatientRecordList();
     byId("patient-payload-preview").textContent = patient.payload || "";
     renderPatientSummaryFromRecord(patient);
+    renderDcm4cheeConsole();
     const count = (patient.dcm4chee?.dicomResults || []).length;
     setStatus(
       "patient-form-status",
@@ -1334,12 +1700,15 @@ async function refreshPatientDcm4cheeResults(patientId, button, options = {}) {
     );
     if (options.orderId) {
       selectedOrderRecordId = options.orderId;
+      selectedDcm4cheeOrderId = options.orderId;
       setStatus("order-form-status", `PACS results refreshed (${count})`, result.success ? "success" : "warning");
       await refreshOrders();
     }
+    setStatus("dcm4chee-console-status", `PACS results refreshed (${count})`, result.success ? "success" : "warning");
   } catch (error) {
     setStatus("patient-form-status", error.message, "error");
     if (options.orderId) setStatus("order-form-status", error.message, "error");
+    setStatus("dcm4chee-console-status", error.message, "error");
   } finally {
     if (button) button.disabled = false;
   }
@@ -2595,8 +2964,8 @@ function dcm4cheeDetailBlock(title, rows) {
   return block;
 }
 
-function renderDcm4cheeAttemptHistory(attempts) {
-  const container = byId("dcm4chee-attempt-history");
+function renderDcm4cheeAttemptHistory(attempts, containerId = "dcm4chee-attempt-history") {
+  const container = byId(containerId);
   if (!container) return;
   container.replaceChildren(createElement("h3", "dcm4chee Attempts"));
   if (!attempts.length) {
@@ -2634,12 +3003,12 @@ function renderDcm4cheeAttemptHistory(attempts) {
   container.appendChild(list);
 }
 
-async function loadDcm4cheeAttemptHistory(orderId) {
-  const container = byId("dcm4chee-attempt-history");
+async function loadDcm4cheeAttemptHistory(orderId, containerId = "dcm4chee-attempt-history") {
+  const container = byId(containerId);
   if (!container) return;
   try {
     const result = await requestJson(`/api/orders/${orderId}/dcm4chee-attempts`);
-    renderDcm4cheeAttemptHistory(result.items || []);
+    renderDcm4cheeAttemptHistory(result.items || [], containerId);
   } catch (error) {
     container.replaceChildren(createElement("h3", "dcm4chee Attempts"), createElement("p", error.message, "muted"));
   }
@@ -2826,9 +3195,12 @@ async function retryDcm4cheeOrder(orderId, button) {
     const mwl = result.item?.dcm4chee?.mwl || {};
     setStatus("order-form-status", mwl.displayStatus || "dcm4chee sync updated", result.success ? "success" : "error");
     selectedOrderRecordId = orderId;
+    selectedDcm4cheeOrderId = orderId;
     await refreshOrders();
+    await refreshDcm4cheeConsole();
   } catch (error) {
     setStatus("order-form-status", "Retry failed", "error");
+    setStatus("dcm4chee-console-status", error.message, "error");
     byId("order-payload-preview").textContent = error.message;
   } finally {
     if (button) button.disabled = false;
@@ -2847,9 +3219,12 @@ async function verifyDcm4cheeOrder(orderId, button) {
     const status = verification.status || "MWL verification updated";
     setStatus("order-form-status", status, result.success ? "success" : "error");
     selectedOrderRecordId = orderId;
+    selectedDcm4cheeOrderId = orderId;
     await refreshOrders();
+    await refreshDcm4cheeConsole();
   } catch (error) {
     setStatus("order-form-status", "Verification failed", "error");
+    setStatus("dcm4chee-console-status", error.message, "error");
     byId("order-payload-preview").textContent = error.message;
   } finally {
     if (button) button.disabled = false;
@@ -3808,6 +4183,7 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("create-order").addEventListener("click", createOrderRecord);
   byId("refresh-orders").addEventListener("click", refreshOrders);
   byId("copy-order-payload").addEventListener("click", () => copyTextFromElement("order-payload-preview"));
+  byId("refresh-dcm4chee-console").addEventListener("click", refreshDcm4cheeConsole);
   byId("refresh-oie-inventory").addEventListener("click", refreshOieInventory);
   byId("copy-oie-payload").addEventListener("click", () => copyTextFromElement("oie-payload-preview"));
   byId("start-oie-listener").addEventListener("click", startOieListener);
