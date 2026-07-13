@@ -2737,6 +2737,14 @@ class HealthcareLabApiTests(unittest.TestCase):
             f"/api/orders/{order['id']}/dcm4chee-simulated-ap-return",
             json={"type": "pdf", "artifactUrl": "http://localhost/reports/zac-42.pdf"},
         )
+        store.begin_dcm4chee_result_refresh(patient["id"], "intervening-refresh")
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            refresh_generation="intervening-refresh",
+        )
+        store.complete_dcm4chee_result_refresh(patient["id"], "intervening-refresh")
         dicom = self.client.post(
             f"/api/orders/{order['id']}/dcm4chee-simulated-ap-return",
             json={"type": "dicom"},
@@ -2938,18 +2946,21 @@ class HealthcareLabApiTests(unittest.TestCase):
             status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
             refresh_generation="generation-1",
         )
+        store.complete_dcm4chee_result_refresh(patient["id"], "generation-1")
         store.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient["id"],
             profile=profile,
             status=DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
             refresh_generation="generation-2",
         )
+        store.complete_dcm4chee_result_refresh(patient["id"], "generation-2")
         store.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient["id"],
             profile=profile,
             status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
             refresh_generation="generation-3",
         )
+        store.complete_dcm4chee_result_refresh(patient["id"], "generation-3")
 
         direct_results = store.list_dcm4chee_results_for_patient(patient["id"])
         aggregated_results = store.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"]
@@ -2958,6 +2969,58 @@ class HealthcareLabApiTests(unittest.TestCase):
             self.assertEqual(
                 [(item["reconciliationStatus"], item["refreshGeneration"]) for item in results],
                 [(DCM4CHEE_RESULT_STATUS_NO_RESULT, "generation-3")],
+            )
+
+    def test_dcm4chee_result_refresh_publishes_only_completed_snapshots(self):
+        patient = self.create_local_patient()
+        store = self.client.application.extensions["demo_store"]
+        profile = dcm4chee_profile_from_config(self.client.application.config)
+
+        store.begin_dcm4chee_result_refresh(patient["id"], "generation-0")
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            refresh_generation="generation-0",
+        )
+        store.complete_dcm4chee_result_refresh(patient["id"], "generation-0")
+
+        store.begin_dcm4chee_result_refresh(patient["id"], "generation-1")
+        for results in (
+            store.list_dcm4chee_results_for_patient(patient["id"]),
+            store.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"],
+        ):
+            self.assertEqual([item["refreshGeneration"] for item in results], ["generation-0"])
+
+        store.begin_dcm4chee_result_refresh(patient["id"], "generation-2")
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            refresh_generation="generation-2",
+        )
+        store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient["id"],
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            refresh_generation="generation-1",
+        )
+        store.complete_dcm4chee_result_refresh(patient["id"], "generation-1")
+
+        self.assertEqual(
+            [item["refreshGeneration"] for item in store.list_dcm4chee_results_for_patient(patient["id"])],
+            ["generation-0"],
+        )
+
+        store.complete_dcm4chee_result_refresh(patient["id"], "generation-2")
+
+        for results in (
+            store.list_dcm4chee_results_for_patient(patient["id"]),
+            store.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"],
+        ):
+            self.assertEqual(
+                [(item["reconciliationStatus"], item["refreshGeneration"]) for item in results],
+                [(DCM4CHEE_RESULT_STATUS_NO_RESULT, "generation-2")],
             )
 
     @patch("app.urllib.request.urlopen")

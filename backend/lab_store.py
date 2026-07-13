@@ -1103,6 +1103,8 @@ class DemoStore:
                     patient_record_id INTEGER NOT NULL,
                     refresh_generation TEXT NOT NULL,
                     started_at TEXT NOT NULL,
+                    completed_at TEXT NOT NULL DEFAULT '',
+                    results_snapshot_json TEXT NOT NULL DEFAULT '[]',
                     FOREIGN KEY(patient_record_id) REFERENCES local_patient_records(id) ON DELETE CASCADE,
                     UNIQUE(patient_record_id, refresh_generation)
                 );
@@ -1280,6 +1282,18 @@ class DemoStore:
                 "local_dcm4chee_result_records",
                 "refresh_generation",
                 "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "local_dcm4chee_result_refresh_runs",
+                "completed_at",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "local_dcm4chee_result_refresh_runs",
+                "results_snapshot_json",
+                "TEXT NOT NULL DEFAULT '[]'",
             )
             self._backfill_dcm4chee_mwl_mappings(connection)
             self._ensure_column(connection, "local_patient_records", "email", "TEXT NOT NULL DEFAULT ''")
@@ -3644,9 +3658,16 @@ class DemoStore:
                 now,
             )
             existing = connection.execute(
-                "SELECT id, first_seen_at FROM local_dcm4chee_result_records WHERE result_key = ?",
+                "SELECT * FROM local_dcm4chee_result_records WHERE result_key = ?",
                 (result_key,),
             ).fetchone()
+            if existing and self._dcm4chee_result_row_is_newer_than_generation(
+                connection,
+                existing,
+                values["patient_record_id"],
+                values["refresh_generation"],
+            ):
+                return self._dcm4chee_result_record_dict(existing)
             if existing:
                 connection.execute(
                     """
@@ -3896,6 +3917,11 @@ class DemoStore:
             if result_type in {"pdf", "dicom"}
             else ""
         ) or f"simulated-ap-return-{now_iso()}"
+        self.begin_dcm4chee_result_refresh(
+            int(order["patientRecordId"]),
+            generation,
+            promote_existing=True,
+        )
         base_metadata = {
             "study_instance_uid": str(mapping.get("studyInstanceUid") or ""),
             "accession_number": str(mapping.get("accessionNumber") or ""),
@@ -3959,6 +3985,7 @@ class DemoStore:
                     refresh_generation=generation,
                 )
             )
+        self.complete_dcm4chee_result_refresh(int(order["patientRecordId"]), generation)
         return {
             "items": created,
             "evidence": self.dcm4chee_e2e_evidence_for_order(int(order_record_id), profile),
@@ -4010,9 +4037,16 @@ class DemoStore:
                 now,
             )
             existing = connection.execute(
-                "SELECT id FROM local_dcm4chee_result_records WHERE result_key = ?",
+                "SELECT * FROM local_dcm4chee_result_records WHERE result_key = ?",
                 (result_key,),
             ).fetchone()
+            if existing and self._dcm4chee_result_row_is_newer_than_generation(
+                connection,
+                existing,
+                int(patient_record_id),
+                generation,
+            ):
+                return self._dcm4chee_result_record_dict(existing)
             if existing:
                 connection.execute(
                     """
@@ -4089,22 +4123,190 @@ class DemoStore:
             (int(patient_record_id), generation, started_at),
         )
 
+    @staticmethod
+    def _dcm4chee_result_refresh_run_id(
+        connection: sqlite3.Connection,
+        patient_record_id: int,
+        refresh_generation: str,
+    ) -> int | None:
+        row = connection.execute(
+            """
+            SELECT id FROM local_dcm4chee_result_refresh_runs
+            WHERE patient_record_id = ? AND refresh_generation = ?
+            """,
+            (int(patient_record_id), str(refresh_generation or "").strip()),
+        ).fetchone()
+        return int(row["id"]) if row else None
+
+    @classmethod
+    def _dcm4chee_result_row_is_newer_than_generation(
+        cls,
+        connection: sqlite3.Connection,
+        existing: sqlite3.Row,
+        patient_record_id: int | None,
+        refresh_generation: str,
+    ) -> bool:
+        existing_generation = str(existing["refresh_generation"] or "").strip()
+        incoming_generation = str(refresh_generation or "").strip()
+        if patient_record_id is None or not existing_generation or not incoming_generation:
+            return False
+        existing_run_id = cls._dcm4chee_result_refresh_run_id(
+            connection,
+            int(patient_record_id),
+            existing_generation,
+        )
+        incoming_run_id = cls._dcm4chee_result_refresh_run_id(
+            connection,
+            int(patient_record_id),
+            incoming_generation,
+        )
+        return bool(
+            existing_run_id is not None
+            and incoming_run_id is not None
+            and existing_run_id > incoming_run_id
+        )
+
     def begin_dcm4chee_result_refresh(
         self,
         patient_record_id: int,
         refresh_generation: str,
+        *,
+        promote_existing: bool = False,
     ) -> None:
         generation = str(refresh_generation or "").strip()
         if not generation:
             raise SimulatorValidationError("DICOM result refresh generation is required.")
         started_at = now_iso()
         with self.lock, self.connect() as connection:
+            existing_run = connection.execute(
+                """
+                SELECT id FROM local_dcm4chee_result_refresh_runs
+                WHERE patient_record_id = ? AND refresh_generation = ?
+                """,
+                (int(patient_record_id), generation),
+            ).fetchone()
+            latest_run = connection.execute(
+                """
+                SELECT id FROM local_dcm4chee_result_refresh_runs
+                WHERE patient_record_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (int(patient_record_id),),
+            ).fetchone()
+            if (
+                promote_existing
+                and existing_run
+                and latest_run
+                and int(existing_run["id"]) != int(latest_run["id"])
+            ):
+                connection.execute(
+                    "DELETE FROM local_dcm4chee_result_refresh_runs WHERE id = ?",
+                    (int(existing_run["id"]),),
+                )
+            completed = connection.execute(
+                """
+                SELECT id FROM local_dcm4chee_result_refresh_runs
+                WHERE patient_record_id = ? AND completed_at != ''
+                LIMIT 1
+                """,
+                (int(patient_record_id),),
+            ).fetchone()
+            if not completed:
+                legacy_rows = connection.execute(
+                    """
+                    SELECT * FROM local_dcm4chee_result_records
+                    WHERE patient_record_id = ?
+                    ORDER BY last_refreshed_at DESC, id DESC
+                    """,
+                    (int(patient_record_id),),
+                ).fetchall()
+                if legacy_rows:
+                    legacy_generation = str(legacy_rows[0]["refresh_generation"] or "").strip()
+                    if legacy_generation:
+                        legacy_rows = [
+                            row for row in legacy_rows
+                            if str(row["refresh_generation"] or "").strip() == legacy_generation
+                        ]
+                    else:
+                        legacy_generation = "legacy-snapshot"
+                    legacy_snapshot = [self._dcm4chee_result_record_dict(row) for row in legacy_rows]
+                    self._record_dcm4chee_result_refresh_run(
+                        connection,
+                        int(patient_record_id),
+                        legacy_generation,
+                        started_at,
+                    )
+                    connection.execute(
+                        """
+                        UPDATE local_dcm4chee_result_refresh_runs
+                        SET completed_at = ?, results_snapshot_json = ?
+                        WHERE patient_record_id = ? AND refresh_generation = ?
+                        """,
+                        (
+                            started_at,
+                            json.dumps(legacy_snapshot, sort_keys=True),
+                            int(patient_record_id),
+                            legacy_generation,
+                        ),
+                    )
             self._record_dcm4chee_result_refresh_run(
                 connection,
                 int(patient_record_id),
                 generation,
                 started_at,
             )
+
+    def complete_dcm4chee_result_refresh(
+        self,
+        patient_record_id: int,
+        refresh_generation: str,
+    ) -> list[dict[str, Any]]:
+        generation = str(refresh_generation or "").strip()
+        if not generation:
+            raise SimulatorValidationError("DICOM result refresh generation is required.")
+        completed_at = now_iso()
+        with self.lock, self.connect() as connection:
+            self._record_dcm4chee_result_refresh_run(
+                connection,
+                int(patient_record_id),
+                generation,
+                completed_at,
+            )
+            latest_run = connection.execute(
+                """
+                SELECT refresh_generation FROM local_dcm4chee_result_refresh_runs
+                WHERE patient_record_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (int(patient_record_id),),
+            ).fetchone()
+            if latest_run and str(latest_run["refresh_generation"] or "").strip() != generation:
+                return []
+            rows = connection.execute(
+                """
+                SELECT * FROM local_dcm4chee_result_records
+                WHERE patient_record_id = ? AND refresh_generation = ?
+                ORDER BY last_refreshed_at DESC, id DESC
+                """,
+                (int(patient_record_id), generation),
+            ).fetchall()
+            snapshot = [self._dcm4chee_result_record_dict(row) for row in rows]
+            connection.execute(
+                """
+                UPDATE local_dcm4chee_result_refresh_runs
+                SET completed_at = ?, results_snapshot_json = ?
+                WHERE patient_record_id = ? AND refresh_generation = ?
+                """,
+                (
+                    completed_at,
+                    json.dumps(snapshot, sort_keys=True),
+                    int(patient_record_id),
+                    generation,
+                ),
+            )
+        return snapshot
 
     def get_dcm4chee_result_record(self, record_id: int) -> dict[str, Any]:
         with self.connect() as connection:
@@ -4120,33 +4322,26 @@ class DemoStore:
         with self.connect() as connection:
             latest = connection.execute(
                 """
-                SELECT refresh_generation FROM local_dcm4chee_result_refresh_runs
-                WHERE patient_record_id = ?
+                SELECT results_snapshot_json FROM local_dcm4chee_result_refresh_runs
+                WHERE patient_record_id = ? AND completed_at != ''
                 ORDER BY id DESC
                 LIMIT 1
                 """,
                 (int(patient_record_id),),
             ).fetchone()
-            if not latest:
-                latest = connection.execute(
-                    """
-                    SELECT refresh_generation FROM local_dcm4chee_result_records
-                    WHERE patient_record_id = ? AND refresh_generation != ''
-                    ORDER BY last_refreshed_at DESC, id DESC
-                    LIMIT 1
-                    """,
-                    (int(patient_record_id),),
-                ).fetchone()
             if latest:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_dcm4chee_result_records
-                    WHERE patient_record_id = ? AND refresh_generation = ?
-                    ORDER BY last_refreshed_at DESC, id DESC
-                    """,
-                    (int(patient_record_id), latest["refresh_generation"]),
-                ).fetchall()
-                return [self._dcm4chee_result_record_dict(row) for row in rows]
+                snapshot = self._json_value(latest["results_snapshot_json"], [])
+                return snapshot if isinstance(snapshot, list) else []
+            has_run = connection.execute(
+                """
+                SELECT 1 FROM local_dcm4chee_result_refresh_runs
+                WHERE patient_record_id = ?
+                LIMIT 1
+                """,
+                (int(patient_record_id),),
+            ).fetchone()
+            if has_run:
+                return []
             rows = connection.execute(
                 """
                 SELECT * FROM local_dcm4chee_result_records
@@ -6780,7 +6975,7 @@ class DemoStore:
                 ).fetchall()
                 dcm4chee_result_refresh_rows = connection.execute(
                     f"""
-                    SELECT patient_record_id, refresh_generation
+                    SELECT patient_record_id, completed_at, results_snapshot_json
                     FROM local_dcm4chee_result_refresh_runs
                     WHERE patient_record_id IN ({placeholders})
                     ORDER BY id DESC
@@ -6793,20 +6988,25 @@ class DemoStore:
                 source_id = str(dcm4chee_row["patient_record_id"])
                 if source_id not in dcm4chee_by_source_id:
                     dcm4chee_by_source_id[source_id] = self._dcm4chee_patient_sync_dict(dcm4chee_row)
-            latest_result_generation_by_source_id: dict[str, str] = {}
+            dcm4chee_result_run_patient_ids: set[str] = set()
             for refresh_row in dcm4chee_result_refresh_rows:
                 source_id = str(refresh_row["patient_record_id"])
-                if source_id not in latest_result_generation_by_source_id:
-                    latest_result_generation_by_source_id[source_id] = str(
-                        refresh_row["refresh_generation"] or ""
-                    )
+                dcm4chee_result_run_patient_ids.add(source_id)
+                if refresh_row["completed_at"] and source_id not in dcm4chee_results_by_source_id:
+                    snapshot = self._json_value(refresh_row["results_snapshot_json"], [])
+                    dcm4chee_results_by_source_id[source_id] = snapshot if isinstance(snapshot, list) else []
+            latest_result_generation_by_source_id: dict[str, str] = {}
             for dcm4chee_result_row in dcm4chee_result_rows:
                 source_id = str(dcm4chee_result_row["patient_record_id"])
+                if source_id in dcm4chee_result_run_patient_ids:
+                    continue
                 generation = str(dcm4chee_result_row["refresh_generation"] or "")
                 if generation and source_id not in latest_result_generation_by_source_id:
                     latest_result_generation_by_source_id[source_id] = generation
             for dcm4chee_result_row in dcm4chee_result_rows:
                 source_id = str(dcm4chee_result_row["patient_record_id"])
+                if source_id in dcm4chee_result_run_patient_ids:
+                    continue
                 latest_generation = latest_result_generation_by_source_id.get(source_id)
                 if latest_generation and dcm4chee_result_row["refresh_generation"] != latest_generation:
                     continue

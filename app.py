@@ -1142,6 +1142,7 @@ def refresh_patient_dcm4chee_results(
             diagnostic_payload={"reason": "no_local_dcm4chee_orders"},
             refresh_generation=refresh_generation,
         )
+        store.complete_dcm4chee_result_refresh(patient_record_id, refresh_generation)
         patient = store.get_patient_record(patient_record_id)
         return {
             "success": True,
@@ -1252,6 +1253,7 @@ def refresh_patient_dcm4chee_results(
                     refresh_generation=refresh_generation,
                 )
             )
+    store.complete_dcm4chee_result_refresh(patient_record_id, refresh_generation)
     patient = store.get_patient_record(patient_record_id)
     return {
         "success": not any(
