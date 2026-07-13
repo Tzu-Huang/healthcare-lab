@@ -6,9 +6,9 @@
 
 ## 2. Patient Preset and Protocol Propagation
 
-- [ ] 2.1 Change the Patient demo preset and form validation so blank MRN requests automatic allocation while manual MRN entry remains supported.
-- [ ] 2.2 Render `Generated on create` in unsaved Patient previews and show the persisted allocated MRN after creation.
-- [ ] 2.3 Verify generated MRNs propagate through HL7, FHIR, GDT, and DICOM Patient payloads and remain unchanged when copied into Orders.
+- [x] 2.1 Change the Patient demo preset and form validation so blank MRN requests automatic allocation while manual MRN entry remains supported.
+- [x] 2.2 Render `Generated on create` in unsaved Patient previews and show the persisted allocated MRN after creation.
+- [x] 2.3 Verify generated MRNs propagate through HL7, FHIR, GDT, and DICOM Patient payloads and remain unchanged when copied into Orders.
 
 ## 3. Consistent Order Identity Presentation
 
