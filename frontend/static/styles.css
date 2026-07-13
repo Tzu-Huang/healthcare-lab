@@ -1390,24 +1390,157 @@ tr.selected-row {
   gap: 10px;
 }
 
-.dcm4chee-console-grid.patient-focused-grid {
-  grid-template-columns: minmax(340px, 0.78fr) minmax(0, 1.22fr);
+.dcm4chee-workspace {
+  display: grid;
+  gap: 20px;
+  margin: 22px 0 34px;
 }
 
-.dcm4chee-console-grid.lower-grid {
-  grid-template-columns: minmax(420px, 0.9fr) minmax(0, 1.1fr);
+.dcm4chee-console-grid {
+  display: grid;
+  grid-template-columns: minmax(560px, 1.45fr) minmax(340px, 0.55fr);
+  gap: 20px;
+  align-items: stretch;
 }
 
-.dcm4chee-selected-patient-panel,
-.dcm4chee-selected-order-panel,
+.dcm4chee-patient-panel,
+.dcm4chee-workflow-panel,
 .dcm4chee-profile-panel {
   min-width: 0;
+}
+
+.dcm4chee-patient-table-wrap,
+.dcm4chee-order-table-wrap {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.dcm4chee-patient-table thead th,
+.dcm4chee-order-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #ffffff;
+}
+
+.dcm4chee-orders-heading,
+.dcm4chee-selected-order-bar,
+.dcm4chee-preview-heading,
+.dcm4chee-selected-patient-heading {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ui-line);
+}
+
+.dcm4chee-orders-heading h3,
+.dcm4chee-selected-order-bar h3,
+.dcm4chee-preview-heading h3,
+.dcm4chee-selected-patient-heading h3 {
+  margin: 0;
+  color: #13233a;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.dcm4chee-send-selection-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.dcm4chee-selected-order-bar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dcm4chee-selected-order-bar button {
+  flex: 0 0 auto;
+}
+
+.dcm4chee-preview-output {
+  min-height: 180px;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.dcm4chee-workflow-panel {
+  min-height: 560px;
 }
 
 .dcm4chee-patient-table,
 .dcm4chee-order-table {
   table-layout: auto;
   min-width: 100%;
+}
+
+.dcm4chee-patient-table th:first-child,
+.dcm4chee-patient-table td:first-child {
+  width: 38px;
+}
+
+.dcm4chee-patient-toggle {
+  min-width: 24px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #405068;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  transform: rotate(-90deg);
+  transition: transform 140ms ease, color 140ms ease;
+}
+
+.dcm4chee-patient-toggle.expanded {
+  transform: rotate(0deg);
+}
+
+.dcm4chee-patient-toggle:hover {
+  background: transparent;
+  color: #1d4ed8;
+}
+
+.dcm4chee-patient-detail-row td {
+  padding: 14px;
+  background: #ffffff;
+}
+
+.dcm4chee-patient-rollup-content {
+  display: grid;
+  gap: 18px;
+}
+
+.dcm4chee-patient-section {
+  display: grid;
+  gap: 8px;
+}
+
+.dcm4chee-patient-section-heading {
+  margin-bottom: 0;
+}
+
+.dcm4chee-patient-section h3 {
+  margin: 0;
+  color: #13233a;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.dcm4chee-patient-detail-row .dcm4chee-nested-table-wrap {
+  margin: 0;
+}
+
+.dcm4chee-nested-table {
+  width: auto;
+  min-width: 100%;
+  table-layout: auto;
+}
+
+.dcm4chee-nested-table th,
+.dcm4chee-nested-table td {
+  white-space: nowrap;
 }
 
 .dcm4chee-patient-table td:nth-child(2),
@@ -2579,6 +2712,7 @@ button.primary:hover,
     grid-template-columns: 1fr;
   }
 
+  .dcm4chee-console-grid,
   .oie-console-grid,
   .oie-console-grid.patient-focused-grid,
   .gdt-console-grid,
@@ -2660,6 +2794,24 @@ button.primary:hover,
   .oie-send-connection-grid,
   .oie-connection-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dcm4chee-patient-table-wrap,
+  .dcm4chee-order-table-wrap {
+    max-height: none;
+  }
+
+  .dcm4chee-send-selection-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dcm4chee-selected-order-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dcm4chee-selected-order-bar button {
+    width: 100%;
   }
 
   .oie-selected-order-bar {
