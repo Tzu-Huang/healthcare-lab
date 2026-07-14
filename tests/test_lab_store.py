@@ -52,6 +52,154 @@ class HealthcareLabStoreTests(unittest.TestCase):
         payload.update(overrides)
         return payload
 
+    @staticmethod
+    def oie_settings_payload(**overrides):
+        payload = {
+            "managementApi": {
+                "baseUrl": "http://oie:8080",
+                "username": "admin",
+                "tlsVerify": False,
+                "timeoutSeconds": 10,
+            },
+            "resultListener": {
+                "host": "0.0.0.0",
+                "port": 6665,
+                "mllpFraming": True,
+                "autoStart": True,
+            },
+            "managedChannels": [],
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_oie_settings_profile_seeds_secret_safe_local_defaults(self):
+        profile = self.store.get_oie_settings_profile()
+
+        self.assertEqual(profile["profileName"], "local-oie")
+        self.assertEqual(profile["managementApi"]["baseUrl"], "http://oie:8080")
+        self.assertEqual(profile["managementApi"]["username"], "admin")
+        self.assertTrue(profile["managementApi"]["passwordConfigured"])
+        self.assertFalse(profile["managementApi"]["tlsVerify"])
+        self.assertEqual(profile["managementApi"]["timeoutSeconds"], 10)
+        self.assertEqual(
+            profile["resultListener"],
+            {
+                "host": "0.0.0.0",
+                "port": 6665,
+                "mllpFraming": True,
+                "autoStart": True,
+            },
+        )
+        self.assertNotIn("password", profile["managementApi"])
+        self.assertNotIn("Admin", json.dumps(profile))
+        with self.store.connect() as connection:
+            password = connection.execute(
+                "SELECT management_api_password FROM oie_settings_profiles"
+            ).fetchone()[0]
+        self.assertEqual(password, "Admin")
+
+    def test_oie_settings_profile_update_persists_and_replaces_channel_mappings(self):
+        payload = self.oie_settings_payload(
+            managementApi={
+                "baseUrl": "https://oie.example.test/api",
+                "username": "operator",
+                "password": "replacement-secret",
+                "tlsVerify": True,
+                "timeoutSeconds": 12.5,
+            },
+            resultListener={
+                "host": "127.0.0.1",
+                "port": 7665,
+                "mllpFraming": False,
+                "autoStart": False,
+            },
+            managedChannels=[
+                {
+                    "logicalType": "HLAB-RESULT",
+                    "channelId": "channel-1",
+                    "channelName": "HLAB Result",
+                    "templateVersion": "1.2.0",
+                    "lastKnownRevision": "42",
+                }
+            ],
+        )
+
+        updated = self.store.update_oie_settings_profile(payload)
+        reopened = DemoStore(self.store.path)
+        persisted = reopened.get_oie_settings_profile()
+
+        self.assertEqual(updated, persisted)
+        self.assertEqual(persisted["managementApi"]["timeoutSeconds"], 12.5)
+        self.assertEqual(persisted["managedChannels"][0]["logicalType"], "hlab-result")
+        self.assertEqual(persisted["managedChannels"][0]["channelId"], "channel-1")
+        self.assertNotIn("replacement-secret", json.dumps(persisted))
+
+        replacement = self.oie_settings_payload(
+            managedChannels=[
+                {
+                    "logicalType": "order-ingress",
+                    "channelName": "Order Ingress",
+                }
+            ]
+        )
+        replaced = reopened.update_oie_settings_profile(replacement)
+        self.assertEqual(
+            [item["logicalType"] for item in replaced["managedChannels"]],
+            ["order-ingress"],
+        )
+        with reopened.connect() as connection:
+            password = connection.execute(
+                "SELECT management_api_password FROM oie_settings_profiles"
+            ).fetchone()[0]
+        self.assertEqual(password, "replacement-secret")
+
+    def test_oie_settings_profile_rejects_duplicate_logical_types_atomically(self):
+        original = self.store.update_oie_settings_profile(
+            self.oie_settings_payload(
+                managedChannels=[
+                    {"logicalType": "result", "channelName": "Original Result"}
+                ]
+            )
+        )
+        invalid = self.oie_settings_payload(
+            managedChannels=[
+                {"logicalType": "RESULT", "channelName": "One"},
+                {"logicalType": "result", "channelName": "Two"},
+            ]
+        )
+
+        with self.assertRaisesRegex(SimulatorValidationError, "duplicate logicalType 'result'"):
+            self.store.update_oie_settings_profile(invalid)
+
+        self.assertEqual(self.store.get_oie_settings_profile(), original)
+
+    def test_oie_settings_profile_migration_preserves_existing_workflow_records(self):
+        patient = self.store.create_patient_record(self.patient_payload(mrn="MRN-LEGACY-001"))
+        order = self.store.create_order_record({"patientRecordId": patient["id"]})
+        result = self.store.record_oie_result(
+            "MSH|legacy",
+            {
+                "messageControlId": "LEGACY-RESULT-1",
+                "messageType": "ORU^R01",
+                "patientMrn": "MRN-LEGACY-001",
+                "placerOrderNumber": order["localOrderNumber"],
+                "fillerOrderNumber": "",
+            },
+        )
+        with self.store.connect() as connection:
+            connection.execute("DROP TABLE oie_managed_channel_mappings")
+            connection.execute("DROP TABLE oie_settings_profiles")
+
+        reopened = DemoStore(self.store.path)
+
+        self.assertEqual(reopened.get_patient_record(patient["id"])["id"], patient["id"])
+        self.assertEqual(reopened.get_order_record(order["id"])["id"], order["id"])
+        self.assertEqual(reopened.list_oie_results()[0]["id"], result["id"])
+        self.assertEqual(
+            reopened.get_oie_settings_profile()["managementApi"]["username"],
+            "admin",
+        )
+
     def test_patient_mrn_sequence_allocates_persists_and_does_not_reuse_deleted_values(self):
         first = self.store.create_patient_record(self.patient_payload())
         second = self.store.create_patient_record(self.patient_payload(firstName="Blake"))
