@@ -52,6 +52,7 @@ from backend.api.dcm4chee import create_dcm4chee_profile_blueprint
 from backend.api.patients import create_patients_blueprint
 from backend.api.orders import create_orders_blueprint
 from backend.api.fhir import create_fhir_blueprint
+from backend.api.gdt import create_gdt_blueprint
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain import fhir as fhir_domain
@@ -3567,6 +3568,14 @@ def create_app(database_path: str | None = None) -> Flask:
             record_sync=sync_fhir_workflow_record_to_medplum,
         )
     )
+    app.register_blueprint(
+        create_gdt_blueprint(
+            app, store, is_internal_file=gdt_is_internal_or_temp_file,
+            has_supported_extension=gdt_has_supported_exchange_extension,
+            filename_binding_matches=gdt_filename_binding_matches,
+            bridge_importer=import_gdt_bridge_files,
+        )
+    )
 
     def static_asset_version(filename: str) -> str:
         asset_path = Path(app.static_folder or "") / filename
@@ -4067,11 +4076,9 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response(str(exc), 400)
         return jsonify({"success": item["sync"]["status"] == FHIR_SYNC_STATUS_SYNCED, "item": item})
 
-    @app.get("/api/gdt/orders")
     def list_gdt_orders():
         return jsonify({"success": True, "items": store.list_gdt_order_records()})
 
-    @app.get("/api/gdt/orders/<int:order_id>")
     def get_gdt_order(order_id: int):
         try:
             item = store.get_gdt_order_record(order_id)
@@ -4079,7 +4086,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response("GDT order was not found.", 404)
         return jsonify({"success": True, "item": item})
 
-    @app.post("/api/gdt/orders")
     def create_gdt_order():
         payload = request.get_json(silent=True) or {}
         try:
@@ -4154,11 +4160,9 @@ def create_app(database_path: str | None = None) -> Flask:
             ),
         }
 
-    @app.get("/api/gdt/bridge/config")
     def get_gdt_bridge_config():
         return jsonify({"success": True, "item": gdt_bridge_config_payload()})
 
-    @app.put("/api/gdt/bridge/config")
     def update_gdt_bridge_config():
         payload = request.get_json(silent=True) or {}
         bridge_path = str(payload.get("bridgePath") or "").strip()
@@ -4177,7 +4181,6 @@ def create_app(database_path: str | None = None) -> Flask:
         watcher.configure(bridge_root=bridge_path)
         return jsonify({"success": True, "item": gdt_bridge_config_payload()})
 
-    @app.get("/api/gdt/workbench")
     def gdt_workbench():
         return jsonify(
             {
@@ -4186,7 +4189,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.post("/api/gdt/orders/<int:order_id>/write-6302")
     def write_gdt_order_6302(order_id: int):
         try:
             item = store.get_gdt_order_record(order_id)
@@ -4214,11 +4216,9 @@ def create_app(database_path: str | None = None) -> Flask:
             return jsonify({"success": False, "item": updated, "error": str(exc)}), 500
         return jsonify({"success": True, "item": updated, "path": str(target)})
 
-    @app.get("/api/gdt/bridge/inbox")
     def list_gdt_bridge_inbox():
         return jsonify({"success": True, "items": list_gdt_bridge_inbox_items()})
 
-    @app.post("/api/gdt/bridge/import")
     def import_gdt_bridge_file():
         payload = request.get_json(silent=True) or {}
         filename = Path(str(payload.get("filename") or payload.get("name") or "")).name
@@ -4241,11 +4241,9 @@ def create_app(database_path: str | None = None) -> Flask:
             return jsonify({"success": False, "error": first["error"], "path": first["path"], "result": result}), 400
         return error_response(result["skipped"][0].get("reason", "GDT outbox file was not found.") if result["skipped"] else "GDT outbox file was not found.", 404)
 
-    @app.get("/api/gdt/bridge/watcher/status")
     def gdt_bridge_watcher_status():
         return jsonify({"success": True, "item": app.extensions["gdt_bridge_watcher"].status()})
 
-    @app.post("/api/gdt/bridge/watcher/start")
     def start_gdt_bridge_watcher():
         try:
             item = app.extensions["gdt_bridge_watcher"].start()
@@ -4253,12 +4251,10 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item})
 
-    @app.post("/api/gdt/bridge/watcher/stop")
     def stop_gdt_bridge_watcher():
         item = app.extensions["gdt_bridge_watcher"].stop()
         return jsonify({"success": True, "item": item})
 
-    @app.post("/api/gdt/orders/<int:order_id>/demo-result")
     def create_gdt_demo_result(order_id: int):
         try:
             item = store.create_gdt_demo_result(order_id)
@@ -4268,11 +4264,9 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
 
-    @app.get("/api/gdt/messages")
     def list_gdt_messages():
         return jsonify({"success": True, "items": store.list_gdt_messages()})
 
-    @app.get("/api/gdt/orders/<int:order_id>/events")
     def list_gdt_order_events(order_id: int):
         try:
             store.get_gdt_order_record(order_id)
@@ -4280,7 +4274,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response("GDT order was not found.", 404)
         return jsonify({"success": True, "items": store.list_gdt_events(order_id)})
 
-    @app.post("/api/gdt/results")
     def import_gdt_result():
         payload = request.get_json(silent=True) or {}
         try:
