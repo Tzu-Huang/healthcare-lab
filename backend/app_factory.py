@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 try:
     from dotenv import load_dotenv
@@ -46,6 +46,13 @@ from backend.clients.medplum import (
 )
 from backend.clients import dcm4chee as dcm4chee_client
 from backend.clients import oie as oie_client
+from backend.clients.health import (
+    DOCKER_COMPOSE_APPLICATION_URLS,
+    run_http_smoke,
+    run_lab_application_check,
+    run_tcp_smoke,
+    smoke_step,
+)
 from backend.api.oie import create_oie_blueprint
 from backend.api.lab_servers import create_lab_servers_blueprint
 from backend.api.dashboard import create_dashboard_blueprint
@@ -54,17 +61,47 @@ from backend.api.patients import create_patients_blueprint
 from backend.api.orders import create_orders_blueprint
 from backend.api.fhir import create_fhir_blueprint
 from backend.api.gdt import create_gdt_blueprint
-from backend.services.patient_workflow import PatientWorkflowService
+from backend.api.home import create_home_blueprint
+from backend.services.patient_workflow import PatientWorkflowService, sync_patient_to_dcm4chee
 from backend.services.order_workflow import (
     OrderWorkflowService,
     dcm4chee_patient_payload_from_mwl_payload,
     ensure_dcm4chee_patient_for_mwl_payload,
+    sync_order_to_dcm4chee_mwl,
 )
-from backend.services.oie_workflow import OieWorkflowService
-from backend.services.gdt_workflow import GdtWorkflowService
-from backend.services.fhir_workflow import FhirWorkflowService
+from backend.services.oie_workflow import (
+    OieWorkflowService,
+    accept_oie_result_payload,
+    build_hl7_ack,
+    mllp_frame,
+    mllp_unframe,
+    parse_hl7_ack,
+    parse_oru_summary,
+)
+from backend.services.gdt_workflow import (
+    GdtWorkflowService,
+    discover_gdt_inbound_candidates,
+    gdt_collision_safe_path,
+    gdt_file_is_stable,
+    gdt_filename_binding_matches,
+    gdt_has_supported_exchange_extension,
+    gdt_inbound_sort_key,
+    gdt_is_internal_or_temp_file,
+    gdt_path_status,
+    import_gdt_bridge_files,
+)
+from backend.services.fhir_workflow import (
+    FhirWorkflowService,
+    first_fhir_bundle_resource,
+    medplum_create_resource_url,
+    medplum_identifier_search_url,
+    medplum_resource_reference,
+    medplum_update_resource_url,
+    sync_fhir_workflow_record_to_medplum,
+)
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
+from backend.domain.dicom import validate_dcm4chee_profile
 from backend.domain import fhir as fhir_domain
 from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as RuntimeGdtBridgeInboundWatcher
 from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
@@ -137,13 +174,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-DOCKER_COMPOSE_APPLICATION_URLS = {
-    "oie": "http://oie:8080",
-    "medplum": "http://medplum:8103/fhir/R4",
-    "openemr": "http://openemr:80",
-    "dcm4chee": "http://dcm4chee:8080/dcm4chee-arc/ui2",
-}
-
+# Compatibility exports for existing integrations and test patch seams.
+OieResultListener = RuntimeOieResultListener
+GdtBridgeInboundWatcher = RuntimeGdtBridgeInboundWatcher
+send_hl7_mllp_message = oie_client.send_hl7_mllp_message
 
 def error_response(message: str, status_code: int):
     return jsonify({"success": False, "error": message}), status_code
@@ -243,135 +277,6 @@ def dcm4chee_profile_from_config(config: dict[str, Any]) -> dict[str, Any]:
             "privateKeyPath": str(config.get("DCM4CHEE_PRIVATE_KEY_PATH", "") or "").strip(),
             "localLabOnly": str(config.get("DCM4CHEE_AUTH_MODE", "none") or "").strip().lower() == "none",
         },
-    }
-
-
-def validate_dcm4chee_profile(profile: dict[str, Any]) -> dict[str, Any]:
-    checks: list[dict[str, str]] = []
-
-    def add_check(name: str, field: str, ok: bool, message: str) -> None:
-        checks.append(
-            {
-                "name": name,
-                "field": field,
-                "status": "Healthy" if ok else "Down",
-                "message": message,
-            }
-        )
-
-    def required_text(path: tuple[str, ...], label: str) -> str:
-        value: Any = profile
-        for part in path:
-            value = value.get(part, {}) if isinstance(value, dict) else {}
-        text = str(value or "").strip()
-        add_check(
-            "_".join(path),
-            ".".join(path),
-            bool(text),
-            f"{label} is configured." if text else f"{label} is required.",
-        )
-        return text
-
-    required_text(("profileName",), "Profile name")
-    required_text(("displayName",), "Display name")
-    required_text(("environmentName",), "Environment name")
-    try:
-        require_http_url(profile.get("webUiUrl"), "webUiUrl")
-        add_check("web_ui_url", "webUiUrl", True, "Web UI URL is valid.")
-    except ValidationError as exc:
-        add_check("web_ui_url", "webUiUrl", False, str(exc))
-
-    dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
-    required_text(("dimse", "host"), "DIMSE host")
-    try:
-        port = int(dimse.get("port") or 0)
-        valid_port = 1 <= port <= 65535
-    except (TypeError, ValueError):
-        valid_port = False
-    add_check(
-        "dimse_port",
-        "dimse.port",
-        valid_port,
-        "DIMSE port is valid." if valid_port else "DIMSE port must be an integer between 1 and 65535.",
-    )
-    required_text(("dimse", "calledAETitle"), "Called AE title")
-    required_text(("dimse", "callingAETitle"), "Calling AE title")
-    required_text(("mwl", "aeTitle"), "MWL AE title")
-    required_text(("mwl", "defaultScheduledStationAETitle"), "Default Scheduled Station AE Title")
-
-    hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
-    required_text(("hl7", "host"), "HL7 host")
-    try:
-        port = int(hl7.get("port") or 0)
-        valid_port = 1 <= port <= 65535
-    except (TypeError, ValueError):
-        valid_port = False
-    add_check(
-        "hl7_port",
-        "hl7.port",
-        valid_port,
-        "HL7 port is valid." if valid_port else "HL7 port must be an integer between 1 and 65535.",
-    )
-    required_text(("hl7", "sendingApplication"), "HL7 sending application")
-    required_text(("hl7", "sendingFacility"), "HL7 sending facility")
-    required_text(("hl7", "receivingApplication"), "HL7 receiving application")
-    required_text(("hl7", "receivingFacility"), "HL7 receiving facility")
-    required_text(("hl7", "patientAssigningAuthority"), "HL7 Patient assigning authority")
-
-    dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
-    for field in ("baseUrl", "qidoRsUrl", "wadoRsUrl", "stowRsUrl"):
-        try:
-            require_http_url(dicomweb.get(field), f"dicomweb.{field}")
-            add_check(f"dicomweb_{field}", f"dicomweb.{field}", True, f"DICOMweb {field} is valid.")
-        except ValidationError as exc:
-            add_check(f"dicomweb_{field}", f"dicomweb.{field}", False, str(exc))
-
-    security = profile.get("security") if isinstance(profile.get("security"), dict) else {}
-    auth_mode = str(security.get("authMode") or "").strip().lower()
-    add_check(
-        "security_auth_mode",
-        "security.authMode",
-        auth_mode in DCM4CHEE_AUTH_MODES,
-        "Auth mode is supported." if auth_mode in DCM4CHEE_AUTH_MODES else "Auth mode is unsupported.",
-    )
-    tls_enabled_value = security.get("tlsEnabled")
-    tls_verify_value = security.get("tlsVerify")
-    add_check(
-        "security_tls_enabled",
-        "security.tlsEnabled",
-        isinstance(tls_enabled_value, bool),
-        "TLS enabled value is valid." if isinstance(tls_enabled_value, bool) else "TLS enabled must be true or false.",
-    )
-    add_check(
-        "security_tls_verify",
-        "security.tlsVerify",
-        isinstance(tls_verify_value, bool),
-        "TLS verify value is valid." if isinstance(tls_verify_value, bool) else "TLS verify must be true or false.",
-    )
-    tls_enabled = tls_enabled_value is True
-    has_cert_material = bool(security.get("certificatePath") or security.get("privateKeyPath"))
-    add_check(
-        "security_tls",
-        "security.certificatePath",
-        tls_enabled or not has_cert_material,
-        "TLS settings are consistent."
-        if tls_enabled or not has_cert_material
-        else "Certificate or key paths require TLS to be enabled.",
-    )
-    if auth_mode == "none":
-        add_check(
-            "security_local_lab",
-            "security.authMode",
-            True,
-            "Local profile is unauthenticated and is not production-ready.",
-        )
-
-    valid = all(check["status"] == "Healthy" for check in checks)
-    return {
-        "valid": valid,
-        "status": "Healthy" if valid else "Down",
-        "summary": "dcm4chee profile is valid." if valid else "dcm4chee profile is incomplete or invalid.",
-        "checks": checks,
     }
 
 
@@ -808,284 +713,6 @@ def refresh_patient_dcm4chee_results(
     }
 
 
-def sync_order_to_dcm4chee_mwl(
-    store: DemoStore,
-    order: dict[str, Any],
-    profile: dict[str, Any],
-    *,
-    uid_root: str,
-) -> dict[str, Any]:
-    diagnostics = validate_dcm4chee_profile(profile)
-    dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
-    base_url = str(dicomweb.get("baseUrl") or "").strip().rstrip("/")
-    request_url = f"{base_url}/mwlitems" if base_url else ""
-    if not diagnostics["valid"]:
-        return store.create_dcm4chee_mwl_profile_failure_attempt(
-            int(order["id"]),
-            profile,
-            uid_root=uid_root,
-            request_url=request_url,
-            diagnostics=diagnostics,
-        )
-    payload = store.build_dcm4chee_mwl_payload(order, profile, uid_root=uid_root)
-    existing_mapping = store.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
-    if existing_mapping and existing_mapping.get("status") == DCM4CHEE_MWL_STATUS_CREATED:
-        return existing_mapping
-    patient_record_id = int(order.get("patientRecordId") or 0)
-    patient_sync = store.get_dcm4chee_patient_sync_for_patient(patient_record_id, profile) if patient_record_id else None
-    patient = store.get_patient_record(patient_record_id) if patient_record_id else {}
-    requires_patient_sync = patient.get("protocolVersion") == "DICOM" or patient_sync is not None
-    if requires_patient_sync and (not patient_sync or patient_sync.get("status") != DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED):
-        patient_sync = sync_patient_to_dcm4chee(
-            store,
-            patient,
-            profile,
-            operation_type=DCM4CHEE_PATIENT_SYNC_OPERATION_PREFLIGHT,
-        )
-    if requires_patient_sync and (not patient_sync or patient_sync.get("status") != DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED):
-        mapping = store.upsert_dcm4chee_mwl_mapping(
-            int(order["id"]),
-            profile,
-            uid_root=uid_root,
-            request_payload=payload,
-            sync_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
-            increment_retry=existing_mapping is not None,
-        )
-        error_text = (
-            str(patient_sync.get("lastError") or "")
-            if patient_sync
-            else "dcm4chee Patient sync is required before MWL creation."
-        )
-        if not error_text:
-            error_text = "dcm4chee Patient sync is required before MWL creation."
-        attempt = store.create_dcm4chee_mwl_attempt(
-            int(order["id"]),
-            profile,
-            uid_root=uid_root,
-            request_url=request_url,
-            request_payload=payload,
-            attempt_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
-            error_type="patient_sync_failed",
-            error_text=error_text,
-            operation_type=DCM4CHEE_MWL_OPERATION_CREATE,
-            mapping_id=int(mapping["id"]),
-        )
-        store.update_dcm4chee_mwl_mapping_from_attempt(
-            int(order["id"]),
-            attempt_id=int(attempt["id"]),
-            sync_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
-            error_type="patient_sync_failed",
-            error_text=error_text,
-            error_payload={"patientSync": patient_sync or {}},
-        )
-        return attempt
-    if not requires_patient_sync:
-        try:
-            ensure_dcm4chee_patient_for_mwl_payload(profile, payload)
-        except UpstreamDcm4cheeError as exc:
-            mapping = store.upsert_dcm4chee_mwl_mapping(
-                int(order["id"]),
-                profile,
-                uid_root=uid_root,
-                request_payload=payload,
-                sync_status=DCM4CHEE_MWL_STATUS_FAILED,
-                increment_retry=existing_mapping is not None,
-            )
-            attempt = store.create_dcm4chee_mwl_attempt(
-                int(order["id"]),
-                profile,
-                uid_root=uid_root,
-                request_url=request_url,
-                request_payload=payload,
-                attempt_status=DCM4CHEE_MWL_STATUS_FAILED,
-                error_type="dcm4chee_request_failed",
-                error_text=str(exc),
-                operation_type=DCM4CHEE_MWL_OPERATION_CREATE,
-                mapping_id=int(mapping["id"]),
-            )
-            store.update_dcm4chee_mwl_mapping_from_attempt(
-                int(order["id"]),
-                attempt_id=int(attempt["id"]),
-                sync_status=DCM4CHEE_MWL_STATUS_FAILED,
-                http_status=exc.http_status,
-                response_body=exc.response_body,
-                error_type=attempt["errorType"],
-                error_text=attempt["error"],
-                error_payload={"responseBody": exc.response_body},
-            )
-            return attempt
-    if existing_mapping:
-        created_but_unconfirmed = (
-            int(existing_mapping.get("lastHttpStatus") or 0) in range(200, 300)
-            and str(existing_mapping.get("lastErrorType") or "").startswith("dcm4chee_readback")
-        )
-        readback_attempt = store.create_dcm4chee_mwl_attempt(
-            int(order["id"]),
-            profile,
-            uid_root=uid_root,
-            request_url=request_url,
-            request_payload=payload,
-            operation_type=DCM4CHEE_MWL_OPERATION_READBACK,
-            mapping_id=int(existing_mapping["id"]),
-        )
-        try:
-            readback_status, readback_body, _readback_url = request_dcm4chee_mwl_readback(
-                profile,
-                {
-                    "study_instance_uid": existing_mapping.get("studyInstanceUid", ""),
-                    "accession_number": existing_mapping.get("accessionNumber", ""),
-                    "requested_procedure_id": existing_mapping.get("requestedProcedureId", ""),
-                    "scheduled_procedure_step_id": existing_mapping.get("scheduledProcedureStepId", ""),
-                    "patient_id": existing_mapping.get("patientId", ""),
-                    "issuer_of_patient_id": existing_mapping.get("issuerOfPatientId", ""),
-                },
-            )
-            readback_identifiers = store.dcm4chee_identifiers_from_response_body(readback_body)
-            try:
-                readback_payload = json.loads(readback_body) if readback_body else {}
-            except json.JSONDecodeError:
-                readback_payload = {"raw": readback_body}
-            readback_status_text = (
-                DCM4CHEE_MWL_STATUS_CREATED if readback_identifiers else DCM4CHEE_MWL_STATUS_FAILED
-            )
-            readback_error = "" if readback_identifiers else "dcm4chee read-back returned no identifiers."
-            updated_readback_attempt = store.update_dcm4chee_mwl_attempt_result(
-                int(readback_attempt["id"]),
-                attempt_status=readback_status_text,
-                http_status=readback_status,
-                response_body=readback_body,
-                error_type="" if readback_identifiers else "dcm4chee_readback_empty",
-                error_text=readback_error,
-            )
-            store.update_dcm4chee_mwl_mapping_from_attempt(
-                int(order["id"]),
-                attempt_id=int(updated_readback_attempt["id"]),
-                sync_status=readback_status_text,
-                http_status=readback_status,
-                response_body=readback_body,
-                error_type=updated_readback_attempt["errorType"],
-                error_text=updated_readback_attempt["error"],
-                error_payload={} if readback_identifiers else {"responseBody": readback_body},
-                readback_payload=readback_payload,
-                identifiers=readback_identifiers,
-            )
-            if readback_identifiers:
-                return updated_readback_attempt
-            if created_but_unconfirmed:
-                return updated_readback_attempt
-        except UpstreamDcm4cheeError as exc:
-            updated_readback_attempt = store.update_dcm4chee_mwl_attempt_result(
-                int(readback_attempt["id"]),
-                attempt_status=DCM4CHEE_MWL_STATUS_FAILED,
-                http_status=exc.http_status,
-                response_body=exc.response_body,
-                error_type="dcm4chee_readback_failed",
-                error_text=str(exc),
-            )
-            store.update_dcm4chee_mwl_mapping_from_attempt(
-                int(order["id"]),
-                attempt_id=int(updated_readback_attempt["id"]),
-                sync_status=DCM4CHEE_MWL_STATUS_FAILED,
-                http_status=exc.http_status,
-                response_body=exc.response_body,
-                error_type=updated_readback_attempt["errorType"],
-                error_text=updated_readback_attempt["error"],
-                error_payload={"responseBody": exc.response_body},
-            )
-            if created_but_unconfirmed:
-                return updated_readback_attempt
-    mapping = store.upsert_dcm4chee_mwl_mapping(
-        int(order["id"]),
-        profile,
-        uid_root=uid_root,
-        request_payload=payload,
-        sync_status=DCM4CHEE_MWL_STATUS_PENDING,
-        increment_retry=existing_mapping is not None,
-    )
-    attempt = store.create_dcm4chee_mwl_attempt(
-        int(order["id"]),
-        profile,
-        uid_root=uid_root,
-        request_url=request_url,
-        request_payload=payload,
-        mapping_id=int(mapping["id"]),
-    )
-    try:
-        status, response_body, actual_url = request_dcm4chee_mwl_create(profile, payload)
-    except UpstreamDcm4cheeError as exc:
-        response_body = exc.response_body
-        lower_body = response_body.lower()
-        is_patient_missing = exc.http_status == 404 and "patient" in lower_body and "exist" in lower_body
-        updated_attempt = store.update_dcm4chee_mwl_attempt_result(
-            int(attempt["id"]),
-            attempt_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING if is_patient_missing else DCM4CHEE_MWL_STATUS_FAILED,
-            http_status=exc.http_status,
-            response_body=response_body,
-            error_type="patient_missing" if is_patient_missing else "dcm4chee_request_failed",
-            error_text=str(exc),
-        )
-        store.update_dcm4chee_mwl_mapping_from_attempt(
-            int(order["id"]),
-            attempt_id=int(updated_attempt["id"]),
-            sync_status=updated_attempt["status"],
-            http_status=exc.http_status,
-            response_body=response_body,
-            error_type=updated_attempt["errorType"],
-            error_text=updated_attempt["error"],
-            error_payload={"responseBody": response_body},
-        )
-        return updated_attempt
-    if actual_url != attempt["requestUrl"]:
-        request_url = actual_url
-    response_identifiers = store.dcm4chee_identifiers_from_response_body(response_body)
-    readback_payload: dict[str, Any] | list[Any] | None = None
-    readback_identifiers: dict[str, str] = {}
-    readback_error_type = ""
-    readback_error_text = ""
-    try:
-        readback_status, readback_body, _readback_url = request_dcm4chee_mwl_readback(
-            profile,
-            {
-                **store.dcm4chee_identifiers_from_payload(order, profile, uid_root=uid_root, payload=payload),
-                **response_identifiers,
-            },
-        )
-        try:
-            readback_payload = json.loads(readback_body) if readback_body else {}
-        except json.JSONDecodeError:
-            readback_payload = {"raw": readback_body}
-        readback_identifiers = store.dcm4chee_identifiers_from_response_body(readback_body)
-        if not readback_identifiers:
-            readback_error_type = "dcm4chee_readback_empty"
-            readback_error_text = "dcm4chee read-back returned no identifiers."
-    except UpstreamDcm4cheeError as exc:
-        readback_status = exc.http_status
-        readback_error_type = "dcm4chee_readback_failed"
-        readback_error_text = str(exc)
-        readback_payload = {"responseBody": exc.response_body}
-    updated_attempt = store.update_dcm4chee_mwl_attempt_result(
-        int(attempt["id"]),
-        attempt_status=DCM4CHEE_MWL_STATUS_CREATED,
-        http_status=status,
-        response_body=response_body,
-        error_type=readback_error_type,
-        error_text=readback_error_text,
-    )
-    store.update_dcm4chee_mwl_mapping_from_attempt(
-        int(order["id"]),
-        attempt_id=int(updated_attempt["id"]),
-        sync_status=DCM4CHEE_MWL_STATUS_PENDING if readback_error_type else DCM4CHEE_MWL_STATUS_CREATED,
-        http_status=status,
-        response_body=response_body,
-        error_type=readback_error_type,
-        error_text=readback_error_text,
-        error_payload=readback_payload if readback_error_type else {},
-        readback_payload=readback_payload,
-        identifiers={**response_identifiers, **readback_identifiers},
-    )
-    return updated_attempt
-
-
 def fetch_fhir_service_requests(
     base_url: str,
     token: str,
@@ -1375,21 +1002,6 @@ operation_outcome_from_error = fhir_domain.operation_outcome_from_error
 http_status_from_upstream_error = fhir_domain.http_status_from_upstream_error
 
 
-def medplum_identifier_search_url(base_url: str, record: dict[str, Any]) -> str:
-    identifier = record["identifier"]
-    token = f"{identifier['system']}|{identifier['value']}"
-    query = urllib.parse.urlencode({"identifier": token})
-    return f"{base_url}/{record['resourceType']}?{query}"
-
-
-def medplum_create_resource_url(base_url: str, record: dict[str, Any]) -> str:
-    return f"{base_url}/{record['resourceType']}"
-
-
-def medplum_update_resource_url(base_url: str, record: dict[str, Any], resource_id: str) -> str:
-    return f"{base_url}/{record['resourceType']}/{urllib.parse.quote(resource_id, safe='')}"
-
-
 def medplum_reference_resource_url(base_url: str, reference: str) -> str:
     parts = [part.strip() for part in reference.strip().split("/") if part.strip()]
     if len(parts) != 2:
@@ -1538,187 +1150,6 @@ def medplum_inventory_record(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def first_fhir_bundle_resource(bundle: dict[str, Any], resource_type: str) -> dict[str, Any] | None:
-    if bundle.get("resourceType") != "Bundle":
-        return None
-    for entry in bundle.get("entry") or []:
-        if not isinstance(entry, dict):
-            continue
-        resource = entry.get("resource")
-        if isinstance(resource, dict) and resource.get("resourceType") == resource_type:
-            return resource
-    return None
-
-
-def medplum_resource_reference(resource: dict[str, Any], resource_type: str) -> tuple[str, str]:
-    resource_id = str(resource.get("id") or "").strip()
-    if not resource_id:
-        raise UpstreamFhirError(f"Medplum {resource_type} response did not include an id.")
-    return resource_id, f"{resource_type}/{resource_id}"
-
-
-def sync_fhir_workflow_record_to_medplum(
-    store: DemoStore,
-    record_id: int,
-    *,
-    base_url: str,
-    auth_manager: MedplumAuthManager,
-) -> dict[str, Any]:
-    base = normalize_fhir_base_url(base_url)
-    current_record = store.get_fhir_workflow_record(record_id)
-    original_sync_status = current_record.get("sync", {}).get("status")
-    record = store.mark_fhir_syncing(record_id)
-    search_url = medplum_identifier_search_url(base, record)
-
-    def sync_request(
-        request_url: str,
-        *,
-        method: str,
-        request_payload: dict[str, Any] | None = None,
-        body: bytes | None = None,
-        content_type: str | None = None,
-    ) -> tuple[int, dict[str, Any]]:
-        try:
-            return request_fhir_json(
-                request_url,
-                "",
-                method=method,
-                body=body,
-                content_type=content_type,
-                auth_manager=auth_manager,
-                base_url=base,
-            )
-        except (UpstreamFhirError, ValidationError, SimulatorValidationError) as exc:
-            message = str(exc)
-            response_payload = (
-                exc.response_payload if isinstance(exc, UpstreamFhirError) else {}
-            )
-            http_status = (
-                exc.http_status
-                if isinstance(exc, UpstreamFhirError)
-                else http_status_from_upstream_error(message)
-            )
-            outcome = (
-                operation_outcome_from_payload(response_payload)
-                or operation_outcome_from_error(message)
-            )
-            store.record_fhir_sync_attempt(
-                record_id,
-                method=method,
-                request_url=request_url,
-                request_payload=request_payload or {},
-                http_status=http_status,
-                response_payload=response_payload,
-                operation_outcome=outcome,
-                error_text=message,
-            )
-            if isinstance(exc, UpstreamFhirError):
-                exc.attempt_recorded = True
-            else:
-                setattr(exc, "attempt_recorded", True)
-            raise
-
-    try:
-        status_code, search_body = sync_request(
-            search_url,
-            method="GET",
-        )
-        store.record_fhir_sync_attempt(
-            record_id,
-            method="GET",
-            request_url=search_url,
-            http_status=status_code,
-            response_payload=search_body,
-            operation_outcome=operation_outcome_from_payload(search_body),
-        )
-        existing = first_fhir_bundle_resource(search_body, record["resourceType"])
-        if existing:
-            medplum_id, reference = medplum_resource_reference(existing, record["resourceType"])
-            return store.mark_fhir_sync_success(
-                record_id,
-                medplum_resource_id=medplum_id,
-                medplum_resource_reference=reference,
-            )
-
-        stored_medplum = record.get("medplum") or {}
-        stored_medplum_id = str(stored_medplum.get("id") or "").strip()
-        if stored_medplum_id:
-            if original_sync_status == FHIR_SYNC_STATUS_SYNCED:
-                return store.mark_fhir_sync_success(
-                    record_id,
-                    medplum_resource_id=stored_medplum_id,
-                    medplum_resource_reference=str(stored_medplum.get("reference") or "").strip(),
-                )
-            update_payload = dict(record["resource"])
-            update_payload["id"] = stored_medplum_id
-            update_url = medplum_update_resource_url(base, record, stored_medplum_id)
-            update_status, update_body = sync_request(
-                update_url,
-                method="PUT",
-                request_payload=update_payload,
-                body=json.dumps(update_payload).encode("utf-8"),
-                content_type="application/fhir+json",
-            )
-            store.record_fhir_sync_attempt(
-                record_id,
-                method="PUT",
-                request_url=update_url,
-                request_payload=update_payload,
-                http_status=update_status,
-                response_payload=update_body,
-                operation_outcome=operation_outcome_from_payload(update_body),
-            )
-            medplum_id, reference = medplum_resource_reference(update_body, record["resourceType"])
-            return store.mark_fhir_sync_success(
-                record_id,
-                medplum_resource_id=medplum_id,
-                medplum_resource_reference=reference,
-            )
-
-        create_url = medplum_create_resource_url(base, record)
-        request_payload = record["resource"]
-        create_status, create_body = sync_request(
-            create_url,
-            method="POST",
-            request_payload=request_payload,
-            body=json.dumps(request_payload).encode("utf-8"),
-            content_type="application/fhir+json",
-        )
-        store.record_fhir_sync_attempt(
-            record_id,
-            method="POST",
-            request_url=create_url,
-            request_payload=request_payload,
-            http_status=create_status,
-            response_payload=create_body,
-            operation_outcome=operation_outcome_from_payload(create_body),
-        )
-        medplum_id, reference = medplum_resource_reference(create_body, record["resourceType"])
-        return store.mark_fhir_sync_success(
-            record_id,
-            medplum_resource_id=medplum_id,
-            medplum_resource_reference=reference,
-        )
-    except (UpstreamFhirError, ValidationError, SimulatorValidationError) as exc:
-        message = str(exc)
-        outcome = operation_outcome_from_error(message)
-        if not getattr(exc, "attempt_recorded", False):
-            store.record_fhir_sync_attempt(
-                record_id,
-                method="SYNC",
-                request_url=search_url,
-                request_payload=record.get("resource") or {},
-                http_status=http_status_from_upstream_error(message),
-                operation_outcome=outcome,
-                error_text=message,
-            )
-        return store.mark_fhir_sync_failure(
-            record_id,
-            error_text=message,
-            operation_outcome=outcome,
-        )
-
-
 def derive_lab_overall_status(checks: dict[str, str]) -> str:
     values = [checks.get(level, "Unknown") for level in ("process", "application", "protocol")]
     known = [value for value in values if value != "Unknown"]
@@ -1729,54 +1160,6 @@ def derive_lab_overall_status(checks: dict[str, str]) -> str:
     if "Degraded" in known or len(known) != len(values):
         return "Degraded"
     return "Healthy"
-
-
-def run_lab_application_check(
-    server: dict[str, Any], timeout_seconds: float = 2.0
-) -> tuple[str, str]:
-    base_url = str(server.get("baseUrl") or "").strip()
-    operation = server.get("operation") or {}
-    backing_service = str(operation.get("backingService") or "").strip()
-    urls = []
-    if (
-        operation.get("controlType") == "docker-compose"
-        and backing_service in DOCKER_COMPOSE_APPLICATION_URLS
-    ):
-        urls.append(DOCKER_COMPOSE_APPLICATION_URLS[backing_service])
-    if base_url and base_url not in urls:
-        urls.append(base_url)
-    host = str(server.get("host") or "").strip()
-    port = server.get("port")
-    last_error = ""
-    for url in urls:
-        try:
-            request_obj = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(request_obj, timeout=timeout_seconds) as response:
-                if 200 <= int(response.status) < 500:
-                    return "Healthy", ""
-                return "Down", f"HTTP {response.status}"
-        except urllib.error.HTTPError as exc:
-            if 400 <= int(exc.code) < 500:
-                return "Healthy", f"HTTP {exc.code}"
-            return "Down", f"{url}: HTTP {exc.code}"
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            last_error = f"{url}: {exc}"
-            continue
-    if (
-        not urls
-        and operation.get("controlType") == "internal-tool"
-        and backing_service == "lab-app"
-    ):
-        return "Healthy", "Internal lab tool is provided by lab-app."
-    if host and port:
-        try:
-            with socket.create_connection((host, int(port)), timeout_seconds):
-                return "Healthy", ""
-        except (OSError, socket.timeout) as exc:
-            return "Down", str(exc)
-    if urls:
-        return "Down", last_error
-    return "Unknown", "No application endpoint configured."
 
 
 def run_lab_protocol_check(
@@ -1811,32 +1194,6 @@ def smoke_status_from_steps(steps: list[dict[str, Any]]) -> str:
     return "Healthy"
 
 
-def smoke_step(name: str, status: str, message: str = "", *, required: bool = True) -> dict[str, Any]:
-    return {
-        "name": name,
-        "status": status,
-        "message": message,
-        "required": required,
-    }
-
-
-def run_http_smoke(url: str, name: str, *, required: bool = True) -> dict[str, Any]:
-    if not url:
-        return smoke_step(name, "Unknown", "Endpoint is not configured.", required=required)
-    try:
-        request_obj = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(request_obj, timeout=3) as response:
-            if 200 <= int(response.status) < 500:
-                return smoke_step(name, "Healthy", f"HTTP {response.status}", required=required)
-            return smoke_step(name, "Down", f"HTTP {response.status}", required=required)
-    except urllib.error.HTTPError as exc:
-        if 400 <= int(exc.code) < 500:
-            return smoke_step(name, "Healthy", f"HTTP {exc.code}", required=required)
-        return smoke_step(name, "Down", f"HTTP {exc.code}", required=required)
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        return smoke_step(name, "Down", str(exc), required=required)
-
-
 MEDPLUM_AUTH_NOT_CONFIGURED_MESSAGE = (
     "Auth not configured: set MEDPLUM_CLIENT_ID and MEDPLUM_CLIENT_SECRET on lab-app."
 )
@@ -1858,503 +1215,6 @@ def describe_medplum_diagnostic_report_failure(exc: Exception) -> str:
     if "Medplum returned HTTP 401:" in message:
         return f"FHIR DiagnosticReport fetch unauthorized: {message}"
     return f"DiagnosticReport fetch failed: {message}"
-
-
-def run_tcp_smoke(host: str, port: Any, name: str, *, required: bool = True) -> dict[str, Any]:
-    if not host or not port:
-        return smoke_step(name, "Unknown", "Host or port is not configured.", required=required)
-    try:
-        port_number = int(port)
-    except (TypeError, ValueError):
-        return smoke_step(name, "Down", "Port must be an integer between 1 and 65535.", required=required)
-    if not 1 <= port_number <= 65535:
-        return smoke_step(name, "Down", "Port must be an integer between 1 and 65535.", required=required)
-    try:
-        with socket.create_connection((host, port_number), 3):
-            return smoke_step(name, "Healthy", "TCP reachable.", required=required)
-    except (OSError, socket.timeout) as exc:
-        return smoke_step(name, "Down", str(exc), required=required)
-
-
-def mllp_frame(message: str) -> bytes:
-    return b"\x0b" + message.encode("utf-8") + b"\x1c\x0d"
-
-
-def mllp_unframe(payload: bytes) -> str:
-    text = payload.decode("utf-8", errors="replace")
-    if text.startswith("\x0b"):
-        text = text[1:]
-    if text.endswith("\x1c\r"):
-        text = text[:-2]
-    elif text.endswith("\x1c"):
-        text = text[:-1]
-    return text
-
-
-def parse_hl7_ack(payload: str) -> dict[str, str]:
-    result = {"code": "", "controlId": "", "text": ""}
-    for segment in payload.replace("\n", "\r").split("\r"):
-        fields = segment.split("|")
-        if fields and fields[0] == "MSA":
-            result["code"] = fields[1].strip() if len(fields) > 1 else ""
-            result["controlId"] = fields[2].strip() if len(fields) > 2 else ""
-            result["text"] = fields[3].strip() if len(fields) > 3 else ""
-            break
-    return result
-
-
-def _hl7_segments(payload: str) -> list[list[str]]:
-    return [
-        segment.split("|")
-        for segment in payload.replace("\n", "\r").split("\r")
-        if segment.strip()
-    ]
-
-
-def _first_component(value: str) -> str:
-    return str(value or "").split("^", 1)[0].strip()
-
-
-def _hl7_message_code(value: str) -> str:
-    components = str(value or "").split("^")
-    return "^".join(part.strip() for part in components[:2] if part.strip())
-
-
-def parse_oru_summary(payload: str) -> dict[str, str]:
-    segments = _hl7_segments(payload)
-    if not segments or segments[0][0] != "MSH":
-        raise ValidationError("HL7 payload must start with an MSH segment.")
-    summary = {
-        "messageType": "",
-        "messageControlId": "",
-        "patientMrn": "",
-        "placerOrderNumber": "",
-        "fillerOrderNumber": "",
-    }
-    for fields in segments:
-        segment_id = fields[0]
-        if segment_id == "MSH":
-            summary["messageType"] = _hl7_message_code(fields[8] if len(fields) > 8 else "")
-            summary["messageControlId"] = fields[9].strip() if len(fields) > 9 else ""
-        elif segment_id == "PID":
-            summary["patientMrn"] = _first_component(fields[3] if len(fields) > 3 else "")
-        elif segment_id == "OBR":
-            summary["placerOrderNumber"] = _first_component(fields[2] if len(fields) > 2 else "")
-            summary["fillerOrderNumber"] = _first_component(fields[3] if len(fields) > 3 else "")
-    if not summary["messageType"]:
-        raise ValidationError("HL7 MSH-9 message type is required.")
-    return summary
-
-
-def build_hl7_ack(
-    inbound_payload: str,
-    *,
-    code: str,
-    text: str = "",
-    message_control_id: str = "",
-) -> str:
-    inbound_msh = next(
-        (fields for fields in _hl7_segments(inbound_payload) if fields and fields[0] == "MSH"),
-        [],
-    )
-    sending_app = inbound_msh[4] if len(inbound_msh) > 4 and inbound_msh[4] else "HEALTHCARE_LAB"
-    sending_facility = inbound_msh[5] if len(inbound_msh) > 5 and inbound_msh[5] else "LAB_APP"
-    receiving_app = inbound_msh[2] if len(inbound_msh) > 2 and inbound_msh[2] else "OIE"
-    receiving_facility = inbound_msh[3] if len(inbound_msh) > 3 and inbound_msh[3] else "HL7LAB"
-    control_id = message_control_id
-    if not control_id and len(inbound_msh) > 9:
-        control_id = inbound_msh[9].strip()
-    inbound_message = inbound_msh[8] if len(inbound_msh) > 8 else ""
-    inbound_components = str(inbound_message or "").split("^")
-    ack_trigger = inbound_components[1].strip() if len(inbound_components) > 1 and inbound_components[1].strip() else "R01"
-    ack_time = hl7_message_timestamp()
-    ack_control_id = f"ACK{ack_time}"
-    segments = [
-        (
-            "MSH|^~\\&|"
-            f"{sending_app}|{sending_facility}|{receiving_app}|{receiving_facility}|"
-            f"{ack_time}||ACK^{ack_trigger}^ACK|{ack_control_id}|P|{HL7_V2_MSH_SUFFIX}"
-        ),
-        f"MSA|{code}|{control_id}|{text}",
-    ]
-    if code in {"AE", "AR", "CE", "CR"}:
-        error_code = "200^Unsupported message type^HL70357" if code in {"AR", "CR"} else "102^Data type error^HL70357"
-        segments.append(f"ERR||MSH^1^9^1^1|{error_code}|E")
-    return "\r".join(segments)
-
-
-def accept_oie_result_payload(store: DemoStore, payload: str) -> tuple[str, dict[str, Any], int]:
-    try:
-        parsed = parse_oru_summary(payload)
-        if parsed["messageType"] not in {"ORU^R01", "ORU^W01"}:
-            item = store.record_oie_result_error(
-                payload,
-                parsed["messageType"],
-                f"Unsupported message type: {parsed['messageType'] or 'unknown'}.",
-            )
-            ack = build_hl7_ack(
-                payload,
-                code="AR",
-                text=item["error"],
-                message_control_id=parsed.get("messageControlId", ""),
-            )
-            return ack, item, 400
-        item = store.record_oie_result(payload, parsed)
-        text = "Duplicate result ignored." if item.get("duplicate") else "Result accepted."
-        ack = build_hl7_ack(
-            payload,
-            code="AA",
-            text=text,
-            message_control_id=parsed.get("messageControlId", ""),
-        )
-        return ack, item, 200
-    except ValidationError as exc:
-        item = store.record_oie_result_error(payload, "", str(exc))
-        return build_hl7_ack(payload, code="AE", text=str(exc)), item, 400
-
-
-def gdt_path_status(path: Path, status: str, reason: str = "") -> dict[str, Any]:
-    item: dict[str, Any] = {"name": path.name, "path": str(path), "status": status}
-    try:
-        stat = path.stat()
-        item.update(
-            {
-                "size": stat.st_size,
-                "updatedAt": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
-                "createdAt": datetime.fromtimestamp(stat.st_ctime, timezone.utc).isoformat(),
-            }
-        )
-    except OSError:
-        item.update({"size": 0, "updatedAt": "", "createdAt": ""})
-    if reason:
-        item["reason"] = reason
-    return item
-
-
-def gdt_is_internal_or_temp_file(path: Path) -> bool:
-    name = path.name
-    lowered = name.lower()
-    return (
-        name.startswith(".")
-        or lowered.endswith(".tmp")
-        or lowered.endswith(".temp")
-        or lowered.endswith(".processing")
-        or ".processing." in lowered
-    )
-
-
-def gdt_has_supported_exchange_extension(path: Path, *, profile: str = "permissive") -> bool:
-    if path.suffix.lower() == ".gdt":
-        return True
-    return normalize_gdt_filename_profile(profile) == "gdt21" and bool(re.fullmatch(r"\.\d{3}", path.suffix))
-
-
-def gdt_filename_binding_matches(
-    path: Path,
-    *,
-    profile: str = "permissive",
-    receiver_id: str = "",
-    sender_id: str = "",
-) -> bool:
-    profile = normalize_gdt_filename_profile(profile)
-    name = path.name
-    upper_name = name.upper()
-    receiver = str(receiver_id or "").strip().upper()
-    sender = str(sender_id or "").strip().upper()
-    if profile == "permissive":
-        return path.suffix.lower() == ".gdt"
-    if profile == "gdt35":
-        if path.suffix.lower() != ".gdt":
-            return False
-        pattern = r"^([A-Z0-9]+)_([A-Z0-9]+)_([A-Z0-9]+)\.GDT$"
-        match = re.match(pattern, upper_name)
-        if not match:
-            return False
-        matched_receiver, matched_sender, _sequence = match.groups()
-        if receiver and matched_receiver != receiver:
-            return False
-        if sender and matched_sender != sender:
-            return False
-        return True
-    stem_upper = path.stem.upper()
-    suffix_upper = path.suffix.upper()
-    if suffix_upper == ".GDT":
-        return (not receiver or stem_upper.startswith(receiver)) and (
-            not sender or stem_upper.endswith(sender)
-        )
-    if re.fullmatch(r"\.\d{3}", suffix_upper):
-        return (not receiver or stem_upper.startswith(receiver)) and (
-            not sender or stem_upper.endswith(sender)
-        )
-    return False
-
-
-def gdt_collision_safe_path(path: Path) -> Path:
-    if not path.exists():
-        return path
-    for index in range(1, 1000):
-        candidate = path.with_name(f"{path.stem}-{index}{path.suffix}")
-        if not candidate.exists():
-            return candidate
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-    return path.with_name(f"{path.stem}-{timestamp}{path.suffix}")
-
-
-def gdt_inbound_sort_key(path: Path) -> tuple[float, float, str]:
-    try:
-        stat = path.stat()
-        return (float(stat.st_ctime), float(stat.st_mtime), path.name.lower())
-    except OSError:
-        return (float("inf"), float("inf"), path.name.lower())
-
-
-def gdt_file_is_stable(
-    path: Path,
-    *,
-    stable_seconds: float = 1.0,
-    observations: dict[str, tuple[int, float]] | None = None,
-) -> tuple[bool, str]:
-    try:
-        stat = path.stat()
-    except OSError as exc:
-        return False, f"stat failed: {exc}"
-    if observations is not None:
-        key = str(path)
-        current = (int(stat.st_size), float(stat.st_mtime))
-        previous = observations.get(key)
-        observations[key] = current
-        if previous != current:
-            return False, "waiting for stable size and timestamp"
-    age_seconds = max(0.0, time.time() - float(stat.st_mtime))
-    if age_seconds < max(0.0, float(stable_seconds)):
-        return False, "waiting for file age threshold"
-    return True, ""
-
-
-def discover_gdt_inbound_candidates(
-    bridge_root: str | Path,
-    *,
-    filename: str = "",
-    filename_profile: str = "permissive",
-    receiver_id: str = "",
-    sender_id: str = "",
-    require_stable: bool = False,
-    stable_seconds: float = 1.0,
-    observations: dict[str, tuple[int, float]] | None = None,
-) -> tuple[list[Path], list[dict[str, Any]], dict[str, Path]]:
-    directories = ensure_gdt_bridge_dirs(bridge_root)
-    inbound = directories["outbox"]
-    skipped: list[dict[str, Any]] = []
-    if not inbound.is_dir():
-        raise SimulatorValidationError(f"GDT outbox folder does not exist: {inbound}")
-    if filename:
-        paths = [inbound / Path(filename).name]
-    else:
-        paths = [path for path in inbound.iterdir() if path.is_file()]
-    candidates: list[Path] = []
-    for path in paths:
-        if not path.exists() or not path.is_file():
-            skipped.append(gdt_path_status(path, "skipped", "not found"))
-            continue
-        if gdt_is_internal_or_temp_file(path):
-            skipped.append(gdt_path_status(path, "skipped", "temporary or internal file"))
-            continue
-        if not gdt_has_supported_exchange_extension(path, profile=filename_profile):
-            skipped.append(gdt_path_status(path, "skipped", "unsupported extension"))
-            continue
-        if not gdt_filename_binding_matches(
-            path,
-            profile=filename_profile,
-            receiver_id=receiver_id,
-            sender_id=sender_id,
-        ):
-            skipped.append(gdt_path_status(path, "skipped", "filename binding mismatch"))
-            continue
-        if require_stable:
-            stable, reason = gdt_file_is_stable(
-                path,
-                stable_seconds=stable_seconds,
-                observations=observations,
-            )
-            if not stable:
-                skipped.append(gdt_path_status(path, "skipped", reason))
-                continue
-        candidates.append(path)
-    return sorted(candidates, key=gdt_inbound_sort_key), skipped, directories
-
-
-def import_gdt_bridge_files(
-    store: DemoStore,
-    bridge_root: str | Path,
-    *,
-    filename: str = "",
-    success_mode: str = "archive",
-    filename_profile: str = "permissive",
-    receiver_id: str = "",
-    sender_id: str = "",
-    require_stable: bool = False,
-    stable_seconds: float = 1.0,
-    observations: dict[str, tuple[int, float]] | None = None,
-) -> dict[str, Any]:
-    success_mode = normalize_gdt_bridge_success_mode(success_mode)
-    filename_profile = normalize_gdt_filename_profile(filename_profile)
-    candidates, skipped, directories = discover_gdt_inbound_candidates(
-        bridge_root,
-        filename=filename,
-        filename_profile=filename_profile,
-        receiver_id=receiver_id,
-        sender_id=sender_id,
-        require_stable=require_stable,
-        stable_seconds=stable_seconds,
-        observations=observations,
-    )
-    processing_dir = directories["processing"]
-    imported: list[dict[str, Any]] = []
-    failures: list[dict[str, Any]] = []
-    for source_path in candidates:
-        processing_path = gdt_collision_safe_path(processing_dir / source_path.name)
-        try:
-            source_path.replace(processing_path)
-        except OSError as exc:
-            skipped.append(gdt_path_status(source_path, "skipped", f"claim failed: {exc}"))
-            continue
-        try:
-            raw_gdt_text = processing_path.read_bytes().decode("cp1252")
-            item = store.record_gdt_result(
-                {
-                    "rawGdtText": raw_gdt_text,
-                    "bridgeRoot": str(directories["root"]),
-                    "sourceFile": source_path.name,
-                    "sourcePath": str(source_path),
-                }
-            )
-        except (SimulatorValidationError, UnicodeDecodeError, OSError) as exc:
-            error_target = gdt_collision_safe_path(directories["error"] / source_path.name)
-            try:
-                if processing_path.exists():
-                    processing_path.replace(error_target)
-            except OSError:
-                pass
-            failures.append(
-                {
-                    "name": source_path.name,
-                    "sourcePath": str(source_path),
-                    "path": str(error_target),
-                    "error": str(exc),
-                }
-            )
-            continue
-        disposition_error = ""
-        target_path: Path | None = None
-        try:
-            if success_mode == "delete":
-                processing_path.unlink()
-                target_path = processing_path
-                final_status = "deleted"
-            else:
-                target_path = gdt_collision_safe_path(directories["archive"] / source_path.name)
-                processing_path.replace(target_path)
-                final_status = "imported"
-        except OSError as exc:
-            final_status = "imported-warning"
-            target_path = processing_path
-            disposition_error = str(exc)
-        imported_item = {
-            "item": item,
-            "name": source_path.name,
-            "sourcePath": str(source_path),
-            "path": "" if success_mode == "delete" and not disposition_error else str(target_path),
-            "status": final_status,
-            "successMode": success_mode,
-        }
-        if disposition_error:
-            imported_item["dispositionError"] = disposition_error
-        imported.append(imported_item)
-    return {
-        "imported": imported,
-        "skipped": skipped,
-        "failures": failures,
-        "processedCount": len(imported) + len(failures),
-        "successMode": success_mode,
-        "filenameProfile": filename_profile,
-        "receiverId": receiver_id,
-        "senderId": sender_id,
-    }
-
-
-# Compatibility names now resolve to lifecycle implementations owned by
-# ``backend.runtime``. Workflow callbacks are injected by ``create_app``.
-OieResultListener = RuntimeOieResultListener
-GdtBridgeInboundWatcher = RuntimeGdtBridgeInboundWatcher
-send_hl7_mllp_message = oie_client.send_hl7_mllp_message
-
-
-def sync_patient_to_dcm4chee(
-    store: DemoStore,
-    patient: dict[str, Any],
-    profile: dict[str, Any],
-    *,
-    operation_type: str = DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE,
-    timeout_seconds: float = 10,
-) -> dict[str, Any]:
-    hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
-    host = str(hl7.get("host") or "").strip()
-    port = int(hl7.get("port") or 0)
-    request_url = f"mllp://{host}:{port}" if host and port else ""
-    event_type = "A08" if operation_type == "adt-update" else "A04"
-    payload = store.build_dcm4chee_patient_adt_payload(patient, profile, event_type=event_type)
-    sync = store.upsert_dcm4chee_patient_sync(
-        int(patient["id"]),
-        profile,
-        sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
-        increment_retry=store.get_dcm4chee_patient_sync_for_patient(int(patient["id"]), profile) is not None,
-    )
-    attempt = store.create_dcm4chee_patient_sync_attempt(
-        int(patient["id"]),
-        profile,
-        patient_sync_id=int(sync["id"]),
-        operation_type=operation_type,
-        request_url=request_url,
-        request_payload=payload,
-    )
-    try:
-        response_payload = send_hl7_mllp_message(
-            payload,
-            host=host,
-            port=port,
-            timeout_seconds=timeout_seconds,
-            framing=True,
-        )
-    except (OSError, socket.timeout, TimeoutError) as exc:
-        updated_attempt = store.update_dcm4chee_patient_sync_attempt_result(
-            int(attempt["id"]),
-            attempt_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
-            error_type="dcm4chee_hl7_unreachable",
-            error_text=str(exc),
-        )
-        return store.update_dcm4chee_patient_sync_from_attempt(
-            int(sync["id"]),
-            updated_attempt,
-            sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
-        )
-
-    ack = parse_hl7_ack(response_payload)
-    accepted = ack.get("code") == "AA"
-    error_type = "" if accepted else "dcm4chee_hl7_rejected"
-    error_text = "" if accepted else (ack.get("text") or f"dcm4chee returned HL7 ACK {ack.get('code') or 'unknown'}.")
-    updated_attempt = store.update_dcm4chee_patient_sync_attempt_result(
-        int(attempt["id"]),
-        attempt_status=DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED if accepted else DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
-        response_payload=response_payload,
-        ack=ack,
-        error_type=error_type,
-        error_text=error_text,
-    )
-    return store.update_dcm4chee_patient_sync_from_attempt(
-        int(sync["id"]),
-        updated_attempt,
-        sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED if accepted else DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
-    )
 
 
 def run_gdt_bridge_smoke(app: Flask, server: dict[str, Any]) -> list[dict[str, Any]]:
@@ -3030,6 +1890,20 @@ def create_app(database_path: str | None = None) -> Flask:
         )
         return str((medplum or {}).get("baseUrl") or "").strip()
 
+    def configured_dicom_patient_sync(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return sync_patient_to_dcm4chee(
+            *args,
+            sender=send_hl7_mllp_message,
+            **kwargs,
+        )
+
+    def configured_dicom_order_sync(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return sync_order_to_dcm4chee_mwl(
+            *args,
+            patient_syncer=configured_dicom_patient_sync,
+            **kwargs,
+        )
+
     app.register_blueprint(
         create_dcm4chee_profile_blueprint(
             app.config,
@@ -3045,7 +1919,7 @@ def create_app(database_path: str | None = None) -> Flask:
                 medplum_base_url=configured_medplum_base_url,
                 auth_manager=get_auth_manager,
                 fhir_sync=sync_fhir_workflow_record_to_medplum,
-                dicom_patient_sync=sync_patient_to_dcm4chee,
+                dicom_patient_sync=configured_dicom_patient_sync,
                 dcm_result_refresh=refresh_patient_dcm4chee_results,
                 dcm_profile=dcm4chee_profile_from_config,
             )
@@ -3059,7 +1933,7 @@ def create_app(database_path: str | None = None) -> Flask:
                 medplum_base_url=configured_medplum_base_url,
                 auth_manager=get_auth_manager,
                 fhir_sync=sync_fhir_workflow_record_to_medplum,
-                dcm_sync=sync_order_to_dcm4chee_mwl,
+                dcm_sync=configured_dicom_order_sync,
                 dcm_verify=verify_order_dcm4chee_mwl,
                 dcm_profile=dcm4chee_profile_from_config,
             )
@@ -3096,28 +1970,7 @@ def create_app(database_path: str | None = None) -> Flask:
             )
         )
     )
-
-    def static_asset_version(filename: str) -> str:
-        asset_path = Path(app.static_folder or "") / filename
-        try:
-            return str(asset_path.stat().st_mtime_ns)
-        except OSError:
-            return "0"
-
-    @app.context_processor
-    def inject_asset_helpers():
-        return {"asset_version": static_asset_version}
-
-    @app.get("/")
-    def index():
-        return render_template(
-            "index.html",
-            project_mode=app.config["PROJECT_MODE"],
-            oie_order_host=app.config["OIE_MLLP_ORDER_HOST"],
-            oie_order_port=app.config["OIE_MLLP_ORDER_PORT"],
-            oie_result_host=app.config["OIE_MLLP_RESULT_HOST"],
-            oie_result_port=app.config["OIE_MLLP_RESULT_PORT"],
-        )
+    app.register_blueprint(create_home_blueprint(app.config))
 
     return app
 

@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import socket
 from collections.abc import Callable, Mapping
+from datetime import datetime
 from typing import Any, Protocol
 
+from backend.domain.errors import ValidationError
 from backend.domain.statuses import (
     ORDER_STATUS_ACCEPTED,
     ORDER_STATUS_ERROR,
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_TRANSPORT_ERROR,
 )
+
+HL7_V2_MSH_SUFFIX = "2.5.1||||||UNICODE UTF-8"
 
 
 class OieRepositoryPort(Protocol):
@@ -143,3 +147,144 @@ class OieWorkflowService:
                 transport_error=str(exc),
             )
             raise OieTransportError(str(exc), item) from exc
+
+
+def mllp_frame(message: str) -> bytes:
+    return b"\x0b" + message.encode("utf-8") + b"\x1c\x0d"
+
+
+def hl7_message_timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d%H%M%S")
+
+
+def mllp_unframe(payload: bytes) -> str:
+    text = payload.decode("utf-8", errors="replace")
+    if text.startswith("\x0b"):
+        text = text[1:]
+    if text.endswith("\x1c\r"):
+        text = text[:-2]
+    elif text.endswith("\x1c"):
+        text = text[:-1]
+    return text
+
+
+def parse_hl7_ack(payload: str) -> dict[str, str]:
+    result = {"code": "", "controlId": "", "text": ""}
+    for segment in payload.replace("\n", "\r").split("\r"):
+        fields = segment.split("|")
+        if fields and fields[0] == "MSA":
+            result["code"] = fields[1].strip() if len(fields) > 1 else ""
+            result["controlId"] = fields[2].strip() if len(fields) > 2 else ""
+            result["text"] = fields[3].strip() if len(fields) > 3 else ""
+            break
+    return result
+
+
+def _hl7_segments(payload: str) -> list[list[str]]:
+    return [
+        segment.split("|")
+        for segment in payload.replace("\n", "\r").split("\r")
+        if segment.strip()
+    ]
+
+
+def _first_component(value: str) -> str:
+    return str(value or "").split("^", 1)[0].strip()
+
+
+def _hl7_message_code(value: str) -> str:
+    components = str(value or "").split("^")
+    return "^".join(part.strip() for part in components[:2] if part.strip())
+
+
+def parse_oru_summary(payload: str) -> dict[str, str]:
+    segments = _hl7_segments(payload)
+    if not segments or segments[0][0] != "MSH":
+        raise ValidationError("HL7 payload must start with an MSH segment.")
+    summary = {
+        "messageType": "",
+        "messageControlId": "",
+        "patientMrn": "",
+        "placerOrderNumber": "",
+        "fillerOrderNumber": "",
+    }
+    for fields in segments:
+        segment_id = fields[0]
+        if segment_id == "MSH":
+            summary["messageType"] = _hl7_message_code(fields[8] if len(fields) > 8 else "")
+            summary["messageControlId"] = fields[9].strip() if len(fields) > 9 else ""
+        elif segment_id == "PID":
+            summary["patientMrn"] = _first_component(fields[3] if len(fields) > 3 else "")
+        elif segment_id == "OBR":
+            summary["placerOrderNumber"] = _first_component(fields[2] if len(fields) > 2 else "")
+            summary["fillerOrderNumber"] = _first_component(fields[3] if len(fields) > 3 else "")
+    if not summary["messageType"]:
+        raise ValidationError("HL7 MSH-9 message type is required.")
+    return summary
+
+
+def build_hl7_ack(
+    inbound_payload: str,
+    *,
+    code: str,
+    text: str = "",
+    message_control_id: str = "",
+) -> str:
+    inbound_msh = next(
+        (fields for fields in _hl7_segments(inbound_payload) if fields and fields[0] == "MSH"),
+        [],
+    )
+    sending_app = inbound_msh[4] if len(inbound_msh) > 4 and inbound_msh[4] else "HEALTHCARE_LAB"
+    sending_facility = inbound_msh[5] if len(inbound_msh) > 5 and inbound_msh[5] else "LAB_APP"
+    receiving_app = inbound_msh[2] if len(inbound_msh) > 2 and inbound_msh[2] else "OIE"
+    receiving_facility = inbound_msh[3] if len(inbound_msh) > 3 and inbound_msh[3] else "HL7LAB"
+    control_id = message_control_id
+    if not control_id and len(inbound_msh) > 9:
+        control_id = inbound_msh[9].strip()
+    inbound_message = inbound_msh[8] if len(inbound_msh) > 8 else ""
+    inbound_components = str(inbound_message or "").split("^")
+    ack_trigger = inbound_components[1].strip() if len(inbound_components) > 1 and inbound_components[1].strip() else "R01"
+    ack_time = hl7_message_timestamp()
+    ack_control_id = f"ACK{ack_time}"
+    segments = [
+        (
+            "MSH|^~\\&|"
+            f"{sending_app}|{sending_facility}|{receiving_app}|{receiving_facility}|"
+            f"{ack_time}||ACK^{ack_trigger}^ACK|{ack_control_id}|P|{HL7_V2_MSH_SUFFIX}"
+        ),
+        f"MSA|{code}|{control_id}|{text}",
+    ]
+    if code in {"AE", "AR", "CE", "CR"}:
+        error_code = "200^Unsupported message type^HL70357" if code in {"AR", "CR"} else "102^Data type error^HL70357"
+        segments.append(f"ERR||MSH^1^9^1^1|{error_code}|E")
+    return "\r".join(segments)
+
+
+def accept_oie_result_payload(store: OieRepositoryPort, payload: str) -> tuple[str, dict[str, Any], int]:
+    try:
+        parsed = parse_oru_summary(payload)
+        if parsed["messageType"] not in {"ORU^R01", "ORU^W01"}:
+            item = store.record_oie_result_error(
+                payload,
+                parsed["messageType"],
+                f"Unsupported message type: {parsed['messageType'] or 'unknown'}.",
+            )
+            ack = build_hl7_ack(
+                payload,
+                code="AR",
+                text=item["error"],
+                message_control_id=parsed.get("messageControlId", ""),
+            )
+            return ack, item, 400
+        item = store.record_oie_result(payload, parsed)
+        text = "Duplicate result ignored." if item.get("duplicate") else "Result accepted."
+        ack = build_hl7_ack(
+            payload,
+            code="AA",
+            text=text,
+            message_control_id=parsed.get("messageControlId", ""),
+        )
+        return ack, item, 200
+    except ValidationError as exc:
+        item = store.record_oie_result_error(payload, "", str(exc))
+        return build_hl7_ack(payload, code="AE", text=str(exc)), item, 400
