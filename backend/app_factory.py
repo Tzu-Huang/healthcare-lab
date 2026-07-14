@@ -45,7 +45,7 @@ from backend.clients.medplum import (
     request_fhir_raw,
 )
 from backend.clients import dcm4chee as dcm4chee_client
-from backend.api.oie import create_oie_settings_blueprint
+from backend.api.oie import create_oie_blueprint
 from backend.api.lab_servers import create_lab_servers_blueprint
 from backend.api.dashboard import create_dashboard_blueprint
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
@@ -3473,7 +3473,14 @@ def create_app(database_path: str | None = None) -> Flask:
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
     app.extensions["oie_settings_service"] = OieSettingsService(store.oie_settings_repository)
     app.register_blueprint(
-        create_oie_settings_blueprint(app.extensions["oie_settings_service"])
+        create_oie_blueprint(
+            app,
+            store,
+            app.extensions["oie_settings_service"],
+            result_handler=accept_oie_result_payload,
+            ack_parser=parse_hl7_ack,
+            order_sender_provider=lambda: send_hl7_mllp_message,
+        )
     )
     app.register_blueprint(
         create_lab_servers_blueprint(
@@ -4261,7 +4268,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
 
-    @app.get("/api/oie/local-adt-patients")
     def list_oie_local_adt_patients():
         return jsonify(
             {
@@ -4272,7 +4278,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.get("/api/oie/local-orders")
     def list_oie_local_orders():
         return jsonify(
             {
@@ -4283,15 +4288,12 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.get("/api/oie/workbench")
     def oie_workbench():
         return jsonify({"success": True, **store.list_oie_workbench()})
 
-    @app.get("/api/oie/results")
     def oie_results():
         return jsonify({"success": True, "items": store.list_oie_results()})
 
-    @app.post("/api/oie/results")
     def receive_oie_result():
         payload = request.get_data(as_text=True)
         if request.is_json:
@@ -4302,12 +4304,10 @@ def create_app(database_path: str | None = None) -> Flask:
         ack, item, status_code = accept_oie_result_payload(store, payload)
         return jsonify({"success": status_code < 400, "item": item, "ack": ack}), status_code
 
-    @app.get("/api/oie/result-listener/status")
     def oie_result_listener_status():
         listener: OieResultListener = app.extensions["oie_result_listener"]
         return jsonify({"success": True, "item": listener.status()})
 
-    @app.post("/api/oie/result-listener/start")
     def start_oie_result_listener():
         listener: OieResultListener = app.extensions["oie_result_listener"]
         payload = request.get_json(silent=True) or {}
@@ -4323,12 +4323,10 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item})
 
-    @app.post("/api/oie/result-listener/stop")
     def stop_oie_result_listener():
         listener: OieResultListener = app.extensions["oie_result_listener"]
         return jsonify({"success": True, "item": listener.stop()})
 
-    @app.post("/api/oie/local-orders/<int:order_id>/send")
     def send_oie_local_order(order_id: int):
         payload = request.get_json(silent=True) or {}
         default_host = app.config["OIE_MLLP_ORDER_HOST"]
