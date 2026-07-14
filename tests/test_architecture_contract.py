@@ -189,11 +189,35 @@ class ArchitectureContractTest(unittest.TestCase):
                         path.read_text(encoding="utf-8"),
                     )
                 )
+        factory_path = BACKEND / "app_factory.py"
+        violations.extend(
+            placement_violations(
+                factory_path.relative_to(ROOT).as_posix(),
+                factory_path.read_text(encoding="utf-8"),
+            )
+        )
         self.assertEqual(
             [],
             violations,
             "Architecture placement violations:\n" + "\n".join(map(str, violations)),
         )
+
+    def test_composition_root_does_not_own_workflow_implementations(self):
+        path = BACKEND / "app_factory.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        definitions = {
+            node.name
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        }
+        forbidden = {
+            "accept_oie_result_payload",
+            "import_gdt_bridge_files",
+            "sync_fhir_workflow_record_to_medplum",
+            "sync_order_to_dcm4chee_mwl",
+            "sync_patient_to_dcm4chee",
+        }
+        self.assertEqual(set(), definitions & forbidden)
 
     def test_placement_failures_name_category_path_and_line(self):
         fixtures = {
