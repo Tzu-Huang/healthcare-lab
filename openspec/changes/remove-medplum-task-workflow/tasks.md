@@ -7,15 +7,15 @@
 
 ## 2. Frontend ServiceRequest-Only Workflow
 
-- [ ] 2.1 Group Patient FHIR Orders using ServiceRequest only and remove Task related-resource navigation, labels, prompts, and preview text.
-- [ ] 2.2 Change Local Orders FHIR acceptance and error display to depend only on the ServiceRequest sync status and valid Medplum reference.
-- [ ] 2.3 Remove remaining Task-facing DOM copy while preserving Patient, ServiceRequest, DiagnosticReport, Observation, DocumentReference, and Binary workflows.
+- [x] 2.1 Group Patient FHIR Orders using ServiceRequest only and remove Task related-resource navigation, labels, prompts, and preview text.
+- [x] 2.2 Change Local Orders FHIR acceptance and error display to depend only on the ServiceRequest sync status and valid Medplum reference.
+- [x] 2.3 Remove remaining Task-facing DOM copy while preserving Patient, ServiceRequest, DiagnosticReport, Observation, DocumentReference, and Binary workflows.
 
 ## 3. Tests And Contracts
 
 - [x] 3.1 Update store tests for the supported mapping set, ServiceRequest-only order ledger, response shape, and preserved result-resource dependency order.
 - [x] 3.2 Update API tests to assert one ServiceRequest Medplum write, no generated Task request, ServiceRequest failure preservation, and rejection or exclusion of historical Task workflow operations.
-- [ ] 3.3 Update frontend contract tests for ServiceRequest-only patient rollups, related resources, preview copy, and order acceptance logic.
+- [x] 3.3 Update frontend contract tests for ServiceRequest-only patient rollups, related resources, preview copy, and order acceptance logic.
 
 ## 4. Documentation And Diagrams
 
