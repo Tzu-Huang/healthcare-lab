@@ -291,6 +291,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("renderMedplumPatientList", script)
         self.assertIn("renderMedplumPatientList();\n  const patient = selectedMedplumPatient();", script)
         self.assertIn('const serviceRequests = patient ? medplumRecordsForPatient(patient, "ServiceRequest") : [];', script)
+        self.assertIn('item.resourceType === "ServiceRequest"', script)
+        self.assertIn('"ServiceRequest",\n          medplumResourceRollupTable(orders', script)
         self.assertIn("clearMedplumPreview", script)
         self.assertIn("medplum-service-request-select", script)
         self.assertIn("medplum-diagnostic-report-select", script)
@@ -301,13 +303,17 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("FHIR order code is required.", script)
         self.assertIn('payload.mode !== "fhir" && payload.requestedAt', script)
         self.assertIn("serviceRequest", script)
-        self.assertNotIn("Task:", script)
+        self.assertIn('serviceRequest.sync?.status === "Synced"', script)
+        self.assertIn('/^ServiceRequest\\/[^/]+$/.test(serviceRequestReference)', script)
+        self.assertNotIn('"Task"', script)
+        self.assertNotIn("item.fhir?.task", script)
 
         template = Path(__file__).resolve().parents[1] / "frontend" / "templates" / "index.html"
         html = template.read_text(encoding="utf-8")
         self.assertIn('id="medplum-diagnostic-report-rollup"', html)
         self.assertIn('id="medplum-diagnostic-report-status"', html)
         self.assertIn("Live Results", html)
+        self.assertNotIn("Task", html)
 
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
         styles = styles_path.read_text(encoding="utf-8")
@@ -376,8 +382,9 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.get_json()
         self.assertEqual(body["item"]["bridgePath"], str(target))
-        self.assertTrue((target / "outbox").is_dir())
-        self.assertTrue((target / "inbound").is_dir())
+        self.assertFalse(target.exists())
+        self.assertEqual(body["item"]["inboxPath"], str(target / "inbox"))
+        self.assertEqual(body["item"]["outboxPath"], str(target / "outbox"))
         current = self.client.get("/api/gdt/bridge/config").get_json()["item"]
         self.assertEqual(current["outboxPath"], str(target / "outbox"))
         self.assertIn("watcher", current)
@@ -400,7 +407,9 @@ class HealthcareLabApiTests(unittest.TestCase):
 
     def write_gdt_result_file(self, order, filename="device-result.gdt", text="Imported from bridge file"):
         bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
-        inbound = bridge_root / "inbound" / filename
+        for folder_name in ("inbox", "outbox", "processing", "archive", "error"):
+            (bridge_root / folder_name).mkdir(parents=True, exist_ok=True)
+        inbound = bridge_root / "outbox" / filename
         inbound.parent.mkdir(parents=True, exist_ok=True)
         inbound.write_bytes(self.gdt_result_payload_for_order(order, text=text).encode("cp1252"))
         return inbound
@@ -1516,7 +1525,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         return store.get_patient_record(patient["id"])
 
     @patch("app.urllib.request.urlopen")
-    def test_order_api_creates_fhir_service_request_and_task(self, urlopen):
+    def test_order_api_creates_only_fhir_service_request(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
         patient = self.create_synced_fhir_patient()
         created_payloads = []
@@ -1543,11 +1552,6 @@ class HealthcareLabApiTests(unittest.TestCase):
             if payload["resourceType"] == "ServiceRequest":
                 return FakeHttpResponse(
                     json.dumps({"resourceType": "ServiceRequest", "id": "sr-created"}).encode("utf-8"),
-                    status=201,
-                )
-            if payload["resourceType"] == "Task":
-                return FakeHttpResponse(
-                    json.dumps({"resourceType": "Task", "id": "task-created"}).encode("utf-8"),
                     status=201,
                 )
             self.fail(f"Unexpected payload: {payload}")
@@ -1578,18 +1582,15 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(item["protocolVersion"], "FHIR R4")
         self.assertEqual(item["fhir"]["serviceRequest"]["sync"]["status"], "Synced")
         self.assertEqual(item["fhir"]["serviceRequest"]["medplum"]["reference"], "ServiceRequest/sr-created")
-        self.assertEqual(item["fhir"]["task"]["sync"]["status"], "Synced")
-        self.assertEqual(item["fhir"]["task"]["medplum"]["reference"], "Task/task-created")
+        self.assertEqual(set(item["fhir"]), {"serviceRequest"})
+        self.assertEqual(len(created_payloads), 1)
         service_request = next(payload for payload in created_payloads if payload["resourceType"] == "ServiceRequest")
-        task = next(payload for payload in created_payloads if payload["resourceType"] == "Task")
         self.assertEqual(service_request["subject"]["reference"], "Patient/patient-order")
         self.assertRegex(service_request["occurrenceDateTime"], r"^2026-07-08T10:30:00[+-]\d{2}:\d{2}$")
         self.assertRegex(service_request["authoredOn"], r"^2026-07-08T09:00:00[+-]\d{2}:\d{2}$")
-        self.assertEqual(task["for"]["reference"], "Patient/patient-order")
-        self.assertEqual(task["focus"]["reference"], "ServiceRequest/sr-created")
 
     @patch("app.urllib.request.urlopen")
-    def test_order_api_preserves_fhir_task_sync_failure(self, urlopen):
+    def test_order_api_preserves_fhir_service_request_sync_failure(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
         patient = self.create_synced_fhir_patient()
 
@@ -1605,7 +1606,7 @@ class HealthcareLabApiTests(unittest.TestCase):
                     ).encode("utf-8"),
                     status=200,
                 )
-            if "Task" in request.full_url:
+            if request.get_method() != "GET" and "ServiceRequest" in request.full_url:
                 raise urllib.error.HTTPError(
                     request.full_url,
                     400,
@@ -1615,7 +1616,7 @@ class HealthcareLabApiTests(unittest.TestCase):
                         json.dumps(
                             {
                                 "resourceType": "OperationOutcome",
-                                "issue": [{"severity": "error", "diagnostics": "task rejected"}],
+                                "issue": [{"severity": "error", "diagnostics": "service request rejected"}],
                             }
                         ).encode("utf-8"),
                         status=400,
@@ -1644,9 +1645,54 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 201)
         item = response.get_json()["item"]
-        self.assertEqual(item["fhir"]["serviceRequest"]["sync"]["status"], "Synced")
-        self.assertEqual(item["fhir"]["task"]["sync"]["status"], "Sync failed")
-        self.assertIn("task rejected", item["fhir"]["task"]["sync"]["error"])
+        self.assertEqual(item["fhir"]["serviceRequest"]["sync"]["status"], "Sync failed")
+        self.assertIn("service request rejected", item["fhir"]["serviceRequest"]["sync"]["error"])
+        self.assertEqual(set(item["fhir"]), {"serviceRequest"})
+
+    def test_historical_fhir_task_is_excluded_from_active_api_contracts(self):
+        store = self.client.application.extensions["demo_store"]
+        record = store.create_fhir_workflow_record(
+            {
+                "localSourceType": "local_order_records",
+                "localSourceId": "historical-task",
+                "resourceType": "ServiceRequest",
+                "resource": {
+                    "resourceType": "ServiceRequest",
+                    "status": "active",
+                    "intent": "order",
+                    "subject": {"reference": "Patient/historical"},
+                },
+            }
+        )
+        with store.connect() as connection:
+            connection.execute(
+                """
+                UPDATE local_fhir_workflow_records
+                SET resource_type = 'Task', resource_json = ?, medplum_resource_reference = 'Task/historical'
+                WHERE id = ?
+                """,
+                (json.dumps({"resourceType": "Task", "status": "completed", "intent": "order"}), record["id"]),
+            )
+
+        listed = self.client.get("/api/fhir/records").get_json()["items"]
+        self.assertNotIn(record["id"], [item["id"] for item in listed])
+        inventory = self.client.get("/api/fhir/inventory").get_json()["items"]
+        self.assertNotIn(record["id"], [item["id"] for item in inventory])
+        self.assertEqual(self.client.get(f"/api/fhir/records/{record['id']}").status_code, 400)
+        self.assertEqual(self.client.get(f"/api/fhir/records/{record['id']}/preview").status_code, 400)
+        self.set_medplum_base_url("http://medplum.test/fhir/R4")
+        self.assertEqual(self.client.post(f"/api/fhir/records/{record['id']}/sync", json={}).status_code, 400)
+
+        create = self.client.post(
+            "/api/fhir/records",
+            json={
+                "localSourceType": "local_order_records",
+                "localSourceId": "new-task",
+                "resourceType": "Task",
+                "resource": {"resourceType": "Task", "status": "requested", "intent": "order"},
+            },
+        )
+        self.assertEqual(create.status_code, 400)
 
     def test_order_api_rejects_missing_patient(self):
         response = self.client.post("/api/orders", json={"patientRecordId": 404})
@@ -3244,12 +3290,13 @@ class HealthcareLabApiTests(unittest.TestCase):
     def test_gdt_bridge_write_import_demo_and_workbench(self):
         patient = self.create_local_patient()
         order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
+        (bridge_root / "inbox").mkdir(parents=True, exist_ok=True)
 
         written = self.client.post(f"/api/gdt/orders/{order['id']}/write-6302", json={})
         self.assertEqual(written.status_code, 200)
         inbound_path = Path(written.get_json()["path"])
-        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
-        self.assertEqual(inbound_path.parent, bridge_root / "inbound")
+        self.assertEqual(inbound_path.parent, bridge_root / "inbox")
         self.assertTrue(inbound_path.exists())
         self.assertIn(order["localGdtOrderNumber"], inbound_path.read_text(encoding="cp1252"))
         inbound_path.unlink()
@@ -3323,8 +3370,9 @@ class HealthcareLabApiTests(unittest.TestCase):
 
     def test_gdt_bridge_batch_import_skips_temp_files_and_moves_parse_failures_to_error(self):
         bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
-        inbound_dir = bridge_root / "inbound"
-        inbound_dir.mkdir(parents=True, exist_ok=True)
+        inbound_dir = bridge_root / "outbox"
+        for folder_name in ("outbox", "processing", "archive", "error"):
+            (bridge_root / folder_name).mkdir(parents=True, exist_ok=True)
         (inbound_dir / "partial.gdt.tmp").write_text("not ready", encoding="utf-8")
         bad_file = inbound_dir / "bad-result.gdt"
         bad_file.write_text("8000|NOT-GDT\n", encoding="utf-8")
@@ -3419,6 +3467,9 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in result["imported"]], [first.name, second.name])
 
     def test_gdt_bridge_watcher_api_lifecycle_and_path_change_guard(self):
+        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
+        (bridge_root / "inbox").mkdir(parents=True, exist_ok=True)
+        (bridge_root / "outbox").mkdir(parents=True, exist_ok=True)
         started = self.client.post("/api/gdt/bridge/watcher/start", json={})
         self.assertEqual(started.status_code, 200)
         self.assertTrue(started.get_json()["item"]["running"])
@@ -4071,6 +4122,7 @@ class HealthcareLabApiTests(unittest.TestCase):
     def test_openemr_gdt_backend_verify_reports_healthy_steps(self, urlopen):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
         self.install_openemr_source(lambda: FakeDbConnection(rows=[{"procedure_order_id": 1}]))
+        Path(self.client.application.config["GDT_BRIDGE_PATH"]).mkdir(parents=True, exist_ok=True)
 
         result = self.run_openemr_smoke()
 
@@ -4119,6 +4171,7 @@ class HealthcareLabApiTests(unittest.TestCase):
     def test_openemr_gdt_backend_verify_degrades_when_no_ecg_orders_exist(self, urlopen):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
         self.install_openemr_source(lambda: FakeDbConnection(rows=[]))
+        Path(self.client.application.config["GDT_BRIDGE_PATH"]).mkdir(parents=True, exist_ok=True)
 
         result = self.run_openemr_smoke()
 

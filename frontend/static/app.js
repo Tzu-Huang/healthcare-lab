@@ -2028,7 +2028,7 @@ function medplumRecordsForPatient(patient, resourceType = "") {
 
 function medplumOrderRecordsForPatient(patient) {
   return medplumInventory.filter((item) => (
-    ["ServiceRequest", "Task"].includes(item.resourceType)
+    item.resourceType === "ServiceRequest"
     && medplumRecordMatchesPatient(item, patient)
   ));
 }
@@ -2044,14 +2044,6 @@ function medplumRecordReferences(item) {
   const references = new Set(item?.references || []);
   if (medplumRecordReference(item)) references.add(medplumRecordReference(item));
   return references;
-}
-
-function medplumRecordsReferencing(reference, resourceType = "") {
-  if (!reference) return [];
-  return medplumInventory.filter((item) => (
-    (!resourceType || item.resourceType === resourceType)
-    && medplumRecordReferences(item).has(reference)
-  ));
 }
 
 function medplumLiveReportsForPatient(patient) {
@@ -2265,7 +2257,7 @@ function renderMedplumPatientList() {
       content.append(
         medplumPatientSection(
           "FHIR ORDERS",
-          "ServiceRequest & Task",
+          "ServiceRequest",
           medplumResourceRollupTable(orders, "No FHIR Orders for this Patient."),
         ),
         medplumPatientSection(
@@ -2409,16 +2401,11 @@ function renderMedplumRelatedResources(patient) {
     container.appendChild(createElement("p", "Select a FHIR patient.", "muted"));
     return;
   }
-  const selectedServiceRequest = selectedMedplumServiceRequest();
   const selectedReport = selectedMedplumDiagnosticReport();
-  const serviceRequestRef = medplumRecordReference(selectedServiceRequest);
   const liveRelated = selectedReport?.relationships?.related || [];
   const reportReferences = selectedReport?.reference
     ? new Set((selectedReport.relationships?.related || []).map((item) => item.reference))
     : medplumRecordReferences(selectedReport);
-  const tasks = serviceRequestRef
-    ? medplumRecordsReferencing(serviceRequestRef, "Task")
-    : medplumRecordsForPatient(patient, "Task");
   const observations = medplumRecordsForPatient(patient, "Observation").filter((item) => {
     const reference = medplumRecordReference(item);
     return selectedReport && reportReferences.size ? reportReferences.has(reference) : medplumRecordMatchesPatient(item, patient);
@@ -2428,7 +2415,6 @@ function renderMedplumRelatedResources(patient) {
     return selectedReport && reportReferences.size ? reportReferences.has(reference) : medplumRecordMatchesPatient(item, patient);
   });
   [
-    ["Task", tasks],
     ["Observation", observations],
     ["DocumentReference", documents],
   ].forEach(([label, items]) => {
@@ -2447,7 +2433,7 @@ function renderMedplumRelatedResources(patient) {
     container.appendChild(group);
   }
   if (!container.childElementCount) {
-    container.appendChild(createElement("p", "No related Task, Observation, DocumentReference, or Binary records for the current selection.", "muted"));
+    container.appendChild(createElement("p", "No related Observation, DocumentReference, or Binary records for the current selection.", "muted"));
   }
 }
 
@@ -2458,7 +2444,7 @@ function clearMedplumPreview() {
   byId("medplum-selected-title").textContent = "No resource selected";
   const summary = byId("medplum-selected-summary");
   summary.replaceChildren();
-  summary.appendChild(createElement("p", "Select a FHIR Patient, ServiceRequest, DiagnosticReport, Task, Observation, DocumentReference, or Binary.", "muted"));
+  summary.appendChild(createElement("p", "Select a FHIR Patient, ServiceRequest, DiagnosticReport, Observation, DocumentReference, or Binary.", "muted"));
   byId("medplum-json-preview").textContent = "Select a FHIR resource to inspect raw JSON.";
 }
 
@@ -3523,13 +3509,9 @@ function orderModeLabel(item, mode) {
 function orderStateLabel(item, mode) {
   if (mode === "fhir") {
     const serviceRequest = item.fhir?.serviceRequest || {};
-    const task = item.fhir?.task || {};
     const serviceRequestReference = serviceRequest.medplum?.reference || "";
-    const taskReference = task.medplum?.reference || "";
     return serviceRequest.sync?.status === "Synced"
-      && task.sync?.status === "Synced"
       && /^ServiceRequest\/[^/]+$/.test(serviceRequestReference)
-      && /^Task\/[^/]+$/.test(taskReference)
       ? "Accepted"
       : "Error";
   }
@@ -4173,8 +4155,8 @@ function renderGdtBridgeConfig() {
   const summary = byId("gdt-bridge-config-summary");
   summary.replaceChildren();
   [
-    ["Outbox", item.outboxPath],
-    ["Inbound", item.inboundPath],
+    ["Output (inbox)", item.inboxPath],
+    ["Returned data (outbox)", item.outboxPath],
     ["Archive", item.archivePath],
     ["Error", item.errorPath],
     ["Import mode", item.successMode],
@@ -4536,7 +4518,7 @@ function renderGdtInbox() {
   const files = gdtWorkbench.bridgeInbox || [];
   if (!files.length) {
     const row = document.createElement("tr");
-    const cell = rowCell("No inbound GDT files found.");
+    const cell = rowCell("No returned GDT files found in outbox.");
     cell.colSpan = 5;
     cell.className = "muted";
     row.appendChild(cell);

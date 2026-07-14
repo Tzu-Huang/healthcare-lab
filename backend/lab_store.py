@@ -100,8 +100,6 @@ FHIR_ORDER_DEFAULT_STATUS = "active"
 FHIR_ORDER_DEFAULT_INTENT = "order"
 FHIR_ORDER_DEFAULT_CATEGORY = "Procedure"
 FHIR_ORDER_DEFAULT_PRIORITY = "routine"
-FHIR_ORDER_TASK_CODE = "ECG-WORKLIST"
-FHIR_ORDER_TASK_DISPLAY = "ECG worklist task"
 GDT_ORDER_PROTOCOL_VERSION = "GDT 2.1"
 GDT_ORDER_STATUS_CREATED = "Created"
 GDT_ORDER_STATUS_ERROR = "Error"
@@ -132,7 +130,6 @@ FHIR_SYNC_STATUSES = (
 FHIR_SUPPORTED_RESOURCE_TYPES = (
     "Patient",
     "ServiceRequest",
-    "Task",
     "Binary",
     "Observation",
     "DocumentReference",
@@ -142,7 +139,6 @@ FHIR_SUPPORTED_RESOURCE_TYPES = (
 FHIR_RESOURCE_DEPENDENCY_ORDER = {
     "Patient": 10,
     "ServiceRequest": 20,
-    "Task": 30,
     "Binary": 40,
     "Observation": 50,
     "DocumentReference": 60,
@@ -152,7 +148,6 @@ FHIR_RESOURCE_DEPENDENCY_ORDER = {
 FHIR_IDENTIFIER_SYSTEMS = {
     "Patient": "https://healthcare-lab.local/fhir/identifier/patient",
     "ServiceRequest": "https://healthcare-lab.local/fhir/identifier/service-request",
-    "Task": "https://healthcare-lab.local/fhir/identifier/task",
     "Binary": "https://healthcare-lab.local/fhir/identifier/binary",
     "Observation": "https://healthcare-lab.local/fhir/identifier/observation",
     "DocumentReference": "https://healthcare-lab.local/fhir/identifier/document-reference",
@@ -167,10 +162,6 @@ FHIR_RESOURCE_MAPPINGS = {
     "ServiceRequest": {
         "local_source_type": "local_order_records",
         "depends_on": ("Patient",),
-    },
-    "Task": {
-        "local_source_type": "local_order_records",
-        "depends_on": ("Patient", "ServiceRequest"),
     },
     "Binary": {
         "local_source_type": "local_fhir_artifacts",
@@ -193,7 +184,6 @@ FHIR_RESOURCE_MAPPINGS = {
         "depends_on": (
             "Patient",
             "ServiceRequest",
-            "Task",
             "Binary",
             "Observation",
             "DocumentReference",
@@ -398,27 +388,28 @@ def first_gdt_field(fields: dict[str, list[str]], code: str) -> str:
 
 
 def ensure_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
+    """Resolve the configured GDT paths without creating them."""
     root = Path(base_path)
-    directories = {
+    return {
         "root": root,
+        "inbox": root / "inbox",
         "outbox": root / "outbox",
         "processed": root / "processed",
         "processing": root / "processing",
         "error": root / "error",
-        "outbound": root / "outbound",
-        "inbound": root / "inbound",
         "reports": root / "reports",
         "archive": root / "archive",
     }
-    for path in directories.values():
-        path.mkdir(parents=True, exist_ok=True)
-    return directories
 
 
 def validate_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
     directories = ensure_gdt_bridge_dirs(base_path)
     probe_name = f".write-test-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-    for name in ("outbox", "processed", "processing", "error", "inbound", "archive", "reports"):
+    for name in ("inbox", "outbox"):
+        if not directories[name].is_dir():
+            raise SimulatorValidationError(
+                f"GDT {name} folder does not exist: {directories[name]}"
+            )
         probe_path = directories[name] / probe_name
         try:
             probe_path.write_text("ok", encoding="utf-8")
@@ -2749,44 +2740,6 @@ class DemoStore:
             resource["patientInstruction"] = patient_instruction
         return resource
 
-    @classmethod
-    def _build_order_task_resource(
-        cls,
-        order: dict[str, Any],
-        *,
-        patient_reference: str,
-        service_request_reference: str,
-    ) -> dict[str, Any]:
-        return {
-            "resourceType": "Task",
-            "status": "requested",
-            "intent": "order",
-            "identifier": [
-                {
-                    "system": FHIR_IDENTIFIER_SYSTEMS["Task"],
-                    "value": cls.fhir_identifier_value(
-                        "Task",
-                        "local_order_records",
-                        order["id"],
-                    ),
-                }
-            ],
-            "code": {
-                "coding": [
-                    {
-                        "system": "urn:healthcare-lab:task-code",
-                        "code": FHIR_ORDER_TASK_CODE,
-                        "display": FHIR_ORDER_TASK_DISPLAY,
-                    }
-                ],
-                "text": FHIR_ORDER_TASK_DISPLAY,
-            },
-            "focus": {"reference": service_request_reference},
-            "for": {"reference": patient_reference},
-            "authoredOn": now_iso(),
-            "description": f"Perform ECG order {order.get('localOrderNumber') or order.get('id')}",
-        }
-
     def create_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
         values = self._validate_order_payload(payload)
         timestamp = now_iso()
@@ -4807,33 +4760,6 @@ class DemoStore:
             }
         )
 
-    def create_order_task_fhir_workflow_record(
-        self,
-        order: dict[str, Any],
-        *,
-        patient_reference: str,
-        service_request_reference: str,
-    ) -> dict[str, Any]:
-        if order.get("protocolVersion") != FHIR_ORDER_PROTOCOL_VERSION:
-            raise SimulatorValidationError("Order record is not FHIR mode.")
-        if not patient_reference.startswith("Patient/"):
-            raise SimulatorValidationError("FHIR Task requires a Patient/<id> reference.")
-        if not service_request_reference.startswith("ServiceRequest/"):
-            raise SimulatorValidationError("FHIR Task requires a ServiceRequest/<id> focus reference.")
-        resource = self._build_order_task_resource(
-            order,
-            patient_reference=patient_reference,
-            service_request_reference=service_request_reference,
-        )
-        return self.create_fhir_workflow_record(
-            {
-                "localSourceType": "local_order_records",
-                "localSourceId": str(order["id"]),
-                "resourceType": "Task",
-                "resource": resource,
-            }
-        )
-
     def list_order_records(self, protocol_version: str = "") -> list[dict[str, Any]]:
         with self.connect() as connection:
             if protocol_version:
@@ -6011,7 +5937,7 @@ class DemoStore:
                     SELECT * FROM local_fhir_workflow_records
                     WHERE local_source_type = 'local_order_records'
                     AND local_source_id IN ({placeholders})
-                    AND resource_type IN ('ServiceRequest', 'Task')
+                    AND resource_type = 'ServiceRequest'
                     """,
                     source_ids,
                 ).fetchall()
@@ -6065,7 +5991,6 @@ class DemoStore:
         )
         fhir_records = fhir_records or {}
         service_request = fhir_records.get("ServiceRequest")
-        task = fhir_records.get("Task")
         return {
             "id": row["id"],
             "localOrderNumber": row["local_order_number"],
@@ -6109,7 +6034,6 @@ class DemoStore:
             "alternateCodeSystem": row["alternate_code_system"],
             "fhir": {
                 "serviceRequest": service_request,
-                "task": task,
             }
             if row["protocol_version"] == FHIR_ORDER_PROTOCOL_VERSION
             else None,
@@ -6785,6 +6709,11 @@ class DemoStore:
     def _fhir_workflow_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         resource = self._json_value(row["resource_json"], {})
         operation_outcome = self._json_value(row["operation_outcome_json"], {})
+        mapping = (
+            self.fhir_mapping_for_resource_type(row["resource_type"])
+            if row["resource_type"] in FHIR_SUPPORTED_RESOURCE_TYPES
+            else None
+        )
         return {
             "id": row["id"],
             "localFhirRecordNumber": row["local_fhir_record_number"],
@@ -6797,7 +6726,7 @@ class DemoStore:
             },
             "resource": resource,
             "dependencies": self._json_value(row["dependency_json"], []),
-            "mapping": self.fhir_mapping_for_resource_type(row["resource_type"]),
+            "mapping": mapping,
             "medplum": {
                 "id": row["medplum_resource_id"],
                 "reference": row["medplum_resource_reference"],

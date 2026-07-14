@@ -25,7 +25,9 @@ folder, then restart `lab-app` and `openemr`.
 Inside Healthcare Lab's GDT page, the **Shared Folder** setting controls the
 path the Flask app reads and writes. In Docker this should normally remain
 `/data/gdt-bridge`; the actual Windows folder is controlled by the Compose
-bind mount through `GDT_BRIDGE_HOST_PATH`.
+bind mount through `GDT_BRIDGE_HOST_PATH`. The app does not create bridge
+folders: provision them yourself. Orders are written to `inbox/`, and returned
+device/AP data is read from `outbox/`.
 
 The lab app also points its OpenEMR database settings at `openemr-db` by
 default.
