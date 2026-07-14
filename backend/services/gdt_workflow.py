@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
-from backend.lab_store import ensure_gdt_bridge_dirs
+from backend.domain.gdt import ensure_gdt_bridge_dirs
 
 
 class GdtRepositoryPort(Protocol):

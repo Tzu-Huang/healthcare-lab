@@ -35,6 +35,27 @@ from backend.gdt_adapter import (
     render_gdt_message as adapter_render_gdt_message,
     render_gdt_record as adapter_render_gdt_record,
 )
+from backend.domain.errors import SimulatorValidationError
+from backend.domain.gdt import ensure_gdt_bridge_dirs
+from backend.domain.statuses import (
+    DCM4CHEE_MWL_STATUS_CREATED,
+    DCM4CHEE_MWL_STATUS_FAILED,
+    DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+    DCM4CHEE_MWL_STATUS_PENDING,
+    DCM4CHEE_MWL_VERIFICATION_AMBIGUOUS,
+    DCM4CHEE_MWL_VERIFICATION_FAILED,
+    DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED,
+    DCM4CHEE_MWL_VERIFICATION_VERIFIED,
+    FHIR_SYNC_STATUS_FAILED,
+    FHIR_SYNC_STATUS_PENDING,
+    FHIR_SYNC_STATUS_SYNCED,
+    FHIR_SYNC_STATUS_SYNCING,
+    ORDER_STATUS_ACCEPTED,
+    ORDER_STATUS_ERROR,
+    ORDER_STATUS_READY,
+    ORDER_STATUS_REJECTED,
+    ORDER_STATUS_TRANSPORT_ERROR,
+)
 
 OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES = ("1001",)
 HL7_V2_VERSION = "2.5.1"
@@ -52,11 +73,6 @@ PATIENT_CLASS_DEFAULT = "O"
 GDT_PATIENT_SEX_CODES = {"M": "1", "F": "2"}
 ORDER_PROTOCOL_VERSION = HL7_V2_VERSION
 ORDER_MESSAGE_TYPE = "ORM^O01"
-ORDER_STATUS_READY = "Ready to send"
-ORDER_STATUS_ACCEPTED = "Accepted"
-ORDER_STATUS_ERROR = "Error"
-ORDER_STATUS_REJECTED = "Rejected"
-ORDER_STATUS_TRANSPORT_ERROR = "Transport error"
 ORDER_ALLOWED_PRIORITIES = ("R", "S", "A")
 ORDER_DEFAULT_CODE = "ECG12"
 ORDER_DEFAULT_TEXT = "12 Lead ECG"
@@ -73,10 +89,6 @@ OIE_RESULT_LISTENER_HOST = "0.0.0.0"
 OIE_RESULT_LISTENER_PORT = 6665
 DCM4CHEE_ORDER_PROTOCOL_VERSION = "DICOM"
 DCM4CHEE_ORDER_MESSAGE_TYPE = "MWL"
-DCM4CHEE_MWL_STATUS_PENDING = "Pending sync"
-DCM4CHEE_MWL_STATUS_CREATED = "Created"
-DCM4CHEE_MWL_STATUS_FAILED = "Sync failed"
-DCM4CHEE_MWL_STATUS_PATIENT_MISSING = "Patient missing"
 DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES = {"patient_missing", "patient_sync_failed", "profile_invalid"}
 DCM4CHEE_PATIENT_SYNC_STATUS_PENDING = "Pending sync"
 DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED = "Synced"
@@ -87,10 +99,6 @@ DCM4CHEE_PATIENT_SYNC_OPERATION_PREFLIGHT = "preflight"
 DCM4CHEE_MWL_OPERATION_CREATE = "create"
 DCM4CHEE_MWL_OPERATION_READBACK = "read-back"
 DCM4CHEE_MWL_OPERATION_VERIFY = "verify-mwl"
-DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED = "not_verified"
-DCM4CHEE_MWL_VERIFICATION_VERIFIED = "verified"
-DCM4CHEE_MWL_VERIFICATION_FAILED = "verification_failed"
-DCM4CHEE_MWL_VERIFICATION_AMBIGUOUS = "verification_ambiguous"
 DCM4CHEE_RESULT_STATUS_MATCHED = "matched"
 DCM4CHEE_RESULT_STATUS_NO_RESULT = "no_result"
 DCM4CHEE_RESULT_STATUS_AMBIGUOUS = "ambiguous"
@@ -125,10 +133,6 @@ LAB_SERVER_TYPES = (
 LAB_SERVER_PROTOCOLS = ("HTTP", "TCP", "MLLP", "FHIR", "GDT", "DICOM", "None")
 LAB_HEALTH_STATUSES = ("Healthy", "Degraded", "Down", "Unknown")
 LAB_OPERATION_ACTIONS = ("status", "start", "stop", "restart", "smoke", "logs")
-FHIR_SYNC_STATUS_PENDING = "Pending sync"
-FHIR_SYNC_STATUS_SYNCING = "Syncing"
-FHIR_SYNC_STATUS_SYNCED = "Synced"
-FHIR_SYNC_STATUS_FAILED = "Sync failed"
 FHIR_SYNC_STATUSES = (
     FHIR_SYNC_STATUS_PENDING,
     FHIR_SYNC_STATUS_SYNCING,
@@ -320,10 +324,6 @@ DEFAULT_LAB_OPERATION_METADATA = {
 }
 
 
-class SimulatorValidationError(ValueError):
-    pass
-
-
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
@@ -393,21 +393,6 @@ def parse_gdt_message(payload: str) -> dict[str, list[str]]:
 
 def first_gdt_field(fields: dict[str, list[str]], code: str) -> str:
     return adapter_first_gdt_field(fields, code)
-
-
-def ensure_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
-    """Resolve the configured GDT paths without creating them."""
-    root = Path(base_path)
-    return {
-        "root": root,
-        "inbox": root / "inbox",
-        "outbox": root / "outbox",
-        "processed": root / "processed",
-        "processing": root / "processing",
-        "error": root / "error",
-        "reports": root / "reports",
-        "archive": root / "archive",
-    }
 
 
 def validate_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:

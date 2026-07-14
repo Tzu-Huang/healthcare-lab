@@ -6,8 +6,11 @@ from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
 from backend.clients import dcm4chee as dcm4chee_client
-from backend.lab_store import DCM4CHEE_MWL_STATUS_CREATED, DCM4CHEE_MWL_VERIFICATION_VERIFIED
-from backend.lab_store import SimulatorValidationError
+from backend.domain.errors import SimulatorValidationError
+from backend.domain.statuses import (
+    DCM4CHEE_MWL_STATUS_CREATED,
+    DCM4CHEE_MWL_VERIFICATION_VERIFIED,
+)
 
 
 def _dicom_first_value(payload: dict[str, Any], tag: str, default: str = "") -> str:

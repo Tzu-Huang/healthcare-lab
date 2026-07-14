@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
-from backend.lab_store import FHIR_SYNC_STATUS_SYNCED
+from backend.domain.statuses import FHIR_SYNC_STATUS_SYNCED
 
 
 class PatientRepositoryPort(Protocol):

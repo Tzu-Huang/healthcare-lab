@@ -6,7 +6,7 @@ import socket
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
-from backend.lab_store import (
+from backend.domain.statuses import (
     ORDER_STATUS_ACCEPTED,
     ORDER_STATUS_ERROR,
     ORDER_STATUS_REJECTED,
