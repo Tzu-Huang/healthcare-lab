@@ -37,6 +37,10 @@ from backend.gdt_adapter import (
 )
 from backend.domain.errors import SimulatorValidationError
 from backend.domain.gdt import ensure_gdt_bridge_dirs
+from backend.domain.openemr import (
+    OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES,
+    parse_openemr_allowed_procedure_codes,
+)
 from backend.domain.statuses import (
     DCM4CHEE_MWL_OPERATION_CREATE,
     DCM4CHEE_MWL_OPERATION_READBACK,
@@ -66,7 +70,6 @@ from backend.domain.statuses import (
     ORDER_STATUS_TRANSPORT_ERROR,
 )
 
-OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES = ("1001",)
 HL7_V2_VERSION = "2.5.1"
 HL7_V2_CHARSET = "UNICODE UTF-8"
 HL7_V2_MSH_SUFFIX = f"{HL7_V2_VERSION}||||||{HL7_V2_CHARSET}"
@@ -428,16 +431,6 @@ def normalize_openemr_gender(value: Any) -> str:
     if normalized in {"o", "other"}:
         return "O"
     return "U" if normalized else ""
-
-
-def parse_openemr_allowed_procedure_codes(value: Any) -> tuple[str, ...]:
-    if value is None:
-        return OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES
-    if isinstance(value, str):
-        codes = [item.strip() for item in value.replace(";", ",").split(",")]
-    else:
-        codes = [str(item).strip() for item in value]
-    return tuple(code for code in codes if code)
 
 
 def openemr_provider_name(row: dict[str, Any]) -> str:
