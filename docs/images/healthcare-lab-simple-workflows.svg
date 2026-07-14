@@ -79,12 +79,12 @@
   <text x="1580" y="875" text-anchor="middle" class="node-sub">ECG AP simulator</text>
 
   <path d="M450 825 H640" fill="none" stroke="#222" stroke-width="2.5" marker-end="url(#arrow)"/>
-  <text x="545" y="766" text-anchor="middle" class="label">Patient / ServiceRequest / Task</text>
+  <text x="545" y="766" text-anchor="middle" class="label">Patient / ServiceRequest</text>
   <text x="545" y="790" text-anchor="middle" class="small">FHIR R4 REST</text>
   <text x="545" y="932" text-anchor="middle" class="port">medplum:8103</text>
 
   <path d="M920 825 H1440" fill="none" stroke="#222" stroke-width="2.5" marker-end="url(#arrow)"/>
-  <text x="1180" y="766" text-anchor="middle" class="label">Task / ServiceRequest</text>
+  <text x="1180" y="766" text-anchor="middle" class="label">ServiceRequest</text>
   <text x="1180" y="790" text-anchor="middle" class="small">FHIR R4 REST</text>
   <text x="1180" y="932" text-anchor="middle" class="port">FHIR:8103</text>
 

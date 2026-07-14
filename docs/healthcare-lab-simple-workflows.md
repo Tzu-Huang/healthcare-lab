@@ -36,8 +36,8 @@ flowchart LR
 
     AP["AP<br/>ECG AP simulator"]
 
-    Dashboard -->|"Patient / ServiceRequest / Task<br/>FHIR R4 REST<br/>medplum:8103"| FHIR
-    FHIR -->|"Task / ServiceRequest<br/>FHIR R4 REST<br/>FHIR:8103"| AP
+    Dashboard -->|"Patient / ServiceRequest<br/>FHIR R4 REST<br/>medplum:8103"| FHIR
+    FHIR -->|"ServiceRequest<br/>FHIR R4 REST<br/>FHIR:8103"| AP
     AP -->|"DiagnosticReport / Observation<br/>DocumentReference / Binary<br/>FHIR R4 REST<br/>FHIR:8103"| FHIR
     FHIR -->|"DiagnosticReport / Observation<br/>FHIR R4 REST<br/>medplum:8103"| Dashboard
     Dashboard -.->|"local workflow state<br/>sync status / audit / retry"| DB

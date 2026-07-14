@@ -19,8 +19,8 @@
 
 ## 4. Documentation And Diagrams
 
-- [ ] 4.1 Update README and active workflow documentation to describe Patient/ServiceRequest order flow without Task.
-- [ ] 4.2 Update affected SVG diagram sources and regenerate matching PNG assets without modifying archived OpenSpec history.
+- [x] 4.1 Update README and active workflow documentation to describe Patient/ServiceRequest order flow without Task.
+- [x] 4.2 Update affected SVG diagram sources and regenerate matching PNG assets without modifying archived OpenSpec history.
 
 ## 5. Verification
 
