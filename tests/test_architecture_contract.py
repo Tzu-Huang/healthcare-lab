@@ -35,14 +35,20 @@ class ArchitectureContractTest(unittest.TestCase):
 
     def test_process_entrypoint_contains_no_application_implementation(self):
         path = ROOT / "app.py"
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
         definitions = [
             node.name
             for node in ast.walk(tree)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
         ]
         self.assertEqual([], definitions)
-        self.assertNotIn("flask", imported_modules(path))
+        modules = imported_modules(path)
+        self.assertEqual({"__future__", "sys", "backend"}, modules)
+        self.assertLessEqual(len(source.splitlines()), 20)
+        for forbidden in ("@app.", "sqlite3", "urllib", "socket", "threading"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
 
     def test_lower_layers_do_not_import_flask_or_api_modules(self):
         for package in ("clients", "repositories", "domain", "templates"):
