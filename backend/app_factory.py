@@ -51,6 +51,7 @@ from backend.api.dashboard import create_dashboard_blueprint
 from backend.api.dcm4chee import create_dcm4chee_profile_blueprint
 from backend.api.patients import create_patients_blueprint
 from backend.api.orders import create_orders_blueprint
+from backend.api.fhir import create_fhir_blueprint
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain import fhir as fhir_domain
@@ -3553,6 +3554,19 @@ def create_app(database_path: str | None = None) -> Flask:
             dcm_profile=dcm4chee_profile_from_config,
         )
     )
+    app.register_blueprint(
+        create_fhir_blueprint(
+            store, inventory_types=MEDPLUM_INVENTORY_RESOURCE_TYPES,
+            medplum_base_url=configured_medplum_base_url, auth_manager=get_auth_manager,
+            inventory_mapper=medplum_inventory_record,
+            diagnostic_fetcher=fetch_fhir_diagnostic_report_bundle,
+            base_url_normalizer=normalize_fhir_base_url,
+            reference_url_builder=medplum_reference_resource_url,
+            json_request=request_fhir_json, operation_outcome=operation_outcome_from_payload,
+            upstream_status=http_status_from_upstream_error,
+            record_sync=sync_fhir_workflow_record_to_medplum,
+        )
+    )
 
     def static_asset_version(filename: str) -> str:
         asset_path = Path(app.static_folder or "") / filename
@@ -3807,11 +3821,9 @@ def create_app(database_path: str | None = None) -> Flask:
         patient = store.get_patient_record(int(item["patientRecordId"]))
         return jsonify({"success": True, "patient": patient, **result}), 201
 
-    @app.get("/api/fhir/mappings")
     def list_fhir_mappings():
         return jsonify({"success": True, "items": store.list_fhir_resource_mappings()})
 
-    @app.get("/api/fhir/records")
     def list_fhir_records():
         sync_status = str(request.args.get("syncStatus") or "").strip()
         records = [
@@ -3821,7 +3833,6 @@ def create_app(database_path: str | None = None) -> Flask:
         ]
         return jsonify({"success": True, "items": records})
 
-    @app.get("/api/fhir/inventory")
     def list_fhir_inventory():
         sync_status = str(request.args.get("syncStatus") or "").strip()
         resource_type = str(request.args.get("resourceType") or "").strip()
@@ -3856,7 +3867,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.get("/api/fhir/diagnostic-reports")
     def fetch_fhir_diagnostic_reports():
         patient_reference = str(
             request.args.get("patient")
@@ -3908,7 +3918,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.get("/api/fhir/resource-preview")
     def fetch_fhir_resource_preview():
         reference = str(request.args.get("reference") or "").strip()
         base_url = str(request.args.get("baseUrl") or configured_medplum_base_url()).strip()
@@ -3946,7 +3955,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.post("/api/fhir/records")
     def create_fhir_record():
         payload = request.get_json(silent=True) or {}
         try:
@@ -3955,7 +3963,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
 
-    @app.get("/api/fhir/records/<int:record_id>")
     def get_fhir_record(record_id: int):
         try:
             item = store.get_fhir_workflow_record(record_id)
@@ -3965,7 +3972,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response("FHIR Task workflow records are no longer supported.", 400)
         return jsonify({"success": True, "item": item})
 
-    @app.get("/api/fhir/records/<int:record_id>/preview")
     def get_fhir_record_preview(record_id: int):
         try:
             item = store.get_fhir_workflow_record(record_id)
@@ -4033,7 +4039,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.get("/api/fhir/records/<int:record_id>/attempts")
     def list_fhir_record_attempts(record_id: int):
         try:
             store.get_fhir_workflow_record(record_id)
@@ -4041,7 +4046,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response("FHIR workflow record was not found.", 404)
         return jsonify({"success": True, "items": store.list_fhir_sync_attempts(record_id)})
 
-    @app.post("/api/fhir/records/<int:record_id>/sync")
     def sync_fhir_record(record_id: int):
         payload = request.get_json(silent=True) or {}
         base_url = str(payload.get("baseUrl") or configured_medplum_base_url()).strip()
