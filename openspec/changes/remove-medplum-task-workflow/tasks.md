@@ -24,6 +24,6 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Run JavaScript syntax checks and the relevant Python unit-test suites.
-- [ ] 5.2 Scan active backend, frontend, tests, README, docs, and current specs to confirm no Task workflow references remain outside explicitly documented historical-retention context.
-- [ ] 5.3 Run `git diff --check` and strict OpenSpec validation for `remove-medplum-task-workflow`.
+- [x] 5.1 Run JavaScript syntax checks and the relevant Python unit-test suites.
+- [x] 5.2 Scan active backend, frontend, tests, README, docs, and current specs to confirm no Task workflow references remain outside explicitly documented historical-retention context.
+- [x] 5.3 Run `git diff --check` and strict OpenSpec validation for `remove-medplum-task-workflow`.
