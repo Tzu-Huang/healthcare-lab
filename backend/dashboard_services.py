@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .lab_store import SimulatorValidationError
+from .domain.errors import SimulatorValidationError
 
 DOCKER_SOCKET_PATH = "/var/run/docker.sock"
 DOCKER_COMPOSE_PROJECT = "interoperability-lab"

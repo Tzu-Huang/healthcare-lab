@@ -54,6 +54,66 @@ def imported_modules(path: Path) -> set[str]:
     return imported_modules_from_tree(tree)
 
 
+def backend_module_path(module: str) -> Path | None:
+    if module == "backend":
+        return BACKEND / "__init__.py"
+    if not module.startswith("backend."):
+        return None
+    relative = module.split(".")[1:]
+    module_path = BACKEND.joinpath(*relative).with_suffix(".py")
+    if module_path.is_file():
+        return module_path
+    package_path = BACKEND.joinpath(*relative, "__init__.py")
+    return package_path if package_path.is_file() else None
+
+
+def resolved_backend_imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    relative = path.relative_to(ROOT).with_suffix("")
+    module_parts = list(relative.parts)
+    if module_parts[-1] == "__init__":
+        module_parts.pop()
+        package_parts = module_parts
+    else:
+        package_parts = module_parts[:-1]
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(
+                alias.name for alias in node.names if alias.name.startswith("backend")
+            )
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                parent_count = max(0, len(package_parts) - (node.level - 1))
+                imported_parts = package_parts[:parent_count]
+                if node.module:
+                    imported_parts.extend(node.module.split("."))
+                module = ".".join(imported_parts)
+            else:
+                module = node.module or ""
+            if module.startswith("backend"):
+                modules.add(module)
+                for alias in node.names:
+                    candidate = f"{module}.{alias.name}"
+                    if backend_module_path(candidate):
+                        modules.add(candidate)
+    return modules
+
+
+def transitive_backend_imports(path: Path) -> set[str]:
+    discovered: set[str] = set()
+    pending = list(resolved_backend_imports(path))
+    while pending:
+        module = pending.pop()
+        if module in discovered:
+            continue
+        discovered.add(module)
+        dependency_path = backend_module_path(module)
+        if dependency_path:
+            pending.extend(resolved_backend_imports(dependency_path) - discovered)
+    return discovered
+
+
 def protocol_methods(tree: ast.AST, protocol_name: str) -> set[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef) and node.name == protocol_name:
@@ -214,14 +274,14 @@ class ArchitectureContractTest(unittest.TestCase):
                             f"{path.relative_to(ROOT)} domain layer must not import configuration.",
                         )
 
-    def test_services_do_not_import_concrete_store(self):
+    def test_services_do_not_depend_transitively_on_concrete_store(self):
         for path in (BACKEND / "services").glob("*.py"):
-            modules = imported_modules(path)
+            modules = transitive_backend_imports(path)
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertNotIn(
                     "backend.lab_store",
                     modules,
-                    f"{path.relative_to(ROOT)} must depend on domain types and repository ports, not DemoStore.",
+                    f"{path.relative_to(ROOT)} must not load DemoStore directly or through another backend module.",
                 )
 
     def test_api_modules_do_not_import_concrete_store(self):
