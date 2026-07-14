@@ -57,6 +57,7 @@ from backend.services.patient_workflow import PatientWorkflowService
 from backend.services.order_workflow import OrderWorkflowService
 from backend.services.oie_workflow import OieWorkflowService
 from backend.services.gdt_workflow import GdtWorkflowService
+from backend.services.fhir_workflow import FhirWorkflowService
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain import fhir as fhir_domain
@@ -3573,15 +3574,20 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.register_blueprint(
         create_fhir_blueprint(
-            store, inventory_types=MEDPLUM_INVENTORY_RESOURCE_TYPES,
-            medplum_base_url=configured_medplum_base_url, auth_manager=get_auth_manager,
-            inventory_mapper=medplum_inventory_record,
-            diagnostic_fetcher=fetch_fhir_diagnostic_report_bundle,
-            base_url_normalizer=normalize_fhir_base_url,
-            reference_url_builder=medplum_reference_resource_url,
-            json_request=request_fhir_json, operation_outcome=operation_outcome_from_payload,
-            upstream_status=http_status_from_upstream_error,
-            record_sync=sync_fhir_workflow_record_to_medplum,
+            FhirWorkflowService(
+                store,
+                inventory_types=MEDPLUM_INVENTORY_RESOURCE_TYPES,
+                medplum_base_url=configured_medplum_base_url,
+                auth_manager=get_auth_manager,
+                inventory_mapper=medplum_inventory_record,
+                diagnostic_fetcher=fetch_fhir_diagnostic_report_bundle,
+                base_url_normalizer=normalize_fhir_base_url,
+                reference_url_builder=medplum_reference_resource_url,
+                json_request=request_fhir_json,
+                operation_outcome=operation_outcome_from_payload,
+                upstream_status=http_status_from_upstream_error,
+                record_sync=sync_fhir_workflow_record_to_medplum,
+            )
         )
     )
     app.register_blueprint(
