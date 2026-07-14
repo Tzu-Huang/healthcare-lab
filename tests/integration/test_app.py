@@ -226,7 +226,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn(b"Submit to Medplum", response.data)
 
     def test_frontend_exposes_dashboard_children_and_gdt_workspace_order_action(self):
-        app_js = Path(__file__).resolve().parents[1] / "frontend" / "static" / "app.js"
+        app_js = Path(__file__).resolve().parents[2] / "frontend" / "static" / "app.js"
         script = app_js.read_text(encoding="utf-8")
 
         self.assertIn('const GENERATED_PATIENT_MRN_LABEL = "Generated on create";', script)
@@ -331,14 +331,14 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn('"Task"', script)
         self.assertNotIn("item.fhir?.task", script)
 
-        template = Path(__file__).resolve().parents[1] / "frontend" / "templates" / "index.html"
+        template = Path(__file__).resolve().parents[2] / "frontend" / "templates" / "index.html"
         html = template.read_text(encoding="utf-8")
         self.assertIn('id="medplum-diagnostic-report-rollup"', html)
         self.assertIn('id="medplum-diagnostic-report-status"', html)
         self.assertIn("Live Results", html)
         self.assertNotIn("Task", html)
 
-        styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
+        styles_path = Path(__file__).resolve().parents[2] / "frontend" / "static" / "styles.css"
         styles = styles_path.read_text(encoding="utf-8")
         self.assertIn(".medplum-patient-toggle", styles)
         self.assertIn(".medplum-patient-detail-row td", styles)
@@ -347,7 +347,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(".medplum-context-column", styles)
 
     def test_sidebar_views_hide_inactive_pages(self):
-        styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
+        styles_path = Path(__file__).resolve().parents[2] / "frontend" / "static" / "styles.css"
         styles = styles_path.read_text(encoding="utf-8")
         self.assertIn(".app-view[hidden]", styles)
         self.assertIn("display: none", styles)
@@ -4400,7 +4400,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual([item["State"] for item in line_rows], ["running", "exited"])
 
     def test_default_compose_omits_openemr_and_keeps_gdt_in_lab_app(self):
-        repo = Path(__file__).resolve().parents[1]
+        repo = Path(__file__).resolve().parents[2]
         compose = (repo / "deploy" / "docker-compose.yml").read_text(encoding="utf-8")
         lab_script = (repo / "deploy" / "lab.ps1").read_text(encoding="utf-8")
 
