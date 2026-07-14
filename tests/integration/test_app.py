@@ -4317,7 +4317,9 @@ class HealthcareLabApiTests(unittest.TestCase):
     def test_openemr_gdt_backend_verify_reports_healthy_steps(self, urlopen):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
         self.install_openemr_source(lambda: FakeDbConnection(rows=[{"procedure_order_id": 1}]))
-        Path(self.client.application.config["GDT_BRIDGE_PATH"]).mkdir(parents=True, exist_ok=True)
+        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
+        for name in ("inbox", "outbox"):
+            (bridge_root / name).mkdir(parents=True, exist_ok=True)
 
         result = self.run_openemr_smoke()
 
@@ -4366,7 +4368,9 @@ class HealthcareLabApiTests(unittest.TestCase):
     def test_openemr_gdt_backend_verify_degrades_when_no_ecg_orders_exist(self, urlopen):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
         self.install_openemr_source(lambda: FakeDbConnection(rows=[]))
-        Path(self.client.application.config["GDT_BRIDGE_PATH"]).mkdir(parents=True, exist_ok=True)
+        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
+        for name in ("inbox", "outbox"):
+            (bridge_root / name).mkdir(parents=True, exist_ok=True)
 
         result = self.run_openemr_smoke()
 

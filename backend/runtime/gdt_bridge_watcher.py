@@ -3,22 +3,39 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from backend.config import normalize_gdt_bridge_success_mode, normalize_gdt_filename_profile
 from backend.domain.errors import ValidationError
-from backend.lab_store import DemoStore, validate_gdt_bridge_dirs
+from backend.runtime.gdt_bridge_health import validate_gdt_bridge_dirs
 
-BridgeImporter = Callable[..., dict[str, Any]]
+
+class GdtBridgeStorePort(Protocol):
+    def record_gdt_result(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class BridgeImporter(Protocol):
+    def __call__(
+        self,
+        store: GdtBridgeStorePort,
+        bridge_root: str | Path,
+        *,
+        success_mode: str,
+        filename_profile: str,
+        receiver_id: str,
+        sender_id: str,
+        require_stable: bool,
+        stable_seconds: float,
+        observations: dict[str, tuple[int, float]],
+    ) -> dict[str, Any]: ...
 
 
 class GdtBridgeInboundWatcher:
     def __init__(
         self,
-        store: DemoStore,
+        store: GdtBridgeStorePort,
         bridge_root: str | Path,
         importer: BridgeImporter,
         *,

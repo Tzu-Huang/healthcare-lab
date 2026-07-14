@@ -83,6 +83,7 @@ from backend.domain.statuses import (
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_TRANSPORT_ERROR,
 )
+from backend.runtime.gdt_bridge_health import validate_gdt_bridge_dirs
 
 HL7_V2_VERSION = "2.5.1"
 HL7_V2_CHARSET = "UNICODE UTF-8"
@@ -390,25 +391,6 @@ def parse_gdt_message(payload: str) -> dict[str, list[str]]:
 
 def first_gdt_field(fields: dict[str, list[str]], code: str) -> str:
     return adapter_first_gdt_field(fields, code)
-
-
-def validate_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
-    directories = ensure_gdt_bridge_dirs(base_path)
-    probe_name = f".write-test-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-    for name in ("inbox", "outbox"):
-        if not directories[name].is_dir():
-            raise SimulatorValidationError(
-                f"GDT {name} folder does not exist: {directories[name]}"
-            )
-        probe_path = directories[name] / probe_name
-        try:
-            probe_path.write_text("ok", encoding="utf-8")
-            probe_path.unlink()
-        except OSError as exc:
-            raise SimulatorValidationError(
-                f"GDT {name} folder is not writable: {directories[name]}"
-            ) from exc
-    return directories
 
 
 def normalize_openemr_dob(value: Any) -> str:
