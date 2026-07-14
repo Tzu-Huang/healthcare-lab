@@ -9,15 +9,12 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from .lab_store import LAB_OPERATION_ACTIONS
+from .domain.errors import LabOperationError
+from .domain.lab import LAB_OPERATION_ACTIONS
 
 DOCKER_SOCKET_PATH = "/var/run/docker.sock"
 DOCKER_COMPOSE_PROJECT = "interoperability-lab"
 DOCKER_SOCKET_STOP_GRACE_SECONDS = 10
-
-
-class LabOperationError(RuntimeError):
-    pass
 
 
 class DockerSocketHttpConnection(http.client.HTTPConnection):

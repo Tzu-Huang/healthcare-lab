@@ -7,8 +7,7 @@ from typing import Any, Protocol
 
 from flask import Blueprint, jsonify, request
 
-from backend.domain.errors import SimulatorValidationError
-from backend.lab_operations import LabOperationError
+from backend.domain.errors import LabOperationError, SimulatorValidationError
 
 
 class LabServerServicePort(Protocol):
