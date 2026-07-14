@@ -10,6 +10,7 @@ GDT_ORDER_MESSAGE_TYPE = "6302"
 GDT_RESULT_MESSAGE_TYPE = "6310"
 GDT_ORDER_TEST_CODE_FIELD = "8402"
 GDT_ORDER_TEST_CODE = "EKG01"
+GDT_ORDER_CORRELATION_FIELD = "6330"
 
 
 class GdtValidationError(ValueError):
@@ -153,7 +154,18 @@ def first_gdt_field(fields: dict[str, list[str]], code: str) -> str:
     return values[0] if values else ""
 
 
+def _gdt_request_date(value: Any) -> str:
+    text = _gdt_clean_value(value)
+    digits = "".join(char for char in text if char.isdigit())
+    if len(digits) >= 8:
+        year, month, day = digits[:4], digits[4:6], digits[6:8]
+        if year.isdigit() and month.isdigit() and day.isdigit():
+            return f"{day}{month}{year}"
+    return ""
+
+
 def build_gdt_6302_request(order: dict[str, Any]) -> GdtAdapterResult:
+    request_date = _gdt_request_date(order.get("requestedAt", ""))
     records: list[tuple[str, Any]] = [
         ("8315", order.get("receiverGdtId", "LABGDT")),
         ("8316", order.get("senderGdtId", "HCLAB")),
@@ -161,17 +173,20 @@ def build_gdt_6302_request(order: dict[str, Any]) -> GdtAdapterResult:
         ("3101", order["lastName"]),
         ("3102", order["firstName"]),
         ("3103", order["birthDate"]),
-        ("6200", order["localGdtOrderNumber"]),
+        (GDT_ORDER_CORRELATION_FIELD, order["localGdtOrderNumber"]),
         (GDT_ORDER_TEST_CODE_FIELD, GDT_ORDER_TEST_CODE),
     ]
+    if request_date:
+        records.append(("6200", request_date))
     if order.get("sex"):
         records.append(("3110", order["sex"]))
-    if order.get("requestedAt"):
-        records.append(("6220", order["requestedAt"]))
-    if order.get("orderingProvider"):
-        records.append(("6227", order["orderingProvider"]))
-    if order.get("clinicalIndication"):
-        records.append(("6228", order["clinicalIndication"]))
+    notes = [
+        value
+        for value in (order.get("orderingProvider"), order.get("clinicalIndication"))
+        if _gdt_clean_value(value)
+    ]
+    if notes:
+        records.append(("6227", " | ".join(_gdt_clean_value(value) for value in notes)))
     raw_gdt_text = render_gdt_message(records, set_type=GDT_ORDER_MESSAGE_TYPE)
     parsed = parse_gdt_message(raw_gdt_text)
     canonical = {
@@ -182,7 +197,10 @@ def build_gdt_6302_request(order: dict[str, Any]) -> GdtAdapterResult:
             "code": GDT_ORDER_TEST_CODE,
             "label": order.get("testLabel", "12-lead resting ECG"),
         },
-        "correlation": {"localGdtOrderNumber": order["localGdtOrderNumber"]},
+        "correlation": {
+            "field": GDT_ORDER_CORRELATION_FIELD,
+            "localGdtOrderNumber": order["localGdtOrderNumber"],
+        },
         "validation": {"errors": [], "warnings": []},
     }
     return GdtAdapterResult(raw_gdt_text, parsed, canonical, {"errors": [], "warnings": []})
@@ -257,7 +275,12 @@ def parse_gdt_6310_result(raw_gdt_text: str) -> GdtAdapterResult:
 
 
 def result_order_identifiers(fields: dict[str, list[str]]) -> list[str]:
-    return [value for value in fields.get("6200", []) if value]
+    return [
+        value
+        for code in ("6330", "6200")
+        for value in fields.get(code, [])
+        if value
+    ]
 
 
 def attachment_payloads_from_result_fields(fields: dict[str, list[str]]) -> list[dict[str, str]]:

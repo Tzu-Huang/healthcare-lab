@@ -949,8 +949,11 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(records["8000"], "6302")
         self.assertEqual(records["8402"], "EKG01")
         self.assertEqual(records["3000"], "GDT-PAT-000001")
-        self.assertEqual(records["6200"], "GDT-ORD-000001")
-        self.assertEqual(records["6220"], "20260706110000")
+        self.assertEqual(records["6200"], "06072026")
+        self.assertEqual(records["6330"], "GDT-ORD-000001")
+        self.assertEqual(records["6227"], "1001^WANG^AMY | Resting ECG baseline")
+        self.assertNotIn("6220", records)
+        self.assertNotIn("6228", records)
         self.assertEqual(records["8100"], f"{len(order['payload'].encode('cp1252')):05d}")
         self.assertEqual(order["gdtPatientNumber"], "GDT-PAT-000001")
         self.assertEqual(order["summary"]["mrn"], "MRN-GDT-001")
@@ -1007,7 +1010,7 @@ class HealthcareLabStoreTests(unittest.TestCase):
                 ("8402", "EKG01"),
                 ("3101", "Morgan"),
                 ("3102", "Avery"),
-                ("6200", order["localGdtOrderNumber"]),
+                ("6330", order["localGdtOrderNumber"]),
                 ("8418", "B"),
                 ("8410", "HR"),
                 ("8420", "75"),
