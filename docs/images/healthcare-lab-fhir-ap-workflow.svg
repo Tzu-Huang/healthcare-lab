@@ -104,12 +104,12 @@
   <g filter="url(#soft)">
     <rect x="650" y="320" width="290" height="110" rx="14" fill="#ffffff" stroke="#cddbd7"/>
     <text x="795" y="356" text-anchor="middle" class="tag">FHIR R4 REST</text>
-    <text x="795" y="387" text-anchor="middle" class="tag-small">Patient / ServiceRequest / Task</text>
+    <text x="795" y="387" text-anchor="middle" class="tag-small">Patient / ServiceRequest</text>
     <text x="795" y="414" text-anchor="middle" class="port">medplum:8103</text>
 
     <rect x="1206" y="320" width="322" height="110" rx="14" fill="#ffffff" stroke="#cddbd7"/>
     <text x="1367" y="356" text-anchor="middle" class="tag">FHIR R4 REST</text>
-    <text x="1367" y="387" text-anchor="middle" class="tag-small">AP reads Task / ServiceRequest</text>
+    <text x="1367" y="387" text-anchor="middle" class="tag-small">AP reads ServiceRequest</text>
     <text x="1367" y="414" text-anchor="middle" class="port">FHIR:8103</text>
 
     <rect x="1206" y="656" width="322" height="116" rx="14" fill="#ffffff" stroke="#cddbd7"/>

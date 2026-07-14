@@ -16,7 +16,7 @@ Healthcare Lab SHALL persist intended FHIR workflow resources locally before att
 #### Scenario: Supported resource type is recorded
 - **WHEN** Healthcare Lab creates a local FHIR workflow record
 - **THEN** the record stores the FHIR `resourceType`
-- **AND** the resource type is one of `Patient`, `ServiceRequest`, `Task`, `DiagnosticReport`, `Observation`, `DocumentReference`, `Binary`, or `Provenance`
+- **AND** the resource type is one of `Patient`, `ServiceRequest`, `DiagnosticReport`, `Observation`, `DocumentReference`, `Binary`, or `Provenance`
 - **AND** the record stores a local source type and local source identifier
 
 ### Requirement: Healthcare Lab tracks Medplum sync state per FHIR resource
@@ -73,7 +73,7 @@ Healthcare Lab SHALL define local-to-FHIR mapping metadata for the FHIR resource
 
 #### Scenario: Mapping metadata is available
 - **WHEN** a later workflow needs to create a FHIR resource
-- **THEN** Healthcare Lab provides mapping metadata for `Patient`, `ServiceRequest`, `Task`, `DiagnosticReport`, `Observation`, `DocumentReference`, `Binary`, and `Provenance`
+- **THEN** Healthcare Lab provides mapping metadata for `Patient`, `ServiceRequest`, `DiagnosticReport`, `Observation`, `DocumentReference`, `Binary`, and `Provenance`
 - **AND** each mapping identifies the local source record type
 - **AND** each mapping identifies the deterministic FHIR identifier policy
 - **AND** each mapping identifies required Medplum references to other resources
@@ -101,7 +101,7 @@ Healthcare Lab SHALL treat Medplum as the canonical source of truth for synced F
 - **AND** Healthcare Lab does not require a complete local shadow copy of the Medplum resource inventory
 
 #### Scenario: Local ledger preserves unsynced workflow intent
-- **WHEN** a Patient, Order, Task, or Result workflow attempts to create or update FHIR resources
+- **WHEN** a Patient, Order, or Result workflow attempts to create or update FHIR resources
 - **AND** Medplum is unavailable, unauthorized, rejects the request, or returns an error
 - **THEN** Healthcare Lab preserves the local workflow intent and request payload in the FHIR ledger
 - **AND** Healthcare Lab exposes the record as local `Pending sync` or `Sync failed` workflow data
@@ -114,7 +114,7 @@ Healthcare Lab SHALL treat Medplum as the canonical source of truth for synced F
 - **AND** future inventory reads prefer Medplum live data for the canonical resource representation
 
 ### Requirement: Healthcare Lab reads FHIR workflow resources through Medplum live APIs
-Healthcare Lab SHALL use Medplum live FHIR APIs as the default read path for synced Patient, Order, Task, and Result resources.
+Healthcare Lab SHALL use Medplum live FHIR APIs as the default read path for synced Patient, Order, and Result resources.
 
 #### Scenario: Patient inventory is loaded
 - **WHEN** Healthcare Lab loads a FHIR Patient inventory
@@ -122,11 +122,11 @@ Healthcare Lab SHALL use Medplum live FHIR APIs as the default read path for syn
 - **AND** Healthcare Lab joins matching local ledger metadata when available
 - **AND** local pending or failed Patient intents remain distinguishable from Medplum-sourced Patients
 
-#### Scenario: AP worklist is loaded
-- **WHEN** Healthcare Lab or an AP-facing adapter loads a FHIR ECG worklist
-- **THEN** it queries Medplum `Task` resources using the agreed worklist criteria
-- **AND** it resolves or includes the referenced `ServiceRequest` and `Patient` context
-- **AND** Healthcare Lab records AP pull/update audit data locally without treating the audit trail as the canonical Task resource
+#### Scenario: Order inventory is loaded
+- **WHEN** Healthcare Lab loads FHIR ECG orders for a patient
+- **THEN** it uses Medplum `ServiceRequest` resources as the order representation
+- **AND** it resolves or includes the referenced `Patient` context
+- **AND** it does not require a FHIR `Task` worklist resource
 
 #### Scenario: Result inventory is loaded
 - **WHEN** Healthcare Lab loads FHIR result history for a patient or order
@@ -134,7 +134,7 @@ Healthcare Lab SHALL use Medplum live FHIR APIs as the default read path for syn
 - **AND** Healthcare Lab uses local ledger rows only to show workflow intent, retry/error status, Medplum references, and diagnostic details
 
 ### Requirement: Healthcare Lab avoids full local FHIR shadow ownership
-Healthcare Lab SHALL NOT require a complete local duplicate of Medplum Patient, Order, Task, and Result resources for normal synced workflow operation.
+Healthcare Lab SHALL NOT require a complete local duplicate of Medplum Patient, Order, and Result resources for normal synced workflow operation.
 
 #### Scenario: Later FHIR workflows define persistence
 - **WHEN** a later FHIR Patient, Order, AP, Result, UI, or E2E ticket defines persistence behavior
@@ -195,7 +195,7 @@ Healthcare Lab SHALL provide a Medplum page that displays supported FHIR workflo
 - **AND** the console includes a FHIR Patient list as its primary navigation surface
 - **AND** the console includes distinct selected Patient summary and workflow regions
 - **AND** the console includes a single full-width bottom JSON console for raw FHIR preview
-- **AND** the page includes `Patient`, `ServiceRequest`, `Task`, `DiagnosticReport`, `Observation`, and `DocumentReference` resources when records are available
+- **AND** the page includes `Patient`, `ServiceRequest`, `DiagnosticReport`, `Observation`, and `DocumentReference` resources when records are available
 - **AND** the page shows local ledger sync status and Medplum resource reference when available
 
 #### Scenario: Pending and failed workflow records remain visible
@@ -237,7 +237,7 @@ Healthcare Lab SHALL let users select a Patient, independently disclose Patient 
 
 #### Scenario: Expanded Patient shows workflow rollups
 - **WHEN** a user expands a Patient row
-- **THEN** Healthcare Lab shows an inline FHIR Orders section containing directly related `ServiceRequest` and `Task` records
+- **THEN** Healthcare Lab shows an inline FHIR Orders section containing directly related `ServiceRequest` records
 - **AND** Healthcare Lab shows an inline FHIR Results section containing directly related `DiagnosticReport`, `Observation`, and `DocumentReference` records
 - **AND** each resource row identifies its resource type, summary, sync state, reference, and available non-destructive actions
 
@@ -251,11 +251,11 @@ Healthcare Lab SHALL let users select a Patient, independently disclose Patient 
 #### Scenario: Patient-centered resources are shown by direct reference
 - **WHEN** a user selects or expands a Patient in the Medplum page
 - **THEN** Healthcare Lab shows supported resources that directly reference the selected `Patient/<id>`
-- **AND** direct reference fields include `subject`, `patient`, and `for` where those fields contain a FHIR reference
+- **AND** direct reference fields include `subject` and `patient` where those fields contain a FHIR reference
 - **AND** resources without a direct reference to that Patient are not shown in its Patient context
 
 #### Scenario: Related resource actions update the JSON console
-- **WHEN** a user selects Preview for a displayed Patient, ServiceRequest, Task, DiagnosticReport, Observation, or DocumentReference
+- **WHEN** a user selects Preview for a displayed Patient, ServiceRequest, DiagnosticReport, Observation, or DocumentReference
 - **THEN** Healthcare Lab updates the bottom JSON console to the selected resource
 - **AND** Healthcare Lab does not open a separate rich viewer for that resource
 
@@ -274,35 +274,30 @@ Healthcare Lab SHALL provide retry actions for unsynced local FHIR workflow reco
 - **AND** the page does not expose delete, arbitrary update, or destructive Medplum actions
 
 ### Requirement: Order page creates Medplum-backed FHIR ECG orders
-Healthcare Lab SHALL create FHIR-mode ECG orders from the Order page through a local-first, Medplum-backed workflow that persists a local order anchor and paired FHIR workflow ledger records for `ServiceRequest` and `Task`.
+Healthcare Lab SHALL create FHIR-mode ECG orders from the Order page through a local-first, Medplum-backed workflow that persists a local order anchor and one FHIR workflow ledger record for `ServiceRequest`.
 
 #### Scenario: FHIR Order create requires a synced FHIR Patient
 - **WHEN** a user creates an Order from the Order page with mode `FHIR`
 - **AND** the selected local Patient does not have a synced FHIR ledger record with a Medplum `Patient/<id>` reference
 - **THEN** Healthcare Lab rejects the FHIR Order create request
 - **AND** the response explains that a synced FHIR Patient is required before FHIR Order creation
-- **AND** no `ServiceRequest` or `Task` resource is synced to Medplum
+- **AND** no `ServiceRequest` resource is synced to Medplum
 
-#### Scenario: FHIR Order creates ServiceRequest and Task
+#### Scenario: FHIR Order creates ServiceRequest
 - **WHEN** a user creates an Order from the Order page with mode `FHIR`
 - **AND** the selected Patient has a synced Medplum `Patient/<id>` reference
 - **THEN** Healthcare Lab creates a local order record for the FHIR order
 - **AND** Healthcare Lab creates or updates a local FHIR workflow ledger record with resource type `ServiceRequest`
 - **AND** the `ServiceRequest.subject.reference` is the selected Patient's Medplum reference
 - **AND** Healthcare Lab syncs the `ServiceRequest` to Medplum
-- **AND** Healthcare Lab creates or updates a local FHIR workflow ledger record with resource type `Task`
-- **AND** the `Task.for.reference` is the selected Patient's Medplum reference
-- **AND** the `Task.focus.reference` is the synced `ServiceRequest/<id>` reference
-- **AND** Healthcare Lab syncs the `Task` to Medplum
+- **AND** Healthcare Lab does not create or sync a `Task` resource
 
-#### Scenario: Task sync failure preserves local workflow intent
-- **WHEN** FHIR Order creation syncs the `ServiceRequest` successfully
-- **AND** the generated `Task` sync fails
+#### Scenario: ServiceRequest sync failure preserves local workflow intent
+- **WHEN** FHIR Order creation cannot sync the generated `ServiceRequest`
 - **THEN** Healthcare Lab preserves the local order record
-- **AND** Healthcare Lab preserves both FHIR workflow ledger records
-- **AND** the `ServiceRequest` ledger record remains `Synced`
-- **AND** the `Task` ledger record records `Sync failed`
-- **AND** Local Orders displays the order with independent ServiceRequest and Task sync status
+- **AND** Healthcare Lab preserves the ServiceRequest workflow ledger record
+- **AND** the ServiceRequest ledger record records `Sync failed`
+- **AND** Local Orders displays the ServiceRequest sync error
 
 ### Requirement: Order page FHIR mode exposes a full ServiceRequest form
 Healthcare Lab SHALL expose the full requested ServiceRequest-oriented field set when the Order page protocol mode is `FHIR`.
@@ -326,26 +321,14 @@ Healthcare Lab SHALL expose the full requested ServiceRequest-oriented field set
 - **THEN** the Order form is populated with values that produce a valid FHIR R4 `ServiceRequest` preview
 - **AND** creating the Order uses the same local-first Medplum sync workflow as manually entered FHIR Orders
 
-### Requirement: Generated Task represents the ECG AP worklist item
-Healthcare Lab SHALL generate a FHIR `Task` resource for each FHIR ECG order to represent the AP/worklist execution item.
-
-#### Scenario: Generated Task has required worklist references
-- **WHEN** Healthcare Lab generates the Task for a FHIR ECG order
-- **THEN** the `Task.status` is `requested`
-- **AND** the `Task.intent` is `order`
-- **AND** the `Task.for.reference` matches the selected Patient Medplum reference
-- **AND** the `Task.focus.reference` matches the synced ServiceRequest Medplum reference
-- **AND** the Task includes an ECG worklist code
-- **AND** the Task has a deterministic identifier derived from the local order source
-
 ### Requirement: Local Orders displays FHIR order sync state
-Healthcare Lab SHALL show FHIR Orders in Local Orders with ServiceRequest and Task synchronization status.
+Healthcare Lab SHALL show FHIR Orders in Local Orders with ServiceRequest synchronization status.
 
 #### Scenario: FHIR Order appears in Local Orders
 - **WHEN** a FHIR Order has been created
 - **THEN** Local Orders displays the local order identity, selected Patient, ServiceRequest order code, requested time, and created time
 - **AND** Local Orders displays the ServiceRequest sync status and Medplum reference or sync error
-- **AND** Local Orders displays the Task sync status and Medplum reference or sync error
+- **AND** Local Orders marks the order accepted only when the ServiceRequest is synced with a valid Medplum reference
 
 ### Requirement: Medplum page fetches live DiagnosticReports by Patient
 Healthcare Lab SHALL fetch live `DiagnosticReport` resources from Medplum for the selected FHIR Patient without requiring those reports to already exist as local ledger records.

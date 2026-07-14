@@ -16,7 +16,7 @@ The browser UI exposes two roles in one PoC surface:
 ## Scope
 
 - OpenEMR-style ECG order creation
-- Shared-folder GDT 2.1 `6302` export to `outbox/`
+- Shared-folder GDT 2.1 `6302` export to `inbox/`
 - AP simulator `6301`/`6302` receipt by manual refresh or polling
 - AP simulator display of patient, encounter, order, provider, and correlation context
 - AP simulator `6310` result packaging with PDF and XML/waveform artifact references
@@ -31,12 +31,14 @@ Out of scope for this MVP:
 
 ## Folder Contract
 
-Bridge root defaults to `instance/gdt-bridge/` and contains:
+Bridge root defaults to `instance/gdt-bridge/`. Healthcare Lab only stores and
+resolves this path; it does not create the bridge root or its subfolders. Create
+the folders required by your workflow before sending or importing data.
 
-- `outbox/`: generated GDT 2.1 `6302` files waiting for the AP simulator
+- `inbox/`: generated GDT 2.1 `6302` files waiting for the AP/device
+- `outbox/`: AP/device GDT 2.1 `6310` result files waiting for Healthcare Lab import
 - `processed/`: GDT intake files parsed successfully by the AP simulator
 - `error/`: GDT intake files that failed AP simulator parsing
-- `inbound/`: AP simulator GDT 2.1 `6310` result files waiting for bridge import
 - `reports/`: PDF and XML/waveform artifacts referenced by `6310`
 - `archive/`: imported `6310` files after successful processing
 - `processing/`: files claimed by Healthcare Lab while import is in progress
@@ -47,8 +49,8 @@ debuggability, keeping successfully imported `6310` files under `archive/` after
 the raw payload is persisted. Set `GDT_BRIDGE_IMPORT_SUCCESS_MODE=delete` to use
 standards-oriented exchange-folder cleanup after a successful import.
 
-Automatic inbound import can be enabled from the GDT console. The watcher polls
-the configured `inbound/` folder, skips `.tmp`/`.temp`/internal files, waits for
+Automatic result import can be enabled from the GDT console. The watcher polls
+the configured `outbox/` folder, skips `.tmp`/`.temp`/internal files, waits for
 stable files, claims eligible files with a same-volume rename, and processes
 them in FIFO order by creation time where available. On Docker bind mounts or
 network shares where creation time is unreliable, Healthcare Lab falls back to a
