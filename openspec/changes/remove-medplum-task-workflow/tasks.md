@@ -1,9 +1,9 @@
 ## 1. Backend Resource Support
 
-- [ ] 1.1 Remove Task constants, supported-resource mapping, identifier, dependency-order, Provenance dependency, Medplum inventory/read allowlist, and Task-specific summary behavior.
-- [ ] 1.2 Remove the generated ECG Task builder and order-to-Task workflow ledger creation function.
-- [ ] 1.3 Change FHIR Order creation to create and sync only ServiceRequest while preserving ServiceRequest failure and idempotent retry behavior.
-- [ ] 1.4 Remove Task lookup and `fhir.task` composition from local order API responses and exclude historical Task rows from active list, preview, retry, and sync contracts without deleting stored data.
+- [x] 1.1 Remove Task constants, supported-resource mapping, identifier, dependency-order, Provenance dependency, Medplum inventory/read allowlist, and Task-specific summary behavior.
+- [x] 1.2 Remove the generated ECG Task builder and order-to-Task workflow ledger creation function.
+- [x] 1.3 Change FHIR Order creation to create and sync only ServiceRequest while preserving ServiceRequest failure and idempotent retry behavior.
+- [x] 1.4 Remove Task lookup and `fhir.task` composition from local order API responses and exclude historical Task rows from active list, preview, retry, and sync contracts without deleting stored data.
 
 ## 2. Frontend ServiceRequest-Only Workflow
 
@@ -13,8 +13,8 @@
 
 ## 3. Tests And Contracts
 
-- [ ] 3.1 Update store tests for the supported mapping set, ServiceRequest-only order ledger, response shape, and preserved result-resource dependency order.
-- [ ] 3.2 Update API tests to assert one ServiceRequest Medplum write, no generated Task request, ServiceRequest failure preservation, and rejection or exclusion of historical Task workflow operations.
+- [x] 3.1 Update store tests for the supported mapping set, ServiceRequest-only order ledger, response shape, and preserved result-resource dependency order.
+- [x] 3.2 Update API tests to assert one ServiceRequest Medplum write, no generated Task request, ServiceRequest failure preservation, and rejection or exclusion of historical Task workflow operations.
 - [ ] 3.3 Update frontend contract tests for ServiceRequest-only patient rollups, related resources, preview copy, and order acceptance logic.
 
 ## 4. Documentation And Diagrams

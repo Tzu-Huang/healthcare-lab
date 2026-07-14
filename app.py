@@ -81,13 +81,12 @@ MEDPLUM_DEFAULT_AUTH_GRACE_SECONDS = 300
 MEDPLUM_INVENTORY_RESOURCE_TYPES = (
     "Patient",
     "ServiceRequest",
-    "Task",
     "DiagnosticReport",
     "Observation",
     "DocumentReference",
 )
 MEDPLUM_READ_RESOURCE_TYPES = MEDPLUM_INVENTORY_RESOURCE_TYPES + ("Binary",)
-MEDPLUM_PATIENT_REFERENCE_FIELDS = ("subject", "patient", "for")
+MEDPLUM_PATIENT_REFERENCE_FIELDS = ("subject", "patient")
 DCM4CHEE_PROFILE_NAME = "local-dcm4chee"
 DCM4CHEE_AUTH_MODES = ("none", "basic", "bearer", "oauth2", "mtls")
 
@@ -1998,8 +1997,6 @@ def fhir_resource_summary(resource: dict[str, Any], reference: str) -> dict[str,
                 mrn = str(item.get("value")).strip()
                 break
         return {"primary": name or mrn or reference or "Patient", "secondary": mrn, "status": status}
-    if resource_type == "Task":
-        return {"primary": code or title or reference or "Task", "secondary": str(resource.get("intent") or "").strip(), "status": status}
     if resource_type == "DiagnosticReport":
         return {
             "primary": code or title or reference or "DiagnosticReport",
@@ -3999,26 +3996,6 @@ def create_app(database_path: str | None = None) -> Flask:
                         int(service_request["id"]),
                         error_text="Medplum FHIR base URL is required.",
                     )
-                service_request_reference = str((service_request.get("medplum") or {}).get("reference") or "")
-                patient_reference = str(
-                    ((service_request.get("resource") or {}).get("subject") or {}).get("reference") or ""
-                )
-                if (
-                    (service_request.get("sync") or {}).get("status") == FHIR_SYNC_STATUS_SYNCED
-                    and service_request_reference
-                ):
-                    task = store.create_order_task_fhir_workflow_record(
-                        item,
-                        patient_reference=patient_reference,
-                        service_request_reference=service_request_reference,
-                    )
-                    if base_url:
-                        sync_fhir_workflow_record_to_medplum(
-                            store,
-                            int(task["id"]),
-                            base_url=base_url,
-                            auth_manager=get_auth_manager(),
-                        )
                 item = store.get_order_record(int(item["id"]))
             elif mode == "dicom":
                 item = store.create_dcm4chee_order_record(payload)
@@ -4152,7 +4129,12 @@ def create_app(database_path: str | None = None) -> Flask:
     @app.get("/api/fhir/records")
     def list_fhir_records():
         sync_status = str(request.args.get("syncStatus") or "").strip()
-        return jsonify({"success": True, "items": store.list_fhir_workflow_records(sync_status)})
+        records = [
+            record
+            for record in store.list_fhir_workflow_records(sync_status)
+            if record["resourceType"] != "Task"
+        ]
+        return jsonify({"success": True, "items": records})
 
     @app.get("/api/fhir/inventory")
     def list_fhir_inventory():
@@ -4294,6 +4276,8 @@ def create_app(database_path: str | None = None) -> Flask:
             item = store.get_fhir_workflow_record(record_id)
         except KeyError:
             return error_response("FHIR workflow record was not found.", 404)
+        if item["resourceType"] == "Task":
+            return error_response("FHIR Task workflow records are no longer supported.", 400)
         return jsonify({"success": True, "item": item})
 
     @app.get("/api/fhir/records/<int:record_id>/preview")
@@ -4379,6 +4363,9 @@ def create_app(database_path: str | None = None) -> Flask:
         if not base_url:
             return error_response("Medplum FHIR base URL is required.", 400)
         try:
+            current = store.get_fhir_workflow_record(record_id)
+            if current["resourceType"] == "Task":
+                return error_response("FHIR Task workflow records are no longer supported.", 400)
             item = sync_fhir_workflow_record_to_medplum(
                 store,
                 record_id,
