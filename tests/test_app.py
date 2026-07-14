@@ -291,6 +291,8 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("renderMedplumPatientList", script)
         self.assertIn("renderMedplumPatientList();\n  const patient = selectedMedplumPatient();", script)
         self.assertIn('const serviceRequests = patient ? medplumRecordsForPatient(patient, "ServiceRequest") : [];', script)
+        self.assertIn('item.resourceType === "ServiceRequest"', script)
+        self.assertIn('"ServiceRequest",\n          medplumResourceRollupTable(orders', script)
         self.assertIn("clearMedplumPreview", script)
         self.assertIn("medplum-service-request-select", script)
         self.assertIn("medplum-diagnostic-report-select", script)
@@ -301,13 +303,17 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("FHIR order code is required.", script)
         self.assertIn('payload.mode !== "fhir" && payload.requestedAt', script)
         self.assertIn("serviceRequest", script)
-        self.assertNotIn("Task:", script)
+        self.assertIn('serviceRequest.sync?.status === "Synced"', script)
+        self.assertIn('/^ServiceRequest\\/[^/]+$/.test(serviceRequestReference)', script)
+        self.assertNotIn('"Task"', script)
+        self.assertNotIn("item.fhir?.task", script)
 
         template = Path(__file__).resolve().parents[1] / "frontend" / "templates" / "index.html"
         html = template.read_text(encoding="utf-8")
         self.assertIn('id="medplum-diagnostic-report-rollup"', html)
         self.assertIn('id="medplum-diagnostic-report-status"', html)
         self.assertIn("Live Results", html)
+        self.assertNotIn("Task", html)
 
         styles_path = Path(__file__).resolve().parents[1] / "frontend" / "static" / "styles.css"
         styles = styles_path.read_text(encoding="utf-8")
