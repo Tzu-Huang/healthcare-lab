@@ -131,6 +131,26 @@ class HealthcareLabApiTests(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
+    @staticmethod
+    def oie_settings_payload(**overrides):
+        payload = {
+            "managementApi": {
+                "baseUrl": "http://oie:8080",
+                "username": "admin",
+                "tlsVerify": False,
+                "timeoutSeconds": 10,
+            },
+            "resultListener": {
+                "host": "0.0.0.0",
+                "port": 6665,
+                "mllpFraming": True,
+                "autoStart": True,
+            },
+            "managedChannels": [],
+        }
+        payload.update(overrides)
+        return payload
+
     def test_index_serves_dashboard_only_ui(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
@@ -339,6 +359,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("/api/lab/servers", routes)
         self.assertIn("/api/orders", routes)
         self.assertIn("/api/oie/local-orders", routes)
+        self.assertIn("/api/oie/settings", routes)
         self.assertIn("/api/oie/result-listener/start", routes)
         self.assertIn("/api/oie/workbench", routes)
         self.assertIn("/api/oie/results", routes)
@@ -3524,6 +3545,130 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(parsed["patientMrn"], "MRN-A04-001")
         self.assertEqual(parsed["placerOrderNumber"], "ORD-000001")
         self.assertEqual(parsed["fillerOrderNumber"], "FILL-1")
+
+    def test_oie_settings_api_returns_secret_safe_local_defaults(self):
+        response = self.client.get("/api/oie/settings")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body["success"])
+        item = body["item"]
+        self.assertEqual(item["managementApi"]["baseUrl"], "http://oie:8080")
+        self.assertEqual(item["managementApi"]["username"], "admin")
+        self.assertTrue(item["managementApi"]["passwordConfigured"])
+        self.assertNotIn("password", item["managementApi"])
+        self.assertNotIn("Admin", response.get_data(as_text=True))
+        self.assertEqual(item["resultListener"]["port"], 6665)
+        self.assertTrue(item["resultListener"]["autoStart"])
+
+    def test_oie_settings_api_updates_profile_without_changing_listener_runtime(self):
+        listener_before = self.client.get("/api/oie/result-listener/status").get_json()["item"]
+        payload = self.oie_settings_payload(
+            managementApi={
+                "baseUrl": "https://oie.example.test/api",
+                "username": "operator",
+                "tlsVerify": True,
+                "timeoutSeconds": 15,
+            },
+            resultListener={
+                "host": "127.0.0.1",
+                "port": 7777,
+                "mllpFraming": False,
+                "autoStart": True,
+            },
+            managedChannels=[
+                {
+                    "logicalType": "result",
+                    "channelId": "channel-result",
+                    "channelName": "HLAB Result",
+                    "templateVersion": "2.0",
+                    "lastKnownRevision": "revision-7",
+                }
+            ],
+        )
+
+        response = self.client.put("/api/oie/settings", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        item = response.get_json()["item"]
+        self.assertEqual(item["managementApi"]["baseUrl"], "https://oie.example.test/api")
+        self.assertEqual(item["resultListener"]["port"], 7777)
+        self.assertEqual(item["managedChannels"][0]["channelId"], "channel-result")
+        self.assertEqual(self.client.get("/api/oie/settings").get_json()["item"], item)
+
+        listener_after = self.client.get("/api/oie/result-listener/status").get_json()["item"]
+        self.assertFalse(listener_before["running"])
+        self.assertFalse(listener_after["running"])
+        self.assertEqual(listener_before["port"], 6665)
+        self.assertEqual(listener_after["port"], 6665)
+
+    def test_oie_settings_api_validates_fields_and_rejects_atomically(self):
+        original = self.client.get("/api/oie/settings").get_json()["item"]
+        invalid_payloads = []
+
+        invalid_url = self.oie_settings_payload()
+        invalid_url["managementApi"]["baseUrl"] = "ftp://oie.example.test"
+        invalid_payloads.append((invalid_url, "baseUrl"))
+
+        invalid_host = self.oie_settings_payload()
+        invalid_host["resultListener"]["host"] = ""
+        invalid_payloads.append((invalid_host, "host"))
+
+        invalid_timeout = self.oie_settings_payload()
+        invalid_timeout["managementApi"]["timeoutSeconds"] = "slow"
+        invalid_payloads.append((invalid_timeout, "timeoutSeconds"))
+
+        invalid_port = self.oie_settings_payload()
+        invalid_port["resultListener"]["port"] = 70000
+        invalid_payloads.append((invalid_port, "between 1 and 65535"))
+
+        for payload, message in invalid_payloads:
+            with self.subTest(message=message):
+                response = self.client.put("/api/oie/settings", json=payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(message, response.get_json()["error"])
+                self.assertEqual(
+                    self.client.get("/api/oie/settings").get_json()["item"],
+                    original,
+                )
+
+    def test_oie_settings_api_preserves_replaces_and_never_exposes_password(self):
+        secret = "new-write-only-secret"
+        payload = self.oie_settings_payload()
+        payload["managementApi"]["password"] = secret
+        logger = self.client.application.logger
+
+        with patch.object(logger, "_log") as log_call:
+            response = self.client.put("/api/oie/settings", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(secret, response.get_data(as_text=True))
+        self.assertNotIn(secret, str(log_call.call_args_list))
+        self.assertNotIn("password", response.get_json()["item"]["managementApi"])
+
+        omitted = self.oie_settings_payload()
+        omitted["managementApi"]["username"] = "updated-user"
+        self.assertEqual(self.client.put("/api/oie/settings", json=omitted).status_code, 200)
+        store = self.client.application.extensions["demo_store"]
+        with store.connect() as connection:
+            stored_password = connection.execute(
+                "SELECT management_api_password FROM oie_settings_profiles"
+            ).fetchone()[0]
+        self.assertEqual(stored_password, secret)
+
+        for empty_password in ("", None):
+            with self.subTest(empty_password=empty_password):
+                invalid = self.oie_settings_payload()
+                invalid["managementApi"]["password"] = empty_password
+                rejected = self.client.put("/api/oie/settings", json=invalid)
+                self.assertEqual(rejected.status_code, 400)
+                self.assertIn("non-empty string", rejected.get_json()["error"])
+                self.assertNotIn(secret, rejected.get_data(as_text=True))
+        with store.connect() as connection:
+            preserved_password = connection.execute(
+                "SELECT management_api_password FROM oie_settings_profiles"
+            ).fetchone()[0]
+        self.assertEqual(preserved_password, secret)
 
     def test_oie_result_api_persists_and_matches_order_result(self):
         patient = self.create_local_patient()
