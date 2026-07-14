@@ -1,0 +1,446 @@
+import ast
+import re
+import unittest
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+
+
+ROOT = Path(__file__).resolve().parents[1]
+BACKEND = ROOT / "backend"
+RESPONSIBILITY_PACKAGES = (
+    "api",
+    "services",
+    "clients",
+    "runtime",
+    "repositories",
+    "domain",
+    "templates",
+)
+HTTP_DECORATORS = {"delete", "get", "patch", "post", "put", "route"}
+SQL_PATTERN = re.compile(
+    r"\b(?:ALTER\s+TABLE|CREATE\s+TABLE|DELETE\s+FROM|INSERT\s+INTO|SELECT\b|UPDATE\s+\w+)",
+    re.IGNORECASE,
+)
+PROTOCOL_CALLS = {
+    "socket.create_connection",
+    "urllib.request.urlopen",
+    "urlopen",
+}
+
+
+@dataclass(frozen=True)
+class PlacementViolation:
+    category: str
+    path: PurePosixPath
+    line: int
+    detail: str
+
+    def __str__(self) -> str:
+        return f"[{self.category}] {self.path}:{self.line}: {self.detail}"
+
+
+def imported_modules_from_tree(tree: ast.AST) -> set[str]:
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+    return modules
+
+
+def imported_modules(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return imported_modules_from_tree(tree)
+
+
+def backend_module_path(module: str) -> Path | None:
+    if module == "backend":
+        return BACKEND / "__init__.py"
+    if not module.startswith("backend."):
+        return None
+    relative = module.split(".")[1:]
+    module_path = BACKEND.joinpath(*relative).with_suffix(".py")
+    if module_path.is_file():
+        return module_path
+    package_path = BACKEND.joinpath(*relative, "__init__.py")
+    return package_path if package_path.is_file() else None
+
+
+def resolved_backend_imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    relative = path.relative_to(ROOT).with_suffix("")
+    module_parts = list(relative.parts)
+    if module_parts[-1] == "__init__":
+        module_parts.pop()
+        package_parts = module_parts
+    else:
+        package_parts = module_parts[:-1]
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(
+                alias.name for alias in node.names if alias.name.startswith("backend")
+            )
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                parent_count = max(0, len(package_parts) - (node.level - 1))
+                imported_parts = package_parts[:parent_count]
+                if node.module:
+                    imported_parts.extend(node.module.split("."))
+                module = ".".join(imported_parts)
+            else:
+                module = node.module or ""
+            if module.startswith("backend"):
+                modules.add(module)
+                for alias in node.names:
+                    candidate = f"{module}.{alias.name}"
+                    if backend_module_path(candidate):
+                        modules.add(candidate)
+    return modules
+
+
+def transitive_backend_imports(path: Path) -> set[str]:
+    discovered: set[str] = set()
+    pending = list(resolved_backend_imports(path))
+    while pending:
+        module = pending.pop()
+        if module in discovered:
+            continue
+        discovered.add(module)
+        dependency_path = backend_module_path(module)
+        if dependency_path:
+            pending.extend(resolved_backend_imports(dependency_path) - discovered)
+    return discovered
+
+
+def protocol_methods(tree: ast.AST, protocol_name: str) -> set[str]:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == protocol_name:
+            return {
+                item.name
+                for item in node.body
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+            }
+    return set()
+
+
+def receiver_method_calls(tree: ast.AST, receiver: str) -> set[str]:
+    return {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == receiver
+    }
+
+
+def owned_receiver_method_calls(
+    tree: ast.AST, owner: str, receiver: str
+) -> set[str]:
+    return {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Attribute)
+        and isinstance(node.func.value.value, ast.Name)
+        and node.func.value.value.id == owner
+        and node.func.value.attr == receiver
+    }
+
+
+def dotted_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = dotted_name(node.value)
+        return f"{prefix}.{node.attr}" if prefix else node.attr
+    return ""
+
+
+def placement_violations(relative_path: str, source: str) -> list[PlacementViolation]:
+    path = PurePosixPath(relative_path.replace("\\", "/"))
+    tree = ast.parse(source, filename=str(path))
+    package = path.parts[1] if len(path.parts) > 2 and path.parts[0] == "backend" else ""
+    violations: list[PlacementViolation] = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for decorator in node.decorator_list:
+                target = decorator.func if isinstance(decorator, ast.Call) else decorator
+                if (
+                    isinstance(target, ast.Attribute)
+                    and target.attr in HTTP_DECORATORS
+                    and package != "api"
+                ):
+                    violations.append(
+                        PlacementViolation(
+                            "route",
+                            path,
+                            node.lineno,
+                            "HTTP route decorators must live in backend/api.",
+                        )
+                    )
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if SQL_PATTERN.search(node.value) and package != "repositories":
+                violations.append(
+                    PlacementViolation(
+                        "sql",
+                        path,
+                        node.lineno,
+                        "SQL statements must live in backend/repositories.",
+                    )
+                )
+        if isinstance(node, ast.Call):
+            call_name = dotted_name(node.func)
+            if call_name in PROTOCOL_CALLS and package not in {"clients", "runtime"}:
+                violations.append(
+                    PlacementViolation(
+                        "protocol",
+                        path,
+                        node.lineno,
+                        "External protocol transport calls must live in backend/clients or backend/runtime.",
+                    )
+                )
+        if isinstance(node, ast.ClassDef):
+            if node.name.endswith(("Listener", "Watcher", "SocketServer")) and package != "runtime":
+                violations.append(
+                    PlacementViolation(
+                        "runtime",
+                        path,
+                        node.lineno,
+                        "Listener and watcher implementations must live in backend/runtime.",
+                    )
+                )
+            if node.name.endswith(("WorkflowService", "Coordinator")) and package != "services":
+                violations.append(
+                    PlacementViolation(
+                        "workflow",
+                        path,
+                        node.lineno,
+                        "Workflow coordination implementations must live in backend/services.",
+                    )
+                )
+    return violations
+
+
+class ArchitectureContractTest(unittest.TestCase):
+    def test_responsibility_packages_exist(self):
+        for package in RESPONSIBILITY_PACKAGES:
+            with self.subTest(package=package):
+                self.assertTrue((BACKEND / package / "__init__.py").is_file())
+
+    def test_process_entrypoint_contains_no_application_implementation(self):
+        path = ROOT / "app.py"
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        definitions = [
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        ]
+        self.assertEqual([], definitions)
+        modules = imported_modules_from_tree(tree)
+        self.assertEqual({"__future__", "sys", "backend"}, modules)
+        self.assertLessEqual(len(source.splitlines()), 20)
+        for forbidden in ("@app.", "sqlite3", "urllib", "socket", "threading"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+
+    def test_lower_layers_do_not_import_flask_or_api_modules(self):
+        for package in ("clients", "repositories", "domain", "templates"):
+            for path in (BACKEND / package).glob("*.py"):
+                modules = imported_modules(path)
+                with self.subTest(path=path.relative_to(ROOT)):
+                    self.assertFalse(
+                        any(name == "flask" or name.startswith("flask.") for name in modules),
+                        f"{path.relative_to(ROOT)} lower layer must not import Flask.",
+                    )
+                    self.assertFalse(
+                        any(
+                            name == "backend.api" or name.startswith("backend.api.")
+                            for name in modules
+                        ),
+                        f"{path.relative_to(ROOT)} lower layer must not import backend.api.",
+                    )
+                    if package == "domain":
+                        self.assertFalse(
+                            any(
+                                name == "backend.config" or name.startswith("backend.config.")
+                                for name in modules
+                            ),
+                            f"{path.relative_to(ROOT)} domain layer must not import configuration.",
+                        )
+
+    def test_services_do_not_depend_transitively_on_concrete_store(self):
+        for path in (BACKEND / "services").glob("*.py"):
+            modules = transitive_backend_imports(path)
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertNotIn(
+                    "backend.lab_store",
+                    modules,
+                    f"{path.relative_to(ROOT)} must not load DemoStore directly or through another backend module.",
+                )
+
+    def test_api_modules_do_not_import_concrete_store(self):
+        for path in (BACKEND / "api").glob("*.py"):
+            modules = imported_modules(path)
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertNotIn(
+                    "backend.lab_store",
+                    modules,
+                    f"{path.relative_to(ROOT)} must map HTTP through service ports, not DemoStore.",
+                )
+
+    def test_api_modules_do_not_import_operation_adapters(self):
+        for path in (BACKEND / "api").glob("*.py"):
+            modules = imported_modules(path)
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertNotIn(
+                    "backend.lab_operations",
+                    modules,
+                    f"{path.relative_to(ROOT)} must handle domain errors without importing operation adapters.",
+                )
+
+    def test_runtime_does_not_import_concrete_store(self):
+        for path in (BACKEND / "runtime").glob("*.py"):
+            modules = imported_modules(path)
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertNotIn(
+                    "backend.lab_store",
+                    modules,
+                    f"{path.relative_to(ROOT)} must depend on runtime ports, not DemoStore.",
+                )
+
+    def test_services_and_repositories_do_not_import_runtime(self):
+        for package in ("services", "repositories"):
+            for path in (BACKEND / package).glob("*.py"):
+                modules = imported_modules(path)
+                with self.subTest(path=path.relative_to(ROOT)):
+                    self.assertFalse(
+                        any(
+                            name == "backend.runtime" or name.startswith("backend.runtime.")
+                            for name in modules
+                        ),
+                        f"{path.relative_to(ROOT)} must not depend outward on runtime modules.",
+                    )
+
+    def test_lab_repository_port_declares_consumed_operations(self):
+        path = BACKEND / "services" / "lab_workflow.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        declared = protocol_methods(tree, "LabRepositoryPort")
+        consumed = (
+            receiver_method_calls(tree, "store")
+            | owned_receiver_method_calls(tree, "self", "repository")
+            | {"list_lab_servers"}
+        )
+        self.assertTrue(declared, "LabRepositoryPort must declare a structural repository surface.")
+        self.assertEqual(
+            set(),
+            consumed - declared,
+            f"LabRepositoryPort is missing consumed operations: {sorted(consumed - declared)}",
+        )
+
+    def test_runtime_store_ports_declare_operations(self):
+        expected = {
+            "gdt_bridge_watcher.py": ("GdtBridgeStorePort", {"record_gdt_result"}),
+            "oie_result_listener.py": (
+                "OieResultStorePort",
+                {"record_oie_result", "record_oie_result_error"},
+            ),
+        }
+        for filename, (protocol_name, operations) in expected.items():
+            path = BACKEND / "runtime" / filename
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertEqual(operations, protocol_methods(tree, protocol_name))
+
+    def test_gdt_bridge_directory_validation_has_one_owner(self):
+        owners = []
+        for path in BACKEND.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            if any(
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "validate_gdt_bridge_dirs"
+                for node in ast.walk(tree)
+            ):
+                owners.append(path.relative_to(ROOT).as_posix())
+        self.assertEqual(["backend/repositories/gdt_bridge_health.py"], owners)
+
+    def test_configuration_does_not_import_concrete_store(self):
+        path = BACKEND / "config.py"
+        self.assertNotIn(
+            "backend.lab_store",
+            imported_modules(path),
+            "backend/config.py must use domain configuration types, not DemoStore.",
+        )
+
+    def test_responsibility_packages_obey_placement_contract(self):
+        violations: list[PlacementViolation] = []
+        for package in RESPONSIBILITY_PACKAGES:
+            for path in (BACKEND / package).glob("*.py"):
+                violations.extend(
+                    placement_violations(
+                        path.relative_to(ROOT).as_posix(),
+                        path.read_text(encoding="utf-8"),
+                    )
+                )
+        factory_path = BACKEND / "app_factory.py"
+        violations.extend(
+            placement_violations(
+                factory_path.relative_to(ROOT).as_posix(),
+                factory_path.read_text(encoding="utf-8"),
+            )
+        )
+        self.assertEqual(
+            [],
+            violations,
+            "Architecture placement violations:\n" + "\n".join(map(str, violations)),
+        )
+
+    def test_composition_root_surface_is_allowlisted(self):
+        path = BACKEND / "app_factory.py"
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        definitions = {
+            node.name
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        }
+        allowed = {
+            "create_app",
+            "dcm4chee_result_refresh_generation",
+            "main",
+        }
+        self.assertEqual(allowed, definitions)
+        self.assertLessEqual(
+            len(source.splitlines()),
+            500,
+            "backend/app_factory.py must remain a compact composition root.",
+        )
+
+    def test_placement_failures_name_category_path_and_line(self):
+        fixtures = {
+            "route": ("backend/services/misplaced.py", "@app.get('/x')\ndef handler(): pass\n"),
+            "sql": ("backend/api/misplaced.py", "QUERY = 'SELECT * FROM records'\n"),
+            "protocol": (
+                "backend/services/misplaced.py",
+                "import socket\nsocket.create_connection(('host', 1))\n",
+            ),
+            "runtime": ("backend/services/misplaced.py", "class ResultListener: pass\n"),
+            "workflow": ("backend/api/misplaced.py", "class PatientWorkflowService: pass\n"),
+        }
+        for category, (path, source) in fixtures.items():
+            with self.subTest(category=category):
+                violations = placement_violations(path, source)
+                self.assertEqual(1, len(violations))
+                message = str(violations[0])
+                self.assertIn(f"[{category}]", message)
+                self.assertIn(path, message)
+                self.assertRegex(message, r":\d+:")
+
+
+if __name__ == "__main__":
+    unittest.main()
