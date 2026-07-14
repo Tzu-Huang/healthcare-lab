@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import urllib.parse
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
@@ -16,6 +17,8 @@ from backend.domain.statuses import (
     DCM4CHEE_MWL_STATUS_FAILED,
     DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
     DCM4CHEE_MWL_STATUS_PENDING,
+    DCM4CHEE_MWL_VERIFICATION_AMBIGUOUS,
+    DCM4CHEE_MWL_VERIFICATION_FAILED,
     DCM4CHEE_PATIENT_SYNC_OPERATION_PREFLIGHT,
     DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
     DCM4CHEE_MWL_VERIFICATION_VERIFIED,
@@ -24,6 +27,7 @@ from backend.services.patient_workflow import sync_patient_to_dcm4chee
 
 request_dcm4chee_mwl_create = dcm4chee_client.request_dcm4chee_mwl_create
 request_dcm4chee_mwl_readback = dcm4chee_client.request_dcm4chee_mwl_readback
+request_dcm4chee_mwl_verification = dcm4chee_client.request_dcm4chee_mwl_verification
 
 
 def _dicom_first_value(payload: dict[str, Any], tag: str, default: str = "") -> str:
@@ -514,3 +518,244 @@ def sync_order_to_dcm4chee_mwl(
         identifiers={**response_identifiers, **readback_identifiers},
     )
     return updated_attempt
+
+
+def classify_dcm4chee_mwl_verification_error(exc: UpstreamDcm4cheeError) -> str:
+    body = str(exc.response_body or "").lower()
+    text = str(exc).lower()
+    if exc.http_status == 404 and "patient" in body and "exist" in body:
+        return "patient_missing"
+    if "mwl_rsservice" in body or "no web application" in body:
+        return "mwl_endpoint_unsupported"
+    if "profile" in text or "baseurl" in text:
+        return "mwl_profile_invalid"
+    return "dcm4chee_unreachable" if exc.http_status is None else "mwl_query_failed"
+
+
+def match_dcm4chee_mwl_items(
+    store: OrderRepositoryPort,
+    mapping: dict[str, Any],
+    response_body: str,
+) -> dict[str, Any]:
+    expected = {
+        "patient_id": str(mapping.get("patientId") or "").strip(),
+        "issuer_of_patient_id": str(mapping.get("issuerOfPatientId") or "").strip(),
+        "accession_number": str(mapping.get("accessionNumber") or "").strip(),
+        "requested_procedure_id": str(mapping.get("requestedProcedureId") or "").strip(),
+        "scheduled_procedure_step_id": str(mapping.get("scheduledProcedureStepId") or "").strip(),
+        "scheduled_station_ae_title": str(mapping.get("scheduledStationAETitle") or "").strip(),
+        "study_instance_uid": str(mapping.get("studyInstanceUid") or "").strip(),
+        "worklist_label": str(mapping.get("worklistLabel") or "").strip(),
+    }
+    datasets = store.dcm4chee_datasets_from_response_body(response_body)
+    if not datasets:
+        return {
+            "status": DCM4CHEE_MWL_VERIFICATION_FAILED,
+            "errorType": "mwl_empty",
+            "error": "dcm4chee MWL query returned no items for the expected identifiers.",
+            "match": {},
+            "errorPayload": {"expected": expected, "returnedCount": 0},
+        }
+
+    candidates: list[dict[str, Any]] = []
+    mismatches: list[dict[str, Any]] = []
+    for index, dataset in enumerate(datasets):
+        found = store.dcm4chee_identifiers_from_dataset(dataset)
+        strong_matches = []
+        if expected["accession_number"] and found.get("accession_number") == expected["accession_number"]:
+            strong_matches.append("accession_number")
+        if (
+            expected["requested_procedure_id"]
+            and expected["scheduled_procedure_step_id"]
+            and found.get("requested_procedure_id") == expected["requested_procedure_id"]
+            and found.get("scheduled_procedure_step_id") == expected["scheduled_procedure_step_id"]
+        ):
+            strong_matches.append("requested_procedure_id+scheduled_procedure_step_id")
+        conflicts = {
+            key: {"expected": expected_value, "actual": found.get(key, "")}
+            for key, expected_value in expected.items()
+            if expected_value and found.get(key) and found.get(key) != expected_value
+            and key
+            in {
+                "patient_id",
+                "issuer_of_patient_id",
+                "accession_number",
+                "requested_procedure_id",
+                "scheduled_procedure_step_id",
+                "scheduled_station_ae_title",
+            }
+        }
+        summary = {
+            "index": index,
+            "identifiers": found,
+            "strongMatches": strong_matches,
+            "conflicts": conflicts,
+        }
+        if strong_matches and not conflicts:
+            candidates.append(summary)
+        else:
+            mismatches.append(summary)
+
+    if len(candidates) == 1:
+        return {
+            "status": DCM4CHEE_MWL_VERIFICATION_VERIFIED,
+            "errorType": "",
+            "error": "",
+            "match": {
+                **candidates[0],
+                "method": "dcm4chee-mwl-rest",
+                "expected": expected,
+                "returnedCount": len(datasets),
+            },
+            "errorPayload": {},
+        }
+    if len(candidates) > 1:
+        return {
+            "status": DCM4CHEE_MWL_VERIFICATION_AMBIGUOUS,
+            "errorType": "mwl_ambiguous",
+            "error": "dcm4chee MWL query returned multiple matching items.",
+            "match": {},
+            "errorPayload": {"expected": expected, "candidates": candidates, "returnedCount": len(datasets)},
+        }
+    return {
+        "status": DCM4CHEE_MWL_VERIFICATION_FAILED,
+        "errorType": "mwl_mismatch",
+        "error": "dcm4chee MWL query returned items, but none matched the expected order identifiers.",
+        "match": {},
+        "errorPayload": {"expected": expected, "items": mismatches, "returnedCount": len(datasets)},
+    }
+
+
+def verify_order_dcm4chee_mwl(
+    store: OrderRepositoryPort,
+    order: dict[str, Any],
+    profile: dict[str, Any],
+) -> dict[str, Any]:
+    diagnostics = validate_dcm4chee_profile(profile)
+    mapping = store.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
+    if not mapping:
+        raise SimulatorValidationError("dcm4chee MWL mapping is not available for this order.")
+    query_criteria = store.dcm4chee_mwl_verification_query_from_mapping(mapping)
+    dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
+    base_url = str(dicomweb.get("baseUrl") or "").strip().rstrip("/")
+    request_url = f"{base_url}/mwlitems"
+    if query_criteria:
+        request_url = f"{request_url}?{urllib.parse.urlencode(query_criteria)}"
+
+    attempt = store.create_dcm4chee_mwl_verification_attempt(
+        int(order["id"]),
+        mapping,
+        request_url=request_url,
+        query_criteria=query_criteria,
+    )
+    method = "dcm4chee-mwl-rest"
+    if (
+        str(mapping.get("status") or "").strip() == DCM4CHEE_MWL_STATUS_PATIENT_MISSING
+        or str(mapping.get("lastErrorType") or "").strip() == "patient_missing"
+    ):
+        error_text = (
+            str(mapping.get("lastError") or "").strip()
+            or "dcm4chee patient precondition is missing for this MWL order."
+        )
+        error_payload = {
+            "lastSyncStatus": mapping.get("status") or "",
+            "lastHttpStatus": mapping.get("lastHttpStatus"),
+            "lastResponseBody": mapping.get("lastResponseBody") or "",
+        }
+        updated_attempt = store.update_dcm4chee_mwl_attempt_result(
+            int(attempt["id"]),
+            attempt_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+            http_status=mapping.get("lastHttpStatus"),
+            response_body=mapping.get("lastResponseBody") or "",
+            error_type="patient_missing",
+            error_text=error_text,
+        )
+        updated_mapping = store.update_dcm4chee_mwl_verification_result(
+            int(order["id"]),
+            attempt_id=int(updated_attempt["id"]),
+            verification_status=DCM4CHEE_MWL_VERIFICATION_FAILED,
+            method=method,
+            query_criteria=query_criteria,
+            error_type="patient_missing",
+            error_text=error_text,
+            error_payload=error_payload,
+        )
+        return {"attempt": updated_attempt, "mapping": updated_mapping}
+    if not diagnostics["valid"]:
+        error_text = str(diagnostics.get("summary") or "dcm4chee profile is incomplete or invalid.")
+        updated_attempt = store.update_dcm4chee_mwl_attempt_result(
+            int(attempt["id"]),
+            attempt_status=DCM4CHEE_MWL_STATUS_FAILED,
+            error_type="mwl_profile_invalid",
+            error_text=error_text,
+            response_body=json.dumps(diagnostics, sort_keys=True),
+        )
+        updated_mapping = store.update_dcm4chee_mwl_verification_result(
+            int(order["id"]),
+            attempt_id=int(updated_attempt["id"]),
+            verification_status=DCM4CHEE_MWL_VERIFICATION_FAILED,
+            method=method,
+            query_criteria=query_criteria,
+            error_type="mwl_profile_invalid",
+            error_text=error_text,
+            error_payload=diagnostics,
+        )
+        return {"attempt": updated_attempt, "mapping": updated_mapping}
+
+    try:
+        status, response_body, actual_url = request_dcm4chee_mwl_verification(profile, query_criteria)
+    except UpstreamDcm4cheeError as exc:
+        error_type = classify_dcm4chee_mwl_verification_error(exc)
+        verification_status = (
+            DCM4CHEE_MWL_VERIFICATION_FAILED
+            if error_type != "mwl_ambiguous"
+            else DCM4CHEE_MWL_VERIFICATION_AMBIGUOUS
+        )
+        updated_attempt = store.update_dcm4chee_mwl_attempt_result(
+            int(attempt["id"]),
+            attempt_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING
+            if error_type == "patient_missing"
+            else DCM4CHEE_MWL_STATUS_FAILED,
+            http_status=exc.http_status,
+            response_body=exc.response_body,
+            error_type=error_type,
+            error_text=str(exc),
+        )
+        updated_mapping = store.update_dcm4chee_mwl_verification_result(
+            int(order["id"]),
+            attempt_id=int(updated_attempt["id"]),
+            verification_status=verification_status,
+            method=method,
+            query_criteria=query_criteria,
+            error_type=error_type,
+            error_text=str(exc),
+            error_payload={"responseBody": exc.response_body, "httpStatus": exc.http_status},
+        )
+        return {"attempt": updated_attempt, "mapping": updated_mapping}
+
+    match_result = match_dcm4chee_mwl_items(store, mapping, response_body)
+    attempt_status = (
+        DCM4CHEE_MWL_STATUS_CREATED
+        if match_result["status"] == DCM4CHEE_MWL_VERIFICATION_VERIFIED
+        else DCM4CHEE_MWL_STATUS_FAILED
+    )
+    updated_attempt = store.update_dcm4chee_mwl_attempt_result(
+        int(attempt["id"]),
+        attempt_status=attempt_status,
+        http_status=status,
+        response_body=response_body,
+        error_type=match_result["errorType"],
+        error_text=match_result["error"],
+    )
+    updated_mapping = store.update_dcm4chee_mwl_verification_result(
+        int(order["id"]),
+        attempt_id=int(updated_attempt["id"]),
+        verification_status=match_result["status"],
+        method=method,
+        query_criteria={**query_criteria, "requestUrl": actual_url},
+        match_payload=match_result["match"],
+        error_type=match_result["errorType"],
+        error_text=match_result["error"],
+        error_payload=match_result["errorPayload"],
+    )
+    return {"attempt": updated_attempt, "mapping": updated_mapping}

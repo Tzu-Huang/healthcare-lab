@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.config import DCM4CHEE_AUTH_MODES
 from backend.domain.errors import ValidationError
 from backend.domain.validation import require_http_url
+
+DCM4CHEE_AUTH_MODES = ("none", "basic", "bearer", "oauth2", "mtls")
 
 
 def validate_dcm4chee_profile(profile: dict[str, Any]) -> dict[str, Any]:
