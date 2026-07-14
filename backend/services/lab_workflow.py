@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,7 +34,12 @@ from backend.dashboard_services import (
 from backend.domain.dicom import validate_dcm4chee_profile
 from backend.domain.errors import SimulatorValidationError, UpstreamFhirError, ValidationError
 from backend.domain.gdt import ensure_gdt_bridge_dirs
-from backend.domain.lab import LAB_OPERATION_ACTIONS
+from backend.domain.lab import (
+    LAB_HEALTH_STATUSES,
+    LAB_OPERATION_ACTIONS,
+    LAB_SERVER_PROTOCOLS,
+    LAB_SERVER_TYPES,
+)
 from backend.lab_operations import (
     DockerComposeLabOperationAdapter,
     DockerSocketLabOperationAdapter,
@@ -57,6 +63,12 @@ class LabRepositoryPort(Protocol):
     def get_lab_server(self, server_id: int) -> dict[str, Any]: ...
 
     def list_lab_servers(self) -> list[dict[str, Any]]: ...
+
+    def create_lab_server(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+    def update_lab_server(
+        self, server_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
 
     def update_lab_server_health(
         self,
@@ -96,6 +108,233 @@ def current_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
     )
+
+
+class LabServerWorkflowService:
+    """Coordinate Lab Server registry, health, and operation use cases."""
+
+    def __init__(
+        self,
+        app: ApplicationPort,
+        repository: LabRepositoryPort,
+        *,
+        health_checker: Callable[[LabRepositoryPort, int], dict[str, Any]],
+        availability_decorator: Callable[[ApplicationPort, dict[str, Any]], dict[str, Any]],
+        operation_runner: Callable[..., dict[str, Any]],
+        operator_resolver: Callable[[], str],
+    ) -> None:
+        self.app = app
+        self.repository = repository
+        self._health_checker = health_checker
+        self._availability_decorator = availability_decorator
+        self._operation_runner = operation_runner
+        self._operator_resolver = operator_resolver
+
+    def metadata(self) -> dict[str, list[str]]:
+        return {
+            "serverTypes": list(LAB_SERVER_TYPES),
+            "protocols": list(LAB_SERVER_PROTOCOLS),
+            "healthStatuses": list(LAB_HEALTH_STATUSES),
+        }
+
+    def _decorate(self, item: dict[str, Any]) -> dict[str, Any]:
+        return self._availability_decorator(self.app, item)
+
+    def list_servers(self) -> list[dict[str, Any]]:
+        return [self._decorate(item) for item in self.repository.list_lab_servers()]
+
+    def create_server(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._decorate(self.repository.create_lab_server(payload))
+
+    def get_server(self, server_id: int) -> dict[str, Any]:
+        return self._decorate(self.repository.get_lab_server(server_id))
+
+    def update_server(self, server_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._decorate(self.repository.update_lab_server(server_id, payload))
+
+    def check_server(self, server_id: int) -> dict[str, Any]:
+        return self._decorate(self._health_checker(self.repository, server_id))
+
+    def check_all_servers(self) -> list[dict[str, Any]]:
+        items = []
+        for server in self.repository.list_lab_servers():
+            checked = (
+                server
+                if not server["enabled"]
+                else self._health_checker(self.repository, int(server["id"]))
+            )
+            items.append(self._decorate(checked))
+        return items
+
+    def operation_history(self, server_id: int, *, limit: int = 20) -> list[dict[str, Any]]:
+        self.repository.get_lab_server(server_id)
+        return self.repository.list_lab_operations(server_id, limit=limit)
+
+    def execute_operation(
+        self, server_id: int, action: str, *, lines: int = 200
+    ) -> dict[str, Any]:
+        return self._operation_runner(
+            app=self.app,
+            store=self.repository,
+            server_id=server_id,
+            action=action,
+            lines=lines,
+        )
+
+    def smoke_all_servers(self) -> list[dict[str, Any]]:
+        results = []
+        for item in self.repository.list_lab_servers():
+            if not item["enabled"]:
+                results.append(
+                    {
+                        "server": item,
+                        "operation": self.repository.record_lab_operation(
+                            item["id"],
+                            service_name=item["name"],
+                            action="smoke",
+                            operator=self._operator_resolver(),
+                            result="skipped",
+                            progress=[{"step": "smoke", "status": "skipped"}],
+                            error_text="Server is disabled.",
+                        ),
+                        "output": "",
+                        "command": [],
+                    }
+                )
+                continue
+            try:
+                results.append(
+                    self._operation_runner(
+                        app=self.app,
+                        store=self.repository,
+                        server_id=int(item["id"]),
+                        action="smoke",
+                    )
+                )
+            except LabOperationError as exc:
+                try:
+                    results.append(json.loads(str(exc)))
+                except json.JSONDecodeError:
+                    results.append({"server": item, "operation": None, "error": str(exc)})
+            except SimulatorValidationError as exc:
+                results.append({"server": item, "operation": None, "error": str(exc)})
+        return results
+
+
+class DashboardWorkflowService:
+    """Coordinate dashboard snapshots, health checks, and grouped operations."""
+
+    def __init__(
+        self,
+        app: ApplicationPort,
+        repository: LabRepositoryPort,
+        *,
+        health_check: Callable[[LabRepositoryPort, str], list[dict[str, Any]]],
+        operation_runner: Callable[..., dict[str, Any]],
+    ) -> None:
+        self.app = app
+        self.repository = repository
+        self._health_check = health_check
+        self._operation_runner = operation_runner
+
+    def _snapshot_payload(
+        self, items: list[dict[str, Any]], resources: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {
+            "items": items,
+            "summary": dashboard_summary(items, resources),
+            "resources": resources,
+            "events": dashboard_events(self.repository, items, resources),
+        }
+
+    def snapshot(self) -> dict[str, Any]:
+        resources = collect_dashboard_resource_snapshot()
+        items = dashboard_all_group_items(self.app, self.repository)
+        return self._snapshot_payload(items, resources)
+
+    def restart_preview(self, service_id: str) -> dict[str, Any]:
+        return dashboard_group_item(self.app, self.repository, service_id)["restartPreview"]
+
+    def check_all(self) -> dict[str, Any]:
+        results = []
+        for service_id in LAB_DASHBOARD_SERVICE_GROUPS:
+            try:
+                results.append(
+                    {
+                        "serviceId": service_id,
+                        "servers": self._health_check(self.repository, service_id),
+                    }
+                )
+            except (KeyError, SimulatorValidationError, LabOperationError) as exc:
+                results.append({"serviceId": service_id, "error": str(exc)})
+        return {"results": results, **self.snapshot()}
+
+    def run_action(
+        self, service_id: str, action: str, *, lines: int = 200
+    ) -> dict[str, Any]:
+        group, servers = dashboard_servers_for_group(self.repository, service_id)
+        primary = next(
+            (server for server in servers if server["name"] == group["primary"]),
+            servers[0],
+        )
+        if action.strip().lower() == "check":
+            checked = self._health_check(self.repository, service_id)
+            return {
+                "service": dashboard_group_item(self.app, self.repository, service_id),
+                "servers": checked,
+                "output": json.dumps(checked, indent=2),
+            }
+        operation_action = dashboard_action_for_group(group, action)
+        result = self._operation_runner(
+            app=self.app,
+            store=self.repository,
+            server_id=int(primary["id"]),
+            action=operation_action,
+            lines=lines,
+            backing_services=dashboard_operation_services(group, operation_action),
+        )
+        return {
+            "service": dashboard_group_item(self.app, self.repository, service_id),
+            "operation": result["operation"],
+            "output": result["output"],
+        }
+
+    def run_child_action(
+        self,
+        service_id: str,
+        child_id: str,
+        action: str,
+        *,
+        lines: int = 200,
+    ) -> dict[str, Any]:
+        group, servers = dashboard_servers_for_group(self.repository, service_id)
+        child = dashboard_child_for_group(group, child_id)
+        primary = next(
+            (server for server in servers if server["name"] == group["primary"]),
+            servers[0],
+        )
+        if action.strip().lower() == "check":
+            return {
+                "service": dashboard_group_item(self.app, self.repository, service_id),
+                "child": dashboard_child_item(self.app, child),
+            }
+        operation_action = dashboard_action_for_group(group, action)
+        result = self._operation_runner(
+            app=self.app,
+            store=self.repository,
+            server_id=int(primary["id"]),
+            action=operation_action,
+            lines=lines,
+            backing_services=[str(child["service"])],
+            operation_service_name=str(child["displayName"]),
+            refresh_health=False,
+        )
+        return {
+            "service": dashboard_group_item(self.app, self.repository, service_id),
+            "child": dashboard_child_item(self.app, child),
+            "operation": result["operation"],
+            "output": result["output"],
+        }
 
 
 def run_lab_operation(

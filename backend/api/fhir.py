@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from backend.domain.errors import UpstreamFhirError, ValidationError
-from backend.lab_store import SimulatorValidationError
+from backend.domain.errors import SimulatorValidationError, UpstreamFhirError, ValidationError
 from backend.services.fhir_workflow import FhirWorkflowService
 
 

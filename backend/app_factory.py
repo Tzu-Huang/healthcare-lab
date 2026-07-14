@@ -120,6 +120,8 @@ from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as Runtim
 from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
 from backend.services.oie_settings import OieSettingsService
 from backend.services.lab_workflow import (
+    DashboardWorkflowService,
+    LabServerWorkflowService,
     dashboard_all_group_items,
     dashboard_child_item,
     dashboard_events,
@@ -270,28 +272,32 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.register_blueprint(
         create_lab_servers_blueprint(
-            app,
-            store,
-            health_checker=run_lab_server_health_check,
-            decorate_availability=decorate_lab_operation_availability,
-            operation_runner=run_lab_operation,
-            operator_resolver=resolve_lab_operator,
+            LabServerWorkflowService(
+                app,
+                store,
+                health_checker=lambda target_store, server_id: run_lab_server_health_check(
+                    target_store, server_id
+                ),
+                availability_decorator=decorate_lab_operation_availability,
+                operation_runner=lambda **values: run_lab_operation(**values),
+                operator_resolver=lambda: resolve_lab_operator(),
+            )
         )
     )
     app.register_blueprint(
         create_dashboard_blueprint(
-            app,
-            store,
-            all_items=dashboard_all_group_items,
-            group_item=dashboard_group_item,
-            child_item=dashboard_child_item,
-            health_check=lambda target_store, service_id: run_dashboard_group_health_check(
-                target_store,
-                service_id,
-                health_checker=run_lab_server_health_check,
-            ),
-            event_builder=dashboard_events,
-            operation_runner_provider=lambda: run_lab_operation,
+            DashboardWorkflowService(
+                app,
+                store,
+                health_check=lambda target_store, service_id: run_dashboard_group_health_check(
+                    target_store,
+                    service_id,
+                    health_checker=lambda health_store, server_id: run_lab_server_health_check(
+                        health_store, server_id
+                    ),
+                ),
+                operation_runner=lambda **values: run_lab_operation(**values),
+            )
         )
     )
     def get_auth_manager() -> MedplumAuthManager:

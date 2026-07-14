@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from backend.lab_store import SimulatorValidationError
+from backend.domain.errors import SimulatorValidationError
 from backend.services.order_workflow import OrderWorkflowService
 
 

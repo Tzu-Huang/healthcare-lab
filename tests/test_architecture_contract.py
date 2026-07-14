@@ -76,6 +76,21 @@ def receiver_method_calls(tree: ast.AST, receiver: str) -> set[str]:
     }
 
 
+def owned_receiver_method_calls(
+    tree: ast.AST, owner: str, receiver: str
+) -> set[str]:
+    return {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Attribute)
+        and isinstance(node.func.value.value, ast.Name)
+        and node.func.value.value.id == owner
+        and node.func.value.attr == receiver
+    }
+
+
 def dotted_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -209,6 +224,16 @@ class ArchitectureContractTest(unittest.TestCase):
                     f"{path.relative_to(ROOT)} must depend on domain types and repository ports, not DemoStore.",
                 )
 
+    def test_api_modules_do_not_import_concrete_store(self):
+        for path in (BACKEND / "api").glob("*.py"):
+            modules = imported_modules(path)
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertNotIn(
+                    "backend.lab_store",
+                    modules,
+                    f"{path.relative_to(ROOT)} must map HTTP through service ports, not DemoStore.",
+                )
+
     def test_runtime_does_not_import_concrete_store(self):
         for path in (BACKEND / "runtime").glob("*.py"):
             modules = imported_modules(path)
@@ -236,7 +261,11 @@ class ArchitectureContractTest(unittest.TestCase):
         path = BACKEND / "services" / "lab_workflow.py"
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         declared = protocol_methods(tree, "LabRepositoryPort")
-        consumed = receiver_method_calls(tree, "store") | {"list_lab_servers"}
+        consumed = (
+            receiver_method_calls(tree, "store")
+            | owned_receiver_method_calls(tree, "self", "repository")
+            | {"list_lab_servers"}
+        )
         self.assertTrue(declared, "LabRepositoryPort must declare a structural repository surface.")
         self.assertEqual(
             set(),
