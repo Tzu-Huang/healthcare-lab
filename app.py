@@ -11,6 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,7 +72,9 @@ from backend.dashboard_services import (
     LAB_DASHBOARD_SERVICE_GROUPS,
     collect_dashboard_resource_snapshot,
     dashboard_action_for_group,
+    dashboard_child_for_group,
     dashboard_health_rank,
+    dashboard_operation_services,
     dashboard_servers_for_group,
     dashboard_summary,
     derive_dashboard_group_status,
@@ -3510,6 +3513,7 @@ def dashboard_group_item(app: Flask, store: DemoStore, service_id: str) -> dict[
             "summary": group["riskSummary"],
             "affectedServices": list(group["affectedServices"]),
         },
+        "children": dashboard_child_items(app, group),
         "components": [
             {
                 "name": server["name"],
@@ -3519,6 +3523,56 @@ def dashboard_group_item(app: Flask, store: DemoStore, service_id: str) -> dict[
             for server in servers
         ],
     }
+
+
+def dashboard_child_item(app: Flask, child: dict[str, Any]) -> dict[str, Any]:
+    adapter = DockerComposeLabOperationAdapter(app.config["LAB_DEPLOY_SCRIPT"])
+    unavailable_reason = adapter.unavailable_reason()
+    try:
+        runtime = adapter.inspect(str(child["service"]), timeout_seconds=3)
+    except LabOperationError as exc:
+        runtime = {
+            "exists": False,
+            "running": False,
+            "state": "Unknown",
+            "detail": str(exc),
+            "containerName": "",
+        }
+    return {
+        "id": child["id"],
+        "name": child["displayName"],
+        "role": child["role"],
+        "composeService": child["service"],
+        "status": "Healthy" if runtime["running"] else (
+            "Down" if runtime["state"] != "Unknown" else "Unknown"
+        ),
+        "runtime": runtime,
+        "capabilities": {
+            "check": True,
+            "enable": not bool(unavailable_reason),
+            "disable": not bool(unavailable_reason),
+            "restart": not bool(unavailable_reason),
+        },
+    }
+
+
+def dashboard_child_items(app: Flask, group: dict[str, Any]) -> list[dict[str, Any]]:
+    children = list(group.get("children", ()))
+    if not children:
+        return []
+    with ThreadPoolExecutor(max_workers=len(children)) as executor:
+        return list(executor.map(lambda child: dashboard_child_item(app, child), children))
+
+
+def dashboard_all_group_items(app: Flask, store: DemoStore) -> list[dict[str, Any]]:
+    service_ids = list(LAB_DASHBOARD_SERVICE_GROUPS)
+    with ThreadPoolExecutor(max_workers=len(service_ids)) as executor:
+        return list(
+            executor.map(
+                lambda service_id: dashboard_group_item(app, store, service_id),
+                service_ids,
+            )
+        )
 
 
 def run_dashboard_group_health_check(store: DemoStore, service_id: str) -> list[dict[str, Any]]:
@@ -3567,6 +3621,9 @@ def run_lab_operation(
     server_id: int,
     action: str,
     lines: int = 200,
+    backing_services: list[str] | None = None,
+    operation_service_name: str = "",
+    refresh_health: bool = True,
 ) -> dict[str, Any]:
     server = store.get_lab_server(server_id)
     normalized_action = action.strip().lower()
@@ -3622,14 +3679,20 @@ def run_lab_operation(
                 raise LabOperationError(
                     f"Docker Compose operation '{normalized_action}' is unavailable: {unavailable_reason}"
                 )
-            adapter_result = adapter.run(
-                normalized_action,
-                operation.get("backingService") or server["name"],
-                timeout_seconds=int(operation.get("timeoutSeconds") or 60),
-                lines=lines,
-            )
-            output = adapter_result["output"]
-            command = adapter_result["command"]
+            targets = backing_services or [operation.get("backingService") or server["name"]]
+            outputs = []
+            commands = []
+            for target in targets:
+                adapter_result = adapter.run(
+                    normalized_action,
+                    target,
+                    timeout_seconds=int(operation.get("timeoutSeconds") or 60),
+                    lines=lines,
+                )
+                outputs.append(f"[{target}]\n{adapter_result['output']}".rstrip())
+                commands.append(adapter_result["command"])
+            output = "\n".join(outputs)
+            command = [part for adapter_command in commands for part in adapter_command]
         else:
             adapter_result = run_internal_lab_operation(
                 server,
@@ -3640,7 +3703,7 @@ def run_lab_operation(
             )
             output = adapter_result["output"]
             command = adapter_result["command"]
-        if normalized_action in {"start", "stop", "restart"}:
+        if refresh_health and normalized_action in {"start", "stop", "restart"}:
             run_lab_server_health_check(store, server_id)
     except (LabOperationError, ValidationError, UpstreamFhirError) as exc:
         result = "failed"
@@ -3654,7 +3717,7 @@ def run_lab_operation(
     )
     history = store.record_lab_operation(
         server_id,
-        service_name=server["name"],
+        service_name=operation_service_name or server["name"],
         action=normalized_action,
         operator=resolve_lab_operator(),
         result=result,
@@ -4761,10 +4824,7 @@ def create_app(database_path: str | None = None) -> Flask:
     @app.get("/api/dashboard/services")
     def dashboard_services():
         resource_snapshot = collect_dashboard_resource_snapshot()
-        items = [
-            dashboard_group_item(app, store, service_id)
-            for service_id in LAB_DASHBOARD_SERVICE_GROUPS
-        ]
+        items = dashboard_all_group_items(app, store)
         return jsonify(
             {
                 "success": True,
@@ -4793,10 +4853,7 @@ def create_app(database_path: str | None = None) -> Flask:
             except (KeyError, SimulatorValidationError, LabOperationError) as exc:
                 results.append({"serviceId": service_id, "error": str(exc)})
         resource_snapshot = collect_dashboard_resource_snapshot()
-        items = [
-            dashboard_group_item(app, store, service_id)
-            for service_id in LAB_DASHBOARD_SERVICE_GROUPS
-        ]
+        items = dashboard_all_group_items(app, store)
         return jsonify(
             {
                 "success": True,
@@ -4831,6 +4888,7 @@ def create_app(database_path: str | None = None) -> Flask:
                 server_id=int(primary["id"]),
                 action=operation_action,
                 lines=int(payload.get("lines", 200) or 200),
+                backing_services=dashboard_operation_services(group, operation_action),
             )
         except KeyError:
             return error_response("Dashboard service id is not supported.", 404)
@@ -4846,6 +4904,55 @@ def create_app(database_path: str | None = None) -> Flask:
             {
                 "success": True,
                 "service": dashboard_group_item(app, store, service_id),
+                "operation": result["operation"],
+                "output": result["output"],
+            }
+        )
+
+    @app.post("/api/dashboard/services/<service_id>/children/<child_id>/<action>")
+    def dashboard_child_service_action(service_id: str, child_id: str, action: str):
+        payload = request.get_json(silent=True) or {}
+        try:
+            group, servers = dashboard_servers_for_group(store, service_id)
+            child = dashboard_child_for_group(group, child_id)
+            primary = next(
+                (server for server in servers if server["name"] == group["primary"]),
+                servers[0],
+            )
+            if action.strip().lower() == "check":
+                return jsonify(
+                    {
+                        "success": True,
+                        "service": dashboard_group_item(app, store, service_id),
+                        "child": dashboard_child_item(app, child),
+                    }
+                )
+            operation_action = dashboard_action_for_group(group, action)
+            result = run_lab_operation(
+                app=app,
+                store=store,
+                server_id=int(primary["id"]),
+                action=operation_action,
+                lines=int(payload.get("lines", 200) or 200),
+                backing_services=[str(child["service"])],
+                operation_service_name=str(child["displayName"]),
+                refresh_health=False,
+            )
+        except KeyError:
+            return error_response("Dashboard child service id is not supported.", 404)
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        except LabOperationError as exc:
+            try:
+                body = json.loads(str(exc))
+            except json.JSONDecodeError:
+                body = {"operation": None, "output": "", "error": str(exc)}
+            return jsonify({"success": False, **body}), 500
+        return jsonify(
+            {
+                "success": True,
+                "service": dashboard_group_item(app, store, service_id),
+                "child": dashboard_child_item(app, child),
                 "operation": result["operation"],
                 "output": result["output"],
             }

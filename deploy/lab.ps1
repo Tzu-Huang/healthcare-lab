@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("status", "start", "stop", "restart", "smoke", "logs")]
+    [ValidateSet("status", "inspect", "start", "stop", "restart", "smoke", "logs")]
     [string] $Action = "status",
 
     [Parameter(Position = 1)]
@@ -21,10 +21,13 @@ $ServiceMap = @{
     "all" = @()
     "oie" = @("oie")
     "medplum" = @("medplum", "medplum-app")
+    "medplum-postgres" = @("medplum-postgres")
+    "medplum-redis" = @("medplum-redis")
     "medplum-app" = @("medplum-app")
-    "openemr" = @("openemr")
     "gdt-bridge" = @("lab-app")
     "dcm4chee" = @("dcm4chee")
+    "dcm4chee-db" = @("dcm4chee-db")
+    "ldap" = @("ldap")
     "hl7tester" = @("lab-app")
     "gdt-hospital" = @("lab-app")
     "lab-app" = @("lab-app")
@@ -69,6 +72,9 @@ function Invoke-Smoke {
 $ResolvedServices = @(Resolve-LabService $Service)
 
 switch ($Action) {
+    "inspect" {
+        Invoke-DockerCompose (@("ps", "--all", "--format", "json") + $ResolvedServices)
+    }
     "status" {
         if ($ResolvedServices.Count -eq 0) {
             Invoke-DockerCompose @("ps")

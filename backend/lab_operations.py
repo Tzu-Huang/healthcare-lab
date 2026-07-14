@@ -72,6 +72,30 @@ class DockerSocketLabOperationAdapter:
             raise LabOperationError("Docker socket returned invalid container JSON.") from exc
         return containers if isinstance(containers, list) else []
 
+    def inspect(self, service_name: str) -> dict[str, Any]:
+        if not self.is_available():
+            raise LabOperationError(f"Docker socket is not available at {self.socket_path}.")
+        containers = self.containers_for_service(service_name)
+        if not containers:
+            return {
+                "exists": False,
+                "running": False,
+                "state": "Missing",
+                "detail": "No Compose container exists for this service.",
+                "containerName": "",
+            }
+        container = containers[0]
+        state = str(container.get("State") or "unknown").lower()
+        container_id = str(container.get("Id") or "")
+        name = (container.get("Names") or [container_id[:12]])[0].lstrip("/")
+        return {
+            "exists": True,
+            "running": state == "running",
+            "state": "Running" if state == "running" else state.title(),
+            "detail": str(container.get("Status") or state),
+            "containerName": name,
+        }
+
     def run(
         self,
         action: str,
@@ -142,6 +166,69 @@ class DockerComposeLabOperationAdapter:
             command.extend(["-Lines", str(lines)])
         return command
 
+    @staticmethod
+    def parse_compose_ps_json(output: str | None) -> list[dict[str, Any]]:
+        text = (output or "").strip()
+        if not text:
+            return []
+        try:
+            payload = json.loads(text)
+            return payload if isinstance(payload, list) else [payload]
+        except json.JSONDecodeError:
+            rows = []
+            for line in text.splitlines():
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise LabOperationError("Docker Compose returned invalid service status JSON.") from exc
+                if isinstance(item, dict):
+                    rows.append(item)
+            return rows
+
+    def inspect(self, backing_service: str, *, timeout_seconds: int = 30) -> dict[str, Any]:
+        socket_adapter = DockerSocketLabOperationAdapter()
+        if socket_adapter.is_available():
+            return socket_adapter.inspect(backing_service)
+        reason = self.unavailable_reason()
+        if reason:
+            raise LabOperationError(reason)
+        command = self.build_command("inspect", backing_service)
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=max(1, int(timeout_seconds)),
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise LabOperationError(
+                f"Service status check timed out after {timeout_seconds} seconds."
+            ) from exc
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise LabOperationError(detail or "Docker Compose service status check failed.")
+        rows = self.parse_compose_ps_json(completed.stdout)
+        if not rows:
+            return {
+                "exists": False,
+                "running": False,
+                "state": "Missing",
+                "detail": "No Compose container exists for this service.",
+                "containerName": "",
+            }
+        row = rows[0]
+        state = str(row.get("State") or "unknown").lower()
+        return {
+            "exists": True,
+            "running": state == "running",
+            "state": "Running" if state == "running" else state.title(),
+            "detail": str(row.get("Status") or state),
+            "containerName": str(row.get("Name") or ""),
+        }
+
     def run(
         self,
         action: str,
@@ -168,6 +255,8 @@ class DockerComposeLabOperationAdapter:
                 command,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=max(1, int(timeout_seconds)),
                 check=False,
             )

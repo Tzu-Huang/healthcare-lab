@@ -25,7 +25,9 @@ LAB_DASHBOARD_SERVICE_GROUPS = {
     "hl7-v2-oie": {
         "label": "HL7 v2 / OIE",
         "primary": "OIE",
-        "services": ("OIE", "HL7Tester"),
+        "services": ("OIE",),
+        "backingService": "oie",
+        "children": (),
         "protocol": "HL7 v2",
         "backend": "Open Integration Engine",
         "risk": "medium",
@@ -36,26 +38,46 @@ LAB_DASHBOARD_SERVICE_GROUPS = {
         "label": "HL7 FHIR / Medplum",
         "primary": "Medplum",
         "services": ("Medplum",),
+        "backingService": "medplum",
+        "children": (
+            {
+                "id": "medplum-redis",
+                "service": "medplum-redis",
+                "displayName": "medplum-redis-1",
+                "role": "cache",
+            },
+            {
+                "id": "medplum-postgres",
+                "service": "medplum-postgres",
+                "displayName": "medplum-postgres-1",
+                "role": "database",
+            },
+        ),
         "protocol": "FHIR R4",
         "backend": "Medplum",
         "risk": "high",
         "riskSummary": "Restart can interrupt OAuth token acquisition and active FHIR artifact submissions.",
         "affectedServices": ("Medplum", "FHIR ServiceRequest fetch", "FHIR result submission"),
     },
-    "openemr-gdt": {
-        "label": "OpenEMR / GDT",
-        "primary": "OpenEMR",
-        "services": ("OpenEMR", "GDT Bridge", "GDT Hospital"),
-        "protocol": "GDT 2.1",
-        "backend": "OpenEMR + shared-folder bridge",
-        "risk": "medium",
-        "riskSummary": "Restart can pause OpenEMR order reads and shared-folder import/export checks.",
-        "affectedServices": ("OpenEMR", "GDT Bridge", "GDT Hospital"),
-    },
     "dicom-dcm4chee": {
         "label": "dcm4chee / DICOM",
         "primary": "dcm4chee",
         "services": ("dcm4chee",),
+        "backingService": "dcm4chee",
+        "children": (
+            {
+                "id": "ldap",
+                "service": "ldap",
+                "displayName": "ldap-1",
+                "role": "directory",
+            },
+            {
+                "id": "dcm4chee-db",
+                "service": "dcm4chee-db",
+                "displayName": "dcm4chee-db-1",
+                "role": "database",
+            },
+        ),
         "protocol": "DICOM",
         "backend": "dcm4chee archive",
         "risk": "medium",
@@ -63,6 +85,25 @@ LAB_DASHBOARD_SERVICE_GROUPS = {
         "affectedServices": ("dcm4chee", "DICOM archive UI"),
     },
 }
+
+
+def dashboard_child_for_group(group: dict[str, Any], child_id: str) -> dict[str, Any]:
+    normalized = child_id.strip().lower()
+    child = next(
+        (item for item in group.get("children", ()) if item["id"] == normalized),
+        None,
+    )
+    if child is None:
+        raise KeyError(child_id)
+    return child
+
+
+def dashboard_operation_services(group: dict[str, Any], action: str) -> list[str]:
+    primary = str(group["backingService"])
+    children = [str(item["service"]) for item in group.get("children", ())]
+    if action == "stop":
+        return [primary, *reversed(children)]
+    return [*children, primary]
 
 
 def current_dashboard_timestamp() -> str:
