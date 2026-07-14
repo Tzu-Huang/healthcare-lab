@@ -32,7 +32,12 @@ from backend.dashboard_services import (
     derive_dashboard_group_status,
 )
 from backend.domain.dicom import validate_dcm4chee_profile
-from backend.domain.errors import SimulatorValidationError, UpstreamFhirError, ValidationError
+from backend.domain.errors import (
+    LabOperationError,
+    SimulatorValidationError,
+    UpstreamFhirError,
+    ValidationError,
+)
 from backend.domain.gdt import ensure_gdt_bridge_dirs
 from backend.domain.lab import (
     LAB_HEALTH_STATUSES,
@@ -43,7 +48,6 @@ from backend.domain.lab import (
 from backend.lab_operations import (
     DockerComposeLabOperationAdapter,
     DockerSocketLabOperationAdapter,
-    LabOperationError,
 )
 from backend.repositories.gdt_bridge_health import validate_gdt_bridge_dirs
 from backend.services.fhir_workflow import (

@@ -234,6 +234,16 @@ class ArchitectureContractTest(unittest.TestCase):
                     f"{path.relative_to(ROOT)} must map HTTP through service ports, not DemoStore.",
                 )
 
+    def test_api_modules_do_not_import_operation_adapters(self):
+        for path in (BACKEND / "api").glob("*.py"):
+            modules = imported_modules(path)
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertNotIn(
+                    "backend.lab_operations",
+                    modules,
+                    f"{path.relative_to(ROOT)} must handle domain errors without importing operation adapters.",
+                )
+
     def test_runtime_does_not_import_concrete_store(self):
         for path in (BACKEND / "runtime").glob("*.py"):
             modules = imported_modules(path)

@@ -13,6 +13,10 @@ class SimulatorValidationError(ValueError):
     """Raised when simulator workflow input is invalid."""
 
 
+class LabOperationError(RuntimeError):
+    """Raised when a lab lifecycle or smoke operation fails."""
+
+
 class UpstreamFhirError(RuntimeError):
     """FHIR transport or upstream response failure."""
 
