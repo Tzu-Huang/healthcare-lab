@@ -701,6 +701,16 @@ class DemoStore:
         self.path = str(path)
         self.lock = threading.RLock()
         self.initialize()
+        from backend.repositories.oie_settings import OieSettingsRepository
+
+        self.oie_settings_repository = OieSettingsRepository(
+            self.connect,
+            self.lock,
+            profile_name=OIE_SETTINGS_PROFILE_NAME,
+            validator=self.validate_oie_settings_payload,
+            serializer=self._oie_settings_profile_dict,
+            timestamp_factory=now_iso,
+        )
 
     @contextmanager
     def connect(self):
@@ -1647,87 +1657,10 @@ class DemoStore:
         }
 
     def get_oie_settings_profile(self) -> dict[str, Any]:
-        with self.connect() as connection:
-            profile = connection.execute(
-                "SELECT * FROM oie_settings_profiles WHERE profile_name = ?",
-                (OIE_SETTINGS_PROFILE_NAME,),
-            ).fetchone()
-            if not profile:
-                raise KeyError(OIE_SETTINGS_PROFILE_NAME)
-            mappings = connection.execute(
-                """
-                SELECT * FROM oie_managed_channel_mappings
-                WHERE profile_id = ?
-                ORDER BY logical_type COLLATE NOCASE, id
-                """,
-                (profile["id"],),
-            ).fetchall()
-        return self._oie_settings_profile_dict(profile, mappings)
+        return self.oie_settings_repository.get()
 
     def update_oie_settings_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
-        values = self.validate_oie_settings_payload(payload)
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            profile = connection.execute(
-                "SELECT * FROM oie_settings_profiles WHERE profile_name = ?",
-                (OIE_SETTINGS_PROFILE_NAME,),
-            ).fetchone()
-            if not profile:
-                raise KeyError(OIE_SETTINGS_PROFILE_NAME)
-            password = (
-                values["management_api_password"]
-                if values["password_provided"]
-                else profile["management_api_password"]
-            )
-            connection.execute(
-                """
-                UPDATE oie_settings_profiles
-                SET management_api_base_url = ?, management_api_username = ?,
-                    management_api_password = ?, management_api_tls_verify = ?,
-                    management_api_timeout_seconds = ?, result_listener_host = ?,
-                    result_listener_port = ?, result_listener_mllp_framing = ?,
-                    result_listener_auto_start = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    values["management_api_base_url"],
-                    values["management_api_username"],
-                    password,
-                    values["management_api_tls_verify"],
-                    values["management_api_timeout_seconds"],
-                    values["result_listener_host"],
-                    values["result_listener_port"],
-                    values["result_listener_mllp_framing"],
-                    values["result_listener_auto_start"],
-                    timestamp,
-                    profile["id"],
-                ),
-            )
-            connection.execute(
-                "DELETE FROM oie_managed_channel_mappings WHERE profile_id = ?",
-                (profile["id"],),
-            )
-            for mapping in values["managed_channels"]:
-                connection.execute(
-                    """
-                    INSERT INTO oie_managed_channel_mappings (
-                        profile_id, logical_type, oie_channel_id, channel_name,
-                        template_version, last_known_revision, created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        profile["id"],
-                        mapping["logical_type"],
-                        mapping["oie_channel_id"],
-                        mapping["channel_name"],
-                        mapping["template_version"],
-                        mapping["last_known_revision"],
-                        timestamp,
-                        timestamp,
-                    ),
-                )
-        return self.get_oie_settings_profile()
+        return self.oie_settings_repository.update(payload)
 
     @staticmethod
     def _clean_patient_text(value: Any, field_name: str, required: bool = False) -> str:

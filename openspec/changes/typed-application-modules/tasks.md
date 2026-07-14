@@ -20,8 +20,8 @@
 
 ## 4. Repository and Service Boundaries
 
-- [ ] 4.1 Introduce a typed OIE settings repository that preserves the existing SQLite schema, connection, and transaction semantics.
-- [ ] 4.2 Delegate retained `DemoStore` OIE settings methods to the repository and prevent new OIE persistence methods from expanding `DemoStore`.
+- [x] 4.1 Introduce a typed OIE settings repository that preserves the existing SQLite schema, connection, and transaction semantics.
+- [x] 4.2 Delegate retained `DemoStore` OIE settings methods to the repository and prevent new OIE persistence methods from expanding `DemoStore`.
 - [ ] 4.3 Move workflow and integration coordination out of HTTP handlers into responsibility-specific services with injected clients and repositories.
 - [ ] 4.4 Add or relocate focused repository and service tests for the extracted behavior.
 
