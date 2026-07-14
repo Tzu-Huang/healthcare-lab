@@ -47,6 +47,8 @@ from backend.clients.medplum import (
 from backend.clients import dcm4chee as dcm4chee_client
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
+from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as RuntimeGdtBridgeInboundWatcher
+from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
 from backend.lab_store import (
     DCM4CHEE_MWL_OPERATION_CREATE,
     DCM4CHEE_MWL_OPERATION_VERIFY,
@@ -2739,6 +2741,12 @@ class GdtBridgeInboundWatcher:
             self._stop_event.wait(self.poll_seconds)
 
 
+# Compatibility names now resolve to lifecycle implementations owned by
+# ``backend.runtime``. Workflow callbacks are injected by ``create_app``.
+OieResultListener = RuntimeOieResultListener
+GdtBridgeInboundWatcher = RuntimeGdtBridgeInboundWatcher
+
+
 def send_hl7_mllp_message(
     message: str,
     *,
@@ -3427,6 +3435,7 @@ def create_app(database_path: str | None = None) -> Flask:
     gdt_bridge_watcher = GdtBridgeInboundWatcher(
         store,
         app.config["GDT_BRIDGE_PATH"],
+        import_gdt_bridge_files,
         poll_seconds=app.config["GDT_BRIDGE_WATCH_POLL_SECONDS"],
         success_mode=app.config["GDT_BRIDGE_IMPORT_SUCCESS_MODE"],
         filename_profile=app.config["GDT_BRIDGE_FILENAME_PROFILE"],
@@ -3444,7 +3453,7 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.extensions["demo_store"] = store
     app.extensions["openemr_procedure_order_source"] = openemr_source
-    app.extensions["oie_result_listener"] = OieResultListener(store)
+    app.extensions["oie_result_listener"] = OieResultListener(store, accept_oie_result_payload)
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
 
     def get_auth_manager() -> MedplumAuthManager:

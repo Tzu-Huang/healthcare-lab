@@ -14,9 +14,9 @@
 
 ## 3. Runtime Component Extraction
 
-- [ ] 3.1 Move existing listeners, watchers, sockets, retry loops, and lifecycle state into responsibility-specific runtime modules.
-- [ ] 3.2 Preserve runtime construction, start/stop order, status reporting, and shutdown behavior through explicit composition hooks.
-- [ ] 3.3 Add or relocate focused runtime lifecycle tests before removing the corresponding implementations from `app.py`.
+- [x] 3.1 Move existing listeners, watchers, sockets, retry loops, and lifecycle state into responsibility-specific runtime modules.
+- [x] 3.2 Preserve runtime construction, start/stop order, status reporting, and shutdown behavior through explicit composition hooks.
+- [x] 3.3 Add or relocate focused runtime lifecycle tests before removing the corresponding implementations from `app.py`.
 
 ## 4. Repository and Service Boundaries
 
