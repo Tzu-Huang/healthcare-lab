@@ -5979,7 +5979,7 @@ class DemoStore:
         timestamp = now_iso()
         order_identifiers = [
             value
-            for code in ("6200", "8410")
+            for code in ("6330", "6200", "8410")
             for value in fields.get(code, [])
             if value
         ]
