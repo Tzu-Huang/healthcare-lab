@@ -1,8 +1,8 @@
 # Codex Code Review
 
-**Change:** `add-persistent-oie-settings-profile`  
-**Branch:** `feature/ZAC-45_add-persistent-oie-settings-profile`  
-**Base:** `main`  
+**Change:** `add-persistent-oie-settings-profile`
+**Branch:** `feature/ZAC-45_add-persistent-oie-settings-profile`
+**Base:** `main`
 **Verdict:** Changes requested
 
 ## Findings

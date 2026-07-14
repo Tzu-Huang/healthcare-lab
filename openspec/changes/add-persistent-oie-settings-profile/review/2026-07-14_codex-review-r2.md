@@ -1,8 +1,8 @@
 # Codex Code Review — Round 2
 
-**Change:** `add-persistent-oie-settings-profile`  
-**Branch:** `feature/ZAC-45_add-persistent-oie-settings-profile`  
-**Base:** `main`  
+**Change:** `add-persistent-oie-settings-profile`
+**Branch:** `feature/ZAC-45_add-persistent-oie-settings-profile`
+**Base:** `main`
 **Verdict:** Approved
 
 ## Findings
