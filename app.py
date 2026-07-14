@@ -4600,6 +4600,19 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
 
+    @app.get("/api/oie/settings")
+    def get_oie_settings():
+        return jsonify({"success": True, "item": store.get_oie_settings_profile()})
+
+    @app.put("/api/oie/settings")
+    def update_oie_settings():
+        payload = request.get_json(silent=True)
+        try:
+            item = store.update_oie_settings_profile(payload)
+        except SimulatorValidationError as exc:
+            return error_response(str(exc), 400)
+        return jsonify({"success": True, "item": item})
+
     @app.get("/api/oie/local-adt-patients")
     def list_oie_local_adt_patients():
         return jsonify(
