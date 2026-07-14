@@ -55,6 +55,7 @@ from backend.api.fhir import create_fhir_blueprint
 from backend.api.gdt import create_gdt_blueprint
 from backend.services.patient_workflow import PatientWorkflowService
 from backend.services.order_workflow import OrderWorkflowService
+from backend.services.oie_workflow import OieWorkflowService
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain import fhir as fhir_domain
@@ -3479,14 +3480,18 @@ def create_app(database_path: str | None = None) -> Flask:
     app.extensions["oie_result_listener"] = OieResultListener(store, accept_oie_result_payload)
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
     app.extensions["oie_settings_service"] = OieSettingsService(store.oie_settings_repository)
+    app.extensions["oie_workflow_service"] = OieWorkflowService(
+        store,
+        app.config,
+        app.extensions["oie_result_listener"],
+        result_handler=accept_oie_result_payload,
+        ack_parser=parse_hl7_ack,
+        order_sender_provider=lambda: send_hl7_mllp_message,
+    )
     app.register_blueprint(
         create_oie_blueprint(
-            app,
-            store,
             app.extensions["oie_settings_service"],
-            result_handler=accept_oie_result_payload,
-            ack_parser=parse_hl7_ack,
-            order_sender_provider=lambda: send_hl7_mllp_message,
+            app.extensions["oie_workflow_service"],
         )
     )
     app.register_blueprint(
