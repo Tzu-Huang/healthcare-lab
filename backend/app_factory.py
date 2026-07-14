@@ -56,6 +56,7 @@ from backend.api.gdt import create_gdt_blueprint
 from backend.services.patient_workflow import PatientWorkflowService
 from backend.services.order_workflow import OrderWorkflowService
 from backend.services.oie_workflow import OieWorkflowService
+from backend.services.gdt_workflow import GdtWorkflowService
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain import fhir as fhir_domain
@@ -3585,10 +3586,15 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.register_blueprint(
         create_gdt_blueprint(
-            app, store, is_internal_file=gdt_is_internal_or_temp_file,
-            has_supported_extension=gdt_has_supported_exchange_extension,
-            filename_binding_matches=gdt_filename_binding_matches,
-            bridge_importer=import_gdt_bridge_files,
+            GdtWorkflowService(
+                store,
+                app.config,
+                app.extensions["gdt_bridge_watcher"],
+                is_internal_file=gdt_is_internal_or_temp_file,
+                has_supported_extension=gdt_has_supported_exchange_extension,
+                filename_binding_matches=gdt_filename_binding_matches,
+                bridge_importer=import_gdt_bridge_files,
+            )
         )
     )
 
