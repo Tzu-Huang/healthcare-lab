@@ -53,6 +53,8 @@ from backend.api.patients import create_patients_blueprint
 from backend.api.orders import create_orders_blueprint
 from backend.api.fhir import create_fhir_blueprint
 from backend.api.gdt import create_gdt_blueprint
+from backend.services.patient_workflow import PatientWorkflowService
+from backend.services.order_workflow import OrderWorkflowService
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain import fhir as fhir_domain
@@ -3537,22 +3539,30 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.register_blueprint(
         create_patients_blueprint(
-            app,
-            store,
-            medplum_base_url=configured_medplum_base_url,
-            auth_manager=get_auth_manager,
-            fhir_sync=sync_fhir_workflow_record_to_medplum,
-            dicom_patient_sync=sync_patient_to_dcm4chee,
-            dcm_result_refresh=refresh_patient_dcm4chee_results,
-            dcm_profile=dcm4chee_profile_from_config,
+            PatientWorkflowService(
+                store,
+                app.config,
+                medplum_base_url=configured_medplum_base_url,
+                auth_manager=get_auth_manager,
+                fhir_sync=sync_fhir_workflow_record_to_medplum,
+                dicom_patient_sync=sync_patient_to_dcm4chee,
+                dcm_result_refresh=refresh_patient_dcm4chee_results,
+                dcm_profile=dcm4chee_profile_from_config,
+            )
         )
     )
     app.register_blueprint(
         create_orders_blueprint(
-            app, store, medplum_base_url=configured_medplum_base_url,
-            auth_manager=get_auth_manager, fhir_sync=sync_fhir_workflow_record_to_medplum,
-            dcm_sync=sync_order_to_dcm4chee_mwl, dcm_verify=verify_order_dcm4chee_mwl,
-            dcm_profile=dcm4chee_profile_from_config,
+            OrderWorkflowService(
+                store,
+                app.config,
+                medplum_base_url=configured_medplum_base_url,
+                auth_manager=get_auth_manager,
+                fhir_sync=sync_fhir_workflow_record_to_medplum,
+                dcm_sync=sync_order_to_dcm4chee_mwl,
+                dcm_verify=verify_order_dcm4chee_mwl,
+                dcm_profile=dcm4chee_profile_from_config,
+            )
         )
     )
     app.register_blueprint(
