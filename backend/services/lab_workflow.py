@@ -39,7 +39,7 @@ from backend.lab_operations import (
     DockerSocketLabOperationAdapter,
     LabOperationError,
 )
-from backend.runtime.gdt_bridge_health import validate_gdt_bridge_dirs
+from backend.repositories.gdt_bridge_health import validate_gdt_bridge_dirs
 from backend.services.fhir_workflow import (
     fetch_fhir_diagnostic_report_bundle,
     fetch_fhir_service_requests,

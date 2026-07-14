@@ -219,6 +219,19 @@ class ArchitectureContractTest(unittest.TestCase):
                     f"{path.relative_to(ROOT)} must depend on runtime ports, not DemoStore.",
                 )
 
+    def test_services_and_repositories_do_not_import_runtime(self):
+        for package in ("services", "repositories"):
+            for path in (BACKEND / package).glob("*.py"):
+                modules = imported_modules(path)
+                with self.subTest(path=path.relative_to(ROOT)):
+                    self.assertFalse(
+                        any(
+                            name == "backend.runtime" or name.startswith("backend.runtime.")
+                            for name in modules
+                        ),
+                        f"{path.relative_to(ROOT)} must not depend outward on runtime modules.",
+                    )
+
     def test_lab_repository_port_declares_consumed_operations(self):
         path = BACKEND / "services" / "lab_workflow.py"
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -255,7 +268,7 @@ class ArchitectureContractTest(unittest.TestCase):
                 for node in ast.walk(tree)
             ):
                 owners.append(path.relative_to(ROOT).as_posix())
-        self.assertEqual(["backend/runtime/gdt_bridge_health.py"], owners)
+        self.assertEqual(["backend/repositories/gdt_bridge_health.py"], owners)
 
     def test_configuration_does_not_import_concrete_store(self):
         path = BACKEND / "config.py"
