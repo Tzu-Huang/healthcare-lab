@@ -5,36 +5,24 @@ TBD - created by archiving change openemr-gdt-backend-verify. Update Purpose aft
 ## Requirements
 ### Requirement: OpenEMR/GDT backend verification reports required runtime dependencies
 
-Healthcare Lab SHALL provide a backend OpenEMR/GDT verification result that reports OpenEMR HTTP reachability, OpenEMR MariaDB connectivity, required OpenEMR procedure-order query readiness, and GDT shared-folder access as structured check steps.
+Healthcare Lab SHALL treat OpenEMR backend verification as an optional integration and SHALL NOT require OpenEMR HTTP or MariaDB for the default local GDT runtime.
 
-#### Scenario: All required backend checks pass
+#### Scenario: Default local GDT runtime is used
 
-- **WHEN** the default Docker runtime has reachable OpenEMR HTTP, reachable OpenEMR MariaDB, query-ready OpenEMR procedure-order tables, and a writable GDT bridge folder
-- **THEN** the backend verify result reports the required OpenEMR/GDT steps as `Healthy`
+- **WHEN** OpenEMR is not configured or provisioned
+- **THEN** Healthcare Lab can run its local GDT order, bridge, watcher, and result workflows
+- **AND** missing OpenEMR HTTP or MariaDB is not a required GDT runtime failure
 
-#### Scenario: OpenEMR HTTP is unreachable
+#### Scenario: Optional OpenEMR integration is configured
 
-- **WHEN** OpenEMR HTTP cannot be reached through the configured runtime endpoint
-- **THEN** the backend verify result marks the OpenEMR HTTP step as a required failure
-- **AND** the overall backend verify result is not `Healthy`
-
-#### Scenario: OpenEMR MariaDB is unreachable
-
-- **WHEN** the lab app cannot connect to OpenEMR MariaDB using the default runtime settings
-- **THEN** the backend verify result marks the MariaDB connection step as a required failure
-- **AND** the overall backend verify result is not `Healthy`
-
-#### Scenario: Required OpenEMR order schema is unavailable
-
-- **WHEN** the lab app can connect to MariaDB but the required OpenEMR procedure-order query cannot run because required tables or query fields are unavailable
-- **THEN** the backend verify result marks the OpenEMR order schema/query step as a required failure
-- **AND** the overall backend verify result is not `Healthy`
+- **WHEN** an operator configures an external OpenEMR HTTP endpoint and procedure-order database source
+- **THEN** the OpenEMR verification path reports HTTP reachability, MariaDB connectivity, procedure-order query readiness, and GDT shared-folder access as structured check steps
 
 #### Scenario: GDT bridge folder is not writable
 
 - **WHEN** the configured GDT bridge folder structure cannot be created, written, or read by the lab app
-- **THEN** the backend verify result marks the GDT folder contract step as a required failure
-- **AND** the overall backend verify result is not `Healthy`
+- **THEN** the local GDT verification marks the folder contract as a required failure
+- **AND** the failure is independent of OpenEMR availability
 
 ### Requirement: Missing ECG orders degrade verification without hiding backend readiness
 
