@@ -1,5 +1,8 @@
+import json
 import unittest
+from unittest.mock import Mock, patch
 
+from backend.domain.errors import LabOperationError
 from backend.domain.statuses import (
     FHIR_SYNC_STATUS_SYNCED,
     ORDER_STATUS_ACCEPTED,
@@ -7,6 +10,10 @@ from backend.domain.statuses import (
 )
 from backend.services.fhir_workflow import FhirWorkflowService
 from backend.services.gdt_workflow import GdtConfigurationConflict, GdtWorkflowService
+from backend.services.lab_workflow import (
+    DashboardWorkflowService,
+    LabServerWorkflowService,
+)
 from backend.services.oie_workflow import OieTransportError, OieWorkflowService
 from backend.services.order_workflow import OrderWorkflowService
 from backend.services.patient_workflow import PatientWorkflowService
@@ -75,6 +82,26 @@ class Listener:
 
     def stop(self):
         return {"running": False}
+
+
+class LabWorkflowRepository:
+    def __init__(self, servers):
+        self.servers = servers
+        self.operations = []
+
+    def list_lab_servers(self):
+        return self.servers
+
+    def get_lab_server(self, server_id):
+        return next(item for item in self.servers if item["id"] == server_id)
+
+    def list_lab_operations(self, server_id=None, *, limit=20):
+        return self.operations[-limit:]
+
+    def record_lab_operation(self, server_id, **values):
+        operation = {"serverId": server_id, **values}
+        self.operations.append(operation)
+        return operation
 
 
 class WorkflowServiceTest(unittest.TestCase):
@@ -178,6 +205,168 @@ class WorkflowServiceTest(unittest.TestCase):
 
         self.assertEqual(ORDER_STATUS_TRANSPORT_ERROR, raised.exception.item["order_status"])
         self.assertEqual("connection refused", raised.exception.item["transport_error"])
+
+    def test_lab_check_all_skips_disabled_servers_and_decorates_results(self):
+        repository = LabWorkflowRepository(
+            [
+                {"id": 1, "name": "disabled", "enabled": False},
+                {"id": 2, "name": "enabled", "enabled": True},
+            ]
+        )
+        health_checker = Mock(
+            return_value={"id": 2, "name": "enabled", "enabled": True, "checked": True}
+        )
+        service = self._lab_service(repository, health_checker=health_checker)
+
+        items = service.check_all_servers()
+
+        health_checker.assert_called_once_with(repository, 2)
+        self.assertEqual(
+            [
+                {"id": 1, "name": "disabled", "enabled": False, "available": True},
+                {
+                    "id": 2,
+                    "name": "enabled",
+                    "enabled": True,
+                    "checked": True,
+                    "available": True,
+                },
+            ],
+            items,
+        )
+
+    def test_lab_smoke_all_records_disabled_and_keeps_partial_failures(self):
+        servers = [
+            {"id": 1, "name": "disabled", "enabled": False},
+            {"id": 2, "name": "healthy", "enabled": True},
+            {"id": 3, "name": "failed", "enabled": True},
+        ]
+        repository = LabWorkflowRepository(servers)
+
+        def run_operation(**values):
+            if values["server_id"] == 3:
+                raise LabOperationError(
+                    json.dumps(
+                        {
+                            "server": servers[2],
+                            "operation": {"result": "failed"},
+                            "error": "smoke failed",
+                        }
+                    )
+                )
+            return {"server": servers[1], "operation": {"result": "success"}}
+
+        service = self._lab_service(repository, operation_runner=run_operation)
+
+        results = service.smoke_all_servers()
+
+        self.assertEqual(["skipped"], [item["result"] for item in repository.operations])
+        self.assertEqual("Server is disabled.", repository.operations[0]["error_text"])
+        self.assertEqual("success", results[1]["operation"]["result"])
+        self.assertEqual("failed", results[2]["operation"]["result"])
+        self.assertEqual("smoke failed", results[2]["error"])
+
+    def test_lab_execute_operation_passes_repository_and_requested_target(self):
+        repository = LabWorkflowRepository([])
+        operation_runner = Mock(return_value={"operation": {"result": "success"}})
+        service = self._lab_service(repository, operation_runner=operation_runner)
+
+        result = service.execute_operation(9, "logs", lines=75)
+
+        self.assertEqual("success", result["operation"]["result"])
+        operation_runner.assert_called_once_with(
+            app=service.app,
+            store=repository,
+            server_id=9,
+            action="logs",
+            lines=75,
+        )
+
+    def test_dashboard_check_all_keeps_results_when_one_service_fails(self):
+        repository = LabWorkflowRepository([])
+
+        def check(_repository, service_id):
+            if service_id == "broken":
+                raise LabOperationError("unavailable")
+            return [{"id": 1, "overallStatus": "Healthy"}]
+
+        service = DashboardWorkflowService(object(), repository, health_check=check, operation_runner=Mock())
+        service.snapshot = Mock(
+            return_value={"items": [], "summary": {}, "resources": {}, "events": []}
+        )
+
+        with patch.dict(
+            "backend.services.lab_workflow.LAB_DASHBOARD_SERVICE_GROUPS",
+            {"healthy": {}, "broken": {}},
+            clear=True,
+        ):
+            payload = service.check_all()
+
+        self.assertEqual(
+            [
+                {
+                    "serviceId": "healthy",
+                    "servers": [{"id": 1, "overallStatus": "Healthy"}],
+                },
+                {"serviceId": "broken", "error": "unavailable"},
+            ],
+            payload["results"],
+        )
+        self.assertEqual([], payload["items"])
+
+    def test_dashboard_action_targets_primary_and_ordered_backing_services(self):
+        repository = LabWorkflowRepository([])
+        runner = Mock(
+            return_value={"operation": {"result": "success"}, "output": "restarted"}
+        )
+        service = DashboardWorkflowService(
+            object(), repository, health_check=Mock(), operation_runner=runner
+        )
+        group = {
+            "primary": "primary",
+            "backingService": "primary-svc",
+            "children": (
+                {"service": "database"},
+                {"service": "cache"},
+            ),
+        }
+        servers = [
+            {"id": 11, "name": "secondary"},
+            {"id": 22, "name": "primary"},
+        ]
+
+        with (
+            patch(
+                "backend.services.lab_workflow.dashboard_servers_for_group",
+                return_value=(group, servers),
+            ),
+            patch(
+                "backend.services.lab_workflow.dashboard_group_item",
+                return_value={"id": "group"},
+            ),
+        ):
+            result = service.run_action("group", "restart", lines=40)
+
+        runner.assert_called_once_with(
+            app=service.app,
+            store=repository,
+            server_id=22,
+            action="restart",
+            lines=40,
+            backing_services=["database", "cache", "primary-svc"],
+        )
+        self.assertEqual("restarted", result["output"])
+
+    @staticmethod
+    def _lab_service(repository, *, health_checker=None, operation_runner=None):
+        return LabServerWorkflowService(
+            object(),
+            repository,
+            health_checker=health_checker or Mock(),
+            availability_decorator=lambda _app, item: {**item, "available": True},
+            operation_runner=operation_runner or Mock(),
+            operator_resolver=lambda: "tester",
+        )
 
     @staticmethod
     def _oie_service(repository, sender):
