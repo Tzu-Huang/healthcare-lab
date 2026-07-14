@@ -4,14 +4,26 @@ from __future__ import annotations
 
 import socket
 import threading
-from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Protocol
 
 from backend.domain.errors import ValidationError
-from backend.lab_store import DemoStore
 
-ResultHandler = Callable[[DemoStore, str], tuple[str, dict[str, Any], int]]
+
+class OieResultStorePort(Protocol):
+    def record_oie_result(
+        self, raw_message: str, parsed: dict[str, str]
+    ) -> dict[str, Any]: ...
+
+    def record_oie_result_error(
+        self, raw_message: str, message_type: str, error: str
+    ) -> dict[str, Any]: ...
+
+
+class ResultHandler(Protocol):
+    def __call__(
+        self, store: OieResultStorePort, payload: str
+    ) -> tuple[str, dict[str, Any], int]: ...
 
 
 def mllp_frame(message: str) -> bytes:
@@ -28,7 +40,7 @@ def mllp_unframe(payload: bytes) -> str:
 
 
 class OieResultListener:
-    def __init__(self, store: DemoStore, result_handler: ResultHandler):
+    def __init__(self, store: OieResultStorePort, result_handler: ResultHandler):
         self.store = store
         self._result_handler = result_handler
         self.host = "0.0.0.0"

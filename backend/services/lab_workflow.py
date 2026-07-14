@@ -39,6 +39,7 @@ from backend.lab_operations import (
     DockerSocketLabOperationAdapter,
     LabOperationError,
 )
+from backend.runtime.gdt_bridge_health import validate_gdt_bridge_dirs
 from backend.services.fhir_workflow import (
     fetch_fhir_diagnostic_report_bundle,
     fetch_fhir_service_requests,
@@ -53,30 +54,48 @@ class ApplicationPort(Protocol):
 class LabRepositoryPort(Protocol):
     """Structural port implemented by DemoStore during the compatibility migration."""
 
+    def get_lab_server(self, server_id: int) -> dict[str, Any]: ...
+
+    def list_lab_servers(self) -> list[dict[str, Any]]: ...
+
+    def update_lab_server_health(
+        self,
+        server_id: int,
+        *,
+        overall_status: str,
+        process_status: str,
+        application_status: str,
+        protocol_status: str,
+        recent_error: str = "",
+        version: str = "",
+    ) -> dict[str, Any]: ...
+
+    def record_lab_operation(
+        self,
+        server_id: int | None,
+        *,
+        service_name: str,
+        action: str,
+        operator: str,
+        result: str,
+        duration_ms: int = 0,
+        progress: list[dict[str, Any]] | None = None,
+        error_text: str = "",
+        started_at: str = "",
+        completed_at: str = "",
+    ) -> dict[str, Any]: ...
+
+    def list_lab_operations(
+        self, server_id: int | None = None, *, limit: int = 20
+    ) -> list[dict[str, Any]]: ...
+
+    def list_gdt_orders(self) -> list[dict[str, Any]]: ...
+
 
 def current_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
     )
-
-
-def validate_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
-    directories = ensure_gdt_bridge_dirs(base_path)
-    probe_name = f".write-test-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-    for name in ("inbox", "outbox"):
-        if not directories[name].is_dir():
-            raise SimulatorValidationError(
-                f"GDT {name} folder does not exist: {directories[name]}"
-            )
-        probe_path = directories[name] / probe_name
-        try:
-            probe_path.write_text("ok", encoding="utf-8")
-            probe_path.unlink()
-        except OSError as exc:
-            raise SimulatorValidationError(
-                f"GDT {name} folder is not writable: {directories[name]}"
-            ) from exc
-    return directories
 
 
 def run_lab_operation(
@@ -523,9 +542,9 @@ def describe_medplum_diagnostic_report_failure(exc: Exception) -> str:
 def run_gdt_bridge_smoke(app: ApplicationPort, server: dict[str, Any]) -> list[dict[str, Any]]:
     steps = [run_lab_application_check(server)]
     application_step = smoke_step("application_endpoint", steps[0][0], steps[0][1], required=False)
-    bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
-    probe_path = bridge_dirs["root"] / ".lab-smoke-probe"
     try:
+        bridge_dirs = validate_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
+        probe_path = bridge_dirs["root"] / ".lab-smoke-probe"
         probe_path.write_text("ok", encoding="utf-8")
         read_back = probe_path.read_text(encoding="utf-8")
         probe_path.unlink(missing_ok=True)
@@ -534,14 +553,20 @@ def run_gdt_bridge_smoke(app: ApplicationPort, server: dict[str, Any]) -> list[d
             "Healthy" if read_back == "ok" else "Down",
             str(bridge_dirs["root"]),
         )
-    except OSError as exc:
+        structure_step = smoke_step("folder_structure", "Healthy", str(bridge_dirs["root"]))
+        contract_step = smoke_step(
+            "bridge_folder_contract", "Healthy", "GDT bridge folders are writable."
+        )
+    except (OSError, SimulatorValidationError) as exc:
         folder_step = smoke_step("folder_write_read", "Down", str(exc))
+        structure_step = smoke_step("folder_structure", "Down", str(exc))
+        contract_step = smoke_step("bridge_folder_contract", "Down", str(exc))
     openemr_source = app.extensions.get("openemr_procedure_order_source")
     openemr_status = openemr_source.status() if openemr_source else {"configured": False}
     return [
-        smoke_step("folder_structure", "Healthy", str(bridge_dirs["root"])),
+        structure_step,
         folder_step,
-        smoke_step("bridge_folder_contract", "Healthy", "GDT bridge folders are writable."),
+        contract_step,
         smoke_step(
             "openemr_source_status",
             "Healthy" if openemr_status.get("configured") else "Unknown",
@@ -554,7 +579,7 @@ def run_gdt_bridge_smoke(app: ApplicationPort, server: dict[str, Any]) -> list[d
 
 def run_gdt_folder_contract_smoke(app: ApplicationPort) -> dict[str, Any]:
     try:
-        bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
+        bridge_dirs = validate_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
         probe_path = bridge_dirs["root"] / ".lab-smoke-probe"
         probe_path.write_text("ok", encoding="utf-8")
         read_back = probe_path.read_text(encoding="utf-8")
@@ -570,7 +595,7 @@ def run_gdt_folder_contract_smoke(app: ApplicationPort) -> dict[str, Any]:
             "Healthy",
             f"GDT bridge folders are writable at {bridge_dirs['root']}.",
         )
-    except OSError as exc:
+    except (OSError, SimulatorValidationError) as exc:
         return smoke_step("gdt_folder_contract", "Down", str(exc))
 
 

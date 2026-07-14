@@ -54,6 +54,28 @@ def imported_modules(path: Path) -> set[str]:
     return imported_modules_from_tree(tree)
 
 
+def protocol_methods(tree: ast.AST, protocol_name: str) -> set[str]:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == protocol_name:
+            return {
+                item.name
+                for item in node.body
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+            }
+    return set()
+
+
+def receiver_method_calls(tree: ast.AST, receiver: str) -> set[str]:
+    return {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == receiver
+    }
+
+
 def dotted_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -186,6 +208,54 @@ class ArchitectureContractTest(unittest.TestCase):
                     modules,
                     f"{path.relative_to(ROOT)} must depend on domain types and repository ports, not DemoStore.",
                 )
+
+    def test_runtime_does_not_import_concrete_store(self):
+        for path in (BACKEND / "runtime").glob("*.py"):
+            modules = imported_modules(path)
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertNotIn(
+                    "backend.lab_store",
+                    modules,
+                    f"{path.relative_to(ROOT)} must depend on runtime ports, not DemoStore.",
+                )
+
+    def test_lab_repository_port_declares_consumed_operations(self):
+        path = BACKEND / "services" / "lab_workflow.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        declared = protocol_methods(tree, "LabRepositoryPort")
+        consumed = receiver_method_calls(tree, "store") | {"list_lab_servers"}
+        self.assertTrue(declared, "LabRepositoryPort must declare a structural repository surface.")
+        self.assertEqual(
+            set(),
+            consumed - declared,
+            f"LabRepositoryPort is missing consumed operations: {sorted(consumed - declared)}",
+        )
+
+    def test_runtime_store_ports_declare_operations(self):
+        expected = {
+            "gdt_bridge_watcher.py": ("GdtBridgeStorePort", {"record_gdt_result"}),
+            "oie_result_listener.py": (
+                "OieResultStorePort",
+                {"record_oie_result", "record_oie_result_error"},
+            ),
+        }
+        for filename, (protocol_name, operations) in expected.items():
+            path = BACKEND / "runtime" / filename
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertEqual(operations, protocol_methods(tree, protocol_name))
+
+    def test_gdt_bridge_directory_validation_has_one_owner(self):
+        owners = []
+        for path in BACKEND.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            if any(
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "validate_gdt_bridge_dirs"
+                for node in ast.walk(tree)
+            ):
+                owners.append(path.relative_to(ROOT).as_posix())
+        self.assertEqual(["backend/runtime/gdt_bridge_health.py"], owners)
 
     def test_configuration_does_not_import_concrete_store(self):
         path = BACKEND / "config.py"

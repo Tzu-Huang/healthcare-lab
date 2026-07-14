@@ -18,7 +18,17 @@ from backend.domain.statuses import (
 HL7_V2_MSH_SUFFIX = "2.5.1||||||UNICODE UTF-8"
 
 
-class OieRepositoryPort(Protocol):
+class OieResultRepositoryPort(Protocol):
+    def record_oie_result(
+        self, raw_message: str, parsed: dict[str, str]
+    ) -> dict[str, Any]: ...
+
+    def record_oie_result_error(
+        self, raw_message: str, message_type: str, error: str
+    ) -> dict[str, Any]: ...
+
+
+class OieRepositoryPort(OieResultRepositoryPort, Protocol):
     def list_oie_local_adt_inventory(self) -> list[dict[str, Any]]: ...
 
     def list_oie_local_order_inventory(self) -> list[dict[str, Any]]: ...
@@ -260,7 +270,9 @@ def build_hl7_ack(
     return "\r".join(segments)
 
 
-def accept_oie_result_payload(store: OieRepositoryPort, payload: str) -> tuple[str, dict[str, Any], int]:
+def accept_oie_result_payload(
+    store: OieResultRepositoryPort, payload: str
+) -> tuple[str, dict[str, Any], int]:
     try:
         parsed = parse_oru_summary(payload)
         if parsed["messageType"] not in {"ORU^R01", "ORU^W01"}:

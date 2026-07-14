@@ -15,7 +15,11 @@ from backend.domain.errors import SimulatorValidationError
 from backend.domain.gdt import ensure_gdt_bridge_dirs
 
 
-class GdtRepositoryPort(Protocol):
+class GdtResultRepositoryPort(Protocol):
+    def record_gdt_result(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class GdtRepositoryPort(GdtResultRepositoryPort, Protocol):
     def list_gdt_order_records(self) -> list[dict[str, Any]]: ...
 
     def get_gdt_order_record(self, order_id: int) -> dict[str, Any]: ...
@@ -31,8 +35,6 @@ class GdtRepositoryPort(Protocol):
     def list_gdt_messages(self) -> list[dict[str, Any]]: ...
 
     def list_gdt_events(self, order_id: int) -> list[dict[str, Any]]: ...
-
-    def record_gdt_result(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
 class GdtWatcherPort(Protocol):
@@ -395,7 +397,7 @@ def discover_gdt_inbound_candidates(
 
 
 def import_gdt_bridge_files(
-    store: GdtRepositoryPort,
+    store: GdtResultRepositoryPort,
     bridge_root: str | Path,
     *,
     filename: str = "",
