@@ -3480,6 +3480,8 @@ def create_app(database_path: str | None = None) -> Flask:
             store,
             health_checker=run_lab_server_health_check,
             decorate_availability=decorate_lab_operation_availability,
+            operation_runner=run_lab_operation,
+            operator_resolver=resolve_lab_operator,
         )
     )
 
@@ -4529,92 +4531,6 @@ def create_app(database_path: str | None = None) -> Flask:
                 "output": result["output"],
             }
         )
-
-    def execute_lab_server_operation(server_id: int, action: str):
-        payload = request.get_json(silent=True) or {}
-        try:
-            result = run_lab_operation(
-                app=app,
-                store=store,
-                server_id=server_id,
-                action=action,
-                lines=int(payload.get("lines", 200) or 200),
-            )
-        except KeyError:
-            return error_response("Server was not found.", 404)
-        except SimulatorValidationError as exc:
-            return error_response(str(exc), 400)
-        except LabOperationError as exc:
-            try:
-                body = json.loads(str(exc))
-            except json.JSONDecodeError:
-                body = {"operation": None, "output": "", "error": str(exc)}
-            return jsonify({"success": False, **body}), 500
-        return jsonify({"success": True, **result})
-
-    @app.post("/api/lab/servers/<int:server_id>/start")
-    def start_lab_server(server_id: int):
-        return execute_lab_server_operation(server_id, "start")
-
-    @app.post("/api/lab/servers/<int:server_id>/status")
-    def status_lab_server(server_id: int):
-        return execute_lab_server_operation(server_id, "status")
-
-    @app.post("/api/lab/servers/<int:server_id>/stop")
-    def stop_lab_server(server_id: int):
-        return execute_lab_server_operation(server_id, "stop")
-
-    @app.post("/api/lab/servers/<int:server_id>/restart")
-    def restart_lab_server(server_id: int):
-        return execute_lab_server_operation(server_id, "restart")
-
-    @app.post("/api/lab/servers/<int:server_id>/smoke")
-    def smoke_lab_server(server_id: int):
-        return execute_lab_server_operation(server_id, "smoke")
-
-    @app.post("/api/lab/servers/<int:server_id>/logs")
-    def logs_lab_server(server_id: int):
-        return execute_lab_server_operation(server_id, "logs")
-
-    @app.post("/api/lab/servers/smoke-all")
-    def smoke_all_lab_servers():
-        results = []
-        for item in store.list_lab_servers():
-            if not item["enabled"]:
-                results.append(
-                    {
-                        "server": item,
-                        "operation": store.record_lab_operation(
-                            item["id"],
-                            service_name=item["name"],
-                            action="smoke",
-                            operator=resolve_lab_operator(),
-                            result="skipped",
-                            progress=[{"step": "smoke", "status": "skipped"}],
-                            error_text="Server is disabled.",
-                        ),
-                        "output": "",
-                        "command": [],
-                    }
-                )
-                continue
-            try:
-                results.append(
-                    run_lab_operation(
-                        app=app,
-                        store=store,
-                        server_id=int(item["id"]),
-                        action="smoke",
-                    )
-                )
-            except LabOperationError as exc:
-                try:
-                    results.append(json.loads(str(exc)))
-                except json.JSONDecodeError:
-                    results.append({"server": item, "operation": None, "error": str(exc)})
-            except SimulatorValidationError as exc:
-                results.append({"server": item, "operation": None, "error": str(exc)})
-        return jsonify({"success": True, "items": results})
 
     return app
 
