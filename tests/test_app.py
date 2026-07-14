@@ -3260,6 +3260,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(item["gdtTestCode"], "EKG01")
         self.assertEqual(item["gdtPatientNumber"], f"GDT-PAT-{patient['id']:06d}")
         self.assertEqual(item["messages"][0]["parsedFields"]["8402"], ["EKG01"])
+        self.assertEqual(item["messages"][0]["parsedFields"]["6200"], ["06072026"])
+        self.assertEqual(item["messages"][0]["parsedFields"]["6330"], [item["localGdtOrderNumber"]])
+        self.assertNotIn("6220", item["messages"][0]["parsedFields"])
+        self.assertNotIn("6228", item["messages"][0]["parsedFields"])
         self.assertEqual(item["attachments"][0]["url"], "http://localhost/reports/demo.pdf")
         self.assertIn("8402EKG01", item["payload"])
 
