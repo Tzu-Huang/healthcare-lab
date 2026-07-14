@@ -9,7 +9,7 @@ from typing import Any, Protocol
 
 from backend.config import normalize_gdt_bridge_success_mode, normalize_gdt_filename_profile
 from backend.domain.errors import ValidationError
-from backend.runtime.gdt_bridge_health import validate_gdt_bridge_dirs
+from backend.repositories.gdt_bridge_health import validate_gdt_bridge_dirs
 
 
 class GdtBridgeStorePort(Protocol):

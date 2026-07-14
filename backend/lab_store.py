@@ -83,7 +83,7 @@ from backend.domain.statuses import (
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_TRANSPORT_ERROR,
 )
-from backend.runtime.gdt_bridge_health import validate_gdt_bridge_dirs
+from backend.repositories.gdt_bridge_health import validate_gdt_bridge_dirs
 
 HL7_V2_VERSION = "2.5.1"
 HL7_V2_CHARSET = "UNICODE UTF-8"

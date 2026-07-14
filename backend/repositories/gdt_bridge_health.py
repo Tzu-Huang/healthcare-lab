@@ -1,4 +1,4 @@
-"""Filesystem health checks for the GDT bridge runtime."""
+"""Filesystem health checks for the file-backed GDT bridge repository."""
 
 from __future__ import annotations
 
