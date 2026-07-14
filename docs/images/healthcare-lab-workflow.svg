@@ -65,7 +65,7 @@
 
     <rect x="764" y="254" width="392" height="90" rx="12" fill="#ffffff" stroke="#cddbd7"/>
     <text x="960" y="292" text-anchor="middle" class="lane-label">FHIR R4 REST API</text>
-    <text x="960" y="324" text-anchor="middle" class="lane-sub">OAuth / Patient-ServiceRequest-Task sync</text>
+    <text x="960" y="324" text-anchor="middle" class="lane-sub">OAuth / Patient-ServiceRequest sync</text>
 
     <rect x="1190" y="424" width="316" height="90" rx="12" fill="#ffffff" stroke="#cddbd7"/>
     <text x="1348" y="462" text-anchor="middle" class="lane-label">GDT 2.1 Bridge</text>
