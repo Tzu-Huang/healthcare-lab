@@ -584,7 +584,6 @@ class HealthcareLabStoreTests(unittest.TestCase):
             {
                 "Patient",
                 "ServiceRequest",
-                "Task",
                 "Binary",
                 "Observation",
                 "DocumentReference",
@@ -596,8 +595,10 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertIn("Patient", mappings["ServiceRequest"]["dependsOn"])
         self.assertIn("DocumentReference", mappings["DiagnosticReport"]["dependsOn"])
         self.assertIn("DiagnosticReport", mappings["Provenance"]["dependsOn"])
+        self.assertNotIn("Task", mappings)
+        self.assertNotIn("Task", mappings["Provenance"]["dependsOn"])
 
-    def test_fhir_order_builds_service_request_task_and_requires_synced_patient(self):
+    def test_fhir_order_builds_service_request_and_requires_synced_patient(self):
         patient = self.store.create_patient_record(
             {
                 "mode": "fhir",
@@ -658,21 +659,11 @@ class HealthcareLabStoreTests(unittest.TestCase):
             medplum_resource_id="sr-1",
             medplum_resource_reference="ServiceRequest/sr-1",
         )
-        task = self.store.create_order_task_fhir_workflow_record(
-            order,
-            patient_reference="Patient/patient-1",
-            service_request_reference="ServiceRequest/sr-1",
-        )
 
         self.assertEqual(service_request["identifier"]["value"], f"local-order-records-{order['id']}")
-        self.assertEqual(task["identifier"]["value"], f"local-order-records-{order['id']}")
-        self.assertEqual(task["resource"]["status"], "requested")
-        self.assertEqual(task["resource"]["intent"], "order")
-        self.assertEqual(task["resource"]["for"]["reference"], "Patient/patient-1")
-        self.assertEqual(task["resource"]["focus"]["reference"], "ServiceRequest/sr-1")
         refreshed = self.store.get_order_record(order["id"])
         self.assertEqual(refreshed["fhir"]["serviceRequest"]["resourceType"], "ServiceRequest")
-        self.assertEqual(refreshed["fhir"]["task"]["resourceType"], "Task")
+        self.assertEqual(set(refreshed["fhir"]), {"serviceRequest"})
 
     def test_fhir_sync_attempts_and_failure_details_are_preserved(self):
         item = self.store.create_fhir_workflow_record(
