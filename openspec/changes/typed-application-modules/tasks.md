@@ -30,7 +30,7 @@
 - [ ] 5.1 Move dashboard and infrastructure HTTP routes into typed API Blueprints without changing their contracts.
 - [ ] 5.2 Move patient, order, result, GDT, and OIE settings routes into responsibility-specific API Blueprints without changing their contracts.
 - [ ] 5.3 Implement `backend/app_factory.py` as the composition root for configuration, dependencies, Blueprint registration, and runtime startup.
-- [ ] 5.4 Reduce `app.py` to process entrypoint and explicitly required compatibility wiring, then tighten the architecture contract allowlist.
+- [x] 5.4 Reduce `app.py` to process entrypoint and explicitly required compatibility wiring, then tighten the architecture contract allowlist.
 
 ## 6. Test Organization and Regression Preservation
 
