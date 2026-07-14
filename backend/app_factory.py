@@ -46,6 +46,7 @@ from backend.clients.medplum import (
 )
 from backend.clients import dcm4chee as dcm4chee_client
 from backend.api.oie import create_oie_settings_blueprint
+from backend.api.lab_servers import create_lab_servers_blueprint
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain import fhir as fhir_domain
@@ -3473,6 +3474,14 @@ def create_app(database_path: str | None = None) -> Flask:
     app.register_blueprint(
         create_oie_settings_blueprint(app.extensions["oie_settings_service"])
     )
+    app.register_blueprint(
+        create_lab_servers_blueprint(
+            app,
+            store,
+            health_checker=run_lab_server_health_check,
+            decorate_availability=decorate_lab_operation_availability,
+        )
+    )
 
     def get_auth_manager() -> MedplumAuthManager:
         return MedplumAuthManager(
@@ -4359,17 +4368,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return jsonify({"success": False, "item": item, "error": str(exc)}), 502
         return jsonify({"success": True, "item": item})
 
-    @app.get("/api/lab/server-metadata")
-    def lab_server_metadata():
-        return jsonify(
-            {
-                "success": True,
-                "serverTypes": list(LAB_SERVER_TYPES),
-                "protocols": list(LAB_SERVER_PROTOCOLS),
-                "healthStatuses": list(LAB_HEALTH_STATUSES),
-            }
-        )
-
     @app.get("/api/dcm4chee/profile")
     @app.get("/api/dcm4chee/profiles/<profile_name>")
     def get_dcm4chee_profile(profile_name: str | None = None):
@@ -4529,85 +4527,6 @@ def create_app(database_path: str | None = None) -> Flask:
                 "child": dashboard_child_item(app, child),
                 "operation": result["operation"],
                 "output": result["output"],
-            }
-        )
-
-    @app.get("/api/lab/servers")
-    def list_lab_servers():
-        return jsonify(
-            {
-                "success": True,
-                "items": [
-                    decorate_lab_operation_availability(app, item)
-                    for item in store.list_lab_servers()
-                ],
-            }
-        )
-
-    @app.post("/api/lab/servers")
-    def create_lab_server():
-        payload = request.get_json(silent=True) or {}
-        try:
-            item = store.create_lab_server(payload)
-        except SimulatorValidationError as exc:
-            return error_response(str(exc), 400)
-        return jsonify({"success": True, "item": decorate_lab_operation_availability(app, item)}), 201
-
-    @app.get("/api/lab/servers/<int:server_id>")
-    def get_lab_server(server_id: int):
-        try:
-            item = store.get_lab_server(server_id)
-        except KeyError:
-            return error_response("Server was not found.", 404)
-        return jsonify({"success": True, "item": decorate_lab_operation_availability(app, item)})
-
-    @app.put("/api/lab/servers/<int:server_id>")
-    def update_lab_server(server_id: int):
-        payload = request.get_json(silent=True) or {}
-        try:
-            item = store.update_lab_server(server_id, payload)
-        except KeyError:
-            return error_response("Server was not found.", 404)
-        except SimulatorValidationError as exc:
-            return error_response(str(exc), 400)
-        return jsonify({"success": True, "item": decorate_lab_operation_availability(app, item)})
-
-    @app.post("/api/lab/servers/<int:server_id>/check")
-    def check_lab_server(server_id: int):
-        try:
-            item = run_lab_server_health_check(store, server_id)
-        except KeyError:
-            return error_response("Server was not found.", 404)
-        except SimulatorValidationError as exc:
-            return error_response(str(exc), 400)
-        return jsonify({"success": True, "item": decorate_lab_operation_availability(app, item)})
-
-    @app.post("/api/lab/servers/check-all")
-    def check_all_lab_servers():
-        checked = []
-        for item in store.list_lab_servers():
-            if not item["enabled"]:
-                checked.append(decorate_lab_operation_availability(app, item))
-                continue
-            checked.append(
-                decorate_lab_operation_availability(
-                    app,
-                    run_lab_server_health_check(store, int(item["id"])),
-                )
-            )
-        return jsonify({"success": True, "items": checked})
-
-    @app.get("/api/lab/servers/<int:server_id>/operations")
-    def lab_server_operation_history(server_id: int):
-        try:
-            store.get_lab_server(server_id)
-        except KeyError:
-            return error_response("Server was not found.", 404)
-        limit = int(request.args.get("limit", 20))
-        return jsonify(
-            {
-                "success": True,
-                "items": store.list_lab_operations(server_id, limit=limit),
             }
         )
 
