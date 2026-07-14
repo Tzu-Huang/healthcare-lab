@@ -205,7 +205,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn(b"GDT AP Simulator", response.data)
         self.assertNotIn(b"Submit to Medplum", response.data)
 
-    def test_frontend_exposes_dashboard_gdt_order_action(self):
+    def test_frontend_exposes_dashboard_children_and_gdt_workspace_order_action(self):
         app_js = Path(__file__).resolve().parents[1] / "frontend" / "static" / "app.js"
         script = app_js.read_text(encoding="utf-8")
 
@@ -248,8 +248,11 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('statusLabel === "Accepted" ? "success" : "error"', script)
         self.assertIn('return status === "Created" ? "Accepted" : "Error";', script)
         self.assertIn('["error", "rejected", "transport error"].includes(status) ? "Error" : "Accepted"', script)
-        self.assertIn('service.id === "openemr-gdt"', script)
-        self.assertIn("ECG Order", script)
+        self.assertNotIn('service.id === "openemr-gdt"', script)
+        self.assertIn("function dashboardServiceToggle(service)", script)
+        self.assertIn("function renderDashboardChild(service, child, body)", script)
+        self.assertIn("function runChildServiceAction(serviceId, childId, action)", script)
+        self.assertIn('byId("create-gdt-ecg-order").addEventListener', script)
         self.assertIn('"/api/gdt/orders"', script)
         self.assertIn('"/api/gdt/workbench"', script)
         self.assertIn("Preview GDT-OUT", script)
@@ -3661,15 +3664,25 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(item["status"], "Transport error")
         self.assertIn("connection refused", item["transportError"])
 
-    def test_dashboard_services_exposes_four_allowlisted_groups(self):
+    def test_dashboard_services_exposes_three_allowlisted_groups_with_children(self):
         response = self.client.get("/api/dashboard/services")
         self.assertEqual(response.status_code, 200)
         body = response.get_json()
         self.assertEqual(
             [item["id"] for item in body["items"]],
-            ["hl7-v2-oie", "fhir-medplum", "openemr-gdt", "dicom-dcm4chee"],
+            ["hl7-v2-oie", "fhir-medplum", "dicom-dcm4chee"],
         )
-        self.assertEqual(body["summary"]["total"], 4)
+        self.assertEqual(body["summary"]["total"], 3)
+        by_id = {item["id"]: item for item in body["items"]}
+        self.assertEqual(by_id["hl7-v2-oie"]["children"], [])
+        self.assertEqual(
+            [child["name"] for child in by_id["fhir-medplum"]["children"]],
+            ["medplum-redis-1", "medplum-postgres-1"],
+        )
+        self.assertEqual(
+            [child["name"] for child in by_id["dicom-dcm4chee"]["children"]],
+            ["ldap-1", "dcm4chee-db-1"],
+        )
         self.assertIn("resources", body)
         self.assertIn("events", body)
 
@@ -3688,7 +3701,25 @@ class HealthcareLabApiTests(unittest.TestCase):
         response = self.client.post("/api/dashboard/services/fhir-medplum/enable", json={})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(run_operation.call_args.kwargs["action"], "start")
+        self.assertEqual(
+            run_operation.call_args.kwargs["backing_services"],
+            ["medplum-redis", "medplum-postgres", "medplum"],
+        )
         self.assertIn("service", response.get_json())
+
+        stopped = self.client.post("/api/dashboard/services/fhir-medplum/disable", json={})
+        self.assertEqual(stopped.status_code, 200)
+        self.assertEqual(
+            run_operation.call_args.kwargs["backing_services"],
+            ["medplum", "medplum-postgres", "medplum-redis"],
+        )
+
+        restarted = self.client.post("/api/dashboard/services/dicom-dcm4chee/restart", json={})
+        self.assertEqual(restarted.status_code, 200)
+        self.assertEqual(
+            run_operation.call_args.kwargs["backing_services"],
+            ["ldap", "dcm4chee-db", "dcm4chee"],
+        )
 
         preview = self.client.get("/api/dashboard/services/fhir-medplum/restart-preview")
         self.assertEqual(preview.status_code, 200)
@@ -3706,7 +3737,7 @@ class HealthcareLabApiTests(unittest.TestCase):
 
     @patch("app.run_lab_operation")
     @patch("app.run_lab_server_health_check")
-    def test_dashboard_check_runs_health_check_for_every_group_component(
+    def test_dashboard_check_runs_health_check_for_primary_service(
         self, run_health_check, run_operation
     ):
         store = self.client.application.extensions["demo_store"]
@@ -3723,34 +3754,42 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         run_health_check.side_effect = mark_healthy
 
-        response = self.client.post("/api/dashboard/services/openemr-gdt/check", json={})
+        response = self.client.post("/api/dashboard/services/dicom-dcm4chee/check", json={})
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(run_operation.called)
-        self.assertEqual(run_health_check.call_count, 3)
+        self.assertEqual(run_health_check.call_count, 1)
         body = response.get_json()
         self.assertEqual(body["service"]["status"], "Healthy")
         self.assertEqual(body["service"]["checks"]["process"], "Healthy")
         self.assertEqual(
             [item["name"] for item in body["servers"]],
-            ["OpenEMR", "GDT Bridge", "GDT Hospital"],
+            ["dcm4chee"],
         )
 
-    @patch("app.urllib.request.urlopen")
-    def test_openemr_gdt_check_treats_file_based_gdt_services_as_healthy(self, urlopen):
-        urlopen.return_value = FakeHttpResponse(b"ok", status=200)
+    @patch("app.run_lab_operation")
+    def test_dashboard_child_action_targets_only_allowlisted_child(self, run_operation):
+        run_operation.return_value = {
+            "operation": {"action": "stop", "result": "success"},
+            "output": "stopped",
+        }
 
-        response = self.client.post("/api/dashboard/services/openemr-gdt/check", json={})
+        response = self.client.post(
+            "/api/dashboard/services/fhir-medplum/children/medplum-redis/disable",
+            json={},
+        )
 
         self.assertEqual(response.status_code, 200)
-        body = response.get_json()
-        self.assertEqual(body["service"]["status"], "Healthy")
-        by_name = {item["name"]: item for item in body["servers"]}
-        self.assertEqual(by_name["OpenEMR"]["overallStatus"], "Healthy")
-        self.assertEqual(by_name["GDT Bridge"]["overallStatus"], "Healthy")
-        self.assertEqual(by_name["GDT Bridge"]["checks"]["application"], "Healthy")
-        self.assertEqual(by_name["GDT Bridge"]["checks"]["protocol"], "Healthy")
-        self.assertEqual(by_name["GDT Hospital"]["overallStatus"], "Healthy")
+        self.assertEqual(run_operation.call_args.kwargs["backing_services"], ["medplum-redis"])
+        self.assertEqual(run_operation.call_args.kwargs["operation_service_name"], "medplum-redis-1")
+        self.assertFalse(run_operation.call_args.kwargs["refresh_health"])
+
+        rejected = self.client.post(
+            "/api/dashboard/services/fhir-medplum/children/arbitrary-container/restart",
+            json={},
+        )
+        self.assertEqual(rejected.status_code, 404)
+        self.assertEqual(run_operation.call_count, 1)
 
     @patch("backend.dashboard_services.Path.exists", return_value=False)
     @patch("backend.dashboard_services.subprocess.run", side_effect=OSError("docker missing"))
@@ -4188,6 +4227,35 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(command[:4], ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass"])
         self.assertIn("restart", command)
         self.assertIn("oie", command)
+
+        inspect_command = adapter.build_command("inspect", "medplum-redis")
+        self.assertIn("inspect", inspect_command)
+        self.assertIn("medplum-redis", inspect_command)
+
+    def test_lab_compose_operation_adapter_parses_array_and_line_json_status(self):
+        array_rows = DockerComposeLabOperationAdapter.parse_compose_ps_json(
+            '[{"Name":"interoperability-lab-ldap-1","State":"running"}]'
+        )
+        line_rows = DockerComposeLabOperationAdapter.parse_compose_ps_json(
+            '{"Name":"one","State":"running"}\n{"Name":"two","State":"exited"}'
+        )
+
+        self.assertEqual(array_rows[0]["Name"], "interoperability-lab-ldap-1")
+        self.assertEqual([item["State"] for item in line_rows], ["running", "exited"])
+
+    def test_default_compose_omits_openemr_and_keeps_gdt_in_lab_app(self):
+        repo = Path(__file__).resolve().parents[1]
+        compose = (repo / "deploy" / "docker-compose.yml").read_text(encoding="utf-8")
+        lab_script = (repo / "deploy" / "lab.ps1").read_text(encoding="utf-8")
+
+        self.assertNotIn("\n  openemr:\n", compose)
+        self.assertNotIn("\n  openemr-db:\n", compose)
+        self.assertNotIn("OPENEMR_DB_HOST: openemr-db", compose)
+        self.assertIn("GDT_BRIDGE_PATH: /data/gdt-bridge", compose)
+        self.assertIn('"medplum-redis" = @("medplum-redis")', lab_script)
+        self.assertIn('"dcm4chee-db" = @("dcm4chee-db")', lab_script)
+        self.assertIn('"ldap" = @("ldap")', lab_script)
+        self.assertNotIn('"openemr" = @("openemr")', lab_script)
 
     def test_docker_socket_stop_uses_short_grace_period(self):
         adapter = FakeDockerSocketLabOperationAdapter()

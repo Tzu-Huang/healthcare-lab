@@ -847,6 +847,37 @@ tr.selected-row {
   font-size: 12px;
 }
 
+.dashboard-primary-identity,
+.dashboard-child-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dashboard-service-toggle {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.dashboard-child-row td {
+  background: #f7faf9;
+  border-top-color: #e5eeea;
+}
+
+.dashboard-child-identity {
+  padding-left: 40px;
+}
+
+.dashboard-child-identity::before {
+  content: "↳";
+  color: var(--muted);
+}
+
 .actions-cell {
   position: relative;
   text-align: right;

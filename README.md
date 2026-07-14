@@ -1,7 +1,7 @@
 # Healthcare Lab
 
 Local healthcare interoperability lab dashboard and control plane for monitoring
-OIE, Medplum, OpenEMR/GDT, and dcm4chee services.
+OIE, Medplum, and dcm4chee services while hosting an independent local GDT workflow.
 
 This project is split out from the former combined `intern/repo` workspace. It
 owns the Server Health Dashboard, local Docker Compose runtime, service health
@@ -19,7 +19,7 @@ The lab now has three working local workflow tracks:
 - **FHIR R4 / Medplum:** Patient creation is local-first with Medplum sync,
   retry, and idempotent identifier matching. FHIR Orders create a local order
   anchor and sync a `ServiceRequest` as the sole order resource.
-- **GDT 2.1 / OpenEMR-style bridge:** Patient/order context can be exported as
+- **GDT 2.1 / local bridge:** Patient/order context can be exported as
   GDT `6302`, result files can be imported from the bridge folders, and parsed
   `6310` result context is retained locally.
 
@@ -36,7 +36,7 @@ The browser UI opens with square test-category options:
 
 - **HL7 v2.5** for the OIE/Mirth MLLP workflow.
 - **HL7 FHIR** for Medplum FHIR API return testing.
-- **GDT** for the OpenEMR-style ECG order / bridge proof of concept.
+- **GDT** for the local ECG order / shared-folder bridge workflow.
 
 The HL7 v2.5 category presents the AP workflow: listen for hospital HL7, review
 the queue, upload ECG JSON and/or PDF, return the ECG result, and inspect the
@@ -129,11 +129,8 @@ seeded with:
 | --- | --- |
 | OIE | HL7 Engine |
 | Medplum | FHIR Server |
-| OpenEMR | EMR |
-| GDT Bridge | GDT Bridge |
 | dcm4chee | DICOM Archive |
 | HL7Tester | Test Tool |
-| GDT Hospital | Test Tool |
 
 Health status values are:
 
