@@ -45,10 +45,12 @@ from backend.clients.medplum import (
     request_fhir_raw,
 )
 from backend.clients import dcm4chee as dcm4chee_client
+from backend.api.oie import create_oie_settings_blueprint
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as RuntimeGdtBridgeInboundWatcher
 from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
+from backend.services.oie_settings import OieSettingsService
 from backend.lab_store import (
     DCM4CHEE_MWL_OPERATION_CREATE,
     DCM4CHEE_MWL_OPERATION_VERIFY,
@@ -3455,6 +3457,10 @@ def create_app(database_path: str | None = None) -> Flask:
     app.extensions["openemr_procedure_order_source"] = openemr_source
     app.extensions["oie_result_listener"] = OieResultListener(store, accept_oie_result_payload)
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
+    app.extensions["oie_settings_service"] = OieSettingsService(store.oie_settings_repository)
+    app.register_blueprint(
+        create_oie_settings_blueprint(app.extensions["oie_settings_service"])
+    )
 
     def get_auth_manager() -> MedplumAuthManager:
         return MedplumAuthManager(
@@ -4218,19 +4224,6 @@ def create_app(database_path: str | None = None) -> Flask:
         except SimulatorValidationError as exc:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
-
-    @app.get("/api/oie/settings")
-    def get_oie_settings():
-        return jsonify({"success": True, "item": store.get_oie_settings_profile()})
-
-    @app.put("/api/oie/settings")
-    def update_oie_settings():
-        payload = request.get_json(silent=True)
-        try:
-            item = store.update_oie_settings_profile(payload)
-        except SimulatorValidationError as exc:
-            return error_response(str(exc), 400)
-        return jsonify({"success": True, "item": item})
 
     @app.get("/api/oie/local-adt-patients")
     def list_oie_local_adt_patients():
