@@ -3470,6 +3470,9 @@ class HealthcareLabApiTests(unittest.TestCase):
         bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
         (bridge_root / "inbox").mkdir(parents=True, exist_ok=True)
         (bridge_root / "outbox").mkdir(parents=True, exist_ok=True)
+        self.client.application.extensions["gdt_bridge_watcher"].configure(
+            bridge_root=bridge_root
+        )
         started = self.client.post("/api/gdt/bridge/watcher/start", json={})
         self.assertEqual(started.status_code, 200)
         self.assertTrue(started.get_json()["item"]["running"])
