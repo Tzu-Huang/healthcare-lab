@@ -36,7 +36,7 @@
 
 - [x] 6.1 Split monolithic tests into matching `api`, `services`, `clients`, `runtime`, `repositories`, `templates`, `integration`, and `e2e` packages as applicable.
 - [x] 6.2 Confirm moved tests retain the existing assertions and remove superseded monolithic test locations without reducing collected coverage.
-- [ ] 6.3 Verify architecture contract failures clearly identify misplaced routes, SQL, protocol logic, runtime classes, and workflow implementation.
+- [x] 6.3 Verify architecture contract failures clearly identify misplaced routes, SQL, protocol logic, runtime classes, and workflow implementation.
 
 ## 7. Verification
 
