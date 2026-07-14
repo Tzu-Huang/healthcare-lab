@@ -16,16 +16,14 @@ class FakeService:
         return {"profileName": "local-oie", "updated": True}
 
 
+class FakeWorkflow:
+    pass
+
+
 class OieSettingsBlueprintTest(unittest.TestCase):
     def setUp(self):
         app = Flask(__name__)
-        app.config.update(OIE_MLLP_RESULT_HOST="0.0.0.0", OIE_MLLP_RESULT_PORT=6665, OIE_MLLP_ORDER_HOST="localhost", OIE_MLLP_ORDER_PORT=6600)
-        app.extensions["oie_result_listener"] = type("Listener", (), {"status": lambda self: {}, "stop": lambda self: {}})()
-        store = type("Store", (), {})()
-        app.register_blueprint(create_oie_blueprint(
-            app, store, FakeService(), result_handler=lambda _store, _payload: ("ACK", {}, 200),
-            ack_parser=lambda _payload: {}, order_sender_provider=lambda: lambda *_args, **_kwargs: "",
-        ))
+        app.register_blueprint(create_oie_blueprint(FakeService(), FakeWorkflow()))
         self.client = app.test_client()
 
     def test_get_preserves_response_shape(self):
