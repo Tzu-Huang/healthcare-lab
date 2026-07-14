@@ -179,6 +179,14 @@ class ArchitectureContractTest(unittest.TestCase):
                     f"{path.relative_to(ROOT)} must depend on domain types and repository ports, not DemoStore.",
                 )
 
+    def test_configuration_does_not_import_concrete_store(self):
+        path = BACKEND / "config.py"
+        self.assertNotIn(
+            "backend.lab_store",
+            imported_modules(path),
+            "backend/config.py must use domain configuration types, not DemoStore.",
+        )
+
     def test_responsibility_packages_obey_placement_contract(self):
         violations: list[PlacementViolation] = []
         for package in RESPONSIBILITY_PACKAGES:

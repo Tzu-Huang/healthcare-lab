@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.domain.errors import ValidationError
-from backend.lab_store import (
+from backend.domain.openemr import (
     OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES,
     parse_openemr_allowed_procedure_codes,
 )
