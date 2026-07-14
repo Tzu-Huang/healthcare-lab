@@ -3,6 +3,7 @@ const byId = (id) => document.getElementById(id);
 let dashboardServices = [];
 let dashboardEvents = [];
 let dashboardResources = null;
+let expandedDashboardServiceIds = new Set();
 let patientRecords = [];
 let orderRecords = [];
 let gdtOrderRecords = [];
@@ -65,8 +66,7 @@ const MEDPLUM_SOURCE_LABELS = {
 
 const DASHBOARD_RESOURCE_CONTAINERS = [
   { displayName: "oie-1", aliases: ["oie-1", "oie"] },
-  { displayName: "medplum-app-1", aliases: ["medplum-app-1", "medplum-app"] },
-  { displayName: "openEMR", aliases: ["openemr-1", "openemr"] },
+  { displayName: "medplum-1", aliases: ["medplum-1", "medplum"] },
   { displayName: "dcm4chee-1", aliases: ["dcm4chee-1", "dcm4chee"] },
 ];
 
@@ -291,12 +291,73 @@ function actionButton(service, action, label) {
   return button;
 }
 
+function childActionButton(service, child, action, label) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.disabled = !child.capabilities?.[action];
+  button.addEventListener("click", () => runChildServiceAction(service.id, child.id, action));
+  return button;
+}
+
+function dashboardServiceToggle(service) {
+  const button = document.createElement("button");
+  const expanded = expandedDashboardServiceIds.has(service.id);
+  button.type = "button";
+  button.className = "dashboard-service-toggle";
+  button.textContent = expanded ? "▾" : "▸";
+  button.setAttribute("aria-expanded", String(expanded));
+  button.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} ${service.label} sub-services`);
+  button.addEventListener("click", () => {
+    if (expanded) {
+      expandedDashboardServiceIds.delete(service.id);
+    } else {
+      expandedDashboardServiceIds.add(service.id);
+    }
+    renderServices();
+  });
+  return button;
+}
+
+function renderDashboardChild(service, child, body) {
+  const row = document.createElement("tr");
+  row.className = "dashboard-child-row";
+
+  const serviceCell = document.createElement("td");
+  const identity = createElement("div", "", "dashboard-child-identity");
+  identity.append(
+    createElement("strong", child.name),
+    createElement("span", child.role, "muted dashboard-cell-subtext"),
+  );
+  serviceCell.appendChild(identity);
+  row.appendChild(serviceCell);
+
+  row.appendChild(rowCell(createElement("span", child.runtime?.state || child.status, `status ${statusClass(child.status)}`)));
+
+  const checks = document.createElement("div");
+  checks.className = "dashboard-checks";
+  checks.appendChild(createElement("span", child.runtime?.detail || "Docker runtime state unavailable"));
+  row.appendChild(rowCell(checks));
+
+  const actions = document.createElement("div");
+  actions.className = "button-row compact-actions";
+  actions.append(
+    childActionButton(service, child, "check", "Check"),
+    childActionButton(service, child, "enable", "Start"),
+    childActionButton(service, child, "disable", "Stop"),
+    childActionButton(service, child, "restart", "Restart"),
+  );
+  row.appendChild(rowCell(actions));
+  body.appendChild(row);
+}
+
 function renderServices() {
   const body = byId("dashboard-service-list");
   const filter = byId("dashboard-filter").value.trim().toLowerCase();
   body.replaceChildren();
   const visible = dashboardServices.filter((service) => {
-    const haystack = `${service.label} ${service.protocol} ${service.backend}`.toLowerCase();
+    const childNames = (service.children || []).map((child) => child.name).join(" ");
+    const haystack = `${service.label} ${service.protocol} ${service.backend} ${childNames}`.toLowerCase();
     return !filter || haystack.includes(filter);
   });
   if (!visible.length) {
@@ -309,9 +370,15 @@ function renderServices() {
   }
   visible.forEach((service) => {
     const row = document.createElement("tr");
+    row.className = "dashboard-primary-row";
     const serviceCell = document.createElement("td");
-    serviceCell.appendChild(createElement("strong", service.label));
-    serviceCell.appendChild(createElement("span", service.protocol, "muted dashboard-cell-subtext"));
+    const identity = createElement("div", "", "dashboard-primary-identity");
+    if (service.children?.length) identity.appendChild(dashboardServiceToggle(service));
+    const text = createElement("div");
+    text.appendChild(createElement("strong", service.label));
+    text.appendChild(createElement("span", service.protocol, "muted dashboard-cell-subtext"));
+    identity.appendChild(text);
+    serviceCell.appendChild(identity);
     row.appendChild(serviceCell);
 
     const status = createElement("span", service.status, `status ${statusClass(service.status)}`);
@@ -330,15 +397,11 @@ function renderServices() {
     actions.appendChild(actionButton(service, "enable", "Start"));
     actions.appendChild(actionButton(service, "disable", "Stop"));
     actions.appendChild(actionButton(service, "restart", "Restart"));
-    if (service.id === "openemr-gdt") {
-      const orderButton = document.createElement("button");
-      orderButton.type = "button";
-      orderButton.textContent = "ECG Order";
-      orderButton.addEventListener("click", openGdtOrderFlow);
-      actions.appendChild(orderButton);
-    }
     row.appendChild(rowCell(actions));
     body.appendChild(row);
+    if (expandedDashboardServiceIds.has(service.id)) {
+      (service.children || []).forEach((child) => renderDashboardChild(service, child, body));
+    }
   });
 }
 
@@ -428,6 +491,21 @@ async function runServiceAction(serviceId, action) {
     });
     replaceDashboardService(result.service);
     setStatus("dashboard-refresh-status", `${action} complete`, "success");
+    setTimeout(refreshDashboard, 1000);
+  } catch (error) {
+    setStatus("dashboard-refresh-status", error.message, "error");
+  }
+}
+
+async function runChildServiceAction(serviceId, childId, action) {
+  setStatus("dashboard-refresh-status", `${childId} ${action} running...`, "pending");
+  try {
+    const result = await requestJson(`/api/dashboard/services/${serviceId}/children/${childId}/${action}`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    replaceDashboardService(result.service);
+    setStatus("dashboard-refresh-status", `${childId} ${action} complete`, "success");
     setTimeout(refreshDashboard, 1000);
   } catch (error) {
     setStatus("dashboard-refresh-status", error.message, "error");
@@ -4740,6 +4818,7 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("start-oie-listener").addEventListener("click", startOieListener);
   byId("stop-oie-listener").addEventListener("click", stopOieListener);
   byId("refresh-gdt-console").addEventListener("click", refreshGdtConsole);
+  byId("create-gdt-ecg-order").addEventListener("click", openGdtOrderFlow);
   byId("refresh-gdt-bridge-config").addEventListener("click", refreshGdtBridgeConfig);
   byId("save-gdt-bridge-config").addEventListener("click", saveGdtBridgeConfig);
   byId("start-gdt-watcher").addEventListener("click", startGdtWatcher);

@@ -10,17 +10,15 @@ Interoperability Lab Console. It targets Docker Desktop on Windows.
 - `oie`: Open Integration Engine / Mirth-style HL7 engine.
 - `medplum`: FHIR server backed by Postgres and Redis.
 - `medplum-app`: Medplum Web UI for the same local Medplum runtime.
-- `openemr`: OpenEMR backed by MariaDB.
 - `lab-app`: this Flask app, representing GDT Bridge, HL7Tester, and GDT
   Hospital logical services.
 - `dcm4chee`: DICOM archive backed by Postgres.
 
-The GDT bridge shared folder is mounted at `/data/gdt-bridge` in both `lab-app`
-and `openemr`, so the default app configuration can use one shared folder
-contract. By default Docker Compose binds the repo-local `instance/gdt-bridge`
+The GDT bridge shared folder is mounted at `/data/gdt-bridge` in `lab-app`.
+By default Docker Compose binds the repo-local `instance/gdt-bridge`
 folder from the developer machine into that container path. Set
 `GDT_BRIDGE_HOST_PATH` in the repo-root `.env` file to use another computer
-folder, then restart `lab-app` and `openemr`.
+folder, then restart `lab-app`.
 
 Inside Healthcare Lab's GDT page, the **Shared Folder** setting controls the
 path the Flask app reads and writes. In Docker this should normally remain
@@ -29,8 +27,9 @@ bind mount through `GDT_BRIDGE_HOST_PATH`. The app does not create bridge
 folders: provision them yourself. Orders are written to `inbox/`, and returned
 device/AP data is read from `outbox/`.
 
-The lab app also points its OpenEMR database settings at `openemr-db` by
-default.
+OpenEMR and MariaDB are not part of the default runtime. An external OpenEMR
+procedure-order source can still be configured with the optional `OPENEMR_DB_*`
+settings in the repo-root `.env` file.
 
 ## Medplum Auth Runtime
 
@@ -145,8 +144,9 @@ Run commands from `repo`:
 .\deploy\lab.ps1 stop all
 ```
 
-Supported service names are `all`, `oie`, `medplum`, `medplum-app`, `openemr`,
-`gdt-bridge`, `dcm4chee`, `hl7tester`, `gdt-hospital`, and `lab-app`. The
+Supported service names are `all`, `oie`, `medplum`, `medplum-app`,
+`medplum-postgres`, `medplum-redis`, `gdt-bridge`, `dcm4chee`, `dcm4chee-db`,
+`ldap`, `hl7tester`, `gdt-hospital`, and `lab-app`. The
 logical services `gdt-bridge`, `hl7tester`, and `gdt-hospital` map to the
 `lab-app` container. The `medplum` service name starts or recreates both the
 Medplum API server and Web UI companion.
@@ -174,7 +174,6 @@ Medplum API server and Web UI companion.
 | OIE order listener | host `6600` |
 | Medplum FHIR/API | `8103` |
 | Medplum Web UI | `3000` |
-| OpenEMR | `8088` |
 | dcm4chee UI | `8082` |
 | dcm4chee DICOM | `11112` |
 | dcm4chee HL7 Patient sync | `2575` |
