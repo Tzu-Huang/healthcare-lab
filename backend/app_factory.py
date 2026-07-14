@@ -48,6 +48,7 @@ from backend.clients import dcm4chee as dcm4chee_client
 from backend.api.oie import create_oie_blueprint
 from backend.api.lab_servers import create_lab_servers_blueprint
 from backend.api.dashboard import create_dashboard_blueprint
+from backend.api.dcm4chee import create_dcm4chee_profile_blueprint
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain import fhir as fhir_domain
@@ -3504,6 +3505,13 @@ def create_app(database_path: str | None = None) -> Flask:
             operation_runner_provider=lambda: run_lab_operation,
         )
     )
+    app.register_blueprint(
+        create_dcm4chee_profile_blueprint(
+            app.config,
+            profile_builder=dcm4chee_profile_from_config,
+            profile_validator=validate_dcm4chee_profile,
+        )
+    )
 
     def get_auth_manager() -> MedplumAuthManager:
         return MedplumAuthManager(
@@ -4381,8 +4389,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return jsonify({"success": False, "item": item, "error": str(exc)}), 502
         return jsonify({"success": True, "item": item})
 
-    @app.get("/api/dcm4chee/profile")
-    @app.get("/api/dcm4chee/profiles/<profile_name>")
     def get_dcm4chee_profile(profile_name: str | None = None):
         profile = dcm4chee_profile_from_config(app.config)
         if profile_name and profile_name != profile["profileName"]:
@@ -4395,7 +4401,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.get("/api/dcm4chee/profile/diagnostics")
     def get_dcm4chee_profile_diagnostics():
         profile = dcm4chee_profile_from_config(app.config)
         return jsonify(
