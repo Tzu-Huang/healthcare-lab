@@ -49,6 +49,7 @@ from backend.api.oie import create_oie_blueprint
 from backend.api.lab_servers import create_lab_servers_blueprint
 from backend.api.dashboard import create_dashboard_blueprint
 from backend.api.dcm4chee import create_dcm4chee_profile_blueprint
+from backend.api.patients import create_patients_blueprint
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain import fhir as fhir_domain
@@ -3505,14 +3506,6 @@ def create_app(database_path: str | None = None) -> Flask:
             operation_runner_provider=lambda: run_lab_operation,
         )
     )
-    app.register_blueprint(
-        create_dcm4chee_profile_blueprint(
-            app.config,
-            profile_builder=dcm4chee_profile_from_config,
-            profile_validator=validate_dcm4chee_profile,
-        )
-    )
-
     def get_auth_manager() -> MedplumAuthManager:
         return MedplumAuthManager(
             client_id=app.config["MEDPLUM_CLIENT_ID"],
@@ -3531,6 +3524,26 @@ def create_app(database_path: str | None = None) -> Flask:
             None,
         )
         return str((medplum or {}).get("baseUrl") or "").strip()
+
+    app.register_blueprint(
+        create_dcm4chee_profile_blueprint(
+            app.config,
+            profile_builder=dcm4chee_profile_from_config,
+            profile_validator=validate_dcm4chee_profile,
+        )
+    )
+    app.register_blueprint(
+        create_patients_blueprint(
+            app,
+            store,
+            medplum_base_url=configured_medplum_base_url,
+            auth_manager=get_auth_manager,
+            fhir_sync=sync_fhir_workflow_record_to_medplum,
+            dicom_patient_sync=sync_patient_to_dcm4chee,
+            dcm_result_refresh=refresh_patient_dcm4chee_results,
+            dcm_profile=dcm4chee_profile_from_config,
+        )
+    )
 
     def static_asset_version(filename: str) -> str:
         asset_path = Path(app.static_folder or "") / filename
@@ -3554,12 +3567,10 @@ def create_app(database_path: str | None = None) -> Flask:
             oie_result_port=app.config["OIE_MLLP_RESULT_PORT"],
         )
 
-    @app.get("/api/patients")
     def list_patients():
         protocol_version = str(request.args.get("protocolVersion") or "").strip()
         return jsonify({"success": True, "items": store.list_patient_records(protocol_version)})
 
-    @app.post("/api/patients")
     def create_patient():
         payload = request.get_json(silent=True) or {}
         try:
@@ -3591,7 +3602,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
 
-    @app.post("/api/patients/<int:record_id>/fhir-sync")
     def sync_patient_fhir_record(record_id: int):
         try:
             item = store.get_patient_record(record_id)
@@ -3616,7 +3626,6 @@ def create_app(database_path: str | None = None) -> Flask:
         fhir = item.get("fhir") or {}
         return jsonify({"success": (fhir.get("sync") or {}).get("status") == FHIR_SYNC_STATUS_SYNCED, "item": item})
 
-    @app.post("/api/patients/<int:record_id>/dcm4chee-results-refresh")
     def refresh_patient_dcm4chee_result_records(record_id: int):
         try:
             result = refresh_patient_dcm4chee_results(
@@ -3628,7 +3637,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response("Patient record was not found.", 404)
         return jsonify(result)
 
-    @app.post("/api/dcm4chee/e2e-fixture")
     def create_dcm4chee_e2e_fixture():
         try:
             result = store.create_dcm4chee_e2e_demo_fixture(
