@@ -31,7 +31,13 @@ class GdtAdapterTests(unittest.TestCase):
 
         self.assertEqual(fields["8000"], ["6302"])
         self.assertEqual(fields["8100"], [f"{len(result.raw_gdt_text.encode('cp1252')):05d}"])
+        self.assertEqual(fields["6200"], ["06072026"])
+        self.assertEqual(fields["6330"], ["GDT-ORD-000001"])
         self.assertEqual(fields["8402"], ["EKG01"])
+        self.assertNotIn("6220", fields)
+        self.assertEqual(fields["6227"], ["1001^WANG^AMY | Resting ECG baseline"])
+        self.assertNotIn("6228", fields)
+        self.assertEqual(result.canonical["correlation"]["field"], "6330")
         self.assertEqual(result.validation, {"errors": [], "warnings": []})
 
     def test_6310_result_measurements_status_and_text_are_canonicalized(self):
