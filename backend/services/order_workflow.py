@@ -5,7 +5,62 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
+from backend.clients import dcm4chee as dcm4chee_client
 from backend.lab_store import DCM4CHEE_MWL_STATUS_CREATED, DCM4CHEE_MWL_VERIFICATION_VERIFIED
+from backend.lab_store import SimulatorValidationError
+
+
+def _dicom_first_value(payload: dict[str, Any], tag: str, default: str = "") -> str:
+    element = payload.get(tag) if isinstance(payload, dict) else None
+    if not isinstance(element, dict):
+        return default
+    values = element.get("Value")
+    if not isinstance(values, list) or not values:
+        return default
+    value = values[0]
+    if isinstance(value, dict):
+        return str(value.get("Alphabetic") or default).strip()
+    return str(value or default).strip()
+
+
+def dcm4chee_patient_payload_from_mwl_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    patient_payload = {
+        tag: payload[tag]
+        for tag in ("00100010", "00100020", "00100021", "00100030", "00100040")
+        if tag in payload
+    }
+    if "00100020" not in patient_payload:
+        raise SimulatorValidationError("dcm4chee Patient ID is required before MWL sync.")
+    return patient_payload
+
+
+def ensure_dcm4chee_patient_for_mwl_payload(
+    profile: dict[str, Any], payload: dict[str, Any]
+) -> dict[str, Any]:
+    identifiers = {
+        "patient_id": _dicom_first_value(payload, "00100020"),
+        "issuer_of_patient_id": _dicom_first_value(payload, "00100021"),
+    }
+    if not identifiers["patient_id"]:
+        raise SimulatorValidationError("dcm4chee Patient ID is required before MWL sync.")
+    status, response_body, lookup_url = dcm4chee_client.request_dcm4chee_patient_search(
+        profile,
+        patient_id=identifiers["patient_id"],
+        issuer_of_patient_id=identifiers["issuer_of_patient_id"],
+    )
+    if status == 200 and response_body.strip():
+        return {"status": "found", "httpStatus": status, "url": lookup_url, **identifiers}
+    patient_payload = dcm4chee_patient_payload_from_mwl_payload(payload)
+    create_status, create_body, create_url = dcm4chee_client.request_dcm4chee_patient_create(
+        profile, patient_payload
+    )
+    return {
+        "status": "created",
+        "httpStatus": create_status,
+        "url": create_url,
+        "responseBody": create_body,
+        **identifiers,
+    }
 
 
 class OrderRepositoryPort(Protocol):
