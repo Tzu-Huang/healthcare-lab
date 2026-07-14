@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import sqlite3
 import threading
@@ -63,6 +64,13 @@ ORDER_DEFAULT_ALT_CODE = "93000"
 ORDER_DEFAULT_ALT_TEXT = "Electrocardiogram, routine ECG with at least 12 leads"
 ORDER_DEFAULT_ALT_SYSTEM = "C4"
 ORDER_DEFAULT_PROVIDER = "1001^WANG^AMY"
+OIE_SETTINGS_PROFILE_NAME = "local-oie"
+OIE_MANAGEMENT_API_BASE_URL = "http://oie:8080"
+OIE_MANAGEMENT_API_USERNAME = "admin"
+OIE_MANAGEMENT_API_PASSWORD = "Admin"
+OIE_MANAGEMENT_API_TIMEOUT_SECONDS = 10
+OIE_RESULT_LISTENER_HOST = "0.0.0.0"
+OIE_RESULT_LISTENER_PORT = 6665
 DCM4CHEE_ORDER_PROTOCOL_VERSION = "DICOM"
 DCM4CHEE_ORDER_MESSAGE_TYPE = "MWL"
 DCM4CHEE_MWL_STATUS_PENDING = "Pending sync"
@@ -848,6 +856,34 @@ class DemoStore:
                     FOREIGN KEY(matched_order_record_id) REFERENCES local_order_records(id) ON DELETE SET NULL,
                     FOREIGN KEY(duplicate_of_id) REFERENCES oie_result_records(id) ON DELETE SET NULL
                 );
+                CREATE TABLE IF NOT EXISTS oie_settings_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    profile_name TEXT NOT NULL UNIQUE,
+                    management_api_base_url TEXT NOT NULL,
+                    management_api_username TEXT NOT NULL,
+                    management_api_password TEXT NOT NULL,
+                    management_api_tls_verify INTEGER NOT NULL DEFAULT 0,
+                    management_api_timeout_seconds REAL NOT NULL,
+                    result_listener_host TEXT NOT NULL,
+                    result_listener_port INTEGER NOT NULL,
+                    result_listener_mllp_framing INTEGER NOT NULL DEFAULT 1,
+                    result_listener_auto_start INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS oie_managed_channel_mappings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    profile_id INTEGER NOT NULL,
+                    logical_type TEXT NOT NULL,
+                    oie_channel_id TEXT NOT NULL DEFAULT '',
+                    channel_name TEXT NOT NULL,
+                    template_version TEXT NOT NULL DEFAULT '',
+                    last_known_revision TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(profile_id) REFERENCES oie_settings_profiles(id) ON DELETE CASCADE,
+                    UNIQUE(profile_id, logical_type)
+                );
                 CREATE TABLE IF NOT EXISTS local_gdt_order_records (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     local_gdt_order_number TEXT NOT NULL UNIQUE,
@@ -1154,6 +1190,8 @@ class DemoStore:
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_oie_result_control_id
                 ON oie_result_records(message_control_id)
                 WHERE message_control_id != '';
+                CREATE INDEX IF NOT EXISTS idx_oie_managed_channel_profile
+                ON oie_managed_channel_mappings(profile_id, logical_type);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_fhir_record_identifier
                 ON local_fhir_workflow_records(resource_type, identifier_system, identifier_value);
                 CREATE INDEX IF NOT EXISTS idx_fhir_record_source
@@ -1374,6 +1412,7 @@ class DemoStore:
             )
             self._seed_patient_mrn_sequence(connection)
             self._seed_lab_servers(connection)
+            self._seed_oie_settings_profile(connection)
 
     @staticmethod
     def _seed_patient_mrn_sequence(connection: sqlite3.Connection) -> None:
@@ -1391,6 +1430,300 @@ class DemoStore:
             """,
             (highest_existing + 1,),
         )
+
+    @staticmethod
+    def _seed_oie_settings_profile(connection: sqlite3.Connection) -> None:
+        timestamp = now_iso()
+        connection.execute(
+            """
+            INSERT INTO oie_settings_profiles (
+                profile_name, management_api_base_url, management_api_username,
+                management_api_password, management_api_tls_verify,
+                management_api_timeout_seconds, result_listener_host,
+                result_listener_port, result_listener_mllp_framing,
+                result_listener_auto_start, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 0, ?, ?, ?, 1, 1, ?, ?)
+            ON CONFLICT(profile_name) DO NOTHING
+            """,
+            (
+                OIE_SETTINGS_PROFILE_NAME,
+                OIE_MANAGEMENT_API_BASE_URL,
+                OIE_MANAGEMENT_API_USERNAME,
+                OIE_MANAGEMENT_API_PASSWORD,
+                OIE_MANAGEMENT_API_TIMEOUT_SECONDS,
+                OIE_RESULT_LISTENER_HOST,
+                OIE_RESULT_LISTENER_PORT,
+                timestamp,
+                timestamp,
+            ),
+        )
+
+    @staticmethod
+    def _oie_required_object(payload: dict[str, Any], key: str, label: str) -> dict[str, Any]:
+        value = payload.get(key)
+        if not isinstance(value, dict):
+            raise SimulatorValidationError(f"OIE {label} must be a JSON object.")
+        return value
+
+    @staticmethod
+    def _oie_required_boolean(payload: dict[str, Any], key: str, label: str) -> bool:
+        if key not in payload or not isinstance(payload[key], bool):
+            raise SimulatorValidationError(f"OIE {label} must be true or false.")
+        return payload[key]
+
+    @classmethod
+    def validate_oie_settings_payload(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise SimulatorValidationError("OIE settings payload must be a JSON object.")
+
+        management = cls._oie_required_object(payload, "managementApi", "managementApi")
+        result_listener = cls._oie_required_object(
+            payload,
+            "resultListener",
+            "resultListener",
+        )
+        managed_channels = payload.get("managedChannels")
+        if not isinstance(managed_channels, list):
+            raise SimulatorValidationError("OIE managedChannels must be a JSON array.")
+
+        base_url = str(management.get("baseUrl") or "").strip()
+        parsed_url = urllib.parse.urlparse(base_url)
+        if parsed_url.scheme.lower() not in {"http", "https"} or not parsed_url.hostname:
+            raise SimulatorValidationError(
+                "OIE Management API baseUrl must be an HTTP or HTTPS URL with a host."
+            )
+        username = str(management.get("username") or "").strip()
+        if not username:
+            raise SimulatorValidationError("OIE Management API username is required.")
+        raw_timeout = management.get("timeoutSeconds")
+        if isinstance(raw_timeout, bool):
+            raise SimulatorValidationError(
+                "OIE Management API timeoutSeconds must be a positive number."
+            )
+        try:
+            timeout_seconds = float(raw_timeout)
+        except (TypeError, ValueError) as exc:
+            raise SimulatorValidationError(
+                "OIE Management API timeoutSeconds must be a positive number."
+            ) from exc
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise SimulatorValidationError(
+                "OIE Management API timeoutSeconds must be a positive number."
+            )
+
+        listener_host = str(result_listener.get("host") or "").strip()
+        if not listener_host:
+            raise SimulatorValidationError("OIE resultListener host is required.")
+        raw_port = result_listener.get("port")
+        if isinstance(raw_port, bool):
+            raise SimulatorValidationError(
+                "OIE resultListener port must be an integer between 1 and 65535."
+            )
+        try:
+            listener_port = int(raw_port)
+        except (TypeError, ValueError) as exc:
+            raise SimulatorValidationError(
+                "OIE resultListener port must be an integer between 1 and 65535."
+            ) from exc
+        if str(raw_port).strip() != str(listener_port) or not 1 <= listener_port <= 65535:
+            raise SimulatorValidationError(
+                "OIE resultListener port must be an integer between 1 and 65535."
+            )
+
+        normalized_channels: list[dict[str, str]] = []
+        logical_types: set[str] = set()
+        for index, mapping in enumerate(managed_channels):
+            if not isinstance(mapping, dict):
+                raise SimulatorValidationError(
+                    f"OIE managedChannels[{index}] must be a JSON object."
+                )
+            logical_type = str(mapping.get("logicalType") or "").strip().lower()
+            if not logical_type:
+                raise SimulatorValidationError(
+                    f"OIE managedChannels[{index}].logicalType is required."
+                )
+            channel_name = str(mapping.get("channelName") or "").strip()
+            if not channel_name:
+                raise SimulatorValidationError(
+                    f"OIE managedChannels[{index}].channelName is required."
+                )
+            if logical_type in logical_types:
+                raise SimulatorValidationError(
+                    f"OIE managedChannels contains duplicate logicalType '{logical_type}'."
+                )
+            logical_types.add(logical_type)
+            normalized_channels.append(
+                {
+                    "logical_type": logical_type,
+                    "oie_channel_id": str(mapping.get("channelId") or "").strip(),
+                    "channel_name": channel_name,
+                    "template_version": str(mapping.get("templateVersion") or "").strip(),
+                    "last_known_revision": str(mapping.get("lastKnownRevision") or "").strip(),
+                }
+            )
+
+        password_provided = "password" in management
+        password = ""
+        if password_provided:
+            if management.get("password") is None:
+                raise SimulatorValidationError(
+                    "OIE Management API password must be a non-empty string when provided."
+                )
+            password = str(management.get("password")).strip()
+            if not password:
+                raise SimulatorValidationError(
+                    "OIE Management API password must be a non-empty string when provided."
+                )
+
+        return {
+            "management_api_base_url": base_url,
+            "management_api_username": username,
+            "management_api_tls_verify": int(
+                cls._oie_required_boolean(management, "tlsVerify", "Management API tlsVerify")
+            ),
+            "management_api_timeout_seconds": timeout_seconds,
+            "result_listener_host": listener_host,
+            "result_listener_port": listener_port,
+            "result_listener_mllp_framing": int(
+                cls._oie_required_boolean(
+                    result_listener,
+                    "mllpFraming",
+                    "resultListener mllpFraming",
+                )
+            ),
+            "result_listener_auto_start": int(
+                cls._oie_required_boolean(
+                    result_listener,
+                    "autoStart",
+                    "resultListener autoStart",
+                )
+            ),
+            "managed_channels": normalized_channels,
+            "password_provided": password_provided,
+            "management_api_password": password,
+        }
+
+    @staticmethod
+    def _oie_settings_profile_dict(
+        profile: sqlite3.Row,
+        mappings: list[sqlite3.Row],
+    ) -> dict[str, Any]:
+        timeout_seconds = float(profile["management_api_timeout_seconds"])
+        normalized_timeout: int | float = (
+            int(timeout_seconds) if timeout_seconds.is_integer() else timeout_seconds
+        )
+        return {
+            "profileName": profile["profile_name"],
+            "managementApi": {
+                "baseUrl": profile["management_api_base_url"],
+                "username": profile["management_api_username"],
+                "passwordConfigured": bool(profile["management_api_password"]),
+                "tlsVerify": bool(profile["management_api_tls_verify"]),
+                "timeoutSeconds": normalized_timeout,
+            },
+            "resultListener": {
+                "host": profile["result_listener_host"],
+                "port": profile["result_listener_port"],
+                "mllpFraming": bool(profile["result_listener_mllp_framing"]),
+                "autoStart": bool(profile["result_listener_auto_start"]),
+            },
+            "managedChannels": [
+                {
+                    "logicalType": mapping["logical_type"],
+                    "channelId": mapping["oie_channel_id"],
+                    "channelName": mapping["channel_name"],
+                    "templateVersion": mapping["template_version"],
+                    "lastKnownRevision": mapping["last_known_revision"],
+                }
+                for mapping in mappings
+            ],
+            "createdAt": profile["created_at"],
+            "updatedAt": profile["updated_at"],
+        }
+
+    def get_oie_settings_profile(self) -> dict[str, Any]:
+        with self.connect() as connection:
+            profile = connection.execute(
+                "SELECT * FROM oie_settings_profiles WHERE profile_name = ?",
+                (OIE_SETTINGS_PROFILE_NAME,),
+            ).fetchone()
+            if not profile:
+                raise KeyError(OIE_SETTINGS_PROFILE_NAME)
+            mappings = connection.execute(
+                """
+                SELECT * FROM oie_managed_channel_mappings
+                WHERE profile_id = ?
+                ORDER BY logical_type COLLATE NOCASE, id
+                """,
+                (profile["id"],),
+            ).fetchall()
+        return self._oie_settings_profile_dict(profile, mappings)
+
+    def update_oie_settings_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        values = self.validate_oie_settings_payload(payload)
+        timestamp = now_iso()
+        with self.lock, self.connect() as connection:
+            profile = connection.execute(
+                "SELECT * FROM oie_settings_profiles WHERE profile_name = ?",
+                (OIE_SETTINGS_PROFILE_NAME,),
+            ).fetchone()
+            if not profile:
+                raise KeyError(OIE_SETTINGS_PROFILE_NAME)
+            password = (
+                values["management_api_password"]
+                if values["password_provided"]
+                else profile["management_api_password"]
+            )
+            connection.execute(
+                """
+                UPDATE oie_settings_profiles
+                SET management_api_base_url = ?, management_api_username = ?,
+                    management_api_password = ?, management_api_tls_verify = ?,
+                    management_api_timeout_seconds = ?, result_listener_host = ?,
+                    result_listener_port = ?, result_listener_mllp_framing = ?,
+                    result_listener_auto_start = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    values["management_api_base_url"],
+                    values["management_api_username"],
+                    password,
+                    values["management_api_tls_verify"],
+                    values["management_api_timeout_seconds"],
+                    values["result_listener_host"],
+                    values["result_listener_port"],
+                    values["result_listener_mllp_framing"],
+                    values["result_listener_auto_start"],
+                    timestamp,
+                    profile["id"],
+                ),
+            )
+            connection.execute(
+                "DELETE FROM oie_managed_channel_mappings WHERE profile_id = ?",
+                (profile["id"],),
+            )
+            for mapping in values["managed_channels"]:
+                connection.execute(
+                    """
+                    INSERT INTO oie_managed_channel_mappings (
+                        profile_id, logical_type, oie_channel_id, channel_name,
+                        template_version, last_known_revision, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        profile["id"],
+                        mapping["logical_type"],
+                        mapping["oie_channel_id"],
+                        mapping["channel_name"],
+                        mapping["template_version"],
+                        mapping["last_known_revision"],
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+        return self.get_oie_settings_profile()
 
     @staticmethod
     def _clean_patient_text(value: Any, field_name: str, required: bool = False) -> str:
