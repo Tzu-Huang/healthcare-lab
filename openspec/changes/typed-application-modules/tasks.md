@@ -1,9 +1,9 @@
 ## 1. Architecture Foundations
 
-- [ ] 1.1 Create the typed `backend/api`, `services`, `clients`, `runtime`, `repositories`, `domain`, and `templates` packages with explicit public boundaries.
-- [ ] 1.2 Extract environment and application configuration parsing into `backend/config.py` with focused compatibility tests.
-- [ ] 1.3 Add project-level architecture and placement guidance, including the reserved modular frontend destinations for ZAC-50.
-- [ ] 1.4 Add an initial AST-based architecture contract test for dependency direction and the allowed `app.py` entrypoint shape.
+- [x] 1.1 Create the typed `backend/api`, `services`, `clients`, `runtime`, `repositories`, `domain`, and `templates` packages with explicit public boundaries.
+- [x] 1.2 Extract environment and application configuration parsing into `backend/config.py` with focused compatibility tests.
+- [x] 1.3 Add project-level architecture and placement guidance, including the reserved modular frontend destinations for ZAC-50.
+- [x] 1.4 Add an initial AST-based architecture contract test for dependency direction and the allowed `app.py` entrypoint shape.
 
 ## 2. Domain and External Client Extraction
 
