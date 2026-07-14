@@ -398,27 +398,28 @@ def first_gdt_field(fields: dict[str, list[str]], code: str) -> str:
 
 
 def ensure_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
+    """Resolve the configured GDT paths without creating them."""
     root = Path(base_path)
-    directories = {
+    return {
         "root": root,
+        "inbox": root / "inbox",
         "outbox": root / "outbox",
         "processed": root / "processed",
         "processing": root / "processing",
         "error": root / "error",
-        "outbound": root / "outbound",
-        "inbound": root / "inbound",
         "reports": root / "reports",
         "archive": root / "archive",
     }
-    for path in directories.values():
-        path.mkdir(parents=True, exist_ok=True)
-    return directories
 
 
 def validate_gdt_bridge_dirs(base_path: str | Path) -> dict[str, Path]:
     directories = ensure_gdt_bridge_dirs(base_path)
     probe_name = f".write-test-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-    for name in ("outbox", "processed", "processing", "error", "inbound", "archive", "reports"):
+    for name in ("inbox", "outbox"):
+        if not directories[name].is_dir():
+            raise SimulatorValidationError(
+                f"GDT {name} folder does not exist: {directories[name]}"
+            )
         probe_path = directories[name] / probe_name
         try:
             probe_path.write_text("ok", encoding="utf-8")

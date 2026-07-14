@@ -4173,8 +4173,8 @@ function renderGdtBridgeConfig() {
   const summary = byId("gdt-bridge-config-summary");
   summary.replaceChildren();
   [
-    ["Outbox", item.outboxPath],
-    ["Inbound", item.inboundPath],
+    ["Output (inbox)", item.inboxPath],
+    ["Returned data (outbox)", item.outboxPath],
     ["Archive", item.archivePath],
     ["Error", item.errorPath],
     ["Import mode", item.successMode],
@@ -4536,7 +4536,7 @@ function renderGdtInbox() {
   const files = gdtWorkbench.bridgeInbox || [];
   if (!files.length) {
     const row = document.createElement("tr");
-    const cell = rowCell("No inbound GDT files found.");
+    const cell = rowCell("No returned GDT files found in outbox.");
     cell.colSpan = 5;
     cell.className = "muted";
     row.appendChild(cell);
