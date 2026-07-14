@@ -2676,8 +2676,10 @@ def discover_gdt_inbound_candidates(
     observations: dict[str, tuple[int, float]] | None = None,
 ) -> tuple[list[Path], list[dict[str, Any]], dict[str, Path]]:
     directories = ensure_gdt_bridge_dirs(bridge_root)
-    inbound = directories["inbound"]
+    inbound = directories["outbox"]
     skipped: list[dict[str, Any]] = []
+    if not inbound.is_dir():
+        raise SimulatorValidationError(f"GDT outbox folder does not exist: {inbound}")
     if filename:
         paths = [inbound / Path(filename).name]
     else:
@@ -3010,7 +3012,7 @@ class GdtBridgeInboundWatcher:
         with self._lock:
             if self._thread and self._thread.is_alive():
                 return self.status()
-            ensure_gdt_bridge_dirs(self.bridge_root)
+            validate_gdt_bridge_dirs(self.bridge_root)
             self._stop_event.clear()
             self._last_error = ""
             self._thread = threading.Thread(target=self._serve, name="gdt-bridge-inbound-watcher", daemon=True)
@@ -3814,7 +3816,6 @@ def create_app(database_path: str | None = None) -> Flask:
         str(Path(__file__).parent / "deploy" / "lab.ps1"),
     )
     Path(app.config["DATABASE_PATH"]).parent.mkdir(parents=True, exist_ok=True)
-    validate_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
     store = DemoStore(app.config["DATABASE_PATH"])
     gdt_bridge_watcher = GdtBridgeInboundWatcher(
         store,
@@ -4426,9 +4427,11 @@ def create_app(database_path: str | None = None) -> Flask:
     def list_gdt_bridge_inbox_items() -> list[dict[str, Any]]:
         bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
         filename_profile = app.config["GDT_BRIDGE_FILENAME_PROFILE"]
+        if not bridge_dirs["outbox"].is_dir():
+            return []
         items = [
             gdt_bridge_file_item(path, "pending")
-            for path in sorted(bridge_dirs["inbound"].iterdir())
+            for path in sorted(bridge_dirs["outbox"].iterdir())
             if (
                 path.is_file()
                 and not gdt_is_internal_or_temp_file(path)
@@ -4442,6 +4445,8 @@ def create_app(database_path: str | None = None) -> Flask:
             )
         ]
         for status, folder_name in (("imported", "archive"), ("error", "error")):
+            if not bridge_dirs[folder_name].is_dir():
+                continue
             for path in sorted(bridge_dirs[folder_name].iterdir()):
                 if (
                     path.is_file()
@@ -4457,8 +4462,8 @@ def create_app(database_path: str | None = None) -> Flask:
         return {
             "bridgePath": str(bridge_dirs["root"]),
             "hostPath": os.environ.get("GDT_BRIDGE_HOST_PATH", ""),
+            "inboxPath": str(bridge_dirs["inbox"]),
             "outboxPath": str(bridge_dirs["outbox"]),
-            "inboundPath": str(bridge_dirs["inbound"]),
             "archivePath": str(bridge_dirs["archive"]),
             "errorPath": str(bridge_dirs["error"]),
             "processingPath": str(bridge_dirs["processing"]),
@@ -4492,10 +4497,6 @@ def create_app(database_path: str | None = None) -> Flask:
                 "restart lab-app, then use /data/gdt-bridge here.",
                 400,
             )
-        try:
-            validate_gdt_bridge_dirs(bridge_path)
-        except SimulatorValidationError as exc:
-            return error_response(str(exc), 400)
         app.config["GDT_BRIDGE_PATH"] = bridge_path
         watcher.configure(bridge_root=bridge_path)
         return jsonify({"success": True, "item": gdt_bridge_config_payload()})
@@ -4517,7 +4518,7 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response("GDT order was not found.", 404)
         bridge_dirs = ensure_gdt_bridge_dirs(app.config["GDT_BRIDGE_PATH"])
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-        target = bridge_dirs["inbound"] / f"gdtin_{item['localGdtOrderNumber']}_{timestamp}.gdt"
+        target = bridge_dirs["inbox"] / f"gdtin_{item['localGdtOrderNumber']}_{timestamp}.gdt"
         temp_path = target.with_suffix(".tmp")
         try:
             temp_path.write_bytes(item["rawGdtText"].encode("cp1252"))
@@ -4546,7 +4547,7 @@ def create_app(database_path: str | None = None) -> Flask:
         payload = request.get_json(silent=True) or {}
         filename = Path(str(payload.get("filename") or payload.get("name") or "")).name
         if not gdt_has_supported_exchange_extension(Path(filename), profile=app.config["GDT_BRIDGE_FILENAME_PROFILE"]):
-            return error_response("A supported GDT inbox filename is required.", 400)
+            return error_response("A supported GDT outbox filename is required.", 400)
         result = import_gdt_bridge_files(
             store,
             app.config["GDT_BRIDGE_PATH"],
@@ -4562,7 +4563,7 @@ def create_app(database_path: str | None = None) -> Flask:
         if result["failures"]:
             first = result["failures"][0]
             return jsonify({"success": False, "error": first["error"], "path": first["path"], "result": result}), 400
-        return error_response(result["skipped"][0].get("reason", "GDT inbox file was not found.") if result["skipped"] else "GDT inbox file was not found.", 404)
+        return error_response(result["skipped"][0].get("reason", "GDT outbox file was not found.") if result["skipped"] else "GDT outbox file was not found.", 404)
 
     @app.get("/api/gdt/bridge/watcher/status")
     def gdt_bridge_watcher_status():

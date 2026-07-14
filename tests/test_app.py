@@ -376,8 +376,9 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.get_json()
         self.assertEqual(body["item"]["bridgePath"], str(target))
-        self.assertTrue((target / "outbox").is_dir())
-        self.assertTrue((target / "inbound").is_dir())
+        self.assertFalse(target.exists())
+        self.assertEqual(body["item"]["inboxPath"], str(target / "inbox"))
+        self.assertEqual(body["item"]["outboxPath"], str(target / "outbox"))
         current = self.client.get("/api/gdt/bridge/config").get_json()["item"]
         self.assertEqual(current["outboxPath"], str(target / "outbox"))
         self.assertIn("watcher", current)
@@ -400,7 +401,9 @@ class HealthcareLabApiTests(unittest.TestCase):
 
     def write_gdt_result_file(self, order, filename="device-result.gdt", text="Imported from bridge file"):
         bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
-        inbound = bridge_root / "inbound" / filename
+        for folder_name in ("inbox", "outbox", "processing", "archive", "error"):
+            (bridge_root / folder_name).mkdir(parents=True, exist_ok=True)
+        inbound = bridge_root / "outbox" / filename
         inbound.parent.mkdir(parents=True, exist_ok=True)
         inbound.write_bytes(self.gdt_result_payload_for_order(order, text=text).encode("cp1252"))
         return inbound
@@ -3244,12 +3247,13 @@ class HealthcareLabApiTests(unittest.TestCase):
     def test_gdt_bridge_write_import_demo_and_workbench(self):
         patient = self.create_local_patient()
         order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
+        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
+        (bridge_root / "inbox").mkdir(parents=True, exist_ok=True)
 
         written = self.client.post(f"/api/gdt/orders/{order['id']}/write-6302", json={})
         self.assertEqual(written.status_code, 200)
         inbound_path = Path(written.get_json()["path"])
-        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
-        self.assertEqual(inbound_path.parent, bridge_root / "inbound")
+        self.assertEqual(inbound_path.parent, bridge_root / "inbox")
         self.assertTrue(inbound_path.exists())
         self.assertIn(order["localGdtOrderNumber"], inbound_path.read_text(encoding="cp1252"))
         inbound_path.unlink()
@@ -3323,8 +3327,9 @@ class HealthcareLabApiTests(unittest.TestCase):
 
     def test_gdt_bridge_batch_import_skips_temp_files_and_moves_parse_failures_to_error(self):
         bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
-        inbound_dir = bridge_root / "inbound"
-        inbound_dir.mkdir(parents=True, exist_ok=True)
+        inbound_dir = bridge_root / "outbox"
+        for folder_name in ("outbox", "processing", "archive", "error"):
+            (bridge_root / folder_name).mkdir(parents=True, exist_ok=True)
         (inbound_dir / "partial.gdt.tmp").write_text("not ready", encoding="utf-8")
         bad_file = inbound_dir / "bad-result.gdt"
         bad_file.write_text("8000|NOT-GDT\n", encoding="utf-8")
@@ -3419,6 +3424,9 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in result["imported"]], [first.name, second.name])
 
     def test_gdt_bridge_watcher_api_lifecycle_and_path_change_guard(self):
+        bridge_root = Path(self.client.application.config["GDT_BRIDGE_PATH"])
+        (bridge_root / "inbox").mkdir(parents=True, exist_ok=True)
+        (bridge_root / "outbox").mkdir(parents=True, exist_ok=True)
         started = self.client.post("/api/gdt/bridge/watcher/start", json={})
         self.assertEqual(started.status_code, 200)
         self.assertTrue(started.get_json()["item"]["running"])
@@ -4071,6 +4079,7 @@ class HealthcareLabApiTests(unittest.TestCase):
     def test_openemr_gdt_backend_verify_reports_healthy_steps(self, urlopen):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
         self.install_openemr_source(lambda: FakeDbConnection(rows=[{"procedure_order_id": 1}]))
+        Path(self.client.application.config["GDT_BRIDGE_PATH"]).mkdir(parents=True, exist_ok=True)
 
         result = self.run_openemr_smoke()
 
@@ -4119,6 +4128,7 @@ class HealthcareLabApiTests(unittest.TestCase):
     def test_openemr_gdt_backend_verify_degrades_when_no_ecg_orders_exist(self, urlopen):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
         self.install_openemr_source(lambda: FakeDbConnection(rows=[]))
+        Path(self.client.application.config["GDT_BRIDGE_PATH"]).mkdir(parents=True, exist_ok=True)
 
         result = self.run_openemr_smoke()
 
