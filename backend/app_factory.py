@@ -50,6 +50,7 @@ from backend.api.lab_servers import create_lab_servers_blueprint
 from backend.api.dashboard import create_dashboard_blueprint
 from backend.api.dcm4chee import create_dcm4chee_profile_blueprint
 from backend.api.patients import create_patients_blueprint
+from backend.api.orders import create_orders_blueprint
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain import fhir as fhir_domain
@@ -3544,6 +3545,14 @@ def create_app(database_path: str | None = None) -> Flask:
             dcm_profile=dcm4chee_profile_from_config,
         )
     )
+    app.register_blueprint(
+        create_orders_blueprint(
+            app, store, medplum_base_url=configured_medplum_base_url,
+            auth_manager=get_auth_manager, fhir_sync=sync_fhir_workflow_record_to_medplum,
+            dcm_sync=sync_order_to_dcm4chee_mwl, dcm_verify=verify_order_dcm4chee_mwl,
+            dcm_profile=dcm4chee_profile_from_config,
+        )
+    )
 
     def static_asset_version(filename: str) -> str:
         asset_path = Path(app.static_folder or "") / filename
@@ -3647,11 +3656,9 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response(str(exc), 400)
         return jsonify({"success": True, **result}), 201
 
-    @app.get("/api/orders")
     def list_orders():
         return jsonify({"success": True, "items": store.list_order_records()})
 
-    @app.get("/api/orders/<int:order_id>")
     def get_order(order_id: int):
         try:
             item = store.get_order_record(order_id)
@@ -3659,7 +3666,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response("Order record was not found.", 404)
         return jsonify({"success": True, "item": item})
 
-    @app.post("/api/orders")
     def create_order():
         payload = request.get_json(silent=True) or {}
         try:
@@ -3699,7 +3705,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response(str(exc), 400)
         return jsonify({"success": True, "item": item}), 201
 
-    @app.get("/api/orders/<int:order_id>/dcm4chee-attempts")
     def list_order_dcm4chee_attempts(order_id: int):
         try:
             item = store.get_order_record(order_id)
@@ -3709,7 +3714,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response("Order record is not DICOM MWL mode.", 400)
         return jsonify({"success": True, "items": store.list_dcm4chee_mwl_attempts(order_id)})
 
-    @app.post("/api/orders/<int:order_id>/dcm4chee-sync")
     def sync_order_dcm4chee_record(order_id: int):
         try:
             item = store.get_order_record(order_id)
@@ -3737,7 +3741,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.post("/api/orders/<int:order_id>/dcm4chee-mwl-verify")
     def verify_order_dcm4chee_record(order_id: int):
         try:
             item = store.get_order_record(order_id)
@@ -3766,7 +3769,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.get("/api/orders/<int:order_id>/dcm4chee-e2e-evidence")
     def get_order_dcm4chee_e2e_evidence(order_id: int):
         try:
             item = store.get_order_record(order_id)
@@ -3784,7 +3786,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.post("/api/orders/<int:order_id>/dcm4chee-simulated-ap-return")
     def create_order_dcm4chee_simulated_ap_return(order_id: int):
         payload = request.get_json(silent=True) or {}
         try:
