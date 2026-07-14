@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from backend.domain.errors import UpstreamFhirError, ValidationError
-from backend.lab_store import FHIR_SYNC_STATUS_SYNCED, SimulatorValidationError
+from backend.domain.errors import SimulatorValidationError, UpstreamFhirError, ValidationError
+from backend.domain.statuses import FHIR_SYNC_STATUS_SYNCED
 
 
 class FhirRepositoryPort(Protocol):

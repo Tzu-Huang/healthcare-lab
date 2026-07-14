@@ -1,0 +1,22 @@
+"""Shared workflow statuses independent of persistence implementations."""
+
+ORDER_STATUS_READY = "Ready to send"
+ORDER_STATUS_ACCEPTED = "Accepted"
+ORDER_STATUS_ERROR = "Error"
+ORDER_STATUS_REJECTED = "Rejected"
+ORDER_STATUS_TRANSPORT_ERROR = "Transport error"
+
+DCM4CHEE_MWL_STATUS_PENDING = "Pending sync"
+DCM4CHEE_MWL_STATUS_CREATED = "Created"
+DCM4CHEE_MWL_STATUS_FAILED = "Sync failed"
+DCM4CHEE_MWL_STATUS_PATIENT_MISSING = "Patient missing"
+
+DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED = "not_verified"
+DCM4CHEE_MWL_VERIFICATION_VERIFIED = "verified"
+DCM4CHEE_MWL_VERIFICATION_FAILED = "verification_failed"
+DCM4CHEE_MWL_VERIFICATION_AMBIGUOUS = "verification_ambiguous"
+
+FHIR_SYNC_STATUS_PENDING = "Pending sync"
+FHIR_SYNC_STATUS_SYNCING = "Syncing"
+FHIR_SYNC_STATUS_SYNCED = "Synced"
+FHIR_SYNC_STATUS_FAILED = "Sync failed"

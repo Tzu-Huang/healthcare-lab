@@ -9,6 +9,10 @@ class ValidationError(ValueError):
     """Raised when application input or configuration is invalid."""
 
 
+class SimulatorValidationError(ValueError):
+    """Raised when simulator workflow input is invalid."""
+
+
 class UpstreamFhirError(RuntimeError):
     """FHIR transport or upstream response failure."""
 

@@ -169,6 +169,16 @@ class ArchitectureContractTest(unittest.TestCase):
                         f"{path.relative_to(ROOT)} lower layer must not import backend.api.",
                     )
 
+    def test_services_do_not_import_concrete_store(self):
+        for path in (BACKEND / "services").glob("*.py"):
+            modules = imported_modules(path)
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertNotIn(
+                    "backend.lab_store",
+                    modules,
+                    f"{path.relative_to(ROOT)} must depend on domain types and repository ports, not DemoStore.",
+                )
+
     def test_responsibility_packages_obey_placement_contract(self):
         violations: list[PlacementViolation] = []
         for package in RESPONSIBILITY_PACKAGES:
