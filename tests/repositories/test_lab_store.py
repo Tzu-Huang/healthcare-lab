@@ -1190,7 +1190,7 @@ class HealthcareLabStoreTests(unittest.TestCase):
 
     def test_healthcare_lab_template_excludes_ap_simulator_views(self):
         template = (
-            Path(__file__).parents[1] / "frontend" / "templates" / "index.html"
+            Path(__file__).parents[2] / "frontend" / "templates" / "index.html"
         ).read_text(encoding="utf-8")
 
         self.assertIn('id="lab-console-view"', template)
