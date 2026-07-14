@@ -3,17 +3,27 @@
 from __future__ import annotations
 
 import socket
+import urllib.parse
+import uuid
 from collections.abc import Callable, Mapping
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from backend.clients.oie import send_hl7_mllp_message
+from backend.clients import dcm4chee as dcm4chee_client
+from backend.domain.errors import SimulatorValidationError, UpstreamDcm4cheeError, ValidationError
 from backend.domain.statuses import (
     DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE,
     DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
     DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
+    DCM4CHEE_RESULT_STATUS_DUPLICATE,
+    DCM4CHEE_RESULT_STATUS_NO_RESULT,
+    DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
     FHIR_SYNC_STATUS_SYNCED,
 )
 from backend.services.oie_workflow import parse_hl7_ack
+
+request_dcm4chee_qido = dcm4chee_client.request_dcm4chee_qido
 
 
 class PatientRepositoryPort(Protocol):
@@ -178,3 +188,179 @@ def sync_patient_to_dcm4chee(
         updated_attempt,
         sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED if accepted else DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
     )
+
+
+def dcm4chee_result_query_from_mapping(mapping: dict[str, Any]) -> dict[str, str]:
+    query = {
+        "StudyInstanceUID": str(mapping.get("studyInstanceUid") or "").strip(),
+        "AccessionNumber": str(mapping.get("accessionNumber") or "").strip(),
+        "PatientID": str(mapping.get("patientId") or "").strip(),
+        "IssuerOfPatientID": str(mapping.get("issuerOfPatientId") or "").strip(),
+    }
+    return {key: value for key, value in query.items() if value}
+
+
+def dcm4chee_merge_result_metadata(
+    base_metadata: dict[str, str],
+    child_metadata: dict[str, str],
+) -> dict[str, str]:
+    merged = {**base_metadata}
+    for key, value in child_metadata.items():
+        if value or key not in merged:
+            merged[key] = value
+    return merged
+
+
+def dcm4chee_result_refresh_generation(
+    *,
+    clock: Callable[..., datetime] = datetime.now,
+    identifier_factory: Callable[[], Any] = uuid.uuid4,
+) -> str:
+    timestamp = clock(timezone.utc).isoformat(timespec="microseconds")
+    return f"{timestamp}-{identifier_factory().hex}"
+
+
+def refresh_patient_dcm4chee_results(
+    store: PatientRepositoryPort,
+    patient_record_id: int,
+    profile: dict[str, Any],
+) -> dict[str, Any]:
+    store.get_patient_record(patient_record_id)
+    mappings = store.list_dcm4chee_mwl_mappings_for_patient(patient_record_id)
+    refreshed: list[dict[str, Any]] = []
+    queries: list[dict[str, Any]] = []
+    study_uid_counts: dict[str, int] = {}
+    refresh_generation = dcm4chee_result_refresh_generation()
+    store.begin_dcm4chee_result_refresh(patient_record_id, refresh_generation)
+    if not mappings:
+        diagnostic = store.record_dcm4chee_result_refresh_diagnostic(
+            patient_record_id=patient_record_id,
+            profile=profile,
+            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+            diagnostic_payload={"reason": "no_local_dcm4chee_orders"},
+            refresh_generation=refresh_generation,
+        )
+        store.complete_dcm4chee_result_refresh(patient_record_id, refresh_generation)
+        patient = store.get_patient_record(patient_record_id)
+        return {
+            "success": True,
+            "patient": patient,
+            "items": patient.get("dcm4chee", {}).get("dicomResults", []),
+            "refreshed": [diagnostic],
+            "queries": [],
+            "refreshGeneration": refresh_generation,
+        }
+
+    for mapping in mappings:
+        query = dcm4chee_result_query_from_mapping(mapping)
+        try:
+            status, studies_body, studies_url = request_dcm4chee_qido(profile, "studies", query)
+        except (ValidationError, SimulatorValidationError) as exc:
+            diagnostic = store.record_dcm4chee_result_refresh_diagnostic(
+                patient_record_id=patient_record_id,
+                profile=profile,
+                status=DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
+                query_payload=query,
+                diagnostic_payload={"reason": "profile_invalid", "error": str(exc)},
+                refresh_generation=refresh_generation,
+            )
+            refreshed.append(diagnostic)
+            continue
+        except UpstreamDcm4cheeError as exc:
+            diagnostic = store.record_dcm4chee_result_refresh_diagnostic(
+                patient_record_id=patient_record_id,
+                profile=profile,
+                status=DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
+                query_payload=query,
+                diagnostic_payload={
+                    "reason": "dcm4chee_query_failed",
+                    "error": str(exc),
+                    "httpStatus": exc.http_status,
+                    "responseBody": exc.response_body,
+                },
+                refresh_generation=refresh_generation,
+            )
+            refreshed.append(diagnostic)
+            continue
+        queries.append({"url": studies_url, "status": status, "query": query})
+        study_datasets = store.dcm4chee_datasets_from_response_body(studies_body)
+        if not study_datasets:
+            diagnostic = store.record_dcm4chee_result_refresh_diagnostic(
+                patient_record_id=patient_record_id,
+                profile=profile,
+                status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
+                query_url=studies_url,
+                query_payload=query,
+                diagnostic_payload={"reason": "empty_study_query", "mappingId": mapping.get("id")},
+                refresh_generation=refresh_generation,
+            )
+            refreshed.append(diagnostic)
+            continue
+        for study_dataset in study_datasets:
+            study_metadata = store.dcm4chee_result_metadata_from_dataset(study_dataset)
+            study_uid = study_metadata.get("study_instance_uid", "")
+            if study_uid:
+                study_uid_counts[study_uid] = study_uid_counts.get(study_uid, 0) + 1
+            refreshed.append(
+                store.upsert_dcm4chee_result_record(
+                    study_metadata,
+                    profile,
+                    patient_record_id=patient_record_id,
+                    query_url=studies_url,
+                    query_payload=query,
+                    raw_metadata=study_dataset,
+                    refresh_generation=refresh_generation,
+                )
+            )
+            if not study_uid:
+                continue
+            study_path = f"studies/{urllib.parse.quote(study_uid, safe='')}"
+            for child_path in (f"{study_path}/series", f"{study_path}/instances"):
+                try:
+                    _child_status, child_body, child_url = request_dcm4chee_qido(profile, child_path, {})
+                except UpstreamDcm4cheeError:
+                    continue
+                for child_dataset in store.dcm4chee_datasets_from_response_body(child_body):
+                    child_metadata = store.dcm4chee_result_metadata_from_dataset(child_dataset)
+                    metadata = dcm4chee_merge_result_metadata(study_metadata, child_metadata)
+                    refreshed.append(
+                        store.upsert_dcm4chee_result_record(
+                            metadata,
+                            profile,
+                            patient_record_id=patient_record_id,
+                            query_url=child_url,
+                            query_payload={"parentStudyInstanceUID": study_uid},
+                            raw_metadata=child_dataset,
+                            refresh_generation=refresh_generation,
+                        )
+                    )
+
+    for study_uid, count in study_uid_counts.items():
+        if count > 1:
+            refreshed.append(
+                store.record_dcm4chee_result_refresh_diagnostic(
+                    patient_record_id=patient_record_id,
+                    profile=profile,
+                    status=DCM4CHEE_RESULT_STATUS_DUPLICATE,
+                    query_payload={"studyInstanceUid": study_uid},
+                    diagnostic_payload={
+                        "reason": "duplicate_study_candidates",
+                        "studyInstanceUid": study_uid,
+                        "count": count,
+                    },
+                    refresh_generation=refresh_generation,
+                )
+            )
+    store.complete_dcm4chee_result_refresh(patient_record_id, refresh_generation)
+    patient = store.get_patient_record(patient_record_id)
+    return {
+        "success": not any(
+            item.get("reconciliationStatus") == DCM4CHEE_RESULT_STATUS_QUERY_FAILED
+            for item in refreshed
+        ),
+        "patient": patient,
+        "items": patient.get("dcm4chee", {}).get("dicomResults", []),
+        "refreshed": refreshed,
+        "queries": queries,
+        "refreshGeneration": refresh_generation,
+    }

@@ -168,6 +168,14 @@ class ArchitectureContractTest(unittest.TestCase):
                         ),
                         f"{path.relative_to(ROOT)} lower layer must not import backend.api.",
                     )
+                    if package == "domain":
+                        self.assertFalse(
+                            any(
+                                name == "backend.config" or name.startswith("backend.config.")
+                                for name in modules
+                            ),
+                            f"{path.relative_to(ROOT)} domain layer must not import configuration.",
+                        )
 
     def test_services_do_not_import_concrete_store(self):
         for path in (BACKEND / "services").glob("*.py"):
@@ -210,22 +218,26 @@ class ArchitectureContractTest(unittest.TestCase):
             "Architecture placement violations:\n" + "\n".join(map(str, violations)),
         )
 
-    def test_composition_root_does_not_own_workflow_implementations(self):
+    def test_composition_root_surface_is_allowlisted(self):
         path = BACKEND / "app_factory.py"
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
         definitions = {
             node.name
             for node in tree.body
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
         }
-        forbidden = {
-            "accept_oie_result_payload",
-            "import_gdt_bridge_files",
-            "sync_fhir_workflow_record_to_medplum",
-            "sync_order_to_dcm4chee_mwl",
-            "sync_patient_to_dcm4chee",
+        allowed = {
+            "create_app",
+            "dcm4chee_result_refresh_generation",
+            "main",
         }
-        self.assertEqual(set(), definitions & forbidden)
+        self.assertEqual(allowed, definitions)
+        self.assertLessEqual(
+            len(source.splitlines()),
+            500,
+            "backend/app_factory.py must remain a compact composition root.",
+        )
 
     def test_placement_failures_name_category_path_and_line(self):
         fixtures = {
