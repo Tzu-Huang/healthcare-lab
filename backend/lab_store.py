@@ -1488,8 +1488,15 @@ class DemoStore:
             raise SimulatorValidationError("OIE managedChannels must be a JSON array.")
 
         base_url = str(management.get("baseUrl") or "").strip()
-        parsed_url = urllib.parse.urlparse(base_url)
-        if parsed_url.scheme.lower() not in {"http", "https"} or not parsed_url.hostname:
+        try:
+            parsed_url = urllib.parse.urlparse(base_url)
+            parsed_hostname = parsed_url.hostname
+            parsed_url.port
+        except ValueError as exc:
+            raise SimulatorValidationError(
+                "OIE Management API baseUrl must be an HTTP or HTTPS URL with a host."
+            ) from exc
+        if parsed_url.scheme.lower() not in {"http", "https"} or not parsed_hostname:
             raise SimulatorValidationError(
                 "OIE Management API baseUrl must be an HTTP or HTTPS URL with a host."
             )

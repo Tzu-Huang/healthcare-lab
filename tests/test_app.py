@@ -3610,6 +3610,10 @@ class HealthcareLabApiTests(unittest.TestCase):
         invalid_url["managementApi"]["baseUrl"] = "ftp://oie.example.test"
         invalid_payloads.append((invalid_url, "baseUrl"))
 
+        malformed_url = self.oie_settings_payload()
+        malformed_url["managementApi"]["baseUrl"] = "http://[bad"
+        invalid_payloads.append((malformed_url, "baseUrl"))
+
         invalid_host = self.oie_settings_payload()
         invalid_host["resultListener"]["host"] = ""
         invalid_payloads.append((invalid_host, "host"))
