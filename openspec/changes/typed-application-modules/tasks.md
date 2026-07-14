@@ -7,7 +7,7 @@
 
 ## 2. Domain and External Client Extraction
 
-- [ ] 2.1 Move framework-independent models, statuses, errors, validation, and shared mapping helpers into typed domain modules.
+- [x] 2.1 Move framework-independent models, statuses, errors, validation, and shared mapping helpers into typed domain modules.
 - [x] 2.2 Extract Medplum/FHIR authentication and transport operations into typed client modules while preserving retry, error, and response behavior.
 - [x] 2.3 Extract dcm4chee/DICOMweb transport operations into typed client modules while preserving verification and error classification behavior.
 - [x] 2.4 Add or relocate focused client and domain tests before removing the corresponding implementations from `app.py`.
