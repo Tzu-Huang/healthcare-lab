@@ -3637,7 +3637,7 @@ class HealthcareLabApiTests(unittest.TestCase):
                 )
 
     def test_oie_settings_api_preserves_replaces_and_never_exposes_password(self):
-        secret = "new-write-only-secret"
+        secret = "  new-write-only-secret  "
         payload = self.oie_settings_payload()
         payload["managementApi"]["password"] = secret
         logger = self.client.application.logger
@@ -3660,10 +3660,10 @@ class HealthcareLabApiTests(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(stored_password, secret)
 
-        for empty_password in ("", None):
-            with self.subTest(empty_password=empty_password):
+        for invalid_password in ("", None, 123):
+            with self.subTest(invalid_password=invalid_password):
                 invalid = self.oie_settings_payload()
-                invalid["managementApi"]["password"] = empty_password
+                invalid["managementApi"]["password"] = invalid_password
                 rejected = self.client.put("/api/oie/settings", json=invalid)
                 self.assertEqual(rejected.status_code, 400)
                 self.assertIn("non-empty string", rejected.get_json()["error"])

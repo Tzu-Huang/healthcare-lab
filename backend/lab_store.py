@@ -1573,15 +1573,12 @@ class DemoStore:
         password_provided = "password" in management
         password = ""
         if password_provided:
-            if management.get("password") is None:
+            raw_password = management.get("password")
+            if not isinstance(raw_password, str) or not raw_password.strip():
                 raise SimulatorValidationError(
                     "OIE Management API password must be a non-empty string when provided."
                 )
-            password = str(management.get("password")).strip()
-            if not password:
-                raise SimulatorValidationError(
-                    "OIE Management API password must be a non-empty string when provided."
-                )
+            password = raw_password
 
         return {
             "management_api_base_url": base_url,
