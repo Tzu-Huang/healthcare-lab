@@ -48,6 +48,7 @@ from backend.clients import dcm4chee as dcm4chee_client
 from backend.api.oie import create_oie_settings_blueprint
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
+from backend.domain import fhir as fhir_domain
 from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as RuntimeGdtBridgeInboundWatcher
 from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
 from backend.services.oie_settings import OieSettingsService
@@ -1586,6 +1587,17 @@ def operation_outcome_from_error(message: str) -> dict[str, Any]:
 def http_status_from_upstream_error(message: str) -> int | None:
     match = re.search(r"HTTP\s+(\d+)", message)
     return int(match.group(1)) if match else None
+
+
+# Compatibility names backed by framework-independent domain implementations.
+normalize_fhir_reference = fhir_domain.normalize_fhir_reference
+fhir_bundle_resources = fhir_domain.fhir_bundle_resources
+service_request_references = fhir_domain.service_request_references
+diagnostic_report_effective_date = fhir_domain.diagnostic_report_effective_date
+attachment_reference_values = fhir_domain.attachment_reference_values
+operation_outcome_from_payload = fhir_domain.operation_outcome_from_payload
+operation_outcome_from_error = fhir_domain.operation_outcome_from_error
+http_status_from_upstream_error = fhir_domain.http_status_from_upstream_error
 
 
 def medplum_identifier_search_url(base_url: str, record: dict[str, Any]) -> str:
