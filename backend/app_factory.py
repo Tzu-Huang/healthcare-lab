@@ -47,6 +47,7 @@ from backend.clients.medplum import (
 from backend.clients import dcm4chee as dcm4chee_client
 from backend.api.oie import create_oie_settings_blueprint
 from backend.api.lab_servers import create_lab_servers_blueprint
+from backend.api.dashboard import create_dashboard_blueprint
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain import fhir as fhir_domain
@@ -3484,6 +3485,18 @@ def create_app(database_path: str | None = None) -> Flask:
             operator_resolver=resolve_lab_operator,
         )
     )
+    app.register_blueprint(
+        create_dashboard_blueprint(
+            app,
+            store,
+            all_items=dashboard_all_group_items,
+            group_item=dashboard_group_item,
+            child_item=dashboard_child_item,
+            health_check=run_dashboard_group_health_check,
+            event_builder=dashboard_events,
+            operation_runner_provider=lambda: run_lab_operation,
+        )
+    )
 
     def get_auth_manager() -> MedplumAuthManager:
         return MedplumAuthManager(
@@ -4395,7 +4408,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.get("/api/dashboard/services")
     def dashboard_services():
         resource_snapshot = collect_dashboard_resource_snapshot()
         items = dashboard_all_group_items(app, store)
@@ -4409,7 +4421,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.get("/api/dashboard/services/<service_id>/restart-preview")
     def dashboard_restart_preview(service_id: str):
         try:
             item = dashboard_group_item(app, store, service_id)
@@ -4417,7 +4428,6 @@ def create_app(database_path: str | None = None) -> Flask:
             return error_response("Dashboard service id is not supported.", 404)
         return jsonify({"success": True, "item": item["restartPreview"]})
 
-    @app.post("/api/dashboard/services/check-all")
     def dashboard_check_all():
         results = []
         for service_id in LAB_DASHBOARD_SERVICE_GROUPS:
@@ -4439,7 +4449,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.post("/api/dashboard/services/<service_id>/<action>")
     def dashboard_service_action(service_id: str, action: str):
         payload = request.get_json(silent=True) or {}
         try:
@@ -4483,7 +4492,6 @@ def create_app(database_path: str | None = None) -> Flask:
             }
         )
 
-    @app.post("/api/dashboard/services/<service_id>/children/<child_id>/<action>")
     def dashboard_child_service_action(service_id: str, child_id: str, action: str):
         payload = request.get_json(silent=True) or {}
         try:
