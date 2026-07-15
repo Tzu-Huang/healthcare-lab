@@ -50,21 +50,23 @@ class PatientEnrichmentLoader:
             item = result[int(row["patient_record_id"])]
             if item["sync"] is None:
                 item["sync"] = self._sync_projector(row)
-        snapshotted: set[int] = set()
+        refresh_run_patients: set[int] = set()
+        selected_snapshots: set[int] = set()
         for row in refresh_rows:
             record_id = int(row["patient_record_id"])
-            snapshotted.add(record_id)
-            if row["completed_at"] and not result[record_id]["results"]:
+            refresh_run_patients.add(record_id)
+            if row["completed_at"] and record_id not in selected_snapshots:
                 snapshot = self._json_loader(row["results_snapshot_json"], [])
                 result[record_id]["results"] = snapshot if isinstance(snapshot, list) else []
+                selected_snapshots.add(record_id)
         generations: dict[int, str] = {}
         for row in result_rows:
             record_id = int(row["patient_record_id"])
-            if record_id not in snapshotted and row["refresh_generation"] and record_id not in generations:
+            if record_id not in refresh_run_patients and row["refresh_generation"] and record_id not in generations:
                 generations[record_id] = str(row["refresh_generation"])
         for row in result_rows:
             record_id = int(row["patient_record_id"])
-            if record_id in snapshotted:
+            if record_id in refresh_run_patients:
                 continue
             if generations.get(record_id) and row["refresh_generation"] != generations[record_id]:
                 continue

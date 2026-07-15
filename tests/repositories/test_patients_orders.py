@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,6 +26,31 @@ class ExtractedPatientOrderRepositoryTests(unittest.TestCase):
         patient = self.store.create_patient_record({"mrn": "EXTERNAL-1", "firstName": "Avery", "lastName": "Morgan", "dob": "19850412", "sex": "F"})
         reopened = DemoStore(self.store.path)
         self.assertEqual(reopened.patient_repository.get_patient_record(patient["id"])["summary"]["mrn"], "EXTERNAL-1")
+
+    def test_latest_empty_dicom_refresh_snapshot_remains_authoritative(self):
+        patient = self.store.create_patient_record({
+            "firstName": "Avery", "lastName": "Morgan", "dob": "19850412", "sex": "F"
+        })
+        with self.store.connect() as connection:
+            connection.execute(
+                """INSERT INTO local_dcm4chee_result_refresh_runs (
+                    patient_record_id, refresh_generation, started_at, completed_at,
+                    results_snapshot_json
+                ) VALUES (?, 'older', '1', '1', ?)""",
+                (patient["id"], json.dumps([{"marker": "stale"}])),
+            )
+            connection.execute(
+                """INSERT INTO local_dcm4chee_result_refresh_runs (
+                    patient_record_id, refresh_generation, started_at, completed_at,
+                    results_snapshot_json
+                ) VALUES (?, 'latest', '2', '2', '[]')""",
+                (patient["id"],),
+            )
+
+        projected = self.store.get_patient_record(patient["id"])
+
+        self.assertEqual(projected["dcm4chee"]["dicomResults"], [])
+        self.assertEqual(projected["dcm4chee"]["resultCount"], 0)
 
 
 if __name__ == "__main__":
