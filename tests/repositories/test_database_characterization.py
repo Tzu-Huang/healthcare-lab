@@ -54,7 +54,7 @@ class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
         store = DemoStore(self.database_path)
 
         self.assertIs(store.oie_settings_repository._lock, store.lock)
-        self.assertIs(store.oie_settings_repository._connect.__self__, store)
+        self.assertIs(store.oie_settings_repository._connect.__self__, store.database)
 
     def test_unversioned_reopen_preserves_rows_and_user_managed_seed_values(self):
         store = DemoStore(self.database_path)
