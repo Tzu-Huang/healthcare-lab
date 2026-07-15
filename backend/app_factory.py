@@ -48,6 +48,7 @@ from backend.clients.medplum import (
 )
 from backend.clients import dcm4chee as dcm4chee_client
 from backend.clients import oie as oie_client
+from backend.clients.openemr import OpenEMRProcedureOrderSource
 from backend.clients.health import (
     DOCKER_COMPOSE_APPLICATION_URLS,
     run_http_smoke,
@@ -118,6 +119,7 @@ from backend.domain.dicom import validate_dcm4chee_profile
 from backend.domain import fhir as fhir_domain
 from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as RuntimeGdtBridgeInboundWatcher
 from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
+from backend.runtime.lazy_wsgi import LazyWsgiApplication
 from backend.services.oie_settings import OieSettingsService
 from backend.services.lab_workflow import (
     DashboardWorkflowService,
@@ -166,7 +168,6 @@ from backend.lab_store import (
     ORDER_STATUS_ERROR,
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_TRANSPORT_ERROR,
-    OpenEMRProcedureOrderSource,
     SimulatorValidationError,
     ensure_gdt_bridge_dirs,
     parse_openemr_allowed_procedure_codes,
@@ -253,10 +254,13 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.extensions["demo_store"] = store
     app.extensions["openemr_procedure_order_source"] = openemr_source
-    app.extensions["oie_result_listener"] = OieResultListener(store, accept_oie_result_payload)
+    app.extensions["oie_result_listener"] = OieResultListener(
+        store.oie_repository, accept_oie_result_payload
+    )
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
     app.extensions["oie_settings_service"] = OieSettingsService(store.oie_settings_repository)
     app.extensions["oie_workflow_service"] = OieWorkflowService(
+        store.oie_repository,
         store,
         app.config,
         app.extensions["oie_result_listener"],
@@ -274,7 +278,8 @@ def create_app(database_path: str | None = None) -> Flask:
         create_lab_servers_blueprint(
             LabServerWorkflowService(
                 app,
-                store,
+                store.lab_repository,
+                operation_repository=store,
                 health_checker=lambda target_store, server_id: run_lab_server_health_check(
                     target_store, server_id
                 ),
@@ -404,7 +409,7 @@ def create_app(database_path: str | None = None) -> Flask:
     return app
 
 
-app = create_app()
+app = LazyWsgiApplication(create_app)
 
 
 def main() -> None:

@@ -120,6 +120,38 @@ FRONTEND_FUNCTION_PATTERN = re.compile(
 CSS_RULE_PATTERN = re.compile(r"(?:^|[{}])\s*([^@{}][^{}]*)\{", re.MULTILINE)
 CSS_FAMILY_PATTERN = re.compile(r"[.#][A-Za-z_-][\w-]*")
 FRONTEND_MODULE_PREFIX_NAME = "<module-prefix>"
+DEMO_STORE_COMPATIBILITY_DELEGATES = {
+    "get_oie_settings_profile": "self.oie_settings_repository.get",
+    "update_oie_settings_profile": "self.oie_settings_repository.update",
+    "list_oie_workbench": "compose_oie_workbench",
+    "record_oie_result": "self.oie_repository.record_oie_result",
+    "record_oie_result_error": "self.oie_repository.record_oie_result_error",
+    "list_oie_results": "self.oie_repository.list_oie_results",
+    "list_lab_servers": "self.lab_repository.list_servers",
+    "get_lab_server": "self.lab_repository.get_server",
+    "create_lab_server": "self.lab_repository.create_server",
+    "update_lab_server": "self.lab_repository.update_server",
+    "update_lab_server_health": "self.lab_repository.update_health",
+    "record_lab_operation": "self.lab_repository.record_operation",
+    "get_lab_operation": "self.lab_repository.get_operation",
+    "list_lab_operations": "self.lab_repository.list_operations",
+}
+# These fingerprints cover only the explicitly approved composition assignments.
+# They are intentionally outside the legacy baseline: changing any constructor
+# argument makes the architecture contract fail instead of refreshing an exception.
+DEMO_STORE_COMPOSITION_VALUE_FINGERPRINTS = {
+    "database": "63ceadc3d76eac94",
+    "path": "015349d13b08340d",
+    "lock": "30935000bde9d350",
+    "oie_settings_repository": "5f4116db8565a374",
+    "lab_repository": "85f04e6f44d60b76",
+    "oie_repository": "ad1c97844d445ea8",
+}
+OIE_WORKBENCH_COMPOSITION_CALLS = (
+    "self.list_oie_local_adt_inventory",
+    "self.list_oie_local_order_inventory",
+    "self.oie_repository.list_oie_results",
+)
 
 
 @dataclass(frozen=True)
@@ -249,6 +281,99 @@ def module_statement_symbol(node: ast.stmt) -> str:
     return "<module>.statement"
 
 
+def is_repository_compatibility_delegate(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    """Recognize mechanically thin facade calls without baseline exceptions."""
+    if len(node.body) != 1 or not isinstance(node.body[0], ast.Return):
+        return False
+    call = node.body[0].value
+    if not isinstance(call, ast.Call):
+        return False
+    target = call.func
+    expected_target = DEMO_STORE_COMPATIBILITY_DELEGATES.get(node.name)
+    if dotted_name(target) != expected_target:
+        return False
+    if expected_target == "compose_oie_workbench":
+        nested_calls = []
+        for argument in call.args:
+            if not isinstance(argument, ast.Call) or argument.args or argument.keywords:
+                return False
+            nested_calls.append(dotted_name(argument.func))
+        return not call.keywords and tuple(nested_calls) == OIE_WORKBENCH_COMPOSITION_CALLS
+    delegated_values = [*call.args, *(item.value for item in call.keywords)]
+    return not any(
+        isinstance(item, (ast.Call, ast.Lambda))
+        for value in delegated_values
+        for item in ast.walk(value)
+    )
+
+
+def is_demo_store_composition_initializer(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    """Recognize the exact infrastructure and repository composition surface."""
+    if node.name != "__init__" or definition_has_sql_execution(node):
+        return False
+    assignments: dict[str, str] = {}
+    initialized = False
+    for statement in node.body:
+        if isinstance(statement, ast.ImportFrom):
+            if statement.module != "backend.repositories.oie_settings":
+                return False
+            if {alias.name for alias in statement.names} - {
+                "OieSettingsRepository",
+                "serialize_oie_settings_profile",
+                "validate_oie_settings_payload",
+            }:
+                return False
+            continue
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            if dotted_name(statement.value.func) != "self.initialize":
+                return False
+            initialized = True
+            continue
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1:
+            return False
+        target_name = dotted_name(statement.targets[0])
+        if not target_name.startswith("self."):
+            return False
+        attribute = target_name.removeprefix("self.")
+        expected_fingerprint = DEMO_STORE_COMPOSITION_VALUE_FINGERPRINTS.get(attribute)
+        if expected_fingerprint is None:
+            return False
+        actual_fingerprint = stable_fingerprint(statement.value)
+        if actual_fingerprint != expected_fingerprint:
+            return False
+        assignments[attribute] = actual_fingerprint
+    return initialized and assignments == DEMO_STORE_COMPOSITION_VALUE_FINGERPRINTS
+
+
+def is_demo_store_composition_class(node: ast.ClassDef) -> bool:
+    """Recognize only the plain DemoStore method container and its exact initializer."""
+    if (
+        node.name != "DemoStore"
+        or node.bases
+        or node.keywords
+        or node.decorator_list
+        or any(
+            not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+            for item in node.body
+        )
+    ):
+        return False
+    initializer = next(
+        (
+            item
+            for item in node.body
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and item.name == "__init__"
+        ),
+        None,
+    )
+    return initializer is not None and is_demo_store_composition_initializer(initializer)
+
+
 class LegacyCandidateCollector(ast.NodeVisitor):
     def __init__(self, path: str, aliases: dict[str, str]):
         self.path = path
@@ -301,9 +426,13 @@ class LegacyCandidateCollector(ast.NodeVisitor):
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self.symbols.append(node.name)
-        self.add("catch-all", node)
-        if definition_has_transport(node, self.aliases) or node.name.endswith(("Adapter", "Connection")):
-            self.add("transport", node)
+        is_demo_store_composition = is_demo_store_composition_class(node)
+        if not is_demo_store_composition:
+            self.add("catch-all", node)
+            if definition_has_transport(node, self.aliases) or node.name.endswith(
+                ("Adapter", "Connection")
+            ):
+                self.add("transport", node)
         self.generic_visit(node)
         self.symbols.pop()
 
@@ -314,6 +443,12 @@ class LegacyCandidateCollector(ast.NodeVisitor):
         self._visit_function(node)
 
     def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        if self.symbol == "DemoStore" and (
+            is_repository_compatibility_delegate(node)
+            or is_demo_store_composition_initializer(node)
+        ):
+            self.generic_visit(node)
+            return
         self.symbols.append(node.name)
         lowered = node.name.lower()
         self.add("catch-all", node)
@@ -714,13 +849,13 @@ def placement_violations(relative_path: str, source: str) -> list[PlacementViola
                         )
                     )
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if SQL_PATTERN.search(node.value) and package != "repositories":
+            if SQL_PATTERN.search(node.value) and package not in {"repositories", "clients"}:
                 violations.append(
                     PlacementViolation(
                         "sql",
                         path,
                         node.lineno,
-                        "SQL statements must live in backend/repositories.",
+                        "SQL statements must live in backend/repositories or external database clients.",
                     )
                 )
         if isinstance(node, ast.Call):
@@ -996,11 +1131,17 @@ class ArchitectureContractTest(unittest.TestCase):
             | owned_receiver_method_calls(tree, "self", "repository")
             | {"list_lab_servers"}
         )
+        consumed.discard("list_gdt_orders")
         self.assertTrue(declared, "LabRepositoryPort must declare a structural repository surface.")
         self.assertEqual(
             set(),
             consumed - declared,
             f"LabRepositoryPort is missing consumed operations: {sorted(consumed - declared)}",
+        )
+        self.assertIn(
+            "list_gdt_orders",
+            protocol_methods(tree, "LabOperationStorePort"),
+            "Cross-context GDT inventory must remain on the operation coordination port.",
         )
 
     def test_runtime_store_ports_declare_operations(self):
@@ -1186,6 +1327,106 @@ class ArchitectureContractTest(unittest.TestCase):
             set(),
             legacy_backend_candidates("backend/lab_store.py", ""),
         )
+
+    def test_compatibility_delegate_exemption_rejects_lookalikes_and_nested_work(self):
+        allowed = (
+            "def get_lab_server(self, server_id):\n"
+            "    return self.lab_repository.get_server(server_id)\n"
+        )
+        allowed_node = ast.parse(allowed).body[0]
+        self.assertIsInstance(allowed_node, ast.FunctionDef)
+        self.assertTrue(is_repository_compatibility_delegate(allowed_node))
+        self.assertTrue(
+            legacy_backend_violations(
+                "backend/lab_store.py", allowed, frozenset()
+            ),
+            "Approved delegate shapes are exempt only inside DemoStore.",
+        )
+        rejected = {
+            "lookalike repository": (
+                "def get_lab_server(self, server_id):\n"
+                "    return attacker.fake_repository.get_server(server_id)\n"
+            ),
+            "new facade": (
+                "def delete_everything(self):\n"
+                "    return self.lab_repository.delete_everything()\n"
+            ),
+            "broad composer": (
+                "def workbench(values):\n"
+                "    return compose_payload_and_write(values)\n"
+            ),
+            "nested SQL": (
+                "def get_lab_server(self, connection):\n"
+                "    return self.lab_repository.get_server("
+                "connection.execute('SELECT id FROM lab_servers'))\n"
+            ),
+            "nested workflow": (
+                "def get_lab_server(self, server_id):\n"
+                "    return self.lab_repository.get_server(build_payload(server_id))\n"
+            ),
+        }
+        for label, source in rejected.items():
+            with self.subTest(label=label):
+                self.assertTrue(
+                    legacy_backend_violations(
+                        "backend/lab_store.py", source, frozenset()
+                    )
+                )
+
+    def test_demo_store_composition_is_allowed_without_aggregate_exception(self):
+        tree = ast.parse((BACKEND / "lab_store.py").read_text(encoding="utf-8"))
+        demo_store = next(
+            item
+            for item in tree.body
+            if isinstance(item, ast.ClassDef) and item.name == "DemoStore"
+        )
+        initializer = next(
+            item
+            for item in demo_store.body
+            if isinstance(item, ast.FunctionDef) and item.name == "__init__"
+        )
+        self.assertTrue(is_demo_store_composition_class(demo_store))
+        self.assertTrue(is_demo_store_composition_initializer(initializer))
+
+        lab_assignment = next(
+            item
+            for item in initializer.body
+            if isinstance(item, ast.Assign)
+            and dotted_name(item.targets[0]) == "self.lab_repository"
+        )
+        lab_assignment.value.args.append(
+            ast.Dict(keys=[ast.Constant("workflow")], values=[ast.Constant("hidden")])
+        )
+        self.assertFalse(is_demo_store_composition_initializer(initializer))
+
+    def test_demo_store_class_shell_rejects_structural_mutations(self):
+        tree = ast.parse((BACKEND / "lab_store.py").read_text(encoding="utf-8"))
+        demo_store = next(
+            item
+            for item in tree.body
+            if isinstance(item, ast.ClassDef) and item.name == "DemoStore"
+        )
+        self.assertTrue(is_demo_store_composition_class(demo_store))
+
+        mutations = (
+            lambda item: item.bases.append(ast.Name(id="InjectedBehavior")),
+            lambda item: item.decorator_list.append(ast.Name(id="instrument")),
+            lambda item: item.body.append(
+                ast.Assign(
+                    targets=[ast.Name(id="hidden_state")],
+                    value=ast.Dict(
+                        keys=[ast.Constant("workflow")],
+                        values=[ast.Constant("hidden")],
+                    ),
+                )
+            ),
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                candidate = ast.parse(ast.unparse(demo_store)).body[0]
+                self.assertIsInstance(candidate, ast.ClassDef)
+                mutate(candidate)
+                self.assertFalse(is_demo_store_composition_class(candidate))
 
     def test_new_frontend_globals_and_selector_families_are_rejected(self):
         function_sources = {
