@@ -1,29 +1,29 @@
-# Code Review: ZAC-57 (Round 4)
+# Code Review: ZAC-57 (Round 5)
 
 ## Findings
 
-### [P1] Scope composition exemptions to the exact DemoStore class shell
+### [P3] Remove the extra blank line at EOF
 
-`tests/test_architecture_contract.py:434` applies `is_repository_compatibility_delegate` before checking the collector's enclosing symbol, so an approved-shaped function outside `DemoStore` reports zero violations. In addition, the class exemption at line 413 depends only on the class name and initializer; adding a base class, decorator, or class-level state leaves the collected candidate set unchanged. Restrict delegate exemptions to methods whose enclosing symbol is exactly `DemoStore`, and require the exempt class shell to have no bases, decorators, keywords, or non-method state. Add negative fixtures for standalone/foreign delegates and structural class mutations.
+`backend/clients/openemr.py:209` adds a blank line after the module's terminating newline, so `git diff --check main...HEAD` reports `new blank line at EOF`. Remove the extra line so the branch passes the standard diff hygiene check.
 
 ## Missing Tests and Residual Risks
 
-- No fixture currently proves that an approved-shaped delegate outside `DemoStore` is rejected.
-- No fixture currently proves that base classes, decorators, or class-level payload/state invalidate the aggregate class exemption.
-- Review did not contact live OpenEMR/OIE services or run Docker, deployment, push, merge, or release actions.
+- No functional test gap was found in this round.
+- Live OpenEMR/OIE services and Docker/deployment actions remain intentionally untested.
 
 ## Prior Finding Status
 
-- Resolved: retained facade methods are bound to exact repository targets.
-- Resolved: repository composition constructor arguments are protected by reviewed AST fingerprints.
-- Resolved: baseline changes remain removal-only and direct OIE settings module execution passes.
+- Resolved: compatibility delegates are limited to the exact retained DemoStore method-to-target mapping.
+- Resolved: repository constructor arguments and the plain DemoStore class shell are enforced.
+- Resolved: all architecture bypass probes now report violations; the legacy baseline remains removal-only.
 
 ## Verification Reviewed
 
-- Focused extraction and isolation suite: 45 tests passed.
-- Architecture contract suite: 36 tests passed, but the context and class-shell probes bypass it.
-- Full automated suite: 262 tests passed with `instance/healthcare-lab.db` unchanged.
+- Focused extraction scope: 45 passed.
+- Architecture contract: 37 passed.
+- Full automated suite: 263 passed with `instance/healthcare-lab.db` unchanged.
+- Guard probes for standalone, new-facade, lookalike, and nested-work cases all report violations.
 
 ## Verdict
 
-Changes requested. Close the remaining exemption-scope gap before `/dev-done`.
+Changes requested for the one-line diff hygiene fix before `/dev-done`.
