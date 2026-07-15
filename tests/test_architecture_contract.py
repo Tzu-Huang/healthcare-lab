@@ -90,8 +90,11 @@ WORKFLOW_NAME_PREFIXES = (
 )
 TRANSPORT_MODULES = ("http", "requests", "socket", "subprocess", "urllib")
 FRONTEND_FUNCTION_PATTERN = re.compile(
-    r"^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(|"
-    r"^const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^\n]*\)|[A-Za-z_$][\w$]*)\s*=>",
+    r"^(?:export\s+)?(?:"
+    r"(?:async\s+)?function\s+(?P<declaration>[A-Za-z_$][\w$]*)\s*\(|"
+    r"(?:const|let|var)\s+(?P<assignment>[A-Za-z_$][\w$]*)\s*=\s*(?:"
+    r"(?:async\s+)?function\b|(?:async\s*)?(?:\([^\n]*\)|[A-Za-z_$][\w$]*)\s*=>)|"
+    r"class\s+(?P<class_name>[A-Za-z_$][\w$]*)\b)",
     re.MULTILINE,
 )
 CSS_RULE_PATTERN = re.compile(r"(?:^|})\s*([^@{}][^{}]*)\{", re.MULTILINE)
@@ -271,7 +274,8 @@ def legacy_backend_violations(
 def frontend_top_level_functions(source: str) -> dict[str, int]:
     functions: dict[str, int] = {}
     for match in FRONTEND_FUNCTION_PATTERN.finditer(source):
-        name = match.group(1) or match.group(2)
+        name = match.group("declaration", "assignment", "class_name")
+        name = next(value for value in name if value)
         functions[name] = source.count("\n", 0, match.start()) + 1
     return functions
 
@@ -310,8 +314,7 @@ def frontend_selector_families(source: str) -> dict[str, int]:
         prelude = match.group(1)
         line = source_without_comments.count("\n", 0, match.start(1)) + 1
         for selector in prelude.split(","):
-            family = CSS_FAMILY_PATTERN.search(selector)
-            if family:
+            for family in CSS_FAMILY_PATTERN.finditer(selector):
                 families.setdefault(family.group(0), line)
     return families
 
@@ -834,21 +837,37 @@ class ArchitectureContractTest(unittest.TestCase):
         )
 
     def test_new_frontend_globals_and_selector_families_are_rejected(self):
-        function_violations = frontend_function_violations(
-            "frontend/static/app.js",
-            "async function fetchNewPatient() { return fetch('/api/patients'); }\n",
-            frozenset(),
-        )
-        self.assertEqual("transport", function_violations[0].category)
-        self.assertRegex(str(function_violations[0]), r"frontend/static/app\.js:\d+:")
+        function_sources = {
+            "declaration": "async function fetchNewPatient() { return fetch('/api/patients'); }\n",
+            "function expression": "const fetchNewPatient = function () { return fetch('/api/patients'); };\n",
+            "let arrow": "let processPatient = (value) => value;\n",
+            "var async function": "var loadPatient = async function () { return true; };\n",
+            "class": "class PatientWorkspace {}\n",
+        }
+        for form, source in function_sources.items():
+            with self.subTest(form=form):
+                function_violations = frontend_function_violations(
+                    "frontend/static/app.js",
+                    source,
+                    frozenset(),
+                )
+                self.assertTrue(function_violations)
+                self.assertRegex(
+                    str(function_violations[0]),
+                    r"frontend/static/app\.js:\d+:",
+                )
 
         selector_violations = frontend_selector_violations(
             "frontend/static/styles.css",
-            ".new-patient-card { display: block; }\n",
-            frozenset(),
+            ".known-family .new-patient-card { display: block; }\n",
+            frozenset({".known-family"}),
         )
+        self.assertEqual([".new-patient-card"], [item.detail.split("'")[1] for item in selector_violations])
         self.assertEqual("presentation", selector_violations[0].category)
-        self.assertRegex(str(selector_violations[0]), r"frontend/static/styles\.css:\d+:")
+        self.assertRegex(
+            str(selector_violations[0]),
+            r"frontend/static/styles\.css:\d+:",
+        )
 
     def test_placement_failures_name_category_path_and_line(self):
         fixtures = {

@@ -1056,6 +1056,33 @@ FRONTEND_SELECTOR_FAMILY_BASELINE: frozenset[str] = frozenset("""
 .workbench-layout
 .workbench-table-wrap
 .workflow-strip
+.active
+.compact
+.compact-detail
+.critical
+.danger-action
+.disabled
+.error
+.expanded
+.healthy
+.inbound
+.info
+.lower-grid
+.neutral
+.outbound
+.patient-focused-grid
+.pending
+.secondary
+.status-error
+.status-neutral
+.status-pending
+.status-success
+.success
+.text-button
+.token-masked
+.warn
+.warning
+.warning-action
 """.split())
 
 CONCRETE_REPOSITORY_IMPORT_BASELINE: frozenset[tuple[str, str]] = frozenset(
