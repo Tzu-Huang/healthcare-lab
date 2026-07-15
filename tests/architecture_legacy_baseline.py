@@ -1430,3 +1430,14 @@ CONCRETE_REPOSITORY_IMPORT_BASELINE: frozenset[tuple[str, str]] = frozenset(
         ),
     }
 )
+
+COMPATIBILITY_FACADE_CALLER_BASELINE: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("backend/app_factory.py", "backend.dashboard_services"),
+        ("backend/app_factory.py", "backend.lab_operations"),
+        ("backend/app_factory.py", "backend.lab_store"),
+        ("backend/lab_store.py", "backend.gdt_adapter"),
+        ("backend/services/lab_workflow.py", "backend.dashboard_services"),
+        ("backend/services/lab_workflow.py", "backend.lab_operations"),
+    }
+)
