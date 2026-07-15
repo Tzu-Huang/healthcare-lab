@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from sqlite3 import Row
 from typing import Any
 
 from backend.domain.errors import SimulatorValidationError
+from backend.domain.records import IndexedRecord
 
 PATIENT_CLASS_DEFAULT = "O"
 PATIENT_MODES = {
@@ -108,7 +108,7 @@ def mrn(value: int) -> str:
     return f"MRN-{value:06d}"
 
 
-def project(row: Row, *, fhir_record=None, dcm4chee_patient_sync=None, dcm4chee_results=None) -> dict[str, Any]:
+def project(row: IndexedRecord, *, fhir_record=None, dcm4chee_patient_sync=None, dcm4chee_results=None) -> dict[str, Any]:
     dcm4chee_results = dcm4chee_results or []
     patient = {
         "mrn": row["mrn"], "firstName": row["first_name"], "lastName": row["last_name"],

@@ -1191,6 +1191,30 @@ class ArchitectureContractTest(unittest.TestCase):
             "backend/config.py must use domain configuration types, not DemoStore.",
         )
 
+    def test_patient_and_order_projection_modules_are_persistence_neutral(self):
+        forbidden_roots = {"flask", "sqlite3"}
+        paths = (
+            BACKEND / "domain" / "patient.py",
+            BACKEND / "domain" / "order.py",
+            BACKEND / "templates" / "patient.py",
+            BACKEND / "templates" / "order.py",
+        )
+        violations = []
+        for path in paths:
+            modules = imported_modules(path)
+            forbidden = sorted(
+                module for module in modules if module.split(".", 1)[0] in forbidden_roots
+            )
+            if forbidden:
+                violations.append(
+                    f"{path.relative_to(ROOT).as_posix()}: {', '.join(forbidden)}"
+                )
+        self.assertEqual(
+            [],
+            violations,
+            "Patient/order domain and template modules must not import Flask or SQLite.",
+        )
+
     def test_responsibility_packages_obey_placement_contract(self):
         violations: list[PlacementViolation] = []
         for package in RESPONSIBILITY_PACKAGES:

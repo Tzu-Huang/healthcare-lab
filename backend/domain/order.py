@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from sqlite3 import Row
 from typing import Any, Callable
 
 from backend.domain.errors import SimulatorValidationError
+from backend.domain.records import IndexedRecord
 
 ALLOWED_PRIORITIES = ("R", "S", "A")
 DEFAULT_CODE = "ECG12"
@@ -91,7 +91,7 @@ def account_number(record_id: int) -> str:
     return f"ACC-ORD-{record_id:06d}"
 
 
-def project(row: Row, *, fhir_records=None, dcm4chee_attempt=None, dcm4chee_mapping=None,
+def project(row: IndexedRecord, *, fhir_records=None, dcm4chee_attempt=None, dcm4chee_mapping=None,
             dcm4chee_status_view: Callable[..., dict[str, Any]] | None = None) -> dict[str, Any]:
     fhir_records = fhir_records or {}
     dcm_view = dcm4chee_status_view(dcm4chee_attempt, dcm4chee_mapping) if dcm4chee_status_view and (dcm4chee_attempt or dcm4chee_mapping) else None
