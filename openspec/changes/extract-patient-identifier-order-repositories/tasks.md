@@ -1,9 +1,9 @@
 ## 1. Characterize Existing Contracts
 
-- [ ] 1.1 Add disposable-database characterization coverage for automatic and explicit MRNs, collision skipping, restart/deletion monotonicity, duplicate rejection, and rollback behavior without touching `instance/*.db`.
-- [ ] 1.2 Add characterization coverage for patient and order protocol filters, row projections, not-found errors, deterministic payload content, and API-compatible response shapes.
-- [ ] 1.3 Add characterization coverage for row-ID-derived order identifiers, atomic create/finalize rollback, and send-result ACK, transport-error, and timestamp updates.
-- [ ] 1.4 Run the focused characterization suite and record any conflict with the proposal's protected behavior as a hard stop; treat ordinary fixture or test failures as implementation work.
+- [x] 1.1 Add disposable-database characterization coverage for automatic and explicit MRNs, collision skipping, restart/deletion monotonicity, duplicate rejection, and rollback behavior without touching `instance/*.db`.
+- [x] 1.2 Add characterization coverage for patient and order protocol filters, row projections, not-found errors, deterministic payload content, and API-compatible response shapes.
+- [x] 1.3 Add characterization coverage for row-ID-derived order identifiers, atomic create/finalize rollback, and send-result ACK, transport-error, and timestamp updates.
+- [x] 1.4 Run the focused characterization suite and record any conflict with the proposal's protected behavior as a hard stop; treat ordinary fixture or test failures as implementation work.
 
 ## 2. Extract Pure Patient and Order Logic
 
