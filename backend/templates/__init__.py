@@ -1,1 +1,1 @@
-"""Validated and versioned generated payload templates."""
+"""Pure protocol payload templates."""
