@@ -127,6 +127,15 @@ DEMO_STORE_COMPATIBILITY_DELEGATES = {
     "record_oie_result": "self.oie_repository.record_oie_result",
     "record_oie_result_error": "self.oie_repository.record_oie_result_error",
     "list_oie_results": "self.oie_repository.list_oie_results",
+    "create_patient_record": "self.patient_repository.create_patient_record",
+    "list_patient_records": "self.patient_repository.list_patient_records",
+    "get_patient_record": "self.patient_repository.get_patient_record",
+    "create_order_record": "self.order_repository.create_order_record",
+    "list_order_records": "self.order_repository.list_order_records",
+    "get_order_record": "self.order_repository.get_order_record",
+    "update_order_send_result": "self.order_repository.update_order_send_result",
+    "_normalize_requested_at": "order_domain.normalize_requested_at",
+    "_clean_order_text": "order_domain.clean_text",
     "list_lab_servers": "self.lab_repository.list_servers",
     "get_lab_server": "self.lab_repository.get_server",
     "create_lab_server": "self.lab_repository.create_server",
@@ -146,6 +155,10 @@ DEMO_STORE_COMPOSITION_VALUE_FINGERPRINTS = {
     "oie_settings_repository": "5f4116db8565a374",
     "lab_repository": "85f04e6f44d60b76",
     "oie_repository": "ad1c97844d445ea8",
+    "patient_enrichment_loader": "f96e0811607e98ea",
+    "order_enrichment_loader": "1b4be87817e209db",
+    "patient_repository": "d00640c6f67b5a6e",
+    "order_repository": "47836393f0cf93aa",
 }
 OIE_WORKBENCH_COMPOSITION_CALLS = (
     "self.list_oie_local_adt_inventory",
@@ -1176,6 +1189,30 @@ class ArchitectureContractTest(unittest.TestCase):
             "backend.lab_store",
             imported_modules(path),
             "backend/config.py must use domain configuration types, not DemoStore.",
+        )
+
+    def test_patient_and_order_projection_modules_are_persistence_neutral(self):
+        forbidden_roots = {"flask", "sqlite3"}
+        paths = (
+            BACKEND / "domain" / "patient.py",
+            BACKEND / "domain" / "order.py",
+            BACKEND / "templates" / "patient.py",
+            BACKEND / "templates" / "order.py",
+        )
+        violations = []
+        for path in paths:
+            modules = imported_modules(path)
+            forbidden = sorted(
+                module for module in modules if module.split(".", 1)[0] in forbidden_roots
+            )
+            if forbidden:
+                violations.append(
+                    f"{path.relative_to(ROOT).as_posix()}: {', '.join(forbidden)}"
+                )
+        self.assertEqual(
+            [],
+            violations,
+            "Patient/order domain and template modules must not import Flask or SQLite.",
         )
 
     def test_responsibility_packages_obey_placement_contract(self):
