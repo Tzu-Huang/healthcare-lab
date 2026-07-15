@@ -119,6 +119,7 @@ from backend.domain.dicom import validate_dcm4chee_profile
 from backend.domain import fhir as fhir_domain
 from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as RuntimeGdtBridgeInboundWatcher
 from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
+from backend.runtime.lazy_wsgi import LazyWsgiApplication
 from backend.services.oie_settings import OieSettingsService
 from backend.services.lab_workflow import (
     DashboardWorkflowService,
@@ -408,7 +409,7 @@ def create_app(database_path: str | None = None) -> Flask:
     return app
 
 
-app = create_app()
+app = LazyWsgiApplication(create_app)
 
 
 def main() -> None:
