@@ -1,10 +1,8 @@
 import unittest
 
 from backend.domain.errors import SimulatorValidationError
-from backend.lab_store import (
-    OpenEMRProcedureOrderSource,
-    map_openemr_procedure_order_to_gdt_order,
-)
+from backend.clients.openemr import OpenEMRProcedureOrderSource
+from backend.domain.openemr import map_openemr_procedure_order_to_gdt_order
 
 
 class FakeCursor:
