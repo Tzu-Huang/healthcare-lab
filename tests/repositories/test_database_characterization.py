@@ -141,4 +141,3 @@ class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
         )
         oie = next(item for item in store.list_lab_servers() if item["name"] == "OIE")
         self.assertEqual(oie["host"], "legacy-host")
-

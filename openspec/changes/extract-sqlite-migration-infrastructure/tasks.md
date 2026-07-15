@@ -7,9 +7,9 @@
 
 ## 2. Introduce Shared SQLite Infrastructure
 
-- [ ] 2.1 Add a repository-layer SQLite owner for the path, connection factory, shared `RLock`, and initialization lifecycle without changing public application behavior.
-- [ ] 2.2 Implement the connection context with the characterized timeout, row factory, foreign-key PRAGMA, commit, rollback, and close semantics.
-- [ ] 2.3 Add focused tests that use only temporary databases and prove repositories can receive the shared connection factory and lock without depending on `DemoStore`.
+- [x] 2.1 Add a repository-layer SQLite owner for the path, connection factory, shared `RLock`, and initialization lifecycle without changing public application behavior.
+- [x] 2.2 Implement the connection context with the characterized timeout, row factory, foreign-key PRAGMA, commit, rollback, and close semantics.
+- [x] 2.3 Add focused tests that use only temporary databases and prove repositories can receive the shared connection factory and lock without depending on `DemoStore`.
 
 ## 3. Build Ordered Migration Infrastructure
 
