@@ -1,6 +1,6 @@
 ## 1. Characterize Protected Behavior and Safety Boundaries
 
-- [ ] 1.1 Add disposable-database characterization tests for patient-sync mappings, attempts, ACK/error projection, retry increments, and success/failure transitions.
+- [x] 1.1 Add disposable-database characterization tests for patient-sync mappings, attempts, ACK/error projection, retry increments, and success/failure transitions.
 - [ ] 1.2 Add characterization tests for MWL mapping creation, stable identifiers, attempts, readback-before-repost, verification outcomes, and retry classification.
 - [ ] 1.3 Add characterization tests for reconciliation precedence, wrong-patient rejection, duplicate candidates, simulated results, and evidence projection.
 - [ ] 1.4 Add characterization tests for result refresh generations, completed-snapshot publication, stale-result supersession, diagnostics, and run ordering.
@@ -17,11 +17,11 @@
 
 ## 3. Extract Patient-Sync Repository
 
-- [ ] 3.1 Add `backend/repositories/dcm4chee_patient_sync.py` using the shared connection factory and lock.
-- [ ] 3.2 Move patient-sync mapping upsert/get/list SQL and row projection into the patient-sync repository.
-- [ ] 3.3 Move patient-sync attempt create/update/get/list SQL and mapping transition behavior into the patient-sync repository.
-- [ ] 3.4 Add focused repository tests for shared-lock use, transaction rollback, retry behavior, ACK/errors, not-found behavior, projections, and existing database compatibility.
-- [ ] 3.5 Convert retained patient-sync `DemoStore` methods to mechanical delegates with no SQL, payload, parsing, or workflow logic.
+- [x] 3.1 Add `backend/repositories/dcm4chee_patient_sync.py` using the shared connection factory and lock.
+- [x] 3.2 Move patient-sync mapping upsert/get/list SQL and row projection into the patient-sync repository.
+- [x] 3.3 Move patient-sync attempt create/update/get/list SQL and mapping transition behavior into the patient-sync repository.
+- [x] 3.4 Add focused repository tests for shared-lock use, transaction rollback, retry behavior, ACK/errors, not-found behavior, projections, and existing database compatibility.
+- [x] 3.5 Convert retained patient-sync `DemoStore` methods to mechanical delegates with no SQL, payload, parsing, or workflow logic.
 
 ## 4. Extract MWL Repository and Backfill
 
