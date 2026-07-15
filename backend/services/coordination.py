@@ -3,10 +3,111 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from backend.services.order_workflow import OrderCoordinationPort
 from backend.services.patient_workflow import PatientCoordinationPort
+
+
+@dataclass(frozen=True)
+class PatientFhirOperations:
+    create_patient_fhir_workflow_record: Callable[..., dict[str, Any]]
+    mark_fhir_sync_failure: Callable[..., dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class DcmFixtureOperations:
+    create_dcm4chee_e2e_demo_fixture: Callable[..., dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class OrderFhirOperations:
+    create_fhir_order_record: Callable[..., dict[str, Any]]
+    create_order_service_request_fhir_workflow_record: Callable[..., dict[str, Any]]
+    mark_fhir_sync_failure: Callable[..., dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class DcmOrderOperations:
+    create_dcm4chee_order_record: Callable[..., dict[str, Any]]
+    list_dcm4chee_mwl_attempts: Callable[..., list[dict[str, Any]]]
+
+
+@dataclass(frozen=True)
+class DcmEvidenceOperations:
+    dcm4chee_e2e_evidence_for_order: Callable[..., dict[str, Any]]
+    create_simulated_dcm4chee_ap_return: Callable[..., dict[str, Any]]
+    get_patient_record: Callable[..., dict[str, Any]]
+
+
+class ConfiguredWorkflowOperations:
+    """Bind broad cross-ledger coordinators behind narrow service-facing operations."""
+
+    def __init__(
+        self,
+        *,
+        patient: Any,
+        order: Any,
+        fhir_sync: Callable[..., Any],
+        patient_sync: Callable[..., Any],
+        result_refresh: Callable[..., Any],
+        order_sync: Callable[..., Any],
+        order_verify: Callable[..., Any],
+        patient_sender: Callable[..., Any],
+    ) -> None:
+        self._patient = patient
+        self._order = order
+        self._fhir_sync = fhir_sync
+        self._patient_sync = patient_sync
+        self._result_refresh = result_refresh
+        self._order_sync = order_sync
+        self._order_verify = order_verify
+        self._patient_sender = patient_sender
+        self.patient_fhir = PatientFhirOperations(
+            patient.create_patient_fhir_workflow_record,
+            patient.mark_fhir_sync_failure,
+        )
+        self.fixture = DcmFixtureOperations(patient.create_dcm4chee_e2e_demo_fixture)
+        self.order_fhir = OrderFhirOperations(
+            order.create_fhir_order_record,
+            order.create_order_service_request_fhir_workflow_record,
+            order.mark_fhir_sync_failure,
+        )
+        self.dcm_order = DcmOrderOperations(
+            order.create_dcm4chee_order_record,
+            order.list_dcm4chee_mwl_attempts,
+        )
+        self.evidence = DcmEvidenceOperations(
+            order.dcm4chee_e2e_evidence_for_order,
+            order.create_simulated_dcm4chee_ap_return,
+            order.get_patient_record,
+        )
+
+    def sync_patient_fhir(self, record_id: int, **kwargs: Any) -> dict[str, Any]:
+        return self._fhir_sync(self._patient, record_id, **kwargs)
+
+    def sync_order_fhir(self, record_id: int, **kwargs: Any) -> dict[str, Any]:
+        return self._fhir_sync(self._order, record_id, **kwargs)
+
+    def sync_patient_dicom(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return self._patient_sync(
+            self._patient, *args, sender=self._patient_sender, **kwargs
+        )
+
+    def refresh_results(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return self._result_refresh(self._patient, *args, **kwargs)
+
+    def sync_order_dicom(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return self._order_sync(
+            self._order,
+            *args,
+            patient_syncer=self.sync_patient_dicom,
+            **kwargs,
+        )
+
+    def verify_order_dicom(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return self._order_verify(self._order, *args, **kwargs)
 
 
 class PatientProtocolCoordinator:

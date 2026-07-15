@@ -1,7 +1,15 @@
 import inspect
 import unittest
 
-from backend.services.coordination import OrderProtocolCoordinator, PatientProtocolCoordinator
+from backend.services.coordination import (
+    DcmEvidenceOperations,
+    DcmFixtureOperations,
+    DcmOrderOperations,
+    OrderFhirOperations,
+    OrderProtocolCoordinator,
+    PatientFhirOperations,
+    PatientProtocolCoordinator,
+)
 from backend.services.order_workflow import OrderCoordinationPort, OrderWorkflowService
 from backend.services.patient_workflow import PatientCoordinationPort, PatientWorkflowService
 
@@ -42,10 +50,9 @@ class PatientOrderPortCompositionTests(unittest.TestCase):
         self.assertIs(service._coordination, coordination)
 
     def test_services_route_named_capabilities_without_a_general_facade(self):
-        patient_parts = [object() for _ in range(4)]
+        patient_parts = [object() for _ in range(2)]
         patient = PatientWorkflowService(
-            object(), {}, fhir_capability=patient_parts[0], patient_sync_capability=patient_parts[1],
-            result_refresh_capability=patient_parts[2], fixture_capability=patient_parts[3],
+            object(), {}, fhir_capability=patient_parts[0], fixture_capability=patient_parts[1],
             medplum_base_url=lambda: "", auth_manager=lambda: None,
             fhir_sync=lambda *args, **kwargs: None, dicom_patient_sync=lambda *args, **kwargs: None,
             dcm_result_refresh=lambda *args, **kwargs: {}, dcm_profile=lambda config: {},
@@ -57,8 +64,29 @@ class PatientOrderPortCompositionTests(unittest.TestCase):
             fhir_sync=lambda *args, **kwargs: None, dcm_sync=lambda *args, **kwargs: None,
             dcm_verify=lambda *args, **kwargs: {}, dcm_profile=lambda config: {},
         )
-        self.assertEqual([patient._fhir, patient._patient_sync, patient._results, patient._fixture], patient_parts)
+        self.assertEqual([patient._fhir, patient._fixture], patient_parts)
         self.assertEqual([order._fhir, order._dcm_order, order._evidence], order_parts)
+
+    def test_named_capability_views_expose_only_their_declared_operations(self):
+        operation = lambda *args, **kwargs: {}
+        capabilities = (
+            PatientFhirOperations(operation, operation),
+            DcmFixtureOperations(operation),
+            OrderFhirOperations(operation, operation, operation),
+            DcmOrderOperations(operation, operation),
+            DcmEvidenceOperations(operation, operation, operation),
+        )
+        expected = (
+            {"create_patient_fhir_workflow_record", "mark_fhir_sync_failure"},
+            {"create_dcm4chee_e2e_demo_fixture"},
+            {"create_fhir_order_record", "create_order_service_request_fhir_workflow_record", "mark_fhir_sync_failure"},
+            {"create_dcm4chee_order_record", "list_dcm4chee_mwl_attempts"},
+            {"dcm4chee_e2e_evidence_for_order", "create_simulated_dcm4chee_ap_return", "get_patient_record"},
+        )
+        for capability, declared in zip(capabilities, expected):
+            public = {name for name in capability.__dataclass_fields__ if not name.startswith("_")}
+            self.assertEqual(public, declared)
+            self.assertFalse(hasattr(capability, "list_lab_servers"))
 
     def test_coordination_adapters_reject_unrelated_facade_methods(self):
         patient = self.coordinator(PatientProtocolCoordinator, get_patient_record=lambda record_id: record_id)
