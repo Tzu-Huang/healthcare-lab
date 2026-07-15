@@ -253,10 +253,13 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.extensions["demo_store"] = store
     app.extensions["openemr_procedure_order_source"] = openemr_source
-    app.extensions["oie_result_listener"] = OieResultListener(store, accept_oie_result_payload)
+    app.extensions["oie_result_listener"] = OieResultListener(
+        store.oie_repository, accept_oie_result_payload
+    )
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
     app.extensions["oie_settings_service"] = OieSettingsService(store.oie_settings_repository)
     app.extensions["oie_workflow_service"] = OieWorkflowService(
+        store.oie_repository,
         store,
         app.config,
         app.extensions["oie_result_listener"],

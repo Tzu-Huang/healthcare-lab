@@ -42,6 +42,7 @@ from backend.domain.openemr import (
 )
 from backend.repositories.database import SQLiteDatabase
 from backend.repositories.lab import LabRepository
+from backend.repositories.oie import OieRepository
 from backend.repositories.maintenance import (
     backfill_dcm4chee_mwl_mappings,
     seed_lab_servers,
@@ -693,20 +694,31 @@ class DemoStore:
         self.path = self.database.path
         self.lock = self.database.lock
         self.initialize()
-        from backend.repositories.oie_settings import OieSettingsRepository
+        from backend.repositories.oie_settings import (
+            OieSettingsRepository,
+            serialize_oie_settings_profile,
+            validate_oie_settings_payload,
+        )
 
         self.oie_settings_repository = OieSettingsRepository(
             self.database.connect,
             self.database.lock,
             profile_name=OIE_SETTINGS_PROFILE_NAME,
-            validator=self.validate_oie_settings_payload,
-            serializer=self._oie_settings_profile_dict,
+            validator=validate_oie_settings_payload,
+            serializer=serialize_oie_settings_profile,
             timestamp_factory=now_iso,
         )
         self.lab_repository = LabRepository(
             self.database.connect,
             self.database.lock,
             timestamp_factory=now_iso,
+        )
+        self.oie_repository = OieRepository(
+            self.database.connect,
+            self.database.lock,
+            timestamp_factory=now_iso,
+            patient_protocol=PATIENT_MODES["hl7-v2"]["protocol"],
+            order_protocol=ORDER_PROTOCOL_VERSION,
         )
 
     @contextmanager
@@ -5441,6 +5453,18 @@ class DemoStore:
             }
             workbench_patients.append(item)
         return {"patients": workbench_patients, "unmatchedResults": unmatched_results}
+
+    # Compatibility-only OIE result seams.
+    def record_oie_result(self, payload_hl7: str, parsed: dict[str, str]) -> dict[str, Any]:
+        return self.oie_repository.record_oie_result(payload_hl7, parsed)
+
+    def record_oie_result_error(
+        self, payload_hl7: str, message_type: str, error_text: str
+    ) -> dict[str, Any]:
+        return self.oie_repository.record_oie_result_error(payload_hl7, message_type, error_text)
+
+    def list_oie_results(self) -> list[dict[str, Any]]:
+        return self.oie_repository.list_oie_results()
 
     def _order_record_dicts_with_fhir(self, rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
         source_ids = [str(row["id"]) for row in rows]
