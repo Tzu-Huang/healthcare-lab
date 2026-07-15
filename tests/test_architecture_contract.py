@@ -349,6 +349,31 @@ def is_demo_store_composition_initializer(
     return initialized and assignments == DEMO_STORE_COMPOSITION_VALUE_FINGERPRINTS
 
 
+def is_demo_store_composition_class(node: ast.ClassDef) -> bool:
+    """Recognize only the plain DemoStore method container and its exact initializer."""
+    if (
+        node.name != "DemoStore"
+        or node.bases
+        or node.keywords
+        or node.decorator_list
+        or any(
+            not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+            for item in node.body
+        )
+    ):
+        return False
+    initializer = next(
+        (
+            item
+            for item in node.body
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and item.name == "__init__"
+        ),
+        None,
+    )
+    return initializer is not None and is_demo_store_composition_initializer(initializer)
+
+
 class LegacyCandidateCollector(ast.NodeVisitor):
     def __init__(self, path: str, aliases: dict[str, str]):
         self.path = path
@@ -401,20 +426,7 @@ class LegacyCandidateCollector(ast.NodeVisitor):
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self.symbols.append(node.name)
-        initializer = next(
-            (
-                item
-                for item in node.body
-                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                and item.name == "__init__"
-            ),
-            None,
-        )
-        is_demo_store_composition = (
-            node.name == "DemoStore"
-            and initializer is not None
-            and is_demo_store_composition_initializer(initializer)
-        )
+        is_demo_store_composition = is_demo_store_composition_class(node)
         if not is_demo_store_composition:
             self.add("catch-all", node)
             if definition_has_transport(node, self.aliases) or node.name.endswith(
@@ -431,9 +443,9 @@ class LegacyCandidateCollector(ast.NodeVisitor):
         self._visit_function(node)
 
     def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
-        if is_repository_compatibility_delegate(node) or (
-            self.symbol == "DemoStore"
-            and is_demo_store_composition_initializer(node)
+        if self.symbol == "DemoStore" and (
+            is_repository_compatibility_delegate(node)
+            or is_demo_store_composition_initializer(node)
         ):
             self.generic_visit(node)
             return
@@ -1321,9 +1333,14 @@ class ArchitectureContractTest(unittest.TestCase):
             "def get_lab_server(self, server_id):\n"
             "    return self.lab_repository.get_server(server_id)\n"
         )
-        self.assertEqual(
-            [],
-            legacy_backend_violations("backend/lab_store.py", allowed, frozenset()),
+        allowed_node = ast.parse(allowed).body[0]
+        self.assertIsInstance(allowed_node, ast.FunctionDef)
+        self.assertTrue(is_repository_compatibility_delegate(allowed_node))
+        self.assertTrue(
+            legacy_backend_violations(
+                "backend/lab_store.py", allowed, frozenset()
+            ),
+            "Approved delegate shapes are exempt only inside DemoStore.",
         )
         rejected = {
             "lookalike repository": (
@@ -1368,6 +1385,7 @@ class ArchitectureContractTest(unittest.TestCase):
             for item in demo_store.body
             if isinstance(item, ast.FunctionDef) and item.name == "__init__"
         )
+        self.assertTrue(is_demo_store_composition_class(demo_store))
         self.assertTrue(is_demo_store_composition_initializer(initializer))
 
         lab_assignment = next(
@@ -1380,6 +1398,35 @@ class ArchitectureContractTest(unittest.TestCase):
             ast.Dict(keys=[ast.Constant("workflow")], values=[ast.Constant("hidden")])
         )
         self.assertFalse(is_demo_store_composition_initializer(initializer))
+
+    def test_demo_store_class_shell_rejects_structural_mutations(self):
+        tree = ast.parse((BACKEND / "lab_store.py").read_text(encoding="utf-8"))
+        demo_store = next(
+            item
+            for item in tree.body
+            if isinstance(item, ast.ClassDef) and item.name == "DemoStore"
+        )
+        self.assertTrue(is_demo_store_composition_class(demo_store))
+
+        mutations = (
+            lambda item: item.bases.append(ast.Name(id="InjectedBehavior")),
+            lambda item: item.decorator_list.append(ast.Name(id="instrument")),
+            lambda item: item.body.append(
+                ast.Assign(
+                    targets=[ast.Name(id="hidden_state")],
+                    value=ast.Dict(
+                        keys=[ast.Constant("workflow")],
+                        values=[ast.Constant("hidden")],
+                    ),
+                )
+            ),
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                candidate = ast.parse(ast.unparse(demo_store)).body[0]
+                self.assertIsInstance(candidate, ast.ClassDef)
+                mutate(candidate)
+                self.assertFalse(is_demo_store_composition_class(candidate))
 
     def test_new_frontend_globals_and_selector_families_are_rejected(self):
         function_sources = {
