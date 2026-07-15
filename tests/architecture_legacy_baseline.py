@@ -896,6 +896,7 @@ writeGdtOrder
 FRONTEND_FUNCTION_BASELINE: frozenset[tuple[str, str]] = frozenset(
     tuple(line.split("|", 1))
     for line in """
+<module-prefix>|e3b0c44298fc1c14
 ackPreviewText|1fc432d0a975ddfc
 actionButton|f48e8e24a6b5e199
 appendMedplumLiveRelatedRow|fc35da4938cce3e6
