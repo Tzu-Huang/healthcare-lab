@@ -206,4 +206,3 @@ class OpenEMRProcedureOrderSource:
         with connection.cursor() as cursor:
             cursor.execute(query, self.allowed_procedure_codes)
             return [dict(row) for row in cursor.fetchall()]
-
