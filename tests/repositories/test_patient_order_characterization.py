@@ -45,7 +45,7 @@ class PatientOrderCharacterizationTests(unittest.TestCase):
             restarted.create_patient_record(self.patient(mrn=" MRN-000001 "))
 
     def test_patient_payload_failure_rolls_back_row_and_sequence(self):
-        with patch.object(DemoStore, "_build_patient_payload", side_effect=RuntimeError("payload")):
+        with patch.object(self.store.patient_repository, "_build_payload", side_effect=RuntimeError("payload")):
             with self.assertRaisesRegex(RuntimeError, "payload"):
                 self.store.create_patient_record(self.patient())
 
@@ -70,7 +70,7 @@ class PatientOrderCharacterizationTests(unittest.TestCase):
 
     def test_order_identifiers_payload_rollback_filters_and_not_found_contract(self):
         patient = self.store.create_patient_record(self.patient(mrn="MRN-ORDER"))
-        with patch.object(DemoStore, "_build_order_orm_payload", side_effect=RuntimeError("payload")):
+        with patch.object(self.store.order_repository, "_build_payload", side_effect=RuntimeError("payload")):
             with self.assertRaisesRegex(RuntimeError, "payload"):
                 self.store.create_order_record({"patientRecordId": patient["id"]})
         with self.store.connect() as connection:
