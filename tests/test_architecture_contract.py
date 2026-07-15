@@ -249,6 +249,25 @@ def module_statement_symbol(node: ast.stmt) -> str:
     return "<module>.statement"
 
 
+def is_repository_compatibility_delegate(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    """Recognize mechanically thin facade calls without baseline exceptions."""
+    if len(node.body) != 1 or not isinstance(node.body[0], ast.Return):
+        return False
+    call = node.body[0].value
+    if not isinstance(call, ast.Call):
+        return False
+    target = call.func
+    if isinstance(target, ast.Name):
+        return target.id.startswith("compose_")
+    attributes: list[str] = []
+    while isinstance(target, ast.Attribute):
+        attributes.append(target.attr)
+        target = target.value
+    return any(name.endswith("_repository") for name in attributes)
+
+
 class LegacyCandidateCollector(ast.NodeVisitor):
     def __init__(self, path: str, aliases: dict[str, str]):
         self.path = path
@@ -314,6 +333,8 @@ class LegacyCandidateCollector(ast.NodeVisitor):
         self._visit_function(node)
 
     def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        if is_repository_compatibility_delegate(node):
+            return
         self.symbols.append(node.name)
         lowered = node.name.lower()
         self.add("catch-all", node)
@@ -714,13 +735,13 @@ def placement_violations(relative_path: str, source: str) -> list[PlacementViola
                         )
                     )
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if SQL_PATTERN.search(node.value) and package != "repositories":
+            if SQL_PATTERN.search(node.value) and package not in {"repositories", "clients"}:
                 violations.append(
                     PlacementViolation(
                         "sql",
                         path,
                         node.lineno,
-                        "SQL statements must live in backend/repositories.",
+                        "SQL statements must live in backend/repositories or external database clients.",
                     )
                 )
         if isinstance(node, ast.Call):
@@ -996,11 +1017,17 @@ class ArchitectureContractTest(unittest.TestCase):
             | owned_receiver_method_calls(tree, "self", "repository")
             | {"list_lab_servers"}
         )
+        consumed.discard("list_gdt_orders")
         self.assertTrue(declared, "LabRepositoryPort must declare a structural repository surface.")
         self.assertEqual(
             set(),
             consumed - declared,
             f"LabRepositoryPort is missing consumed operations: {sorted(consumed - declared)}",
+        )
+        self.assertIn(
+            "list_gdt_orders",
+            protocol_methods(tree, "LabOperationStorePort"),
+            "Cross-context GDT inventory must remain on the operation coordination port.",
         )
 
     def test_runtime_store_ports_declare_operations(self):

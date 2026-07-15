@@ -105,6 +105,12 @@ class LabRepositoryPort(Protocol):
         self, server_id: int | None = None, *, limit: int = 20
     ) -> list[dict[str, Any]]: ...
 
+
+class LabOperationStorePort(LabRepositoryPort, Protocol):
+    """Cross-context inventory needed only by smoke/operation coordination."""
+
+    def list_gdt_orders(self) -> list[dict[str, Any]]: ...
+
 def current_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
@@ -119,6 +125,7 @@ class LabServerWorkflowService:
         app: ApplicationPort,
         repository: LabRepositoryPort,
         *,
+        operation_repository: LabOperationStorePort | None = None,
         health_checker: Callable[[LabRepositoryPort, int], dict[str, Any]],
         availability_decorator: Callable[[ApplicationPort, dict[str, Any]], dict[str, Any]],
         operation_runner: Callable[..., dict[str, Any]],
@@ -126,6 +133,7 @@ class LabServerWorkflowService:
     ) -> None:
         self.app = app
         self.repository = repository
+        self.operation_repository = operation_repository or repository
         self._health_checker = health_checker
         self._availability_decorator = availability_decorator
         self._operation_runner = operation_runner
@@ -176,7 +184,7 @@ class LabServerWorkflowService:
     ) -> dict[str, Any]:
         return self._operation_runner(
             app=self.app,
-            store=self.repository,
+            store=self.operation_repository,
             server_id=server_id,
             action=action,
             lines=lines,
@@ -207,7 +215,7 @@ class LabServerWorkflowService:
                 results.append(
                     self._operation_runner(
                         app=self.app,
-                        store=self.repository,
+                        store=self.operation_repository,
                         server_id=int(item["id"]),
                         action="smoke",
                     )
