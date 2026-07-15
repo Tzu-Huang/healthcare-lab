@@ -54,6 +54,40 @@ class OieTransportError(Exception):
         self.item = item
 
 
+def compose_oie_workbench(
+    patients: list[dict[str, Any]],
+    orders: list[dict[str, Any]],
+    results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    orders_by_patient: dict[int, list[dict[str, Any]]] = {}
+    results_by_patient: dict[int, list[dict[str, Any]]] = {}
+    for order in orders:
+        orders_by_patient.setdefault(int(order["patientRecordId"]), []).append(order)
+    visible_patient_ids = {int(patient["id"]) for patient in patients}
+    unmatched_results = []
+    for result in results:
+        patient_id = result.get("matchedPatientRecordId")
+        if patient_id and int(patient_id) in visible_patient_ids:
+            results_by_patient.setdefault(int(patient_id), []).append(result)
+        else:
+            unmatched_results.append(result)
+    items = []
+    for patient in patients:
+        patient_id = int(patient["id"])
+        patient_orders = orders_by_patient.get(patient_id, [])
+        patient_results = results_by_patient.get(patient_id, [])
+        item = {
+            **patient, "orders": patient_orders, "results": patient_results,
+            "orderCount": len(patient_orders), "resultCount": len(patient_results),
+        }
+        item["summary"] = {
+            **item["summary"], "orderCount": len(patient_orders),
+            "resultCount": len(patient_results),
+        }
+        items.append(item)
+    return {"patients": items, "unmatchedResults": unmatched_results}
+
+
 class OieWorkflowService:
     def __init__(
         self,
@@ -81,40 +115,9 @@ class OieWorkflowService:
         return self._coordination.list_oie_local_order_inventory()
 
     def workbench(self) -> dict[str, Any]:
-        patients = self.local_adt_inventory()
-        orders = self.local_order_inventory()
-        results = self.results()
-        orders_by_patient: dict[int, list[dict[str, Any]]] = {}
-        results_by_patient: dict[int, list[dict[str, Any]]] = {}
-        for order in orders:
-            orders_by_patient.setdefault(int(order["patientRecordId"]), []).append(order)
-        visible_patient_ids = {int(patient["id"]) for patient in patients}
-        unmatched_results = []
-        for result in results:
-            patient_id = result.get("matchedPatientRecordId")
-            if patient_id and int(patient_id) in visible_patient_ids:
-                results_by_patient.setdefault(int(patient_id), []).append(result)
-            else:
-                unmatched_results.append(result)
-        items = []
-        for patient in patients:
-            patient_id = int(patient["id"])
-            patient_orders = orders_by_patient.get(patient_id, [])
-            patient_results = results_by_patient.get(patient_id, [])
-            item = {
-                **patient,
-                "orders": patient_orders,
-                "results": patient_results,
-                "orderCount": len(patient_orders),
-                "resultCount": len(patient_results),
-            }
-            item["summary"] = {
-                **item["summary"],
-                "orderCount": len(patient_orders),
-                "resultCount": len(patient_results),
-            }
-            items.append(item)
-        return {"patients": items, "unmatchedResults": unmatched_results}
+        return compose_oie_workbench(
+            self.local_adt_inventory(), self.local_order_inventory(), self.results()
+        )
 
     def results(self) -> list[dict[str, Any]]:
         return self._results.list_oie_results()

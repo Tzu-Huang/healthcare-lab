@@ -278,6 +278,7 @@ def create_app(database_path: str | None = None) -> Flask:
             LabServerWorkflowService(
                 app,
                 store.lab_repository,
+                operation_repository=store,
                 health_checker=lambda target_store, server_id: run_lab_server_health_check(
                     target_store, server_id
                 ),
