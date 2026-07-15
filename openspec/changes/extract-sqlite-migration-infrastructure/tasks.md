@@ -27,8 +27,8 @@
 
 ## 5. Delegate DemoStore Compatibility
 
-- [ ] 5.1 Change `DemoStore(path)` to initialize and delegate to the shared database owner while retaining compatible `path`, `lock`, `connect()`, and `initialize()` seams.
-- [ ] 5.2 Pass the shared connection factory and lock directly to `OieSettingsRepository` and ensure the pattern is ready for later repository extraction.
+- [x] 5.1 Change `DemoStore(path)` to initialize and delegate to the shared database owner while retaining compatible `path`, `lock`, `connect()`, and `initialize()` seams.
+- [x] 5.2 Pass the shared connection factory and lock directly to `OieSettingsRepository` and ensure the pattern is ready for later repository extraction.
 - [ ] 5.3 Remove only the SQL/catch-all architecture-baseline entries eliminated by this extraction; do not add or refresh baseline exceptions.
 
 ## 6. YOLO Safety Gates and Verification
