@@ -66,7 +66,10 @@ from backend.repositories.oie_settings import (
     validate_oie_settings_payload,
 )
 from backend.services.oie_workflow import compose_oie_workbench
-from backend.services.dcm4chee_coordination import Dcm4cheeWorkflowCoordinator
+from backend.services.dcm4chee_coordination import (
+    Dcm4cheeMwlAttemptCoordinator,
+    Dcm4cheeWorkflowCoordinator,
+)
 from backend.repositories.maintenance import (
     seed_lab_servers,
     seed_oie_settings_profile,
@@ -448,6 +451,7 @@ class DemoStore:
                     connection,
                     order_default_text=ORDER_DEFAULT_TEXT,
                     create_operation=DCM4CHEE_MWL_OPERATION_CREATE,
+                    identifier_projector=dicom_domain.historical_mwl_identifiers,
                 ),
                 seed_patient_mrn_sequence,
                 lambda connection: seed_lab_servers(
@@ -515,10 +519,6 @@ class DemoStore:
                 payload=kwargs.get("payload"),
                 timestamp_factory=hl7_timestamp,
             ),
-            payload_builder=lambda order, profile, **kwargs: dicom_templates.build_mwl_payload(
-                order, profile, uid_root=kwargs.get("uid_root", DCM4CHEE_DEFAULT_UID_ROOT),
-                timestamp_factory=hl7_timestamp,
-            ),
             uid_normalizer=dicom_domain.normalize_uid_root,
             study_uid_builder=lambda uid_root, **kwargs: dicom_domain.study_instance_uid(
                 uid_root, timestamp_factory=hl7_timestamp, **kwargs
@@ -571,6 +571,16 @@ class DemoStore:
             hl7_timestamp_factory=hl7_timestamp,
             enrichment_loader=self.order_enrichment_loader,
             dcm4chee_status_view=dicom_domain.mwl_status_view,
+        )
+        self.dcm4chee_mwl_attempt_coordinator = Dcm4cheeMwlAttemptCoordinator(
+            order_loader=self.order_repository.get_order_record,
+            payload_builder=lambda order, profile, **kwargs: dicom_templates.build_mwl_payload(
+                order,
+                profile,
+                uid_root=kwargs.get("uid_root", DCM4CHEE_DEFAULT_UID_ROOT),
+                timestamp_factory=hl7_timestamp,
+            ),
+            attempt_creator=self.dcm4chee_mwl_repository.create_dcm4chee_mwl_attempt,
         )
         self.dcm4chee_workflow_coordinator = Dcm4cheeWorkflowCoordinator(
             patient_create=self.patient_repository.create_patient_record,
@@ -1232,7 +1242,7 @@ class DemoStore:
         return self.dcm4chee_result_repository.list_dcm4chee_results_for_patient(*args, **kwargs)
 
     def create_dcm4chee_mwl_attempt(self, *args, **kwargs):
-        return self.dcm4chee_mwl_repository.create_dcm4chee_mwl_attempt(*args, **kwargs)
+        return self.dcm4chee_mwl_attempt_coordinator.create_dcm4chee_mwl_attempt(*args, **kwargs)
 
     def create_dcm4chee_mwl_profile_failure_attempt(self, *args, **kwargs):
         return self.dcm4chee_mwl_repository.create_dcm4chee_mwl_profile_failure_attempt(*args, **kwargs)

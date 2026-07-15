@@ -116,32 +116,12 @@ def project_mwl_mapping(row: sqlite3.Row) -> dict[str, Any]:
         "updatedAt": row["updated_at"],
     }
 
-def _dicom_first_value(payload: dict[str, Any], tag: str, default: str = "") -> str:
-    element = payload.get(tag) if isinstance(payload, dict) else None
-    if not isinstance(element, dict):
-        return default
-    values = element.get("Value")
-    if not isinstance(values, list) or not values:
-        return default
-    value = values[0]
-    if isinstance(value, dict):
-        return str(value.get("Alphabetic") or default).strip()
-    return str(value or default).strip()
-
-def _dcm4chee_sps_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    sequence = payload.get("00400100") if isinstance(payload, dict) else None
-    if not isinstance(sequence, dict):
-        return {}
-    values = sequence.get("Value")
-    if not isinstance(values, list) or not values or not isinstance(values[0], dict):
-        return {}
-    return values[0]
-
 def backfill_dcm4chee_mwl_mappings(
     connection: sqlite3.Connection,
     *,
     order_default_text: str,
     create_operation: str,
+    identifier_projector: Callable[..., dict[str, str]],
 ) -> None:
     rows = connection.execute(
         """
@@ -164,17 +144,14 @@ def backfill_dcm4chee_mwl_mappings(
     ).fetchall()
     for row in rows:
         request_payload = _json_value(row["request_payload_json"], {})
-        sps_payload = _dcm4chee_sps_payload(request_payload)
-        patient_id = _dicom_first_value(request_payload, "00100020", row["mrn"])
-        issuer = _dicom_first_value(request_payload, "00100021", row["profile_name"])
-        worklist_label = _dicom_first_value(
+        identifiers = identifier_projector(
             request_payload,
-            "00741202",
-            str(row["order_code_text"] or row["order_code"] or order_default_text).strip(),
-        )
-        scheduled_station = row["scheduled_station_ae_title"] or _dicom_first_value(
-            sps_payload,
-            "00400001",
+            patient_id_default=str(row["mrn"] or "").strip(),
+            issuer_default=str(row["profile_name"] or "").strip(),
+            worklist_label_default=str(
+                row["order_code_text"] or row["order_code"] or order_default_text
+            ).strip(),
+            scheduled_station_default=str(row["scheduled_station_ae_title"] or "").strip(),
         )
         completed_or_attempted = row["completed_at"] or row["attempted_at"]
         response_body = row["response_body"] or ""
@@ -199,15 +176,15 @@ def backfill_dcm4chee_mwl_mappings(
                 row["profile_name"],
                 row["server_identity"],
                 row["mwl_ae_title"],
-                scheduled_station,
+                identifiers["scheduled_station_ae_title"],
                 row["local_dcm4chee_order_number"],
-                patient_id,
-                issuer,
+                identifiers["patient_id"],
+                identifiers["issuer_of_patient_id"],
                 row["accession_number"],
                 row["requested_procedure_id"],
                 row["scheduled_procedure_step_id"],
                 row["study_instance_uid"],
-                worklist_label,
+                identifiers["worklist_label"],
                 row["uid_root"],
                 row["attempt_status"],
                 completed_or_attempted,
@@ -250,7 +227,7 @@ def backfill_dcm4chee_mwl_mappings(
 class Dcm4cheeMwlRepository:
     def __init__(
         self, connection_factory: ConnectionFactory, lock: RLock, *, order_loader,
-        identifiers_from_payload, payload_builder, uid_normalizer, study_uid_builder,
+        identifiers_from_payload, uid_normalizer, study_uid_builder,
         local_order_number, accession_number, requested_procedure_id,
         scheduled_procedure_step_id, timestamp_factory,
     ) -> None:
@@ -258,7 +235,6 @@ class Dcm4cheeMwlRepository:
         self._lock = lock
         self._get_order_record = order_loader
         self._identifiers_from_payload = identifiers_from_payload
-        self._build_payload = payload_builder
         self._normalize_uid_root = uid_normalizer
         self._study_uid = study_uid_builder
         self._local_order_number = local_order_number
@@ -486,21 +462,16 @@ class Dcm4cheeMwlRepository:
         mapping_id: int | None = None,
     ) -> dict[str, Any]:
         order = self._get_order_record(order_record_id)
-        generated_payload = request_payload or self._build_payload(
-            order,
-            profile,
-            uid_root=uid_root,
-        )
+        if request_payload is None:
+            raise ValueError("DICOM MWL attempt request payload is required.")
+        generated_payload = request_payload
         order_id = int(order["id"])
         mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
         dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
         uid_root_text = self._normalize_uid_root(uid_root)
-        study_uid = str(generated_payload["0020000D"]["Value"][0])
-        accession_number = str(generated_payload["00080050"]["Value"][0])
-        requested_procedure_id = str(generated_payload["00401001"]["Value"][0])
-        sps_item = generated_payload["00400100"]["Value"][0]
-        scheduled_procedure_step_id = str(sps_item["00400009"]["Value"][0])
-        scheduled_station_ae_title = str(sps_item["00400001"]["Value"][0])
+        identifiers = self._identifiers_from_payload(
+            order, profile, uid_root=uid_root, payload=generated_payload
+        )
         now = self._timestamp()
         with self._lock, self._connect() as connection:
             cursor = connection.execute(
@@ -523,12 +494,12 @@ class Dcm4cheeMwlRepository:
                     str(profile.get("profileName") or "").strip(),
                     str(dimse.get("calledAETitle") or mwl.get("aeTitle") or "").strip(),
                     str(mwl.get("aeTitle") or "").strip(),
-                    scheduled_station_ae_title,
+                    identifiers["scheduled_station_ae_title"],
                     self._local_order_number(order_id),
-                    accession_number,
-                    requested_procedure_id,
-                    scheduled_procedure_step_id,
-                    study_uid,
+                    identifiers["accession_number"],
+                    identifiers["requested_procedure_id"],
+                    identifiers["scheduled_procedure_step_id"],
+                    identifiers["study_instance_uid"],
                     uid_root_text,
                     request_url,
                     json.dumps(generated_payload, sort_keys=True),
