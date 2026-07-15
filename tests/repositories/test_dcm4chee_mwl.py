@@ -5,12 +5,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from backend.domain.dicom import historical_mwl_identifiers
 from backend.domain.statuses import (
     DCM4CHEE_MWL_STATUS_CREATED,
     DCM4CHEE_MWL_STATUS_FAILED,
     DCM4CHEE_MWL_VERIFICATION_VERIFIED,
 )
 from backend.lab_store import DemoStore
+from backend.repositories.database import SQLiteDatabase
+from backend.repositories.dcm4chee_mwl import backfill_dcm4chee_mwl_mappings
 
 
 class Dcm4cheeMwlRepositoryTests(unittest.TestCase):
@@ -87,24 +90,102 @@ class Dcm4cheeMwlRepositoryTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.store.get_dcm4chee_mwl_attempt(999999)
 
-    def test_historical_backfill_is_idempotent_and_links_attempts(self) -> None:
-        payload = self.store.build_dcm4chee_mwl_payload(self.order, self.profile)
-        attempt = self.store.create_dcm4chee_mwl_attempt(
-            int(self.order["id"]), self.profile, request_payload=payload,
+    def test_historical_backfill_selects_latest_and_preserves_existing_mapping(self) -> None:
+        preserved = self.store.upsert_dcm4chee_mwl_mapping(int(self.order["id"]), self.profile)
+        with self.store.connect() as connection:
+            connection.execute(
+                "UPDATE local_dcm4chee_mwl_mappings SET worklist_label = ? WHERE id = ?",
+                ("USER MANAGED", int(preserved["id"])),
+            )
+            preserved_before = dict(
+                connection.execute(
+                    "SELECT * FROM local_dcm4chee_mwl_mappings WHERE id = ?",
+                    (int(preserved["id"]),),
+                ).fetchone()
+            )
+
+        historical_order = self.store.create_dcm4chee_order_record(
+            {"patientRecordId": self.order["patientRecordId"], "requestedAt": "20260715113000"}
+        )
+        payload = self.store.build_dcm4chee_mwl_payload(historical_order, self.profile)
+        older = self.store.create_dcm4chee_mwl_attempt(
+            int(historical_order["id"]), self.profile, request_payload=payload,
+            attempt_status=DCM4CHEE_MWL_STATUS_FAILED,
+        )
+        latest = self.store.create_dcm4chee_mwl_attempt(
+            int(historical_order["id"]), self.profile, request_payload=payload,
             attempt_status=DCM4CHEE_MWL_STATUS_CREATED,
         )
         with self.store.connect() as connection:
-            connection.execute("DELETE FROM local_dcm4chee_mwl_mappings")
-            connection.execute("UPDATE local_dcm4chee_mwl_attempts SET mapping_id = NULL")
+            connection.execute(
+                "UPDATE local_dcm4chee_mwl_attempts SET attempted_at = ? WHERE id = ?",
+                ("2026-07-15T10:00:00", int(older["id"])),
+            )
+            connection.execute(
+                "UPDATE local_dcm4chee_mwl_attempts SET attempted_at = ? WHERE id = ?",
+                ("2026-07-15T11:00:00", int(latest["id"])),
+            )
 
         first_reopen = DemoStore(self.path)
         second_reopen = DemoStore(self.path)
         mappings = second_reopen.list_dcm4chee_mwl_mappings_for_patient(int(self.order["patientRecordId"]))
-        attempts = second_reopen.list_dcm4chee_mwl_attempts(int(self.order["id"]))
-        self.assertEqual(len(mappings), 1)
-        self.assertEqual(mappings[0]["lastAttemptId"], attempt["id"])
-        self.assertEqual(attempts[0]["mappingId"], mappings[0]["id"])
-        self.assertEqual(first_reopen.get_dcm4chee_mwl_mapping_for_order(int(self.order["id"]))["id"], mappings[0]["id"])
+        backfilled = next(item for item in mappings if item["orderRecordId"] == historical_order["id"])
+        attempts = second_reopen.list_dcm4chee_mwl_attempts(int(historical_order["id"]))
+        with second_reopen.connect() as connection:
+            preserved_after = dict(
+                connection.execute(
+                    "SELECT * FROM local_dcm4chee_mwl_mappings WHERE id = ?",
+                    (int(preserved["id"]),),
+                ).fetchone()
+            )
+
+        self.assertEqual(len(mappings), 2)
+        self.assertEqual(backfilled["lastAttemptId"], latest["id"])
+        self.assertEqual({item["mappingId"] for item in attempts}, {backfilled["id"]})
+        self.assertEqual(preserved_after, preserved_before)
+        self.assertEqual(
+            first_reopen.get_dcm4chee_mwl_mapping_for_order(int(historical_order["id"]))["id"],
+            backfilled["id"],
+        )
+
+    def test_historical_backfill_rolls_back_with_startup_maintenance(self) -> None:
+        historical_order = self.store.create_dcm4chee_order_record(
+            {"patientRecordId": self.order["patientRecordId"], "requestedAt": "20260715123000"}
+        )
+        payload = self.store.build_dcm4chee_mwl_payload(historical_order, self.profile)
+        attempt = self.store.create_dcm4chee_mwl_attempt(
+            int(historical_order["id"]), self.profile, request_payload=payload,
+            attempt_status=DCM4CHEE_MWL_STATUS_CREATED,
+        )
+
+        def apply_backfill(connection: sqlite3.Connection) -> None:
+            backfill_dcm4chee_mwl_mappings(
+                connection,
+                order_default_text="12 Lead ECG",
+                create_operation="create",
+                identifier_projector=historical_mwl_identifiers,
+            )
+
+        def fail_after_backfill(_connection: sqlite3.Connection) -> None:
+            raise RuntimeError("fail after backfill")
+
+        database = SQLiteDatabase(
+            self.path, maintenance=(apply_backfill, fail_after_backfill)
+        )
+        with self.assertRaisesRegex(RuntimeError, "fail after backfill"):
+            database.initialize()
+
+        with self.store.connect() as connection:
+            mapping_count = connection.execute(
+                "SELECT COUNT(*) FROM local_dcm4chee_mwl_mappings WHERE order_record_id = ?",
+                (int(historical_order["id"]),),
+            ).fetchone()[0]
+            mapping_id = connection.execute(
+                "SELECT mapping_id FROM local_dcm4chee_mwl_attempts WHERE id = ?",
+                (int(attempt["id"]),),
+            ).fetchone()[0]
+        self.assertEqual(mapping_count, 0)
+        self.assertIsNone(mapping_id)
 
 
 if __name__ == "__main__":
