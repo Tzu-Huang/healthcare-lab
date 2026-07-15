@@ -189,6 +189,28 @@ def definition_has_sql_execution(node: ast.AST) -> bool:
     )
 
 
+def assigned_names(node: ast.AST) -> list[str]:
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return [name for item in node.elts for name in assigned_names(item)]
+    if isinstance(node, ast.Name):
+        return [node.id]
+    return []
+
+
+def module_statement_symbol(node: ast.stmt) -> str:
+    if isinstance(node, ast.Assign):
+        names = [name for target in node.targets for name in assigned_names(target)]
+        if names:
+            return f"<module>.{','.join(names)}"
+    if isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+        names = assigned_names(node.target)
+        if names:
+            return f"<module>.{','.join(names)}"
+    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+        return f"<module>.{dotted_name(node.value.func) or 'call'}"
+    return "<module>.statement"
+
+
 class LegacyCandidateCollector(ast.NodeVisitor):
     def __init__(self, path: str, aliases: dict[str, str]):
         self.path = path
@@ -210,6 +232,34 @@ class LegacyCandidateCollector(ast.NodeVisitor):
                 getattr(node, "lineno", 1),
             )
         )
+
+    def visit_Module(self, node: ast.Module) -> None:
+        for index, statement in enumerate(node.body):
+            if isinstance(statement, (ast.Import, ast.ImportFrom)):
+                continue
+            if (
+                index == 0
+                and isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str)
+            ):
+                continue
+            if isinstance(statement, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                self.visit(statement)
+                continue
+
+            self.symbols.append(module_statement_symbol(statement))
+            self.add("catch-all", statement)
+            if any(isinstance(child, (ast.Dict, ast.List, ast.Set)) for child in ast.walk(statement)):
+                self.add("payload", statement)
+            if any(isinstance(child, ast.Call) for child in ast.walk(statement)):
+                self.add("workflow", statement)
+            if definition_has_sql_execution(statement):
+                self.add("sql", statement)
+            if definition_has_transport(statement, self.aliases):
+                self.add("transport", statement)
+            self.generic_visit(statement)
+            self.symbols.pop()
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self.symbols.append(node.name)
@@ -896,6 +946,26 @@ class ArchitectureContractTest(unittest.TestCase):
             frozenset(),
         )
         self.assertIn("catch-all", {item.category for item in violations})
+
+    def test_module_level_catch_all_implementation_is_rejected(self):
+        fixtures = {
+            "transport": (
+                "import urllib.request\n"
+                "urllib.request.urlopen('http://example')\n"
+            ),
+            "payload": "PATIENT_TEMPLATE = {'resourceType': 'Patient'}\n",
+            "workflow": "result = run_external_workflow()\n",
+        }
+        for category, source in fixtures.items():
+            with self.subTest(category=category):
+                violations = legacy_backend_violations(
+                    "backend/lab_store.py",
+                    source,
+                    frozenset(),
+                )
+                matches = [item for item in violations if item.category == category]
+                self.assertTrue(matches)
+                self.assertRegex(str(matches[0]), r"backend/lab_store\.py:\d+:")
 
 
 if __name__ == "__main__":
