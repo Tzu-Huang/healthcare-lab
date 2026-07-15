@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -29,7 +30,7 @@ class LazyWsgiApplicationTest(unittest.TestCase):
             )
             result = subprocess.run(
                 [
-                    str(ROOT / ".venv" / "Scripts" / "python.exe"),
+                    sys.executable,
                     "-c",
                     "import backend.app_factory",
                 ],
