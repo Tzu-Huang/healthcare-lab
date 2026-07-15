@@ -1,3 +1,4 @@
+import inspect
 import unittest
 
 from backend.services.coordination import OrderProtocolCoordinator, PatientProtocolCoordinator
@@ -42,8 +43,8 @@ class PatientOrderPortCompositionTests(unittest.TestCase):
             order.list_lab_servers()
 
     def test_coordination_adapters_explicitly_satisfy_workflow_ports(self):
-        patient = PatientProtocolCoordinator(object())
-        order = OrderProtocolCoordinator(object())
+        patient = PatientProtocolCoordinator.__new__(PatientProtocolCoordinator)
+        order = OrderProtocolCoordinator.__new__(OrderProtocolCoordinator)
 
         self.assertIsInstance(patient, PatientCoordinationPort)
         self.assertIsInstance(order, OrderCoordinationPort)
@@ -65,6 +66,19 @@ class PatientOrderPortCompositionTests(unittest.TestCase):
                 if not name.startswith("_") and callable(value)
             }
             self.assertEqual(declared, implemented)
+            for method_name in declared:
+                protocol_signature = inspect.signature(getattr(protocol, method_name))
+                adapter_signature = inspect.signature(getattr(adapter, method_name))
+                self.assertEqual(protocol_signature, adapter_signature)
+                self.assertNotEqual("Any", protocol_signature.return_annotation)
+                self.assertNotIn(
+                    inspect.Parameter.VAR_POSITIONAL,
+                    {parameter.kind for parameter in protocol_signature.parameters.values()},
+                )
+                self.assertNotIn(
+                    inspect.Parameter.VAR_KEYWORD,
+                    {parameter.kind for parameter in protocol_signature.parameters.values()},
+                )
 
 
 if __name__ == "__main__":
