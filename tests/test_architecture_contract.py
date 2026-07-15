@@ -155,6 +155,11 @@ def stable_fingerprint(value: ast.AST | str) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def stable_source_fingerprint(value: str) -> str:
+    payload = value.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
 def root_name(node: ast.AST) -> str:
     while isinstance(node, ast.Attribute):
         node = node.value
@@ -355,7 +360,7 @@ def frontend_top_level_definitions(source: str) -> dict[str, FrontendDefinition]
         definitions[name] = FrontendDefinition(
             name=name,
             line=source.count("\n", 0, match.start()) + 1,
-            fingerprint=stable_fingerprint(body),
+            fingerprint=stable_source_fingerprint(body),
             category=frontend_definition_category(name, body),
         )
     return definitions
@@ -367,7 +372,7 @@ def frontend_definition_inventory(source: str) -> frozenset[tuple[str, str]]:
     inventory = {
         (
             FRONTEND_MODULE_PREFIX_NAME,
-            stable_fingerprint(source[:prefix_end]),
+            stable_source_fingerprint(source[:prefix_end]),
         )
     }
     inventory.update(
@@ -404,7 +409,7 @@ def frontend_function_violations(
     prefix_end = first_definition.start() if first_definition else len(source)
     prefix_key = (
         FRONTEND_MODULE_PREFIX_NAME,
-        stable_fingerprint(source[:prefix_end]),
+        stable_source_fingerprint(source[:prefix_end]),
     )
     if prefix_key not in baseline:
         violations.insert(
@@ -1011,6 +1016,17 @@ class ArchitectureContractTest(unittest.TestCase):
         )
         self.assertEqual(1, len(violations))
         self.assertEqual("transport", violations[0].category)
+
+    def test_frontend_literal_whitespace_change_is_rejected(self):
+        original = 'function buildPayload() { return "A B"; }\n'
+        changed = 'function buildPayload() { return "A  B"; }\n'
+        violations = frontend_function_violations(
+            "frontend/static/app.js",
+            changed,
+            frontend_definition_inventory(original),
+        )
+        self.assertEqual(1, len(violations))
+        self.assertEqual("payload", violations[0].category)
 
     def test_frontend_module_prefix_growth_is_rejected(self):
         original = "const byId = (id) => document.getElementById(id);\n"
