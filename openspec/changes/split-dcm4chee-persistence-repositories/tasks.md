@@ -1,10 +1,10 @@
 ## 1. Characterize Protected Behavior and Safety Boundaries
 
 - [x] 1.1 Add disposable-database characterization tests for patient-sync mappings, attempts, ACK/error projection, retry increments, and success/failure transitions.
-- [ ] 1.2 Add characterization tests for MWL mapping creation, stable identifiers, attempts, readback-before-repost, verification outcomes, and retry classification.
+- [x] 1.2 Add characterization tests for MWL mapping creation, stable identifiers, attempts, readback-before-repost, verification outcomes, and retry classification.
 - [ ] 1.3 Add characterization tests for reconciliation precedence, wrong-patient rejection, duplicate candidates, simulated results, and evidence projection.
 - [ ] 1.4 Add characterization tests for result refresh generations, completed-snapshot publication, stale-result supersession, diagnostics, and run ordering.
-- [ ] 1.5 Add disposable legacy-database characterization for deterministic MWL mapping backfill and attempt linking.
+- [x] 1.5 Add disposable legacy-database characterization for deterministic MWL mapping backfill and attempt linking.
 - [ ] 1.6 Prove the verification fixtures cannot resolve to or mutate a repository `instance/*.db` and use transport doubles instead of live external services.
 - [ ] 1.7 Run the focused characterization suite; stop only if evidence proves a documented hard-stop conflict, otherwise resolve ordinary failures within scope.
 
@@ -25,12 +25,12 @@
 
 ## 4. Extract MWL Repository and Backfill
 
-- [ ] 4.1 Add `backend/repositories/dcm4chee_mwl.py` using the shared connection factory and lock.
-- [ ] 4.2 Move MWL mapping upsert/update/get/reconciliation-lookup SQL and row projection into the MWL repository.
-- [ ] 4.3 Move create, readback, profile-failure, and verification attempt SQL plus verification updates into the MWL repository.
-- [ ] 4.4 Move deterministic historical MWL mapping backfill beside the MWL owner while retaining the supplied startup connection, initialization lock, ordering, and transaction.
-- [ ] 4.5 Add focused repository and disposable legacy-database tests for stable identifiers, retries, readback, verification, lookups, backfill idempotence, and rollback.
-- [ ] 4.6 Convert retained MWL `DemoStore` methods to mechanical delegates with no SQL, payload, parsing, or workflow logic.
+- [x] 4.1 Add `backend/repositories/dcm4chee_mwl.py` using the shared connection factory and lock.
+- [x] 4.2 Move MWL mapping upsert/update/get/reconciliation-lookup SQL and row projection into the MWL repository.
+- [x] 4.3 Move create, readback, profile-failure, and verification attempt SQL plus verification updates into the MWL repository.
+- [x] 4.4 Move deterministic historical MWL mapping backfill beside the MWL owner while retaining the supplied startup connection, initialization lock, ordering, and transaction.
+- [x] 4.5 Add focused repository and disposable legacy-database tests for stable identifiers, retries, readback, verification, lookups, backfill idempotence, and rollback.
+- [x] 4.6 Convert retained MWL `DemoStore` methods to mechanical delegates with no SQL, payload, parsing, or workflow logic.
 
 ## 5. Extract Result Repository and Enrichment Reads
 
