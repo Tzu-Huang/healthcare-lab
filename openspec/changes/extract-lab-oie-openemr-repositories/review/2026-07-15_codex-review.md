@@ -1,28 +1,38 @@
-# Code Review: ZAC-57
+# Code Review: ZAC-57 (Round 2)
 
 ## Findings
 
-### [P1] Use the active Python interpreter in the import-isolation regression
+### [P1] Keep the compatibility-delegate exemption structurally narrow
 
-`tests/runtime/test_lazy_wsgi.py:32` launches `ROOT / ".venv" / "Scripts" / "python.exe"`. That path exists only in the current Windows checkout. The supported Docker application environment uses Linux (`python:3.11-slim`) and a clean CI or contributor checkout is not required to contain a repository-local Windows virtualenv, so this test raises `FileNotFoundError` before it can perform the isolation assertion. Use `sys.executable` so the subprocess runs with the interpreter executing the test suite.
+`tests/test_architecture_contract.py:268` treats any one-line return call as a compatibility delegate when any attribute in the call chain ends with `_repository`; line 263 similarly exempts every global function whose name starts with `compose_`. Because `_visit_function` returns before traversing the function body, arbitrary new implementation such as `return attacker.fake_repository.execute(payload)` or SQL/workflow calls nested in its arguments produces no legacy candidate at all. This weakens the guard that ZAC-57 is intended to strengthen. Restrict the exemption to an exact mechanically thin shape rooted at `self.<approved_repository>.<method>(...)` (and any specifically approved composition seam), continue visiting argument expressions, and add negative fixtures proving lookalike repository/compose calls are rejected.
 
-### [P2] Finish moving pure repository assertions out of the mixed store test module
+### [P1] Do not refresh reviewed legacy exceptions to make the extraction pass
 
-`tests/repositories/test_lab_store.py:75`, `tests/repositories/test_lab_store.py:101`, `tests/repositories/test_lab_store.py:156`, `tests/repositories/test_lab_store.py:274`, `tests/repositories/test_lab_store.py:292`, and `tests/repositories/test_lab_store.py:321` still contain focused OIE settings and lab repository behavior assertions against `DemoStore`. The new responsibility-specific files add overlapping coverage instead of moving these assertions, leaving OpenSpec task 5.1 incomplete. Move the pure repository cases to `test_oie_settings.py` and `test_lab.py`; retain only compatibility/migration integration assertions in the mixed store module.
+`tests/architecture_legacy_baseline.py:69` replaces the reviewed `DemoStore` catch-all fingerprint with a new fingerprint, and line 600 does the same for the aggregate transport exception. The OpenSpec design explicitly makes any changed exception a stop condition and permits only removal of extracted entries. Refreshing these fingerprints approves the modified catch-all class wholesale and prevents the contract from demonstrating exception reduction. Change the collector/baseline representation so the extracted entries can be removed without replacing the existing `DemoStore` catch-all or transport exception with newly reviewed hashes.
+
+### [P2] Import the asserted exception before the test runner starts
+
+`tests/repositories/test_oie_settings.py:144` imports `SimulatorValidationError` after the `if __name__ == "__main__": unittest.main()` block. Discovery happens to work because the module import reaches line 144, but direct module execution starts the suite first and `test_rejects_duplicate_logical_types_atomically` fails with `NameError`. Move the import to the normal import section; `python -m tests.repositories.test_oie_settings` should pass as well as discovery.
 
 ## Missing Tests and Residual Risks
 
-- The lazy WSGI wrapper is covered for one-time construction and import isolation, but the subprocess test currently exercises only the local Windows environment because of the P1 issue.
-- Existing integration coverage exercises OIE workbench composition and retained `DemoStore` seams; no additional behavioral regression was found in the extracted SQL or projections.
-- The review did not contact live OpenEMR/OIE services or run Docker lifecycle actions.
+- The delegate exemption has no negative fixtures for lookalike `_repository` attributes, broad `compose_*` names, or implementation hidden in call arguments.
+- The automated suite passes only because test discovery imports the entire OIE settings module before running it; direct module execution exposes the ordering defect.
+- Review did not contact live OpenEMR/OIE services or run Docker, deployment, push, merge, or release actions.
+
+## Prior Finding Status
+
+- Resolved: the lazy WSGI import-isolation regression now launches `sys.executable`.
+- Resolved: pure lab and OIE settings assertions moved from the mixed `DemoStore` module to responsibility-specific repository suites.
 
 ## Verification Reviewed
 
-- Focused extraction and isolation suite: 39 tests passed.
-- Architecture contract suite: 34 tests passed.
-- Full automated suite: 260 tests passed locally.
-- `instance/healthcare-lab.db` hash and timestamp remained unchanged during the post-fix full run.
+- Focused extraction and isolation suite: 45 tests passed.
+- Architecture contract suite: 34 tests passed, but the exemptions above make that pass insufficient.
+- Full automated suite: 260 tests passed with `instance/healthcare-lab.db` hash and timestamp unchanged.
+- Direct `python -m tests.repositories.test_oie_settings`: 4 tests run, 1 error (`NameError`).
+- Architecture-rule probes for arbitrary `_repository` and `compose_*` return calls: zero violations reported.
 
 ## Verdict
 
-Changes requested. Address the cross-platform test blocker and complete the responsibility-specific test relocation before `/dev-done`.
+Changes requested. Tighten the architecture enforcement without baseline exception churn and correct the relocated test import before `/dev-done`.
