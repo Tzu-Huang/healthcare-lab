@@ -78,7 +78,11 @@ from backend.services.order_workflow import (
     sync_order_to_dcm4chee_mwl,
     verify_order_dcm4chee_mwl,
 )
-from backend.services.coordination import PatientProtocolCoordinator, OrderProtocolCoordinator
+from backend.services.coordination import (
+    ConfiguredWorkflowOperations,
+    OrderProtocolCoordinator,
+    PatientProtocolCoordinator,
+)
 from backend.services.oie_workflow import (
     OieWorkflowService,
     accept_oie_result_payload,
@@ -378,22 +382,16 @@ def create_app(database_path: str | None = None) -> Flask:
         )
         return str((medplum or {}).get("baseUrl") or "").strip()
 
-    def configured_dicom_patient_sync(
-        _coordination: Any, *args: Any, **kwargs: Any
-    ) -> dict[str, Any]:
-        return sync_patient_to_dcm4chee(
-            patient_coordination,
-            *args,
-            sender=send_hl7_mllp_message,
-            **kwargs,
-        )
-
-    def configured_dicom_order_sync(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        return sync_order_to_dcm4chee_mwl(
-            *args,
-            patient_syncer=configured_dicom_patient_sync,
-            **kwargs,
-        )
+    workflow_operations = ConfiguredWorkflowOperations(
+        patient=patient_coordination,
+        order=order_coordination,
+        fhir_sync=sync_fhir_workflow_record_to_medplum,
+        patient_sync=sync_patient_to_dcm4chee,
+        result_refresh=refresh_patient_dcm4chee_results,
+        order_sync=sync_order_to_dcm4chee_mwl,
+        order_verify=verify_order_dcm4chee_mwl,
+        patient_sender=send_hl7_mllp_message,
+    )
 
     app.register_blueprint(
         create_dcm4chee_profile_blueprint(
@@ -407,15 +405,13 @@ def create_app(database_path: str | None = None) -> Flask:
             PatientWorkflowService(
                 store.patient_repository,
                 app.config,
-                fhir_capability=patient_coordination,
-                patient_sync_capability=patient_coordination,
-                result_refresh_capability=patient_coordination,
-                fixture_capability=patient_coordination,
+                fhir_capability=workflow_operations.patient_fhir,
+                fixture_capability=workflow_operations.fixture,
                 medplum_base_url=configured_medplum_base_url,
                 auth_manager=get_auth_manager,
-                fhir_sync=sync_fhir_workflow_record_to_medplum,
-                dicom_patient_sync=configured_dicom_patient_sync,
-                dcm_result_refresh=refresh_patient_dcm4chee_results,
+                fhir_sync=workflow_operations.sync_patient_fhir,
+                dicom_patient_sync=workflow_operations.sync_patient_dicom,
+                dcm_result_refresh=workflow_operations.refresh_results,
                 dcm_profile=dcm4chee_profile_from_config,
             )
         )
@@ -425,14 +421,14 @@ def create_app(database_path: str | None = None) -> Flask:
             OrderWorkflowService(
                 store.order_repository,
                 app.config,
-                fhir_capability=order_coordination,
-                dcm_order_capability=order_coordination,
-                evidence_capability=order_coordination,
+                fhir_capability=workflow_operations.order_fhir,
+                dcm_order_capability=workflow_operations.dcm_order,
+                evidence_capability=workflow_operations.evidence,
                 medplum_base_url=configured_medplum_base_url,
                 auth_manager=get_auth_manager,
-                fhir_sync=sync_fhir_workflow_record_to_medplum,
-                dcm_sync=configured_dicom_order_sync,
-                dcm_verify=verify_order_dcm4chee_mwl,
+                fhir_sync=workflow_operations.sync_order_fhir,
+                dcm_sync=workflow_operations.sync_order_dicom,
+                dcm_verify=workflow_operations.verify_order_dicom,
                 dcm_profile=dcm4chee_profile_from_config,
             )
         )
