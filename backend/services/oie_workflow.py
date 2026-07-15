@@ -27,15 +27,13 @@ class OieResultRepositoryPort(Protocol):
         self, raw_message: str, message_type: str, error: str
     ) -> dict[str, Any]: ...
 
+    def list_oie_results(self) -> list[dict[str, Any]]: ...
 
-class OieRepositoryPort(OieResultRepositoryPort, Protocol):
+
+class OieCoordinationPort(Protocol):
     def list_oie_local_adt_inventory(self) -> list[dict[str, Any]]: ...
 
     def list_oie_local_order_inventory(self) -> list[dict[str, Any]]: ...
-
-    def list_oie_workbench(self) -> dict[str, Any]: ...
-
-    def list_oie_results(self) -> list[dict[str, Any]]: ...
 
     def get_order_record(self, order_id: int) -> dict[str, Any]: ...
 
@@ -56,18 +54,54 @@ class OieTransportError(Exception):
         self.item = item
 
 
+def compose_oie_workbench(
+    patients: list[dict[str, Any]],
+    orders: list[dict[str, Any]],
+    results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    orders_by_patient: dict[int, list[dict[str, Any]]] = {}
+    results_by_patient: dict[int, list[dict[str, Any]]] = {}
+    for order in orders:
+        orders_by_patient.setdefault(int(order["patientRecordId"]), []).append(order)
+    visible_patient_ids = {int(patient["id"]) for patient in patients}
+    unmatched_results = []
+    for result in results:
+        patient_id = result.get("matchedPatientRecordId")
+        if patient_id and int(patient_id) in visible_patient_ids:
+            results_by_patient.setdefault(int(patient_id), []).append(result)
+        else:
+            unmatched_results.append(result)
+    items = []
+    for patient in patients:
+        patient_id = int(patient["id"])
+        patient_orders = orders_by_patient.get(patient_id, [])
+        patient_results = results_by_patient.get(patient_id, [])
+        item = {
+            **patient, "orders": patient_orders, "results": patient_results,
+            "orderCount": len(patient_orders), "resultCount": len(patient_results),
+        }
+        item["summary"] = {
+            **item["summary"], "orderCount": len(patient_orders),
+            "resultCount": len(patient_results),
+        }
+        items.append(item)
+    return {"patients": items, "unmatchedResults": unmatched_results}
+
+
 class OieWorkflowService:
     def __init__(
         self,
-        repository: OieRepositoryPort,
+        result_repository: OieResultRepositoryPort,
+        coordination: OieCoordinationPort,
         configuration: Mapping[str, Any],
         listener: OieListenerPort,
         *,
-        result_handler: Callable[[OieRepositoryPort, str], tuple[str, dict[str, Any], int]],
+        result_handler: Callable[[OieResultRepositoryPort, str], tuple[str, dict[str, Any], int]],
         ack_parser: Callable[[str], dict[str, str]],
         order_sender_provider: Callable[[], Callable[..., str]],
     ) -> None:
-        self._repository = repository
+        self._results = result_repository
+        self._coordination = coordination
         self._configuration = configuration
         self._listener = listener
         self._result_handler = result_handler
@@ -75,21 +109,23 @@ class OieWorkflowService:
         self._order_sender_provider = order_sender_provider
 
     def local_adt_inventory(self) -> list[dict[str, Any]]:
-        return self._repository.list_oie_local_adt_inventory()
+        return self._coordination.list_oie_local_adt_inventory()
 
     def local_order_inventory(self) -> list[dict[str, Any]]:
-        return self._repository.list_oie_local_order_inventory()
+        return self._coordination.list_oie_local_order_inventory()
 
     def workbench(self) -> dict[str, Any]:
-        return self._repository.list_oie_workbench()
+        return compose_oie_workbench(
+            self.local_adt_inventory(), self.local_order_inventory(), self.results()
+        )
 
     def results(self) -> list[dict[str, Any]]:
-        return self._repository.list_oie_results()
+        return self._results.list_oie_results()
 
     def receive_result(self, payload: str) -> tuple[str, dict[str, Any], int]:
         if not payload.strip():
             raise ValueError("HL7 payload is required.")
-        return self._result_handler(self._repository, payload)
+        return self._result_handler(self._results, payload)
 
     def listener_status(self) -> dict[str, Any]:
         return self._listener.status()
@@ -125,7 +161,7 @@ class OieWorkflowService:
         if timeout_seconds <= 0:
             raise ValueError("OIE timeout must be positive.")
 
-        order = self._repository.get_order_record(order_id)
+        order = self._coordination.get_order_record(order_id)
         try:
             ack_payload = self._order_sender_provider()(
                 order["payload"],
@@ -142,7 +178,7 @@ class OieWorkflowService:
                 if ack["code"] == "AR"
                 else ORDER_STATUS_ERROR
             )
-            return self._repository.update_order_send_result(
+            return self._coordination.update_order_send_result(
                 order_id,
                 order_status=status,
                 ack_code=ack["code"],
@@ -151,7 +187,7 @@ class OieWorkflowService:
                 ack_payload=ack_payload,
             )
         except (OSError, socket.timeout, TimeoutError) as exc:
-            item = self._repository.update_order_send_result(
+            item = self._coordination.update_order_send_result(
                 order_id,
                 order_status=ORDER_STATUS_TRANSPORT_ERROR,
                 transport_error=str(exc),

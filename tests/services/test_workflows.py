@@ -372,6 +372,7 @@ class WorkflowServiceTest(unittest.TestCase):
     def _oie_service(repository, sender):
         return OieWorkflowService(
             repository,
+            repository,
             {
                 "OIE_MLLP_ORDER_HOST": "oie",
                 "OIE_MLLP_ORDER_PORT": 6600,

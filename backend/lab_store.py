@@ -1,21 +1,13 @@
 from __future__ import annotations
 
-import hashlib
 import json
-import math
 import re
 import sqlite3
 import urllib.parse
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
-
-try:
-    import pymysql
-    import pymysql.cursors
-except ImportError:  # pragma: no cover - optional OpenEMR integration dependency
-    pymysql = None
+from typing import Any
 
 from backend.gdt_adapter import (
     GDT_DEFAULT_CHARSET_MARKER,
@@ -41,6 +33,13 @@ from backend.domain.openemr import (
     parse_openemr_allowed_procedure_codes,
 )
 from backend.repositories.database import SQLiteDatabase
+from backend.repositories.lab import LabRepository
+from backend.repositories.oie import OieRepository
+from backend.repositories.oie_settings import (
+    serialize_oie_settings_profile,
+    validate_oie_settings_payload,
+)
+from backend.services.oie_workflow import compose_oie_workbench
 from backend.repositories.maintenance import (
     backfill_dcm4chee_mwl_mappings,
     seed_lab_servers,
@@ -400,261 +399,15 @@ def first_gdt_field(fields: dict[str, list[str]], code: str) -> str:
     return adapter_first_gdt_field(fields, code)
 
 
-def normalize_openemr_dob(value: Any) -> str:
-    text = str(value or "").strip()
-    return text[:10] if len(text) >= 10 else text
-
-
-def normalize_openemr_gender(value: Any) -> str:
-    normalized = str(value or "").strip().lower()
-    if normalized in {"m", "male", "man"}:
-        return "M"
-    if normalized in {"f", "female", "woman"}:
-        return "F"
-    if normalized in {"o", "other"}:
-        return "O"
-    return "U" if normalized else ""
-
-
-def openemr_provider_name(row: dict[str, Any]) -> str:
-    full_name = " ".join(
-        part
-        for part in (
-            str(row.get("provider_fname") or "").strip(),
-            str(row.get("provider_lname") or "").strip(),
-        )
-        if part
-    )
-    return full_name or str(row.get("provider_username") or "").strip()
-
-
-def openemr_row_source_key(row: dict[str, Any]) -> tuple[int, int]:
-    return int(row["procedure_order_id"]), int(row.get("procedure_order_seq") or 1)
-
-
-def map_openemr_procedure_order_to_gdt_order(row: dict[str, Any]) -> dict[str, Any]:
-    procedure_order_id, procedure_order_seq = openemr_row_source_key(row)
-    order_number = f"OE-PO-{procedure_order_id}-{procedure_order_seq}"
-    patient_mrn = str(row.get("pubpid") or row.get("pid") or row.get("patient_id") or "").strip()
-    return {
-        "source": "openemr",
-        "sourceProcedureOrderId": procedure_order_id,
-        "sourceProcedureOrderSeq": procedure_order_seq,
-        "sourceFingerprint": hashlib.sha256(
-            json.dumps(row, default=str, sort_keys=True).encode("utf-8")
-        ).hexdigest(),
-        "orderNumber": order_number,
-        "placerOrderNumber": order_number,
-        "fillerOrderNumber": "",
-        "correlationId": f"openemr-procedure-order:{procedure_order_id}:{procedure_order_seq}",
-        "patientMrn": patient_mrn,
-        "patient": {
-            "mrn": patient_mrn,
-            "first_name": str(row.get("patient_fname") or "").strip(),
-            "last_name": str(row.get("patient_lname") or "").strip(),
-            "middle_name": "",
-            "dob": normalize_openemr_dob(row.get("patient_dob")),
-            "gender": normalize_openemr_gender(row.get("patient_sex")),
-        },
-        "encounterId": str(row.get("encounter_id") or "").strip(),
-        "examCode": str(row.get("procedure_code") or "").strip(),
-        "examDescription": str(row.get("procedure_name") or "").strip(),
-        "orderingProvider": openemr_provider_name(row),
-        "orderDate": str(row.get("date_ordered") or "").strip(),
-        "encounterDate": str(row.get("encounter_date") or "").strip(),
-        "encounterReason": str(row.get("encounter_reason") or "").strip(),
-        "status": "QUEUED_FOR_GDT",
-    }
-
-
-class OpenEMRProcedureOrderSource:
-    def __init__(
-        self,
-        *,
-        host: str = "",
-        port: int = 3306,
-        user: str = "",
-        password: str = "",
-        database: str = "",
-        allowed_procedure_codes: tuple[str, ...] = OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES,
-        connection_factory: Callable[..., Any] | None = None,
-    ) -> None:
-        self.host = host.strip()
-        self.port = int(port)
-        self.user = user.strip()
-        self.password = password
-        self.database = database.strip()
-        self.allowed_procedure_codes = tuple(allowed_procedure_codes)
-        self.connection_factory = connection_factory
-
-    def configured(self) -> bool:
-        return bool(self.host and self.user and self.database and self.allowed_procedure_codes)
-
-    def status(self) -> dict[str, Any]:
-        return {
-            "configured": self.configured(),
-            "host": self.host,
-            "port": self.port,
-            "database": self.database,
-            "user": self.user,
-            "allowedProcedureCodes": list(self.allowed_procedure_codes),
-            "driverAvailable": bool(pymysql or self.connection_factory),
-        }
-
-    def list_orders(self) -> list[dict[str, Any]]:
-        if not self.configured():
-            raise SimulatorValidationError("OpenEMR procedure-order source is not configured.")
-        try:
-            rows = self._fetch_rows()
-        except Exception as exc:
-            if self._is_missing_order_schema_error(exc):
-                return []
-            raise
-        return [map_openemr_procedure_order_to_gdt_order(row) for row in rows]
-
-    def get_order(self, procedure_order_id: int, procedure_order_seq: int) -> dict[str, Any]:
-        for order in self.list_orders():
-            if (
-                order["sourceProcedureOrderId"] == int(procedure_order_id)
-                and order["sourceProcedureOrderSeq"] == int(procedure_order_seq)
-            ):
-                return order
-        raise KeyError(f"{procedure_order_id}:{procedure_order_seq}")
-
-    def _connect(self) -> Any:
-        if self.connection_factory:
-            return self.connection_factory()
-        if pymysql is None:
-            raise SimulatorValidationError(
-                "PyMySQL is required for OpenEMR MariaDB access. Install requirements first."
-            )
-        return pymysql.connect(
-            host=self.host,
-            port=self.port,
-            user=self.user,
-            password=self.password,
-            database=self.database,
-            charset="utf8mb4",
-            cursorclass=pymysql.cursors.DictCursor,
-        )
-
-    def verify_order_query(self) -> dict[str, Any]:
-        result: dict[str, Any] = {
-            "configured": self.configured(),
-            "connection": {
-                "status": "Down",
-                "message": "OpenEMR procedure-order source is not configured.",
-            },
-            "schema": {
-                "status": "Unknown",
-                "message": "OpenEMR procedure-order source is not configured.",
-            },
-            "orders": {
-                "status": "Unknown",
-                "message": "OpenEMR procedure-order source is not configured.",
-                "count": 0,
-            },
-        }
-        if not self.configured():
-            return result
-        try:
-            connection = self._connect()
-        except Exception as exc:
-            message = str(exc)
-            result["connection"] = {"status": "Down", "message": message}
-            result["schema"] = {"status": "Unknown", "message": "Skipped because MariaDB connection failed."}
-            result["orders"] = {
-                "status": "Unknown",
-                "message": "Skipped because MariaDB connection failed.",
-                "count": 0,
-            }
-            return result
-        result["connection"] = {"status": "Healthy", "message": "MariaDB connection opened."}
-        try:
-            rows = self._fetch_rows_with_connection(connection)
-        except Exception as exc:
-            message = str(exc)
-            if self._is_missing_order_schema_error(exc):
-                message = f"Required OpenEMR procedure-order schema is unavailable: {message}"
-            result["schema"] = {"status": "Down", "message": message}
-            result["orders"] = {
-                "status": "Unknown",
-                "message": "Skipped because procedure-order query failed.",
-                "count": 0,
-            }
-            return result
-        finally:
-            connection.close()
-        count = len(rows)
-        result["schema"] = {
-            "status": "Healthy",
-            "message": "OpenEMR procedure-order query executed.",
-        }
-        result["orders"] = {
-            "status": "Healthy" if count else "Degraded",
-            "message": f"{count} matching ECG procedure order(s).",
-            "count": count,
-        }
-        return result
-
-    @staticmethod
-    def _is_missing_order_schema_error(exc: Exception) -> bool:
-        args = getattr(exc, "args", ())
-        code = args[0] if args else None
-        message = str(args[1] if len(args) > 1 else exc).lower()
-        order_tables = ("procedure_order", "procedure_order_code", "patient_data")
-        return code == 1146 and "doesn't exist" in message and any(
-            table in message for table in order_tables
-        )
-
-    def _fetch_rows(self) -> list[dict[str, Any]]:
-        connection = self._connect()
-        try:
-            return self._fetch_rows_with_connection(connection)
-        finally:
-            connection.close()
-
-    def _fetch_rows_with_connection(self, connection: Any) -> list[dict[str, Any]]:
-        placeholders = ", ".join(["%s"] * len(self.allowed_procedure_codes))
-        query = f"""
-            SELECT
-              po.procedure_order_id,
-              po.uuid AS order_uuid,
-              po.provider_id,
-              po.patient_id,
-              po.encounter_id,
-              po.date_ordered,
-              poc.procedure_order_seq,
-              poc.procedure_code,
-              poc.procedure_name,
-              pd.pubpid,
-              pd.pid,
-              pd.fname AS patient_fname,
-              pd.lname AS patient_lname,
-              pd.DOB AS patient_dob,
-              pd.sex AS patient_sex,
-              fe.reason AS encounter_reason,
-              fe.date AS encounter_date,
-              u.username AS provider_username,
-              u.fname AS provider_fname,
-              u.lname AS provider_lname,
-              u.npi AS provider_npi
-            FROM procedure_order po
-            JOIN procedure_order_code poc
-              ON poc.procedure_order_id = po.procedure_order_id
-            JOIN patient_data pd
-              ON pd.id = po.patient_id
-            LEFT JOIN form_encounter fe
-              ON fe.encounter = po.encounter_id
-             AND fe.pid = po.patient_id
-            LEFT JOIN users u
-              ON u.id = po.provider_id
-            WHERE poc.procedure_code IN ({placeholders})
-            ORDER BY po.procedure_order_id DESC, poc.procedure_order_seq ASC
-        """
-        with connection.cursor() as cursor:
-            cursor.execute(query, self.allowed_procedure_codes)
-            return [dict(row) for row in cursor.fetchall()]
+# Compatibility re-exports; direct composition imports the owning modules.
+from backend.clients.openemr import OpenEMRProcedureOrderSource
+from backend.domain.openemr import (
+    map_openemr_procedure_order_to_gdt_order,
+    normalize_openemr_dob,
+    normalize_openemr_gender,
+    openemr_provider_name,
+    openemr_row_source_key,
+)
 
 
 class DemoStore:
@@ -692,15 +445,31 @@ class DemoStore:
         self.path = self.database.path
         self.lock = self.database.lock
         self.initialize()
-        from backend.repositories.oie_settings import OieSettingsRepository
+        from backend.repositories.oie_settings import (
+            OieSettingsRepository,
+            serialize_oie_settings_profile,
+            validate_oie_settings_payload,
+        )
 
         self.oie_settings_repository = OieSettingsRepository(
             self.database.connect,
             self.database.lock,
             profile_name=OIE_SETTINGS_PROFILE_NAME,
-            validator=self.validate_oie_settings_payload,
-            serializer=self._oie_settings_profile_dict,
+            validator=validate_oie_settings_payload,
+            serializer=serialize_oie_settings_profile,
             timestamp_factory=now_iso,
+        )
+        self.lab_repository = LabRepository(
+            self.database.connect,
+            self.database.lock,
+            timestamp_factory=now_iso,
+        )
+        self.oie_repository = OieRepository(
+            self.database.connect,
+            self.database.lock,
+            timestamp_factory=now_iso,
+            patient_protocol=PATIENT_MODES["hl7-v2"]["protocol"],
+            order_protocol=ORDER_PROTOCOL_VERSION,
         )
 
     @contextmanager
@@ -710,193 +479,6 @@ class DemoStore:
 
     def initialize(self) -> None:
         self.database.initialize()
-
-    @staticmethod
-    def _oie_required_object(payload: dict[str, Any], key: str, label: str) -> dict[str, Any]:
-        value = payload.get(key)
-        if not isinstance(value, dict):
-            raise SimulatorValidationError(f"OIE {label} must be a JSON object.")
-        return value
-
-    @staticmethod
-    def _oie_required_boolean(payload: dict[str, Any], key: str, label: str) -> bool:
-        if key not in payload or not isinstance(payload[key], bool):
-            raise SimulatorValidationError(f"OIE {label} must be true or false.")
-        return payload[key]
-
-    @classmethod
-    def validate_oie_settings_payload(cls, payload: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(payload, dict):
-            raise SimulatorValidationError("OIE settings payload must be a JSON object.")
-
-        management = cls._oie_required_object(payload, "managementApi", "managementApi")
-        result_listener = cls._oie_required_object(
-            payload,
-            "resultListener",
-            "resultListener",
-        )
-        managed_channels = payload.get("managedChannels")
-        if not isinstance(managed_channels, list):
-            raise SimulatorValidationError("OIE managedChannels must be a JSON array.")
-
-        base_url = str(management.get("baseUrl") or "").strip()
-        try:
-            parsed_url = urllib.parse.urlparse(base_url)
-            parsed_hostname = parsed_url.hostname
-            parsed_url.port
-        except ValueError as exc:
-            raise SimulatorValidationError(
-                "OIE Management API baseUrl must be an HTTP or HTTPS URL with a host."
-            ) from exc
-        if parsed_url.scheme.lower() not in {"http", "https"} or not parsed_hostname:
-            raise SimulatorValidationError(
-                "OIE Management API baseUrl must be an HTTP or HTTPS URL with a host."
-            )
-        username = str(management.get("username") or "").strip()
-        if not username:
-            raise SimulatorValidationError("OIE Management API username is required.")
-        raw_timeout = management.get("timeoutSeconds")
-        if isinstance(raw_timeout, bool):
-            raise SimulatorValidationError(
-                "OIE Management API timeoutSeconds must be a positive number."
-            )
-        try:
-            timeout_seconds = float(raw_timeout)
-        except (TypeError, ValueError) as exc:
-            raise SimulatorValidationError(
-                "OIE Management API timeoutSeconds must be a positive number."
-            ) from exc
-        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-            raise SimulatorValidationError(
-                "OIE Management API timeoutSeconds must be a positive number."
-            )
-
-        listener_host = str(result_listener.get("host") or "").strip()
-        if not listener_host:
-            raise SimulatorValidationError("OIE resultListener host is required.")
-        raw_port = result_listener.get("port")
-        if isinstance(raw_port, bool):
-            raise SimulatorValidationError(
-                "OIE resultListener port must be an integer between 1 and 65535."
-            )
-        try:
-            listener_port = int(raw_port)
-        except (TypeError, ValueError) as exc:
-            raise SimulatorValidationError(
-                "OIE resultListener port must be an integer between 1 and 65535."
-            ) from exc
-        if str(raw_port).strip() != str(listener_port) or not 1 <= listener_port <= 65535:
-            raise SimulatorValidationError(
-                "OIE resultListener port must be an integer between 1 and 65535."
-            )
-
-        normalized_channels: list[dict[str, str]] = []
-        logical_types: set[str] = set()
-        for index, mapping in enumerate(managed_channels):
-            if not isinstance(mapping, dict):
-                raise SimulatorValidationError(
-                    f"OIE managedChannels[{index}] must be a JSON object."
-                )
-            logical_type = str(mapping.get("logicalType") or "").strip().lower()
-            if not logical_type:
-                raise SimulatorValidationError(
-                    f"OIE managedChannels[{index}].logicalType is required."
-                )
-            channel_name = str(mapping.get("channelName") or "").strip()
-            if not channel_name:
-                raise SimulatorValidationError(
-                    f"OIE managedChannels[{index}].channelName is required."
-                )
-            if logical_type in logical_types:
-                raise SimulatorValidationError(
-                    f"OIE managedChannels contains duplicate logicalType '{logical_type}'."
-                )
-            logical_types.add(logical_type)
-            normalized_channels.append(
-                {
-                    "logical_type": logical_type,
-                    "oie_channel_id": str(mapping.get("channelId") or "").strip(),
-                    "channel_name": channel_name,
-                    "template_version": str(mapping.get("templateVersion") or "").strip(),
-                    "last_known_revision": str(mapping.get("lastKnownRevision") or "").strip(),
-                }
-            )
-
-        password_provided = "password" in management
-        password = ""
-        if password_provided:
-            raw_password = management.get("password")
-            if not isinstance(raw_password, str) or not raw_password.strip():
-                raise SimulatorValidationError(
-                    "OIE Management API password must be a non-empty string when provided."
-                )
-            password = raw_password
-
-        return {
-            "management_api_base_url": base_url,
-            "management_api_username": username,
-            "management_api_tls_verify": int(
-                cls._oie_required_boolean(management, "tlsVerify", "Management API tlsVerify")
-            ),
-            "management_api_timeout_seconds": timeout_seconds,
-            "result_listener_host": listener_host,
-            "result_listener_port": listener_port,
-            "result_listener_mllp_framing": int(
-                cls._oie_required_boolean(
-                    result_listener,
-                    "mllpFraming",
-                    "resultListener mllpFraming",
-                )
-            ),
-            "result_listener_auto_start": int(
-                cls._oie_required_boolean(
-                    result_listener,
-                    "autoStart",
-                    "resultListener autoStart",
-                )
-            ),
-            "managed_channels": normalized_channels,
-            "password_provided": password_provided,
-            "management_api_password": password,
-        }
-
-    @staticmethod
-    def _oie_settings_profile_dict(
-        profile: sqlite3.Row,
-        mappings: list[sqlite3.Row],
-    ) -> dict[str, Any]:
-        timeout_seconds = float(profile["management_api_timeout_seconds"])
-        normalized_timeout: int | float = (
-            int(timeout_seconds) if timeout_seconds.is_integer() else timeout_seconds
-        )
-        return {
-            "profileName": profile["profile_name"],
-            "managementApi": {
-                "baseUrl": profile["management_api_base_url"],
-                "username": profile["management_api_username"],
-                "passwordConfigured": bool(profile["management_api_password"]),
-                "tlsVerify": bool(profile["management_api_tls_verify"]),
-                "timeoutSeconds": normalized_timeout,
-            },
-            "resultListener": {
-                "host": profile["result_listener_host"],
-                "port": profile["result_listener_port"],
-                "mllpFraming": bool(profile["result_listener_mllp_framing"]),
-                "autoStart": bool(profile["result_listener_auto_start"]),
-            },
-            "managedChannels": [
-                {
-                    "logicalType": mapping["logical_type"],
-                    "channelId": mapping["oie_channel_id"],
-                    "channelName": mapping["channel_name"],
-                    "templateVersion": mapping["template_version"],
-                    "lastKnownRevision": mapping["last_known_revision"],
-                }
-                for mapping in mappings
-            ],
-            "createdAt": profile["created_at"],
-            "updatedAt": profile["updated_at"],
-        }
 
     def get_oie_settings_profile(self) -> dict[str, Any]:
         return self.oie_settings_repository.get()
@@ -5274,167 +4856,24 @@ class DemoStore:
                 )
         return self._gdt_message_record_dict_by_id(message_record_id)
 
-    def record_oie_result(self, payload_hl7: str, parsed: dict[str, str]) -> dict[str, Any]:
-        timestamp = now_iso()
-        message_control_id = str(parsed.get("messageControlId") or "").strip()
-        message_type = str(parsed.get("messageType") or "").strip()
-        patient_mrn = str(parsed.get("patientMrn") or "").strip()
-        placer_order_number = str(parsed.get("placerOrderNumber") or "").strip()
-        filler_order_number = str(parsed.get("fillerOrderNumber") or "").strip()
-        with self.lock, self.connect() as connection:
-            if message_control_id:
-                duplicate = connection.execute(
-                    """
-                    SELECT * FROM oie_result_records
-                    WHERE message_control_id = ?
-                    """,
-                    (message_control_id,),
-                ).fetchone()
-                if duplicate:
-                    item = self._result_record_dict(duplicate)
-                    item["duplicate"] = True
-                    item["duplicateOfId"] = duplicate["id"]
-                    return item
-            patient_row = None
-            if patient_mrn:
-                patient_row = connection.execute(
-                    """
-                    SELECT * FROM local_patient_records
-                    WHERE mrn = ? AND protocol_version = ?
-                    ORDER BY id DESC
-                    LIMIT 1
-                    """,
-                    (patient_mrn, PATIENT_MODES["hl7-v2"]["protocol"]),
-                ).fetchone()
-            order_row = None
-            if patient_row and (placer_order_number or filler_order_number):
-                order_row = connection.execute(
-                    """
-                    SELECT * FROM local_order_records
-                    WHERE patient_record_id = ? AND protocol_version = ?
-                      AND (
-                        (? != '' AND placer_order_number = ?)
-                        OR (? != '' AND filler_order_number = ?)
-                        OR (? != '' AND local_order_number = ?)
-                      )
-                    ORDER BY id DESC
-                    LIMIT 1
-                    """,
-                    (
-                        patient_row["id"],
-                        ORDER_PROTOCOL_VERSION,
-                        placer_order_number,
-                        placer_order_number,
-                        filler_order_number,
-                        filler_order_number,
-                        filler_order_number,
-                        filler_order_number,
-                    ),
-                ).fetchone()
-            if order_row:
-                match_status = "order-matched"
-            elif patient_row:
-                match_status = "patient-only"
-            else:
-                match_status = "unmatched-patient"
-            cursor = connection.execute(
-                """
-                INSERT INTO oie_result_records (
-                    message_control_id, message_type, patient_mrn, placer_order_number,
-                    filler_order_number, matched_patient_record_id, matched_order_record_id,
-                    match_status, duplicate_of_id, parse_status, error_text, payload_hl7,
-                    received_at, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'accepted', '', ?, ?, ?, ?)
-                """,
-                (
-                    message_control_id,
-                    message_type,
-                    patient_mrn,
-                    placer_order_number,
-                    filler_order_number,
-                    patient_row["id"] if patient_row else None,
-                    order_row["id"] if order_row else None,
-                    match_status,
-                    payload_hl7,
-                    timestamp,
-                    timestamp,
-                    timestamp,
-                ),
-            )
-            result_id = int(cursor.lastrowid)
-            row = connection.execute(
-                "SELECT * FROM oie_result_records WHERE id = ?",
-                (result_id,),
-            ).fetchone()
-        return self._result_record_dict(row)
+    # Compatibility-only OIE result seams.
+    def list_oie_workbench(self) -> dict[str, Any]:
+        return compose_oie_workbench(
+            self.list_oie_local_adt_inventory(),
+            self.list_oie_local_order_inventory(),
+            self.oie_repository.list_oie_results(),
+        )
 
-    def record_oie_result_error(self, payload_hl7: str, message_type: str, error_text: str) -> dict[str, Any]:
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            cursor = connection.execute(
-                """
-                INSERT INTO oie_result_records (
-                    message_control_id, message_type, patient_mrn, placer_order_number,
-                    filler_order_number, matched_patient_record_id, matched_order_record_id,
-                    match_status, duplicate_of_id, parse_status, error_text, payload_hl7,
-                    received_at, created_at, updated_at
-                )
-                VALUES ('', ?, '', '', '', NULL, NULL, 'unmatched-patient', NULL, 'error', ?, ?, ?, ?, ?)
-                """,
-                (message_type, error_text, payload_hl7, timestamp, timestamp, timestamp),
-            )
-            row = connection.execute(
-                "SELECT * FROM oie_result_records WHERE id = ?",
-                (int(cursor.lastrowid),),
-            ).fetchone()
-        return self._result_record_dict(row)
+    def record_oie_result(self, payload_hl7: str, parsed: dict[str, str]) -> dict[str, Any]:
+        return self.oie_repository.record_oie_result(payload_hl7, parsed)
+
+    def record_oie_result_error(
+        self, payload_hl7: str, message_type: str, error_text: str
+    ) -> dict[str, Any]:
+        return self.oie_repository.record_oie_result_error(payload_hl7, message_type, error_text)
 
     def list_oie_results(self) -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT * FROM oie_result_records
-                ORDER BY received_at DESC, id DESC
-                """
-            ).fetchall()
-        return [self._result_record_dict(row) for row in rows]
-
-    def list_oie_workbench(self) -> dict[str, Any]:
-        patients = self.list_patient_records(PATIENT_MODES["hl7-v2"]["protocol"])
-        orders = self.list_order_records(ORDER_PROTOCOL_VERSION)
-        results = self.list_oie_results()
-        orders_by_patient: dict[int, list[dict[str, Any]]] = {}
-        results_by_patient: dict[int, list[dict[str, Any]]] = {}
-        unmatched_results: list[dict[str, Any]] = []
-        for order in orders:
-            orders_by_patient.setdefault(int(order["patientRecordId"]), []).append(order)
-        visible_patient_ids = {int(patient["id"]) for patient in patients}
-        for result in results:
-            patient_id = result.get("matchedPatientRecordId")
-            if patient_id and int(patient_id) in visible_patient_ids:
-                results_by_patient.setdefault(int(patient_id), []).append(result)
-            else:
-                unmatched_results.append(result)
-        workbench_patients = []
-        for patient in patients:
-            patient_id = int(patient["id"])
-            patient_orders = orders_by_patient.get(patient_id, [])
-            patient_results = results_by_patient.get(patient_id, [])
-            item = {
-                **patient,
-                "orders": patient_orders,
-                "results": patient_results,
-                "orderCount": len(patient_orders),
-                "resultCount": len(patient_results),
-            }
-            item["summary"] = {
-                **item["summary"],
-                "orderCount": len(patient_orders),
-                "resultCount": len(patient_results),
-            }
-            workbench_patients.append(item)
-        return {"patients": workbench_patients, "unmatchedResults": unmatched_results}
+        return self.oie_repository.list_oie_results()
 
     def _order_record_dicts_with_fhir(self, rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
         source_ids = [str(row["id"]) for row in rows]
@@ -6624,371 +6063,32 @@ class DemoStore:
         }
 
 
-    @staticmethod
-    def validate_lab_server_payload(
-        payload: dict[str, Any], *, partial: bool = False
-    ) -> dict[str, Any]:
-        if not isinstance(payload, dict):
-            raise SimulatorValidationError("Server payload must be a JSON object.")
-        validated: dict[str, Any] = {}
-        if "name" in payload or not partial:
-            name = str(payload.get("name", "")).strip()
-            if not name:
-                raise SimulatorValidationError("Server name is required.")
-            validated["name"] = name
-        if "serverType" in payload or "server_type" in payload or not partial:
-            server_type = str(
-                payload.get("serverType", payload.get("server_type", ""))
-            ).strip()
-            if server_type not in LAB_SERVER_TYPES:
-                raise SimulatorValidationError(
-                    f"Server type must be one of: {', '.join(LAB_SERVER_TYPES)}."
-                )
-            validated["server_type"] = server_type
-        for source_key, target_key in (
-            ("description", "description"),
-            ("host", "host"),
-            ("baseUrl", "base_url"),
-            ("base_url", "base_url"),
-            ("version", "version"),
-        ):
-            if source_key in payload:
-                validated[target_key] = str(payload.get(source_key, "")).strip()
-        if "port" in payload:
-            raw_port = payload.get("port")
-            if raw_port in (None, ""):
-                validated["port"] = None
-            else:
-                try:
-                    port = int(raw_port)
-                except (TypeError, ValueError) as exc:
-                    raise SimulatorValidationError(
-                        "Port must be an integer between 1 and 65535."
-                    ) from exc
-                if not 1 <= port <= 65535:
-                    raise SimulatorValidationError(
-                        "Port must be an integer between 1 and 65535."
-                    )
-                validated["port"] = port
-        if "protocol" in payload or not partial:
-            protocol = str(payload.get("protocol", "None")).strip() or "None"
-            if protocol not in LAB_SERVER_PROTOCOLS:
-                raise SimulatorValidationError(
-                    f"Protocol must be one of: {', '.join(LAB_SERVER_PROTOCOLS)}."
-                )
-            validated["protocol"] = protocol
-        if "enabled" in payload:
-            validated["enabled"] = 1 if bool(payload.get("enabled")) else 0
-        if "checkConfig" in payload:
-            check_config = payload.get("checkConfig") or {}
-            if not isinstance(check_config, dict):
-                raise SimulatorValidationError("Check config must be a JSON object.")
-            validated["check_config_json"] = json.dumps(check_config)
-        operation_config = payload.get("operation")
-        if isinstance(operation_config, dict):
-            if "controlType" in operation_config:
-                validated["control_type"] = str(operation_config.get("controlType", "")).strip()
-            if "backingService" in operation_config:
-                validated["backing_service"] = str(operation_config.get("backingService", "")).strip()
-            if "supportedActions" in operation_config:
-                actions = operation_config.get("supportedActions") or []
-                if not isinstance(actions, list) or not all(isinstance(action, str) for action in actions):
-                    raise SimulatorValidationError("Supported actions must be a list of strings.")
-                unsupported = [action for action in actions if action not in LAB_OPERATION_ACTIONS]
-                if unsupported:
-                    raise SimulatorValidationError(
-                        f"Unsupported lab operation action: {unsupported[0]}."
-                    )
-                validated["supported_actions_json"] = json.dumps(actions)
-            if "timeoutSeconds" in operation_config:
-                try:
-                    timeout_seconds = int(operation_config.get("timeoutSeconds"))
-                except (TypeError, ValueError) as exc:
-                    raise SimulatorValidationError("Operation timeout must be a positive integer.") from exc
-                if timeout_seconds <= 0:
-                    raise SimulatorValidationError("Operation timeout must be a positive integer.")
-                validated["operation_timeout_seconds"] = timeout_seconds
-            if "smokeProfile" in operation_config:
-                validated["smoke_profile"] = str(operation_config.get("smokeProfile", "")).strip()
-        endpoint_base_url = validated.get("base_url", str(payload.get("baseUrl", "")).strip())
-        endpoint_host = validated.get("host", str(payload.get("host", "")).strip())
-        endpoint_port = validated.get("port", payload.get("port"))
-        if endpoint_base_url and not endpoint_base_url.startswith(("http://", "https://")):
-            raise SimulatorValidationError("Base URL must start with http:// or https://.")
-        if not partial and not endpoint_base_url and not (endpoint_host and endpoint_port):
-            protocol = validated.get("protocol", "None")
-            if protocol not in {"GDT", "None"}:
-                raise SimulatorValidationError(
-                    "Server requires either a base URL or host and port."
-                )
-        return validated
-
-    @staticmethod
-    def _lab_server_dict(row: sqlite3.Row) -> dict[str, Any]:
-        supported_actions = json.loads(row["supported_actions_json"] or "[]")
-        return {
-            "id": row["id"],
-            "name": row["name"],
-            "serverType": row["server_type"],
-            "description": row["description"],
-            "host": row["host"],
-            "port": row["port"],
-            "baseUrl": row["base_url"],
-            "protocol": row["protocol"],
-            "enabled": bool(row["enabled"]),
-            "version": row["version"],
-            "checkConfig": json.loads(row["check_config_json"] or "{}"),
-            "operation": {
-                "controlType": row["control_type"],
-                "backingService": row["backing_service"],
-                "supportedActions": supported_actions,
-                "timeoutSeconds": row["operation_timeout_seconds"],
-                "smokeProfile": row["smoke_profile"],
-            },
-            "overallStatus": row["overall_status"],
-            "checks": {
-                "process": row["process_status"],
-                "application": row["application_status"],
-                "protocol": row["protocol_status"],
-            },
-            "lastCheckAt": row["last_check_at"],
-            "recentError": row["recent_error"],
-            "createdAt": row["created_at"],
-            "updatedAt": row["updated_at"],
-        }
-
+    # Compatibility-only lab seams. New composition uses ``lab_repository`` directly.
     def list_lab_servers(self) -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            rows = connection.execute(
-                "SELECT * FROM lab_servers ORDER BY enabled DESC, name COLLATE NOCASE"
-            ).fetchall()
-        return [self._lab_server_dict(row) for row in rows]
+        return self.lab_repository.list_servers()
 
     def get_lab_server(self, server_id: int) -> dict[str, Any]:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM lab_servers WHERE id = ?", (server_id,)
-            ).fetchone()
-            if not row:
-                raise KeyError(server_id)
-        return self._lab_server_dict(row)
+        return self.lab_repository.get_server(server_id)
 
     def create_lab_server(self, payload: dict[str, Any]) -> dict[str, Any]:
-        values = self.validate_lab_server_payload(payload)
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            try:
-                cursor = connection.execute(
-                    """
-                    INSERT INTO lab_servers (
-                        name, server_type, description, host, port, base_url,
-                        protocol, enabled, version, check_config_json, control_type,
-                        backing_service, supported_actions_json, operation_timeout_seconds,
-                        smoke_profile, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        values["name"],
-                        values["server_type"],
-                        values.get("description", ""),
-                        values.get("host", ""),
-                        values.get("port"),
-                        values.get("base_url", ""),
-                        values.get("protocol", "None"),
-                        values.get("enabled", 1),
-                        values.get("version", ""),
-                        values.get("check_config_json", "{}"),
-                        values.get("control_type", ""),
-                        values.get("backing_service", ""),
-                        values.get("supported_actions_json", "[]"),
-                        values.get("operation_timeout_seconds", 60),
-                        values.get("smoke_profile", ""),
-                        timestamp,
-                        timestamp,
-                    ),
-                )
-            except sqlite3.IntegrityError as exc:
-                raise SimulatorValidationError("Server name must be unique.") from exc
-            server_id = cursor.lastrowid
-        return self.get_lab_server(server_id)
+        return self.lab_repository.create_server(payload)
 
     def update_lab_server(self, server_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-        values = self.validate_lab_server_payload(payload, partial=True)
-        if not values:
-            return self.get_lab_server(server_id)
-        assignments = [f"{key} = ?" for key in values]
-        params = list(values.values())
-        assignments.append("updated_at = ?")
-        params.append(now_iso())
-        params.append(server_id)
-        with self.lock, self.connect() as connection:
-            row = connection.execute(
-                "SELECT id FROM lab_servers WHERE id = ?", (server_id,)
-            ).fetchone()
-            if not row:
-                raise KeyError(server_id)
-            try:
-                connection.execute(
-                    f"UPDATE lab_servers SET {', '.join(assignments)} WHERE id = ?",
-                    params,
-                )
-            except sqlite3.IntegrityError as exc:
-                raise SimulatorValidationError("Server name must be unique.") from exc
-        return self.get_lab_server(server_id)
+        return self.lab_repository.update_server(server_id, payload)
 
-    def update_lab_server_health(
-        self,
-        server_id: int,
-        *,
-        overall_status: str,
-        process_status: str,
-        application_status: str,
-        protocol_status: str,
-        recent_error: str = "",
-        version: str = "",
-    ) -> dict[str, Any]:
-        if overall_status not in LAB_HEALTH_STATUSES:
-            raise SimulatorValidationError("Unknown overall health status.")
-        for status in (process_status, application_status, protocol_status):
-            if status not in LAB_HEALTH_STATUSES:
-                raise SimulatorValidationError("Unknown health check status.")
-        with self.lock, self.connect() as connection:
-            row = connection.execute(
-                "SELECT id FROM lab_servers WHERE id = ?", (server_id,)
-            ).fetchone()
-            if not row:
-                raise KeyError(server_id)
-            connection.execute(
-                """
-                UPDATE lab_servers
-                SET overall_status = ?, process_status = ?, application_status = ?,
-                    protocol_status = ?, recent_error = ?, version = COALESCE(NULLIF(?, ''), version),
-                    last_check_at = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    overall_status,
-                    process_status,
-                    application_status,
-                    protocol_status,
-                    recent_error,
-                    version,
-                    now_iso(),
-                    now_iso(),
-                    server_id,
-                ),
-            )
-        return self.get_lab_server(server_id)
+    def update_lab_server_health(self, server_id: int, **values: Any) -> dict[str, Any]:
+        return self.lab_repository.update_health(server_id, **values)
 
-    def record_lab_operation(
-        self,
-        server_id: int | None,
-        *,
-        service_name: str,
-        action: str,
-        operator: str,
-        result: str,
-        duration_ms: int = 0,
-        progress: list[dict[str, Any]] | None = None,
-        error_text: str = "",
-        started_at: str = "",
-        completed_at: str = "",
-    ) -> dict[str, Any]:
-        normalized_action = action.strip().lower()
-        if normalized_action not in LAB_OPERATION_ACTIONS:
-            raise SimulatorValidationError(
-                f"Unsupported lab operation action: {normalized_action or 'unknown'}."
-            )
-        normalized_result = result.strip() or "Unknown"
-        normalized_operator = operator.strip() or "local-user"
-        normalized_service_name = service_name.strip()
-        if not normalized_service_name:
-            raise SimulatorValidationError("Operation service name is required.")
-        progress_steps = progress or []
-        if not isinstance(progress_steps, list):
-            raise SimulatorValidationError("Operation progress must be a list.")
-        started = started_at or now_iso()
-        completed = completed_at or now_iso()
-        with self.lock, self.connect() as connection:
-            if server_id is not None:
-                row = connection.execute(
-                    "SELECT id FROM lab_servers WHERE id = ?", (server_id,)
-                ).fetchone()
-                if not row:
-                    raise KeyError(server_id)
-            cursor = connection.execute(
-                """
-                INSERT INTO lab_operation_history (
-                    server_id, service_name, action, operator, result, duration_ms,
-                    progress_json, error_text, started_at, completed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    server_id,
-                    normalized_service_name,
-                    normalized_action,
-                    normalized_operator,
-                    normalized_result,
-                    max(0, int(duration_ms)),
-                    json.dumps(progress_steps),
-                    error_text,
-                    started,
-                    completed,
-                ),
-            )
-            operation_id = cursor.lastrowid
-        return self.get_lab_operation(operation_id)
+    def record_lab_operation(self, server_id: int | None, **values: Any) -> dict[str, Any]:
+        return self.lab_repository.record_operation(server_id, **values)
 
     def get_lab_operation(self, operation_id: int) -> dict[str, Any]:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM lab_operation_history WHERE id = ?", (operation_id,)
-            ).fetchone()
-            if not row:
-                raise KeyError(operation_id)
-        return self._lab_operation_dict(row)
+        return self.lab_repository.get_operation(operation_id)
 
     def list_lab_operations(
         self, server_id: int | None = None, *, limit: int = 20
     ) -> list[dict[str, Any]]:
-        bounded_limit = min(200, max(1, int(limit)))
-        with self.connect() as connection:
-            if server_id is None:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM lab_operation_history
-                    ORDER BY id DESC
-                    LIMIT ?
-                    """,
-                    (bounded_limit,),
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM lab_operation_history
-                    WHERE server_id = ?
-                    ORDER BY id DESC
-                    LIMIT ?
-                    """,
-                    (server_id, bounded_limit),
-                ).fetchall()
-        return [self._lab_operation_dict(row) for row in rows]
-
-    @staticmethod
-    def _lab_operation_dict(row: sqlite3.Row) -> dict[str, Any]:
-        return {
-            "id": row["id"],
-            "serverId": row["server_id"],
-            "serviceName": row["service_name"],
-            "action": row["action"],
-            "operator": row["operator"],
-            "result": row["result"],
-            "durationMs": row["duration_ms"],
-            "progress": json.loads(row["progress_json"] or "[]"),
-            "error": row["error_text"],
-            "startedAt": row["started_at"],
-            "completedAt": row["completed_at"],
-        }
+        return self.lab_repository.list_operations(server_id, limit=limit)
 
     def list_gdt_orders(self) -> list[dict[str, Any]]:
         return [
