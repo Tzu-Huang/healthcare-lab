@@ -68,6 +68,18 @@ class OrderRepository:
             )
         return self.get_order_record(record_id)
 
+    def create_dcm4chee_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
+        item = self.create_order_record(payload)
+        timestamp = self._timestamp()
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """UPDATE local_order_records
+                   SET protocol_version = 'DICOM', message_type = 'MWL', order_status = 'Created',
+                       payload_hl7 = '', updated_at = ? WHERE id = ?""",
+                (timestamp, int(item["id"])),
+            )
+        return self.get_order_record(int(item["id"]))
+
     def _project(self, rows: list[Row]) -> list[dict[str, Any]]:
         enrichments = self._enrichment.load(rows) if self._enrichment else {}
         return [order_domain.project(row,

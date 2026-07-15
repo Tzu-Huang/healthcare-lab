@@ -151,6 +151,43 @@ class OrderCoordinationPort(Protocol):
     def upsert_dcm4chee_mwl_mapping(self, order_record_id: int, profile: dict[str, Any], *, uid_root: str = "1.2.826.0.1.3680043.10.543", request_payload: dict[str, Any] | None = None, sync_status: str = "Pending sync", increment_retry: bool = False) -> dict[str, Any]: ...
 
 
+class OrderFhirCapability(Protocol):
+    def create_fhir_order_record(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def create_order_service_request_fhir_workflow_record(self, order: dict[str, Any]) -> dict[str, Any]: ...
+    def mark_fhir_sync_failure(self, record_id: int, *, error_text: str, operation_outcome: dict[str, Any] | None = None) -> dict[str, Any]: ...
+
+
+class DcmOrderCapability(Protocol):
+    def create_dcm4chee_order_record(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def list_dcm4chee_mwl_attempts(self, order_record_id: int | None = None) -> list[dict[str, Any]]: ...
+
+
+class DcmEvidenceCapability(Protocol):
+    def dcm4chee_e2e_evidence_for_order(self, order_record_id: int, profile: dict[str, Any]) -> dict[str, Any]: ...
+    def create_simulated_dcm4chee_ap_return(self, order_record_id: int, profile: dict[str, Any], *, result_type: str = "both", artifact_url: str = "", artifact_path: str = "") -> dict[str, Any]: ...
+    def get_patient_record(self, record_id: int) -> dict[str, Any]: ...
+
+    def get_patient_record(self, record_id: int) -> dict[str, Any]: ...
+
+    def list_dcm4chee_mwl_attempts(self, order_record_id: int | None = None) -> list[dict[str, Any]]: ...
+
+    def mark_fhir_sync_failure(self, record_id: int, *, error_text: str, operation_outcome: dict[str, Any] | None = None) -> dict[str, Any]: ...
+
+    def mark_fhir_sync_success(self, record_id: int, *, medplum_resource_id: str, medplum_resource_reference: str = "") -> dict[str, Any]: ...
+
+    def mark_fhir_syncing(self, record_id: int) -> dict[str, Any]: ...
+
+    def record_fhir_sync_attempt(self, record_id: int, *, method: str, request_url: str, request_payload: dict[str, Any] | None = None, http_status: int | None = None, response_payload: dict[str, Any] | None = None, operation_outcome: dict[str, Any] | None = None, error_text: str = "") -> dict[str, Any]: ...
+
+    def update_dcm4chee_mwl_attempt_result(self, attempt_id: int, *, attempt_status: str, http_status: int | None = None, response_body: str = "", error_type: str = "", error_text: str = "") -> dict[str, Any]: ...
+
+    def update_dcm4chee_mwl_mapping_from_attempt(self, order_record_id: int, *, attempt_id: int | None, sync_status: str, http_status: int | None = None, response_body: str = "", error_type: str = "", error_text: str = "", error_payload: dict[str, Any] | None = None, readback_payload: dict[str, Any] | list[Any] | None = None, identifiers: dict[str, str] | None = None) -> dict[str, Any]: ...
+
+    def update_dcm4chee_mwl_verification_result(self, order_record_id: int, *, attempt_id: int, verification_status: str, method: str, query_criteria: dict[str, Any], match_payload: dict[str, Any] | None = None, error_type: str = "", error_text: str = "", error_payload: dict[str, Any] | None = None) -> dict[str, Any]: ...
+
+    def upsert_dcm4chee_mwl_mapping(self, order_record_id: int, profile: dict[str, Any], *, uid_root: str = "1.2.826.0.1.3680043.10.543", request_payload: dict[str, Any] | None = None, sync_status: str = "Pending sync", increment_retry: bool = False) -> dict[str, Any]: ...
+
+
 
 class OrderWorkflowService:
     def __init__(
@@ -159,6 +196,9 @@ class OrderWorkflowService:
         configuration: Mapping[str, Any],
         *,
         coordination: OrderCoordinationPort | None = None,
+        fhir_capability: OrderFhirCapability | None = None,
+        dcm_order_capability: DcmOrderCapability | None = None,
+        evidence_capability: DcmEvidenceCapability | None = None,
         medplum_base_url: Callable[[], str],
         auth_manager: Callable[[], Any],
         fhir_sync: Callable[..., Any],
@@ -167,7 +207,11 @@ class OrderWorkflowService:
         dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]],
     ) -> None:
         self._repository = repository
-        self._coordination = coordination or repository
+        fallback = coordination or repository
+        self._fhir = fhir_capability or fallback
+        self._dcm_order = dcm_order_capability or fallback
+        self._evidence = evidence_capability or fallback
+        self._coordination = fallback  # compatibility inspection only
         self._configuration = configuration
         self._medplum_base_url = medplum_base_url
         self._auth_manager = auth_manager
@@ -192,25 +236,25 @@ class OrderWorkflowService:
     def create(self, payload: dict[str, Any]) -> dict[str, Any]:
         mode = str(payload.get("mode") or "").strip().lower()
         if mode == "fhir":
-            item = self._coordination.create_fhir_order_record(payload)
-            record = self._coordination.create_order_service_request_fhir_workflow_record(item)
+            item = self._fhir.create_fhir_order_record(payload)
+            record = self._fhir.create_order_service_request_fhir_workflow_record(item)
             base_url = self._medplum_base_url()
             if base_url:
                 self._fhir_sync(
-                    self._coordination,
+                    self._fhir,
                     int(record["id"]),
                     base_url=base_url,
                     auth_manager=self._auth_manager(),
                 )
             else:
-                self._coordination.mark_fhir_sync_failure(
+                self._fhir.mark_fhir_sync_failure(
                     int(record["id"]), error_text="Medplum FHIR base URL is required."
                 )
             return self._repository.get_order_record(int(item["id"]))
         if mode == "dicom":
-            item = self._coordination.create_dcm4chee_order_record(payload)
+            item = self._dcm_order.create_dcm4chee_order_record(payload)
             self._dcm_sync(
-                self._coordination,
+                self._dcm_order,
                 item,
                 self._dcm_profile(self._configuration),
                 uid_root=self._configuration["DCM4CHEE_UID_ROOT"],
@@ -220,12 +264,12 @@ class OrderWorkflowService:
 
     def list_dcm4chee_attempts(self, order_id: int) -> list[dict[str, Any]]:
         self.get_dicom(order_id)
-        return self._coordination.list_dcm4chee_mwl_attempts(order_id)
+        return self._dcm_order.list_dcm4chee_mwl_attempts(order_id)
 
     def sync_dcm4chee(self, order_id: int) -> dict[str, Any]:
         item = self.get_dicom(order_id)
         self._dcm_sync(
-            self._coordination,
+            self._dcm_order,
             item,
             self._dcm_profile(self._configuration),
             uid_root=self._configuration["DCM4CHEE_UID_ROOT"],
@@ -242,7 +286,7 @@ class OrderWorkflowService:
     def verify_dcm4chee(self, order_id: int) -> dict[str, Any]:
         item = self.get_dicom(order_id)
         result = self._dcm_verify(
-            self._coordination, item, self._dcm_profile(self._configuration)
+            self._dcm_order, item, self._dcm_profile(self._configuration)
         )
         item = self._repository.get_order_record(order_id)
         mwl = (item.get("dcm4chee") or {}).get("mwl") or {}
@@ -257,7 +301,7 @@ class OrderWorkflowService:
 
     def dcm4chee_evidence(self, order_id: int) -> dict[str, Any]:
         self.get_dicom(order_id)
-        return self._coordination.dcm4chee_e2e_evidence_for_order(
+        return self._evidence.dcm4chee_e2e_evidence_for_order(
             order_id, self._dcm_profile(self._configuration)
         )
 
@@ -265,14 +309,14 @@ class OrderWorkflowService:
         self, order_id: int, payload: dict[str, Any]
     ) -> dict[str, Any]:
         item = self.get_dicom(order_id)
-        result = self._coordination.create_simulated_dcm4chee_ap_return(
+        result = self._evidence.create_simulated_dcm4chee_ap_return(
             order_id,
             self._dcm_profile(self._configuration),
             result_type=str(payload.get("type") or "both"),
             artifact_url=str(payload.get("artifactUrl") or ""),
             artifact_path=str(payload.get("artifactPath") or ""),
         )
-        patient = self._coordination.get_patient_record(int(item["patientRecordId"]))
+        patient = self._evidence.get_patient_record(int(item["patientRecordId"]))
         return {"patient": patient, **result}
 
 

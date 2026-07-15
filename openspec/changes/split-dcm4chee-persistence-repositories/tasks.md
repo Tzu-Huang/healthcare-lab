@@ -43,12 +43,12 @@
 
 ## 6. Narrow Ports and Cross-Context Coordination
 
-- [ ] 6.1 Split patient workflow dependencies into explicit FHIR, dcm4chee patient-sync, result-refresh, and core patient capabilities.
-- [ ] 6.2 Split order workflow dependencies into explicit FHIR, dcm4chee patient-sync precondition, MWL, result/evidence, and core order capabilities.
-- [ ] 6.3 Move E2E fixture, evidence aggregation, simulated AP return, and other multi-ledger behavior into an explicit service or named coordinator.
-- [ ] 6.4 Update `backend/app_factory.py` to compose repositories and coordinators directly without passing the general facade or using arbitrary attribute forwarding.
-- [ ] 6.5 Update service and composition tests to prove declared ports are explicit, typed, capability-limited, and behavior-compatible.
-- [ ] 6.6 Update the bounded-context placement map to name the three repositories and their mirrored test destinations.
+- [x] 6.1 Split patient workflow dependencies into explicit FHIR, dcm4chee patient-sync, result-refresh, and core patient capabilities.
+- [x] 6.2 Split order workflow dependencies into explicit FHIR, dcm4chee patient-sync precondition, MWL, result/evidence, and core order capabilities.
+- [x] 6.3 Move E2E fixture, evidence aggregation, simulated AP return, and other multi-ledger behavior into an explicit service or named coordinator.
+- [x] 6.4 Update `backend/app_factory.py` to compose repositories and coordinators directly without passing the general facade or using arbitrary attribute forwarding.
+- [x] 6.5 Update service and composition tests to prove declared ports are explicit, typed, capability-limited, and behavior-compatible.
+- [x] 6.6 Update the bounded-context placement map to name the three repositories and their mirrored test destinations.
 
 ## 7. Architecture Cleanup and YOLO-Safe Verification
 

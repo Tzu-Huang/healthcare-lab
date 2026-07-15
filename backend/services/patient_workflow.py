@@ -34,6 +34,25 @@ class PatientLedgerPort(Protocol):
     def get_patient_record(self, record_id: int) -> dict[str, Any]: ...
 
 
+class PatientFhirCapability(Protocol):
+    def create_patient_fhir_workflow_record(self, patient_record: dict[str, Any]) -> dict[str, Any]: ...
+    def mark_fhir_sync_failure(self, record_id: int, *, error_text: str, operation_outcome: dict[str, Any] | None = None) -> dict[str, Any]: ...
+
+
+class DcmPatientSyncCapability(Protocol):
+    def build_dcm4chee_patient_adt_payload(self, patient: dict[str, Any], profile: dict[str, Any], *, event_type: str = "A04", timestamp: str = "") -> str: ...
+    def get_dcm4chee_patient_sync_for_patient(self, patient_record_id: int, profile: dict[str, Any] | None = None) -> dict[str, Any] | None: ...
+
+
+class DcmResultRefreshCapability(Protocol):
+    def begin_dcm4chee_result_refresh(self, patient_record_id: int, refresh_generation: str, *, promote_existing: bool = False) -> None: ...
+    def complete_dcm4chee_result_refresh(self, patient_record_id: int, refresh_generation: str) -> list[dict[str, Any]]: ...
+
+
+class DcmFixtureCapability(Protocol):
+    def create_dcm4chee_e2e_demo_fixture(self, profile: dict[str, Any], *, uid_root: str = "1.2.826.0.1.3680043.10.543") -> dict[str, Any]: ...
+
+
 
 @runtime_checkable
 class PatientCoordinationPort(Protocol):
@@ -88,6 +107,10 @@ class PatientWorkflowService:
         configuration: Mapping[str, Any],
         *,
         coordination: PatientCoordinationPort | None = None,
+        fhir_capability: PatientFhirCapability | None = None,
+        patient_sync_capability: DcmPatientSyncCapability | None = None,
+        result_refresh_capability: DcmResultRefreshCapability | None = None,
+        fixture_capability: DcmFixtureCapability | None = None,
         medplum_base_url: Callable[[], str],
         auth_manager: Callable[[], Any],
         fhir_sync: Callable[..., Any],
@@ -96,7 +119,12 @@ class PatientWorkflowService:
         dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]],
     ) -> None:
         self._repository = repository
-        self._coordination = coordination or repository
+        fallback = coordination or repository
+        self._fhir = fhir_capability or fallback
+        self._patient_sync = patient_sync_capability or fallback
+        self._results = result_refresh_capability or fallback
+        self._fixture = fixture_capability or fallback
+        self._coordination = fallback  # compatibility inspection only
         self._configuration = configuration
         self._medplum_base_url = medplum_base_url
         self._auth_manager = auth_manager
@@ -111,23 +139,23 @@ class PatientWorkflowService:
     def create(self, payload: dict[str, Any]) -> dict[str, Any]:
         item = self._repository.create_patient_record(payload)
         if item["protocolVersion"] == "FHIR R4":
-            record = self._coordination.create_patient_fhir_workflow_record(item)
+            record = self._fhir.create_patient_fhir_workflow_record(item)
             base_url = self._medplum_base_url()
             if base_url:
                 self._fhir_sync(
-                    self._coordination,
+                    self._fhir,
                     int(record["id"]),
                     base_url=base_url,
                     auth_manager=self._auth_manager(),
                 )
             else:
-                self._coordination.mark_fhir_sync_failure(
+                self._fhir.mark_fhir_sync_failure(
                     int(record["id"]), error_text="Medplum FHIR base URL is required."
                 )
             return self._repository.get_patient_record(int(item["id"]))
         if item["protocolVersion"] == "DICOM":
             self._dicom_patient_sync(
-                self._coordination, item, self._dcm_profile(self._configuration)
+                self._patient_sync, item, self._dcm_profile(self._configuration)
             )
             return self._repository.get_patient_record(int(item["id"]))
         return item
@@ -136,12 +164,12 @@ class PatientWorkflowService:
         item = self._repository.get_patient_record(record_id)
         if item["protocolVersion"] != "FHIR R4":
             raise ValueError("Patient record is not FHIR mode.")
-        record = item.get("fhir") or self._coordination.create_patient_fhir_workflow_record(item)
+        record = item.get("fhir") or self._fhir.create_patient_fhir_workflow_record(item)
         base_url = self._medplum_base_url()
         if not base_url:
             raise ValueError("Medplum FHIR base URL is required.")
         self._fhir_sync(
-            self._coordination,
+            self._fhir,
             int(record.get("recordId") or record["id"]),
             base_url=base_url,
             auth_manager=self._auth_manager(),
@@ -152,11 +180,11 @@ class PatientWorkflowService:
 
     def refresh_dcm4chee_results(self, record_id: int) -> dict[str, Any]:
         return self._dcm_result_refresh(
-            self._coordination, record_id, self._dcm_profile(self._configuration)
+            self._results, record_id, self._dcm_profile(self._configuration)
         )
 
     def create_dcm4chee_fixture(self) -> dict[str, Any]:
-        return self._coordination.create_dcm4chee_e2e_demo_fixture(
+        return self._fixture.create_dcm4chee_e2e_demo_fixture(
             self._dcm_profile(self._configuration),
             uid_root=str(self._configuration["DCM4CHEE_UID_ROOT"]),
         )
