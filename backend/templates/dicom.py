@@ -13,6 +13,7 @@ from backend.domain.dicom import (
     requested_procedure_id,
     scheduled_procedure_step_id,
     study_instance_uid,
+    identifiers_from_payload as project_identifiers_from_payload,
 )
 from backend.domain.errors import SimulatorValidationError
 from backend.templates.patient import hl7_escape, hl7_escape_composite
@@ -75,6 +76,16 @@ def build_mwl_payload(
         "00741202": _json_element("LO", worklist_label),
         "00400100": {"vr": "SQ", "Value": [sps_item]},
     }
+
+
+def identifiers_from_payload(
+    order: dict[str, Any], profile: dict[str, Any], *, uid_root: Any,
+    payload: dict[str, Any] | None, timestamp_factory: Callable[[], str],
+) -> dict[str, str]:
+    return project_identifiers_from_payload(
+        order, profile, uid_root=uid_root, payload=payload or {},
+        order_default_text=ORDER_DEFAULT_TEXT, timestamp_factory=timestamp_factory,
+    )
 
 
 def build_patient_adt_payload(

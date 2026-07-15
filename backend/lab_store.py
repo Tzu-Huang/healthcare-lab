@@ -509,14 +509,10 @@ class DemoStore:
             self.database.connect,
             self.database.lock,
             order_loader=lambda record_id: self.order_repository.get_order_record(record_id),
-            identifiers_from_payload=lambda order, profile, **kwargs: dicom_domain.identifiers_from_payload(
+            identifiers_from_payload=lambda order, profile, **kwargs: dicom_templates.identifiers_from_payload(
                 order, profile,
                 uid_root=kwargs.get("uid_root", DCM4CHEE_DEFAULT_UID_ROOT),
-                payload=kwargs.get("payload") or dicom_templates.build_mwl_payload(
-                    order, profile, uid_root=kwargs.get("uid_root", DCM4CHEE_DEFAULT_UID_ROOT),
-                    timestamp_factory=hl7_timestamp,
-                ),
-                order_default_text=ORDER_DEFAULT_TEXT,
+                payload=kwargs.get("payload"),
                 timestamp_factory=hl7_timestamp,
             ),
             payload_builder=lambda order, profile, **kwargs: dicom_templates.build_mwl_payload(
@@ -1119,10 +1115,8 @@ class DemoStore:
         cls, order: dict[str, Any], profile: dict[str, Any], *,
         uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT, payload: dict[str, Any] | None = None,
     ) -> dict[str, str]:
-        payload = payload or cls.build_dcm4chee_mwl_payload(order, profile, uid_root=uid_root)
-        return dicom_domain.identifiers_from_payload(
-            order, profile, uid_root=uid_root, payload=payload,
-            order_default_text=ORDER_DEFAULT_TEXT, timestamp_factory=hl7_timestamp,
+        return dicom_templates.identifiers_from_payload(
+            order, profile, uid_root=uid_root, payload=payload, timestamp_factory=hl7_timestamp
         )
 
     @classmethod
@@ -1183,17 +1177,8 @@ class DemoStore:
     def list_dcm4chee_mwl_mappings_for_patient(self, *args, **kwargs):
         return self.dcm4chee_mwl_repository.list_dcm4chee_mwl_mappings_for_patient(*args, **kwargs)
 
-    def reconcile_dcm4chee_result_metadata(
-        self, metadata: dict[str, str], *, patient_record_id: int | None = None,
-        profile_name: str = "", server_identity: str = "",
-    ) -> dict[str, Any]:
-        mappings = (
-            self.dcm4chee_mwl_repository.list_dcm4chee_mwl_mappings_for_patient(int(patient_record_id))
-            if patient_record_id is not None else []
-        )
-        return apply_dcm4chee_reconciliation(
-            metadata, mappings, profile_name=profile_name, server_identity=server_identity
-        )
+    def reconcile_dcm4chee_result_metadata(self, *args, **kwargs) -> dict[str, Any]:
+        return self.dcm4chee_result_repository.reconcile_dcm4chee_result_metadata(*args, **kwargs)
 
     @staticmethod
     def dcm4chee_result_links(profile: dict[str, Any], metadata: dict[str, str]) -> dict[str, str]:
