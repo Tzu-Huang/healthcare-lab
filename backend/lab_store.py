@@ -30,6 +30,7 @@ from backend.gdt_adapter import (
 from backend.domain.errors import SimulatorValidationError
 from backend.domain import patient as patient_domain
 from backend.domain import order as order_domain
+from backend.domain import dicom as dicom_domain
 from backend.domain.gdt import ensure_gdt_bridge_dirs
 from backend.domain.openemr import (
     OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES,
@@ -59,6 +60,7 @@ from backend.repositories.dcm4chee_results import (
 )
 from backend.templates import patient as patient_templates
 from backend.templates import order as order_templates
+from backend.templates import dicom as dicom_templates
 from backend.repositories.oie_settings import (
     serialize_oie_settings_profile,
     validate_oie_settings_payload,
@@ -499,30 +501,44 @@ class DemoStore:
             self.database.connect,
             self.database.lock,
             patient_loader=lambda record_id: self.patient_repository.get_patient_record(record_id),
-            identifiers=self.dcm4chee_patient_identifiers,
+            identifiers=dicom_domain.patient_identifiers,
             timestamp_factory=now_iso,
         )
         self.dcm4chee_mwl_repository = Dcm4cheeMwlRepository(
             self.database.connect,
             self.database.lock,
             order_loader=lambda record_id: self.order_repository.get_order_record(record_id),
-            identifiers_from_payload=self.dcm4chee_identifiers_from_payload,
-            payload_builder=self.build_dcm4chee_mwl_payload,
-            uid_normalizer=self.normalize_dcm4chee_uid_root,
-            study_uid_builder=self.dcm4chee_study_instance_uid,
-            local_order_number=self._dcm4chee_local_order_number,
-            accession_number=self._dcm4chee_accession_number,
-            requested_procedure_id=self._dcm4chee_requested_procedure_id,
-            scheduled_procedure_step_id=self._dcm4chee_scheduled_procedure_step_id,
+            identifiers_from_payload=lambda order, profile, **kwargs: dicom_domain.identifiers_from_payload(
+                order, profile,
+                uid_root=kwargs.get("uid_root", DCM4CHEE_DEFAULT_UID_ROOT),
+                payload=kwargs.get("payload") or dicom_templates.build_mwl_payload(
+                    order, profile, uid_root=kwargs.get("uid_root", DCM4CHEE_DEFAULT_UID_ROOT),
+                    timestamp_factory=hl7_timestamp,
+                ),
+                order_default_text=ORDER_DEFAULT_TEXT,
+                timestamp_factory=hl7_timestamp,
+            ),
+            payload_builder=lambda order, profile, **kwargs: dicom_templates.build_mwl_payload(
+                order, profile, uid_root=kwargs.get("uid_root", DCM4CHEE_DEFAULT_UID_ROOT),
+                timestamp_factory=hl7_timestamp,
+            ),
+            uid_normalizer=dicom_domain.normalize_uid_root,
+            study_uid_builder=lambda uid_root, **kwargs: dicom_domain.study_instance_uid(
+                uid_root, timestamp_factory=hl7_timestamp, **kwargs
+            ),
+            local_order_number=dicom_domain.local_order_number,
+            accession_number=dicom_domain.accession_number,
+            requested_procedure_id=dicom_domain.requested_procedure_id,
+            scheduled_procedure_step_id=dicom_domain.scheduled_procedure_step_id,
             timestamp_factory=now_iso,
         )
         self.dcm4chee_result_repository = Dcm4cheeResultRepository(
             self.database.connect,
             self.database.lock,
             mwl_mapping_loader=self.dcm4chee_mwl_repository.list_dcm4chee_mwl_mappings_for_patient,
-            profile_identity=self._dcm4chee_profile_identity,
-            link_builder=self.dcm4chee_result_links,
-            result_key_builder=self._dcm4chee_result_key,
+            profile_identity=dicom_domain.profile_identity,
+            link_builder=dicom_domain.result_links,
+            result_key_builder=dicom_domain.result_key,
             timestamp_factory=now_iso,
         )
         self.patient_enrichment_loader = PatientEnrichmentLoader(
@@ -557,7 +573,7 @@ class DemoStore:
             timestamp_factory=now_iso,
             hl7_timestamp_factory=hl7_timestamp,
             enrichment_loader=self.order_enrichment_loader,
-            dcm4chee_status_view=self._dcm4chee_mwl_status_view,
+            dcm4chee_status_view=dicom_domain.mwl_status_view,
         )
 
     @contextmanager
@@ -640,195 +656,57 @@ class DemoStore:
 
     @staticmethod
     def _dcm4chee_local_order_number(record_id: int) -> str:
-        return f"LAB-ORD-{record_id:06d}"
+        return dicom_domain.local_order_number(record_id)
 
     @staticmethod
     def _dcm4chee_accession_number(record_id: int) -> str:
-        return f"ACC-{record_id:06d}"
+        return dicom_domain.accession_number(record_id)
 
     @staticmethod
     def _dcm4chee_requested_procedure_id(record_id: int) -> str:
-        return f"RP-{record_id:06d}"
+        return dicom_domain.requested_procedure_id(record_id)
 
     @staticmethod
     def _dcm4chee_scheduled_procedure_step_id(record_id: int) -> str:
-        return f"SPS-{record_id:06d}"
+        return dicom_domain.scheduled_procedure_step_id(record_id)
 
     @staticmethod
     def normalize_dcm4chee_uid_root(value: Any) -> str:
-        root = str(value or DCM4CHEE_DEFAULT_UID_ROOT).strip().strip(".")
-        if not root:
-            root = DCM4CHEE_DEFAULT_UID_ROOT
-        if not re.match(r"^[0-9]+(?:\.[0-9]+)*$", root):
-            raise SimulatorValidationError("dcm4chee UID root must contain only digits and dots.")
-        if any(part != "0" and part.startswith("0") for part in root.split(".")):
-            raise SimulatorValidationError("dcm4chee UID root components must not have leading zeroes.")
-        if len(root) > 54:
-            raise SimulatorValidationError("dcm4chee UID root is too long for generated Study Instance UIDs.")
-        return root
+        return dicom_domain.normalize_uid_root(value)
 
     @classmethod
     def dcm4chee_study_instance_uid(cls, uid_root: Any, *, order_record_id: int, timestamp: str = "") -> str:
-        root = cls.normalize_dcm4chee_uid_root(uid_root)
-        digits = "".join(character for character in str(timestamp or hl7_timestamp()) if character.isdigit())
-        suffix = f"{digits[:14] or hl7_timestamp()}.{int(order_record_id)}"
-        uid = f"{root}.{suffix}"
-        if len(uid) > 64:
-            suffix = f"{digits[:8] or datetime.now().strftime('%Y%m%d')}.{int(order_record_id)}"
-            uid = f"{root}.{suffix}"
-        if len(uid) > 64:
-            raise SimulatorValidationError("Generated Study Instance UID exceeds 64 characters.")
-        return uid
+        return dicom_domain.study_instance_uid(
+            uid_root, order_record_id=order_record_id, timestamp=timestamp,
+            timestamp_factory=hl7_timestamp,
+        )
 
     @staticmethod
     def _dicom_json_element(vr: str, value: Any = None) -> dict[str, Any]:
-        element: dict[str, Any] = {"vr": vr}
-        if value is not None:
-            element["Value"] = value if isinstance(value, list) else [value]
-        return element
+        return dicom_templates._json_element(vr, value)
 
     @classmethod
     def build_dcm4chee_mwl_payload(
-        cls,
-        order: dict[str, Any],
-        profile: dict[str, Any],
-        *,
+        cls, order: dict[str, Any], profile: dict[str, Any], *,
         uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT,
     ) -> dict[str, Any]:
-        order_id = int(order["id"])
-        patient = order.get("patient") or {}
-        mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
-        scheduled_station_ae_title = str(mwl.get("defaultScheduledStationAETitle") or "").strip()
-        if not scheduled_station_ae_title:
-            raise SimulatorValidationError("dcm4chee default Scheduled Station AE Title is required.")
-        patient_name = "^".join(
-            str(patient.get(key) or "").strip()
-            for key in ("lastName", "firstName", "middleName")
-        ).rstrip("^")
-        if not patient_name:
-            raise SimulatorValidationError("dcm4chee MWL Patient's Name is required.")
-        patient_id = str(patient.get("mrn") or "").strip()
-        if not patient_id:
-            raise SimulatorValidationError("dcm4chee MWL Patient ID is required.")
-        issuer = str(profile.get("profileName") or "HEALTHCARE_LAB").strip()
-        accession_number = cls._dcm4chee_accession_number(order_id)
-        requested_procedure_id = cls._dcm4chee_requested_procedure_id(order_id)
-        sps_id = cls._dcm4chee_scheduled_procedure_step_id(order_id)
-        study_uid = cls.dcm4chee_study_instance_uid(
-            uid_root,
-            order_record_id=order_id,
-            timestamp=str(order.get("requestedAt") or ""),
+        return dicom_templates.build_mwl_payload(
+            order, profile, uid_root=uid_root, timestamp_factory=hl7_timestamp
         )
-        worklist_label = str(order.get("orderCodeText") or order.get("orderCode") or ORDER_DEFAULT_TEXT).strip()
-        requested_at = "".join(character for character in str(order.get("requestedAt") or "") if character.isdigit())
-        scheduled_date = requested_at[:8] if len(requested_at) >= 8 else datetime.now().strftime("%Y%m%d")
-        scheduled_time = requested_at[8:14] if len(requested_at) >= 14 else ""
-        sps_item = {
-            "00400001": cls._dicom_json_element("AE", scheduled_station_ae_title),
-            "00400009": cls._dicom_json_element("SH", sps_id),
-            "00400020": cls._dicom_json_element("CS", "SCHEDULED"),
-            "00400007": cls._dicom_json_element("LO", worklist_label),
-            "00400002": cls._dicom_json_element("DA", scheduled_date),
-        }
-        if scheduled_time:
-            sps_item["00400003"] = cls._dicom_json_element("TM", scheduled_time)
-        return {
-            "00100010": cls._dicom_json_element("PN", {"Alphabetic": patient_name}),
-            "00100020": cls._dicom_json_element("LO", patient_id),
-            "00100021": cls._dicom_json_element("LO", issuer),
-            "00100030": cls._dicom_json_element("DA", str(patient.get("dob") or "").strip()),
-            "00100040": cls._dicom_json_element("CS", str(patient.get("sex") or "").strip() or "U"),
-            "00080050": cls._dicom_json_element("SH", accession_number),
-            "0020000D": cls._dicom_json_element("UI", study_uid),
-            "00401001": cls._dicom_json_element("SH", requested_procedure_id),
-            "00741202": cls._dicom_json_element("LO", worklist_label),
-            "00400100": {"vr": "SQ", "Value": [sps_item]},
-        }
 
     @classmethod
-    def dcm4chee_patient_identifiers(
-        cls,
-        patient: dict[str, Any],
-        profile: dict[str, Any],
-    ) -> dict[str, str]:
-        dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
-        hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
-        summary = patient.get("summary") if isinstance(patient.get("summary"), dict) else {}
-        patient_fields = patient.get("patient") if isinstance(patient.get("patient"), dict) else {}
-        patient_id = str(summary.get("mrn") or patient_fields.get("mrn") or patient.get("mrn") or "").strip()
-        issuer = str(hl7.get("patientAssigningAuthority") or profile.get("profileName") or "HEALTHCARE_LAB").strip()
-        return {
-            "profile_name": str(profile.get("profileName") or "").strip(),
-            "server_identity": str(dimse.get("calledAETitle") or "").strip(),
-            "patient_id": patient_id,
-            "issuer_of_patient_id": issuer,
-            "hl7_host": str(hl7.get("host") or "").strip(),
-            "hl7_port": str(hl7.get("port") or "").strip(),
-            "receiving_application": str(hl7.get("receivingApplication") or "").strip(),
-            "receiving_facility": str(hl7.get("receivingFacility") or "").strip(),
-        }
+    def dcm4chee_patient_identifiers(cls, patient: dict[str, Any], profile: dict[str, Any]) -> dict[str, str]:
+        return dicom_domain.patient_identifiers(patient, profile)
 
     @classmethod
     def build_dcm4chee_patient_adt_payload(
-        cls,
-        patient: dict[str, Any],
-        profile: dict[str, Any],
-        *,
-        event_type: str = "A04",
-        timestamp: str = "",
+        cls, patient: dict[str, Any], profile: dict[str, Any], *,
+        event_type: str = "A04", timestamp: str = "",
     ) -> str:
-        patient_fields = patient.get("patient") if isinstance(patient.get("patient"), dict) else {}
-        summary = patient.get("summary") if isinstance(patient.get("summary"), dict) else {}
-        hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
-        identifiers = cls.dcm4chee_patient_identifiers(patient, profile)
-        patient_name = "^".join(
-            _hl7_escape(str(patient_fields.get(key) or "").strip())
-            for key in ("lastName", "firstName", "middleName")
-        ).rstrip("^")
-        if not patient_name:
-            raise SimulatorValidationError("dcm4chee Patient name is required.")
-        if not identifiers["patient_id"]:
-            raise SimulatorValidationError("dcm4chee Patient ID is required.")
-        if not identifiers["issuer_of_patient_id"]:
-            raise SimulatorValidationError("dcm4chee Patient issuer is required.")
-        message_time = timestamp or hl7_timestamp()
-        normalized_event = str(event_type or "A04").strip().upper()
-        if not normalized_event.startswith("A"):
-            normalized_event = f"A{normalized_event}"
-        message_type = f"ADT^{normalized_event}"
-        message_structure = "ADT_A01"
-        control_id = f"DCMADT{message_time}{int(patient['id']):06d}"
-        visit_number = str(patient.get("visitNumber") or summary.get("visitNumber") or "").strip()
-        patient_class = str(patient.get("patientClass") or "O").strip() or "O"
-        assigned_location = str(patient.get("assignedLocation") or "").strip()
-        attending_provider = str(patient.get("attendingProvider") or "").strip()
-        account_number = str(patient.get("accountNumber") or "").strip()
-        segments = [
-            (
-                "MSH|^~\\&|"
-                f"{_hl7_escape(str(hl7.get('sendingApplication') or 'HEALTHCARE_LAB'))}|"
-                f"{_hl7_escape(str(hl7.get('sendingFacility') or 'LAB_APP'))}|"
-                f"{_hl7_escape(str(hl7.get('receivingApplication') or 'DCM4CHEE'))}|"
-                f"{_hl7_escape(str(hl7.get('receivingFacility') or 'DCM4CHEE'))}|"
-                f"{message_time}||{message_type}^{message_structure}|{control_id}|P|{HL7_V2_MSH_SUFFIX}"
-            ),
-            f"EVN|{normalized_event}|{message_time}",
-            (
-                "PID|1||"
-                f"{_hl7_escape(identifiers['patient_id'])}^^^{_hl7_escape(identifiers['issuer_of_patient_id'])}^MR||"
-                f"{patient_name}||{_hl7_escape(str(patient_fields.get('dob') or summary.get('dob') or ''))}|"
-                f"{_hl7_escape(str(patient_fields.get('sex') or summary.get('sex') or ''))}|||"
-                f"{_hl7_escape_composite(str(patient_fields.get('address') or ''))}||"
-                f"{_hl7_escape(str(patient_fields.get('phone') or ''))}|||||"
-                f"{_hl7_escape(account_number)}"
-            ),
-            (
-                "PV1|1|"
-                f"{_hl7_escape(patient_class)}|{_hl7_escape_composite(assigned_location)}||||"
-                f"{_hl7_escape_composite(attending_provider)}||||||||||||{_hl7_escape(visit_number)}"
-            ),
-        ]
-        return "\r".join(segments)
+        return dicom_templates.build_patient_adt_payload(
+            patient, profile, event_type=event_type, timestamp=timestamp,
+            timestamp_factory=hl7_timestamp,
+        )
 
     def upsert_dcm4chee_patient_sync(
         self, patient_record_id: int, profile: dict[str, Any], *,
@@ -1229,148 +1107,38 @@ class DemoStore:
 
     @staticmethod
     def _dicom_first_value(payload: dict[str, Any], tag: str, default: str = "") -> str:
-        element = payload.get(tag) if isinstance(payload, dict) else None
-        if not isinstance(element, dict):
-            return default
-        values = element.get("Value")
-        if not isinstance(values, list) or not values:
-            return default
-        value = values[0]
-        if isinstance(value, dict):
-            return str(value.get("Alphabetic") or default).strip()
-        return str(value or default).strip()
+        return dicom_domain.dicom_first_value(payload, tag, default)
 
     @staticmethod
     def _dcm4chee_sps_payload(payload: dict[str, Any]) -> dict[str, Any]:
-        sequence = payload.get("00400100") if isinstance(payload, dict) else None
-        if not isinstance(sequence, dict):
-            return {}
-        values = sequence.get("Value")
-        if not isinstance(values, list) or not values or not isinstance(values[0], dict):
-            return {}
-        return values[0]
+        return dicom_domain.sps_payload(payload)
 
     @classmethod
     def dcm4chee_identifiers_from_payload(
-        cls,
-        order: dict[str, Any],
-        profile: dict[str, Any],
-        *,
-        uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT,
-        payload: dict[str, Any] | None = None,
+        cls, order: dict[str, Any], profile: dict[str, Any], *,
+        uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT, payload: dict[str, Any] | None = None,
     ) -> dict[str, str]:
-        order_id = int(order["id"])
-        patient = order.get("patient") or {}
-        mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
-        dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
-        payload = payload or {}
-        sps_payload = cls._dcm4chee_sps_payload(payload)
-        uid_root_text = cls.normalize_dcm4chee_uid_root(uid_root)
-        return {
-            "profile_name": str(profile.get("profileName") or "").strip(),
-            "server_identity": str(dimse.get("calledAETitle") or mwl.get("aeTitle") or "").strip(),
-            "mwl_ae_title": str(mwl.get("aeTitle") or "").strip(),
-            "scheduled_station_ae_title": cls._dicom_first_value(
-                sps_payload,
-                "00400001",
-                str(mwl.get("defaultScheduledStationAETitle") or "").strip(),
-            ),
-            "local_dcm4chee_order_number": cls._dcm4chee_local_order_number(order_id),
-            "patient_id": cls._dicom_first_value(payload, "00100020", str(patient.get("mrn") or "").strip()),
-            "issuer_of_patient_id": cls._dicom_first_value(
-                payload,
-                "00100021",
-                str(profile.get("profileName") or "HEALTHCARE_LAB").strip(),
-            ),
-            "accession_number": cls._dicom_first_value(payload, "00080050", cls._dcm4chee_accession_number(order_id)),
-            "requested_procedure_id": cls._dicom_first_value(
-                payload,
-                "00401001",
-                cls._dcm4chee_requested_procedure_id(order_id),
-            ),
-            "scheduled_procedure_step_id": cls._dicom_first_value(
-                sps_payload,
-                "00400009",
-                cls._dcm4chee_scheduled_procedure_step_id(order_id),
-            ),
-            "study_instance_uid": cls._dicom_first_value(
-                payload,
-                "0020000D",
-                cls.dcm4chee_study_instance_uid(
-                    uid_root_text,
-                    order_record_id=order_id,
-                    timestamp=str(order.get("requestedAt") or ""),
-                ),
-            ),
-            "worklist_label": cls._dicom_first_value(
-                payload,
-                "00741202",
-                str(order.get("orderCodeText") or order.get("orderCode") or ORDER_DEFAULT_TEXT).strip(),
-            ),
-            "uid_root": uid_root_text,
-        }
+        payload = payload or cls.build_dcm4chee_mwl_payload(order, profile, uid_root=uid_root)
+        return dicom_domain.identifiers_from_payload(
+            order, profile, uid_root=uid_root, payload=payload,
+            order_default_text=ORDER_DEFAULT_TEXT, timestamp_factory=hl7_timestamp,
+        )
 
     @classmethod
     def dcm4chee_identifiers_from_response_body(cls, response_body: str) -> dict[str, str]:
-        try:
-            parsed = json.loads(response_body or "")
-        except (TypeError, ValueError):
-            return {}
-        if isinstance(parsed, list):
-            parsed = parsed[0] if parsed and isinstance(parsed[0], dict) else {}
-        if not isinstance(parsed, dict):
-            return {}
-        return cls.dcm4chee_identifiers_from_dataset(parsed)
+        return dicom_domain.identifiers_from_response_body(response_body)
 
     @classmethod
     def dcm4chee_datasets_from_response_body(cls, response_body: str) -> list[dict[str, Any]]:
-        try:
-            parsed = json.loads(response_body or "")
-        except (TypeError, ValueError):
-            return []
-        if isinstance(parsed, list):
-            values = parsed
-        else:
-            values = [parsed]
-        datasets: list[dict[str, Any]] = []
-        for value in values:
-            if not isinstance(value, dict):
-                continue
-            dataset = value.get("attrs") if isinstance(value.get("attrs"), dict) else value
-            if isinstance(dataset, dict):
-                datasets.append(dataset)
-        return datasets
+        return dicom_domain.datasets_from_response_body(response_body)
 
     @classmethod
     def dcm4chee_identifiers_from_dataset(cls, dataset: dict[str, Any]) -> dict[str, str]:
-        dataset = dataset.get("attrs") if isinstance(dataset.get("attrs"), dict) else dataset
-        if not isinstance(dataset, dict):
-            return {}
-        sps_payload = cls._dcm4chee_sps_payload(dataset)
-        values = {
-            "patient_id": cls._dicom_first_value(dataset, "00100020"),
-            "issuer_of_patient_id": cls._dicom_first_value(dataset, "00100021"),
-            "accession_number": cls._dicom_first_value(dataset, "00080050"),
-            "requested_procedure_id": cls._dicom_first_value(dataset, "00401001"),
-            "scheduled_procedure_step_id": cls._dicom_first_value(sps_payload, "00400009"),
-            "study_instance_uid": cls._dicom_first_value(dataset, "0020000D"),
-            "worklist_label": cls._dicom_first_value(dataset, "00741202")
-            or cls._dicom_first_value(sps_payload, "00400007"),
-            "scheduled_station_ae_title": cls._dicom_first_value(sps_payload, "00400001"),
-        }
-        return {key: value for key, value in values.items() if value}
+        return dicom_domain.identifiers_from_dataset(dataset)
 
     @staticmethod
     def dcm4chee_mwl_verification_query_from_mapping(mapping: dict[str, Any]) -> dict[str, str]:
-        query = {
-            "AccessionNumber": str(mapping.get("accessionNumber") or "").strip(),
-            "RequestedProcedureID": str(mapping.get("requestedProcedureId") or "").strip(),
-            "ScheduledProcedureStepID": str(mapping.get("scheduledProcedureStepId") or "").strip(),
-            "PatientID": str(mapping.get("patientId") or "").strip(),
-            "IssuerOfPatientID": str(mapping.get("issuerOfPatientId") or "").strip(),
-            "ScheduledStationAETitle": str(mapping.get("scheduledStationAETitle") or "").strip(),
-        }
-        return {key: value for key, value in query.items() if value}
+        return dicom_domain.verification_query_from_mapping(mapping)
 
     def upsert_dcm4chee_mwl_mapping(self, *args, **kwargs) -> dict[str, Any]:
         return self.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(*args, **kwargs)
@@ -1386,124 +1154,27 @@ class DemoStore:
 
     @classmethod
     def dcm4chee_result_metadata_from_dataset(cls, dataset: dict[str, Any]) -> dict[str, str]:
-        dataset = dataset.get("attrs") if isinstance(dataset.get("attrs"), dict) else dataset
-        if not isinstance(dataset, dict):
-            return {}
-        sps_payload = cls._dcm4chee_sps_payload(dataset)
-        request_attrs = cls._dicom_sequence_first(dataset, "00400275")
-        identifiers = cls.dcm4chee_identifiers_from_dataset(dataset)
-        requested_procedure_id = (
-            identifiers.get("requested_procedure_id")
-            or cls._dicom_first_value(request_attrs, "00401001")
-        )
-        scheduled_procedure_step_id = (
-            identifiers.get("scheduled_procedure_step_id")
-            or cls._dicom_first_value(request_attrs, "00400009")
-            or cls._dicom_first_value(sps_payload, "00400009")
-        )
-        return {
-            **identifiers,
-            "requested_procedure_id": requested_procedure_id,
-            "scheduled_procedure_step_id": scheduled_procedure_step_id,
-            "series_instance_uid": cls._dicom_first_value(dataset, "0020000E"),
-            "sop_instance_uid": cls._dicom_first_value(dataset, "00080018"),
-            "modality": cls._dicom_first_value(dataset, "00080060"),
-            "study_datetime": cls._dicom_datetime(dataset, "00080020", "00080030"),
-            "series_datetime": cls._dicom_datetime(dataset, "00080021", "00080031"),
-            "instance_datetime": cls._dicom_datetime(dataset, "00080012", "00080013")
-            or cls._dicom_datetime(dataset, "00080023", "00080033"),
-        }
+        return dicom_domain.result_metadata_from_dataset(dataset)
 
     @staticmethod
     def _dicom_sequence_first(payload: dict[str, Any], tag: str) -> dict[str, Any]:
-        element = payload.get(tag) if isinstance(payload, dict) else None
-        if not isinstance(element, dict):
-            return {}
-        values = element.get("Value")
-        if not isinstance(values, list) or not values or not isinstance(values[0], dict):
-            return {}
-        return values[0]
+        return dicom_domain.sequence_first(payload, tag)
 
     @classmethod
     def _dicom_datetime(cls, payload: dict[str, Any], date_tag: str, time_tag: str) -> str:
-        date = cls._dicom_first_value(payload, date_tag)
-        time = cls._dicom_first_value(payload, time_tag)
-        if date and time:
-            return f"{date}{time}"
-        return date or time
+        return dicom_domain.dicom_datetime(payload, date_tag, time_tag)
 
     @staticmethod
     def _dcm4chee_profile_identity(profile: dict[str, Any]) -> tuple[str, str, str]:
-        dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
-        mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
-        profile_name = str(profile.get("profileName") or "").strip()
-        server_identity = str(dimse.get("calledAETitle") or mwl.get("aeTitle") or "").strip()
-        source_ae_title = str(dimse.get("calledAETitle") or server_identity).strip()
-        return profile_name, server_identity, source_ae_title
+        return dicom_domain.profile_identity(profile)
 
     @staticmethod
-    def _dcm4chee_result_key(
-        *,
-        profile_name: str,
-        server_identity: str,
-        patient_record_id: int | None = None,
-        status: str = "",
-        study_instance_uid: str = "",
-        series_instance_uid: str = "",
-        sop_instance_uid: str = "",
-        accession_number: str = "",
-        requested_procedure_id: str = "",
-        scheduled_procedure_step_id: str = "",
-    ) -> str:
-        study = str(study_instance_uid or "").strip()
-        series = str(series_instance_uid or "").strip()
-        sop = str(sop_instance_uid or "").strip()
-        if study or series or sop:
-            return "|".join(
-                [
-                    "dicom",
-                    str(profile_name or "").strip(),
-                    str(server_identity or "").strip(),
-                    study,
-                    series,
-                    sop,
-                ]
-            )
-        accession = str(accession_number or "").strip()
-        requested = str(requested_procedure_id or "").strip()
-        sps = str(scheduled_procedure_step_id or "").strip()
-        if accession or requested or sps:
-            return "|".join(
-                [
-                    "dicom-identifiers",
-                    str(profile_name or "").strip(),
-                    str(server_identity or "").strip(),
-                    accession,
-                    requested,
-                    sps,
-                ]
-            )
-        return "|".join(
-            [
-                "diagnostic",
-                str(profile_name or "").strip(),
-                str(server_identity or "").strip(),
-                str(patient_record_id or ""),
-                str(status or "").strip(),
-            ]
-        )
+    def _dcm4chee_result_key(**kwargs) -> str:
+        return dicom_domain.result_key(**kwargs)
 
     @staticmethod
     def _dcm4chee_patient_matches(mapping: dict[str, Any], metadata: dict[str, str]) -> bool:
-        patient_id = str(metadata.get("patient_id") or "").strip()
-        issuer = str(metadata.get("issuer_of_patient_id") or "").strip()
-        expected_patient_id = str(mapping.get("patientId") or "").strip()
-        expected_issuer = str(mapping.get("issuerOfPatientId") or "").strip()
-        if patient_id and expected_patient_id and patient_id != expected_patient_id:
-            return False
-        if issuer and expected_issuer and issuer != expected_issuer:
-            return False
-        return True
+        return dicom_domain.patient_matches(mapping, metadata)
 
     def _dcm4chee_mappings_for_patient(self, patient_record_id: int) -> list[dict[str, Any]]:
         return self.dcm4chee_mwl_repository.list_dcm4chee_mwl_mappings_for_patient(patient_record_id)
@@ -1525,30 +1196,7 @@ class DemoStore:
 
     @staticmethod
     def dcm4chee_result_links(profile: dict[str, Any], metadata: dict[str, str]) -> dict[str, str]:
-        dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
-        viewer = profile.get("viewer") if isinstance(profile.get("viewer"), dict) else {}
-        wado_url = str(dicomweb.get("wadoRsUrl") or dicomweb.get("baseUrl") or "").strip().rstrip("/")
-        study_uid = str(metadata.get("study_instance_uid") or "").strip()
-        series_uid = str(metadata.get("series_instance_uid") or "").strip()
-        sop_uid = str(metadata.get("sop_instance_uid") or "").strip()
-        viewer_template = str(viewer.get("studyUrlTemplate") or "").strip()
-        links = {
-            "viewer_url": "",
-            "study_retrieve_url": "",
-            "series_retrieve_url": "",
-            "instance_retrieve_url": "",
-        }
-        if study_uid and viewer_template:
-            links["viewer_url"] = viewer_template.replace("{studyInstanceUid}", urllib_quote_safe(study_uid))
-        if study_uid and wado_url:
-            study_path = f"{wado_url}/studies/{urllib_quote_safe(study_uid)}"
-            links["study_retrieve_url"] = study_path
-            if series_uid:
-                series_path = f"{study_path}/series/{urllib_quote_safe(series_uid)}"
-                links["series_retrieve_url"] = series_path
-                if sop_uid:
-                    links["instance_retrieve_url"] = f"{series_path}/instances/{urllib_quote_safe(sop_uid)}"
-        return links
+        return dicom_domain.result_links(profile, metadata)
 
     def upsert_dcm4chee_result_record(self, *args, **kwargs):
         return self.dcm4chee_result_repository.upsert_dcm4chee_result_record(*args, **kwargs)
@@ -2921,66 +2569,16 @@ class DemoStore:
         return project_mwl_mapping(row)
 
     @staticmethod
-    def _dcm4chee_mwl_status_view(
-        attempt: dict[str, Any] | None,
-        mapping: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        attempt = attempt or {}
-        mapping = mapping or {}
-        status = str(mapping.get("status") or attempt.get("status") or "").strip()
-        error_type = str(mapping.get("lastErrorType") or attempt.get("errorType") or "").strip()
-        error_text = str(mapping.get("lastError") or attempt.get("error") or "").strip()
-        response_body = str(mapping.get("lastResponseBody") or attempt.get("responseBody") or "").strip()
-        http_status = mapping.get("lastHttpStatus") or attempt.get("httpStatus")
-        retryable = DemoStore._dcm4chee_mwl_retryable(status, error_type)
-        display_status, display_state = DemoStore._dcm4chee_mwl_display_status(status, retryable)
-        return {
-            **attempt,
-            "mapping": mapping or None,
-            "verification": mapping.get("verification") if mapping else None,
-            "status": status,
-            "httpStatus": http_status,
-            "responseBody": response_body,
-            "errorType": error_type,
-            "error": error_text,
-            "displayStatus": display_status,
-            "displayState": display_state,
-            "retryable": retryable,
-            "latest": {
-                "attemptId": attempt.get("id"),
-                "mappingId": mapping.get("id") or attempt.get("mappingId"),
-                "operationType": attempt.get("operationType") or "",
-                "status": status,
-                "displayStatus": display_status,
-                "retryable": retryable,
-                "httpStatus": http_status,
-                "errorType": error_type,
-                "error": error_text,
-                "responseBody": response_body,
-                "retryCount": mapping.get("retryCount", 0),
-                "lastSyncAt": mapping.get("lastSyncAt") or attempt.get("completedAt") or "",
-                "updatedAt": mapping.get("updatedAt") or attempt.get("updatedAt") or "",
-            },
-        }
+    def _dcm4chee_mwl_status_view(attempt: dict[str, Any] | None, mapping: dict[str, Any] | None) -> dict[str, Any]:
+        return dicom_domain.mwl_status_view(attempt, mapping)
 
     @staticmethod
     def _dcm4chee_mwl_retryable(status: str, error_type: str = "") -> bool:
-        normalized_error = str(error_type or "").strip()
-        if normalized_error in DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES:
-            return False
-        return str(status or "").strip() in {DCM4CHEE_MWL_STATUS_PENDING, DCM4CHEE_MWL_STATUS_FAILED}
+        return dicom_domain.mwl_retryable(status, error_type)
 
     @staticmethod
     def _dcm4chee_mwl_display_status(status: str, retryable: bool) -> tuple[str, str]:
-        if status == DCM4CHEE_MWL_STATUS_CREATED:
-            return "Synced", "synced"
-        if status == DCM4CHEE_MWL_STATUS_PENDING:
-            return ("Retry needed", "retry-needed") if retryable else ("Pending", "pending")
-        if status == DCM4CHEE_MWL_STATUS_FAILED:
-            return ("Retry needed", "retry-needed") if retryable else ("Failed", "failed")
-        if status == DCM4CHEE_MWL_STATUS_PATIENT_MISSING:
-            return "Failed", "failed"
-        return status or "Unknown", "unknown"
+        return dicom_domain.mwl_display_status(status, retryable)
 
     @staticmethod
     def _json_value(value: str, fallback: Any) -> Any:

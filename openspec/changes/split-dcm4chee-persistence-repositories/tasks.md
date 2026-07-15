@@ -10,10 +10,10 @@
 
 ## 2. Extract Pure DICOM Rules and Payload Collaborators
 
-- [ ] 2.1 Move or consolidate Patient ADT and MWL payload construction in named template modules with representative deterministic payload tests.
-- [ ] 2.2 Move or consolidate DICOM response parsing, dataset extraction, UID/identifier normalization, and verification-query rules in framework-independent modules.
-- [ ] 2.3 Move or consolidate retry classification, status projection, reconciliation matching policy, and result-link/key rules outside repository modules.
-- [ ] 2.4 Update callable injection and imports so pure modules remain independent of Flask and SQLite and repositories do not parse transport bodies or construct protocol payloads.
+- [x] 2.1 Move or consolidate Patient ADT and MWL payload construction in named template modules with representative deterministic payload tests.
+- [x] 2.2 Move or consolidate DICOM response parsing, dataset extraction, UID/identifier normalization, and verification-query rules in framework-independent modules.
+- [x] 2.3 Move or consolidate retry classification, status projection, reconciliation matching policy, and result-link/key rules outside repository modules.
+- [x] 2.4 Update callable injection and imports so pure modules remain independent of Flask and SQLite and repositories do not parse transport bodies or construct protocol payloads.
 
 ## 3. Extract Patient-Sync Repository
 

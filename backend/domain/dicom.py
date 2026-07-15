@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import re
+from datetime import datetime
+from collections.abc import Callable
 from typing import Any
+from urllib.parse import quote
 
-from backend.domain.errors import ValidationError
+from backend.domain.errors import SimulatorValidationError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain.statuses import (
     DCM4CHEE_RESULT_STATUS_AMBIGUOUS,
@@ -12,9 +17,16 @@ from backend.domain.statuses import (
     DCM4CHEE_RESULT_STATUS_MISSING_ACCESSION,
     DCM4CHEE_RESULT_STATUS_UNLINKED,
     DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
+    DCM4CHEE_MWL_STATUS_CREATED,
+    DCM4CHEE_MWL_STATUS_FAILED,
+    DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
+    DCM4CHEE_MWL_STATUS_PENDING,
+    DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED,
 )
 
 DCM4CHEE_AUTH_MODES = ("none", "basic", "bearer", "oauth2", "mtls")
+DCM4CHEE_DEFAULT_UID_ROOT = "1.2.826.0.1.3680043.10.543"
+DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES = {"patient_missing", "patient_sync_failed", "profile_invalid"}
 
 
 def validate_dcm4chee_profile(profile: dict[str, Any]) -> dict[str, Any]:
@@ -288,4 +300,293 @@ def reconcile_result_metadata(
         "strength": strength,
         "mapping": mapping,
         "diagnostic": {"reason": "matched", "mappingId": mapping["id"]},
+    }
+
+
+def local_order_number(record_id: int) -> str:
+    return f"LAB-ORD-{record_id:06d}"
+
+
+def accession_number(record_id: int) -> str:
+    return f"ACC-{record_id:06d}"
+
+
+def requested_procedure_id(record_id: int) -> str:
+    return f"RP-{record_id:06d}"
+
+
+def scheduled_procedure_step_id(record_id: int) -> str:
+    return f"SPS-{record_id:06d}"
+
+
+def normalize_uid_root(value: Any) -> str:
+    root = str(value or DCM4CHEE_DEFAULT_UID_ROOT).strip().strip(".") or DCM4CHEE_DEFAULT_UID_ROOT
+    if not re.match(r"^[0-9]+(?:\.[0-9]+)*$", root):
+        raise SimulatorValidationError("dcm4chee UID root must contain only digits and dots.")
+    if any(part != "0" and part.startswith("0") for part in root.split(".")):
+        raise SimulatorValidationError("dcm4chee UID root components must not have leading zeroes.")
+    if len(root) > 54:
+        raise SimulatorValidationError("dcm4chee UID root is too long for generated Study Instance UIDs.")
+    return root
+
+
+def study_instance_uid(
+    uid_root: Any, *, order_record_id: int, timestamp: str = "",
+    timestamp_factory: Callable[[], str],
+) -> str:
+    root = normalize_uid_root(uid_root)
+    fallback = timestamp_factory()
+    digits = "".join(character for character in str(timestamp or fallback) if character.isdigit())
+    suffix = f"{digits[:14] or fallback}.{int(order_record_id)}"
+    uid = f"{root}.{suffix}"
+    if len(uid) > 64:
+        suffix = f"{digits[:8] or datetime.now().strftime('%Y%m%d')}.{int(order_record_id)}"
+        uid = f"{root}.{suffix}"
+    if len(uid) > 64:
+        raise SimulatorValidationError("Generated Study Instance UID exceeds 64 characters.")
+    return uid
+
+
+def patient_identifiers(patient: dict[str, Any], profile: dict[str, Any]) -> dict[str, str]:
+    dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
+    hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
+    summary = patient.get("summary") if isinstance(patient.get("summary"), dict) else {}
+    fields = patient.get("patient") if isinstance(patient.get("patient"), dict) else {}
+    return {
+        "profile_name": str(profile.get("profileName") or "").strip(),
+        "server_identity": str(dimse.get("calledAETitle") or "").strip(),
+        "patient_id": str(summary.get("mrn") or fields.get("mrn") or patient.get("mrn") or "").strip(),
+        "issuer_of_patient_id": str(hl7.get("patientAssigningAuthority") or profile.get("profileName") or "HEALTHCARE_LAB").strip(),
+        "hl7_host": str(hl7.get("host") or "").strip(),
+        "hl7_port": str(hl7.get("port") or "").strip(),
+        "receiving_application": str(hl7.get("receivingApplication") or "").strip(),
+        "receiving_facility": str(hl7.get("receivingFacility") or "").strip(),
+    }
+
+
+def dicom_first_value(payload: dict[str, Any], tag: str, default: str = "") -> str:
+    element = payload.get(tag) if isinstance(payload, dict) else None
+    if not isinstance(element, dict):
+        return default
+    values = element.get("Value")
+    if not isinstance(values, list) or not values:
+        return default
+    value = values[0]
+    if isinstance(value, dict):
+        return str(value.get("Alphabetic") or default).strip()
+    return str(value or default).strip()
+
+
+def sps_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    sequence = payload.get("00400100") if isinstance(payload, dict) else None
+    values = sequence.get("Value") if isinstance(sequence, dict) else None
+    return values[0] if isinstance(values, list) and values and isinstance(values[0], dict) else {}
+
+
+def identifiers_from_dataset(dataset: dict[str, Any]) -> dict[str, str]:
+    dataset = dataset.get("attrs") if isinstance(dataset.get("attrs"), dict) else dataset
+    if not isinstance(dataset, dict):
+        return {}
+    sps = sps_payload(dataset)
+    values = {
+        "patient_id": dicom_first_value(dataset, "00100020"),
+        "issuer_of_patient_id": dicom_first_value(dataset, "00100021"),
+        "accession_number": dicom_first_value(dataset, "00080050"),
+        "requested_procedure_id": dicom_first_value(dataset, "00401001"),
+        "scheduled_procedure_step_id": dicom_first_value(sps, "00400009"),
+        "study_instance_uid": dicom_first_value(dataset, "0020000D"),
+        "worklist_label": dicom_first_value(dataset, "00741202") or dicom_first_value(sps, "00400007"),
+        "scheduled_station_ae_title": dicom_first_value(sps, "00400001"),
+    }
+    return {key: value for key, value in values.items() if value}
+
+
+def datasets_from_response_body(response_body: str) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(response_body or "")
+    except (TypeError, ValueError):
+        return []
+    values = parsed if isinstance(parsed, list) else [parsed]
+    return [
+        value.get("attrs") if isinstance(value.get("attrs"), dict) else value
+        for value in values if isinstance(value, dict)
+    ]
+
+
+def identifiers_from_response_body(response_body: str) -> dict[str, str]:
+    datasets = datasets_from_response_body(response_body)
+    return identifiers_from_dataset(datasets[0]) if datasets else {}
+
+
+def verification_query_from_mapping(mapping: dict[str, Any]) -> dict[str, str]:
+    query = {
+        "AccessionNumber": str(mapping.get("accessionNumber") or "").strip(),
+        "RequestedProcedureID": str(mapping.get("requestedProcedureId") or "").strip(),
+        "ScheduledProcedureStepID": str(mapping.get("scheduledProcedureStepId") or "").strip(),
+        "PatientID": str(mapping.get("patientId") or "").strip(),
+        "IssuerOfPatientID": str(mapping.get("issuerOfPatientId") or "").strip(),
+        "ScheduledStationAETitle": str(mapping.get("scheduledStationAETitle") or "").strip(),
+    }
+    return {key: value for key, value in query.items() if value}
+
+
+def identifiers_from_payload(
+    order: dict[str, Any], profile: dict[str, Any], *, uid_root: Any,
+    payload: dict[str, Any], order_default_text: str,
+    timestamp_factory: Callable[[], str],
+) -> dict[str, str]:
+    order_id = int(order["id"])
+    mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
+    dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
+    sps = sps_payload(payload)
+    root = normalize_uid_root(uid_root)
+    return {
+        "profile_name": str(profile.get("profileName") or "").strip(),
+        "server_identity": str(dimse.get("calledAETitle") or mwl.get("aeTitle") or "").strip(),
+        "mwl_ae_title": str(mwl.get("aeTitle") or "").strip(),
+        "scheduled_station_ae_title": dicom_first_value(sps, "00400001", str(mwl.get("defaultScheduledStationAETitle") or "").strip()),
+        "local_dcm4chee_order_number": local_order_number(order_id),
+        "patient_id": dicom_first_value(payload, "00100020", str(order.get("mrn") or "").strip()),
+        "issuer_of_patient_id": dicom_first_value(payload, "00100021", str(profile.get("profileName") or "HEALTHCARE_LAB").strip()),
+        "accession_number": dicom_first_value(payload, "00080050", accession_number(order_id)),
+        "requested_procedure_id": dicom_first_value(payload, "00401001", requested_procedure_id(order_id)),
+        "scheduled_procedure_step_id": dicom_first_value(sps, "00400009", scheduled_procedure_step_id(order_id)),
+        "study_instance_uid": dicom_first_value(
+            payload, "0020000D",
+            study_instance_uid(root, order_record_id=order_id, timestamp=str(order.get("requestedAt") or ""), timestamp_factory=timestamp_factory),
+        ),
+        "worklist_label": dicom_first_value(payload, "00741202", str(order.get("orderCodeText") or order.get("orderCode") or order_default_text).strip()),
+        "uid_root": root,
+    }
+
+
+def sequence_first(payload: dict[str, Any], tag: str) -> dict[str, Any]:
+    element = payload.get(tag) if isinstance(payload, dict) else None
+    values = element.get("Value") if isinstance(element, dict) else None
+    return values[0] if isinstance(values, list) and values and isinstance(values[0], dict) else {}
+
+
+def dicom_datetime(payload: dict[str, Any], date_tag: str, time_tag: str) -> str:
+    date = dicom_first_value(payload, date_tag)
+    time = dicom_first_value(payload, time_tag)
+    return f"{date}{time}" if date and time else date or time
+
+
+def result_metadata_from_dataset(dataset: dict[str, Any]) -> dict[str, str]:
+    dataset = dataset.get("attrs") if isinstance(dataset.get("attrs"), dict) else dataset
+    if not isinstance(dataset, dict):
+        return {}
+    request_attrs = sequence_first(dataset, "00400275")
+    identifiers = identifiers_from_dataset(dataset)
+    return {
+        **identifiers,
+        "requested_procedure_id": identifiers.get("requested_procedure_id") or dicom_first_value(request_attrs, "00401001"),
+        "scheduled_procedure_step_id": identifiers.get("scheduled_procedure_step_id") or dicom_first_value(request_attrs, "00400009") or dicom_first_value(sps_payload(dataset), "00400009"),
+        "series_instance_uid": dicom_first_value(dataset, "0020000E"),
+        "sop_instance_uid": dicom_first_value(dataset, "00080018"),
+        "modality": dicom_first_value(dataset, "00080060"),
+        "study_datetime": dicom_datetime(dataset, "00080020", "00080030"),
+        "series_datetime": dicom_datetime(dataset, "00080021", "00080031"),
+        "instance_datetime": dicom_datetime(dataset, "00080012", "00080013") or dicom_datetime(dataset, "00080023", "00080033"),
+    }
+
+
+def profile_identity(profile: dict[str, Any]) -> tuple[str, str, str]:
+    dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
+    mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
+    profile_name = str(profile.get("profileName") or "").strip()
+    server_identity = str(dimse.get("calledAETitle") or mwl.get("aeTitle") or "").strip()
+    return profile_name, server_identity, str(dimse.get("calledAETitle") or server_identity).strip()
+
+
+def result_key(
+    *, profile_name: str, server_identity: str, patient_record_id: int | None = None,
+    status: str = "", study_instance_uid: str = "", series_instance_uid: str = "",
+    sop_instance_uid: str = "", accession_number: str = "", requested_procedure_id: str = "",
+    scheduled_procedure_step_id: str = "",
+) -> str:
+    study, series, sop = (str(value or "").strip() for value in (study_instance_uid, series_instance_uid, sop_instance_uid))
+    if study or series or sop:
+        return "|".join(["dicom", str(profile_name or "").strip(), str(server_identity or "").strip(), study, series, sop])
+    accession, requested, sps = (str(value or "").strip() for value in (accession_number, requested_procedure_id, scheduled_procedure_step_id))
+    if accession or requested or sps:
+        return "|".join(["dicom-identifiers", str(profile_name or "").strip(), str(server_identity or "").strip(), accession, requested, sps])
+    return "|".join(["diagnostic", str(profile_name or "").strip(), str(server_identity or "").strip(), str(patient_record_id or ""), str(status or "").strip()])
+
+
+def result_links(profile: dict[str, Any], metadata: dict[str, str]) -> dict[str, str]:
+    dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
+    viewer = profile.get("viewer") if isinstance(profile.get("viewer"), dict) else {}
+    wado_url = str(dicomweb.get("wadoRsUrl") or dicomweb.get("baseUrl") or "").strip().rstrip("/")
+    study = str(metadata.get("study_instance_uid") or "").strip()
+    series = str(metadata.get("series_instance_uid") or "").strip()
+    sop = str(metadata.get("sop_instance_uid") or "").strip()
+    links = {"viewer_url": "", "study_retrieve_url": "", "series_retrieve_url": "", "instance_retrieve_url": ""}
+    template = str(viewer.get("studyUrlTemplate") or "").strip()
+    if study and template:
+        links["viewer_url"] = template.replace("{studyInstanceUid}", quote(study, safe=""))
+    if study and wado_url:
+        links["study_retrieve_url"] = f"{wado_url}/studies/{quote(study, safe='')}"
+        if series:
+            links["series_retrieve_url"] = f"{links['study_retrieve_url']}/series/{quote(series, safe='')}"
+            if sop:
+                links["instance_retrieve_url"] = f"{links['series_retrieve_url']}/instances/{quote(sop, safe='')}"
+    return links
+
+
+def mwl_retryable(status: str, error_type: str = "") -> bool:
+    if str(error_type or "").strip() in DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES:
+        return False
+    return str(status or "").strip() in {DCM4CHEE_MWL_STATUS_PENDING, DCM4CHEE_MWL_STATUS_FAILED}
+
+
+def mwl_display_status(status: str, retryable: bool) -> tuple[str, str]:
+    if status == DCM4CHEE_MWL_STATUS_CREATED:
+        return "Synced", "synced"
+    if status == DCM4CHEE_MWL_STATUS_PENDING:
+        return ("Retry needed", "retry-needed") if retryable else ("Pending", "pending")
+    if status == DCM4CHEE_MWL_STATUS_FAILED:
+        return ("Retry needed", "retry-needed") if retryable else ("Failed", "failed")
+    if status == DCM4CHEE_MWL_STATUS_PATIENT_MISSING:
+        return "Failed", "failed"
+    return status or "Unknown", "unknown"
+
+
+def mwl_status_view(attempt: dict[str, Any] | None, mapping: dict[str, Any] | None) -> dict[str, Any]:
+    attempt = attempt or {}
+    mapping = mapping or {}
+    status = str(mapping.get("status") or attempt.get("status") or "").strip()
+    error_type = str(mapping.get("lastErrorType") or attempt.get("errorType") or "").strip()
+    error_text = str(mapping.get("lastError") or attempt.get("error") or "").strip()
+    response_body = str(mapping.get("lastResponseBody") or attempt.get("responseBody") or "").strip()
+    http_status = mapping.get("lastHttpStatus") or attempt.get("httpStatus")
+    retryable = mwl_retryable(status, error_type)
+    display_status, display_state = mwl_display_status(status, retryable)
+    return {
+        **attempt,
+        "mapping": mapping or None,
+        "verification": mapping.get("verification") if mapping else None,
+        "status": status,
+        "httpStatus": http_status,
+        "responseBody": response_body,
+        "errorType": error_type,
+        "error": error_text,
+        "displayStatus": display_status,
+        "displayState": display_state,
+        "retryable": retryable,
+        "latest": {
+            "attemptId": attempt.get("id"),
+            "mappingId": mapping.get("id") or attempt.get("mappingId"),
+            "operationType": attempt.get("operationType") or "",
+            "status": status,
+            "displayStatus": display_status,
+            "retryable": retryable,
+            "httpStatus": http_status,
+            "errorType": error_type,
+            "error": error_text,
+            "responseBody": response_body,
+            "retryCount": mapping.get("retryCount", 0),
+            "lastSyncAt": mapping.get("lastSyncAt") or attempt.get("completedAt") or "",
+            "updatedAt": mapping.get("updatedAt") or attempt.get("updatedAt") or "",
+        },
     }
