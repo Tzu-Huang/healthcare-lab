@@ -83,38 +83,21 @@ def ensure_dcm4chee_patient_for_mwl_payload(
     }
 
 
-class OrderRepositoryPort(Protocol):
+class OrderLedgerPort(Protocol):
     def list_order_records(self) -> list[dict[str, Any]]: ...
 
     def get_order_record(self, order_id: int) -> dict[str, Any]: ...
 
     def create_order_record(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
+
+
+class OrderCoordinationPort(Protocol):
     def create_fhir_order_record(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
     def create_dcm4chee_order_record(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
-    def create_order_service_request_fhir_workflow_record(
-        self, order: dict[str, Any]
-    ) -> dict[str, Any]: ...
-
-    def mark_fhir_sync_failure(self, record_id: int, *, error_text: str) -> dict[str, Any]: ...
-
-    def list_dcm4chee_mwl_attempts(self, order_id: int) -> list[dict[str, Any]]: ...
-
-    def dcm4chee_e2e_evidence_for_order(
-        self, order_id: int, profile: dict[str, Any]
-    ) -> dict[str, Any]: ...
-
-    def create_simulated_dcm4chee_ap_return(
-        self,
-        order_id: int,
-        profile: dict[str, Any],
-        *,
-        result_type: str,
-        artifact_url: str,
-        artifact_path: str,
-    ) -> dict[str, Any]: ...
+    def get_order_record(self, order_id: int) -> dict[str, Any]: ...
 
     def get_patient_record(self, record_id: int) -> dict[str, Any]: ...
 
@@ -122,9 +105,10 @@ class OrderRepositoryPort(Protocol):
 class OrderWorkflowService:
     def __init__(
         self,
-        repository: OrderRepositoryPort,
+        repository: OrderLedgerPort,
         configuration: Mapping[str, Any],
         *,
+        coordination: OrderCoordinationPort | None = None,
         medplum_base_url: Callable[[], str],
         auth_manager: Callable[[], Any],
         fhir_sync: Callable[..., Any],
@@ -133,6 +117,7 @@ class OrderWorkflowService:
         dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]],
     ) -> None:
         self._repository = repository
+        self._coordination = coordination or repository
         self._configuration = configuration
         self._medplum_base_url = medplum_base_url
         self._auth_manager = auth_manager
@@ -157,25 +142,25 @@ class OrderWorkflowService:
     def create(self, payload: dict[str, Any]) -> dict[str, Any]:
         mode = str(payload.get("mode") or "").strip().lower()
         if mode == "fhir":
-            item = self._repository.create_fhir_order_record(payload)
-            record = self._repository.create_order_service_request_fhir_workflow_record(item)
+            item = self._coordination.create_fhir_order_record(payload)
+            record = self._coordination.create_order_service_request_fhir_workflow_record(item)
             base_url = self._medplum_base_url()
             if base_url:
                 self._fhir_sync(
-                    self._repository,
+                    self._coordination,
                     int(record["id"]),
                     base_url=base_url,
                     auth_manager=self._auth_manager(),
                 )
             else:
-                self._repository.mark_fhir_sync_failure(
+                self._coordination.mark_fhir_sync_failure(
                     int(record["id"]), error_text="Medplum FHIR base URL is required."
                 )
             return self._repository.get_order_record(int(item["id"]))
         if mode == "dicom":
-            item = self._repository.create_dcm4chee_order_record(payload)
+            item = self._coordination.create_dcm4chee_order_record(payload)
             self._dcm_sync(
-                self._repository,
+                self._coordination,
                 item,
                 self._dcm_profile(self._configuration),
                 uid_root=self._configuration["DCM4CHEE_UID_ROOT"],
@@ -185,12 +170,12 @@ class OrderWorkflowService:
 
     def list_dcm4chee_attempts(self, order_id: int) -> list[dict[str, Any]]:
         self.get_dicom(order_id)
-        return self._repository.list_dcm4chee_mwl_attempts(order_id)
+        return self._coordination.list_dcm4chee_mwl_attempts(order_id)
 
     def sync_dcm4chee(self, order_id: int) -> dict[str, Any]:
         item = self.get_dicom(order_id)
         self._dcm_sync(
-            self._repository,
+            self._coordination,
             item,
             self._dcm_profile(self._configuration),
             uid_root=self._configuration["DCM4CHEE_UID_ROOT"],
@@ -207,7 +192,7 @@ class OrderWorkflowService:
     def verify_dcm4chee(self, order_id: int) -> dict[str, Any]:
         item = self.get_dicom(order_id)
         result = self._dcm_verify(
-            self._repository, item, self._dcm_profile(self._configuration)
+            self._coordination, item, self._dcm_profile(self._configuration)
         )
         item = self._repository.get_order_record(order_id)
         mwl = (item.get("dcm4chee") or {}).get("mwl") or {}
@@ -222,7 +207,7 @@ class OrderWorkflowService:
 
     def dcm4chee_evidence(self, order_id: int) -> dict[str, Any]:
         self.get_dicom(order_id)
-        return self._repository.dcm4chee_e2e_evidence_for_order(
+        return self._coordination.dcm4chee_e2e_evidence_for_order(
             order_id, self._dcm_profile(self._configuration)
         )
 
@@ -230,19 +215,19 @@ class OrderWorkflowService:
         self, order_id: int, payload: dict[str, Any]
     ) -> dict[str, Any]:
         item = self.get_dicom(order_id)
-        result = self._repository.create_simulated_dcm4chee_ap_return(
+        result = self._coordination.create_simulated_dcm4chee_ap_return(
             order_id,
             self._dcm_profile(self._configuration),
             result_type=str(payload.get("type") or "both"),
             artifact_url=str(payload.get("artifactUrl") or ""),
             artifact_path=str(payload.get("artifactPath") or ""),
         )
-        patient = self._repository.get_patient_record(int(item["patientRecordId"]))
+        patient = self._coordination.get_patient_record(int(item["patientRecordId"]))
         return {"patient": patient, **result}
 
 
 def sync_order_to_dcm4chee_mwl(
-    store: OrderRepositoryPort,
+    store: OrderCoordinationPort,
     order: dict[str, Any],
     profile: dict[str, Any],
     *,
@@ -533,7 +518,7 @@ def classify_dcm4chee_mwl_verification_error(exc: UpstreamDcm4cheeError) -> str:
 
 
 def match_dcm4chee_mwl_items(
-    store: OrderRepositoryPort,
+    store: OrderCoordinationPort,
     mapping: dict[str, Any],
     response_body: str,
 ) -> dict[str, Any]:
@@ -627,7 +612,7 @@ def match_dcm4chee_mwl_items(
 
 
 def verify_order_dcm4chee_mwl(
-    store: OrderRepositoryPort,
+    store: OrderCoordinationPort,
     order: dict[str, Any],
     profile: dict[str, Any],
 ) -> dict[str, Any]:

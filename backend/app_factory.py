@@ -78,6 +78,7 @@ from backend.services.order_workflow import (
     sync_order_to_dcm4chee_mwl,
     verify_order_dcm4chee_mwl,
 )
+from backend.services.coordination import PatientProtocolCoordinator, OrderProtocolCoordinator
 from backend.services.oie_workflow import (
     OieWorkflowService,
     accept_oie_result_payload,
@@ -233,6 +234,8 @@ def create_app(database_path: str | None = None) -> Flask:
     app.config.update(load_application_config(app.instance_path, database_path))
     Path(app.config["DATABASE_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     store = DemoStore(app.config["DATABASE_PATH"])
+    patient_coordination = PatientProtocolCoordinator(store)
+    order_coordination = OrderProtocolCoordinator(store)
     gdt_bridge_watcher = GdtBridgeInboundWatcher(
         store,
         app.config["GDT_BRIDGE_PATH"],
@@ -324,8 +327,11 @@ def create_app(database_path: str | None = None) -> Flask:
         )
         return str((medplum or {}).get("baseUrl") or "").strip()
 
-    def configured_dicom_patient_sync(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    def configured_dicom_patient_sync(
+        _coordination: Any, *args: Any, **kwargs: Any
+    ) -> dict[str, Any]:
         return sync_patient_to_dcm4chee(
+            patient_coordination,
             *args,
             sender=send_hl7_mllp_message,
             **kwargs,
@@ -348,8 +354,9 @@ def create_app(database_path: str | None = None) -> Flask:
     app.register_blueprint(
         create_patients_blueprint(
             PatientWorkflowService(
-                store,
+                store.patient_repository,
                 app.config,
+                coordination=patient_coordination,
                 medplum_base_url=configured_medplum_base_url,
                 auth_manager=get_auth_manager,
                 fhir_sync=sync_fhir_workflow_record_to_medplum,
@@ -362,8 +369,9 @@ def create_app(database_path: str | None = None) -> Flask:
     app.register_blueprint(
         create_orders_blueprint(
             OrderWorkflowService(
-                store,
+                store.order_repository,
                 app.config,
+                coordination=order_coordination,
                 medplum_base_url=configured_medplum_base_url,
                 auth_manager=get_auth_manager,
                 fhir_sync=sync_fhir_workflow_record_to_medplum,
