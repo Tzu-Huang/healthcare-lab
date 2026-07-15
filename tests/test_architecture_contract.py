@@ -486,6 +486,10 @@ def imported_modules_from_tree(tree: ast.AST) -> set[str]:
             modules.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             modules.add(node.module)
+            for alias in node.names:
+                candidate = f"{node.module}.{alias.name}"
+                if backend_module_path(candidate):
+                    modules.add(candidate)
     return modules
 
 
@@ -683,7 +687,10 @@ class ArchitectureContractTest(unittest.TestCase):
         ]
         self.assertEqual([], definitions)
         modules = imported_modules_from_tree(tree)
-        self.assertEqual({"__future__", "sys", "backend"}, modules)
+        self.assertEqual(
+            {"__future__", "sys", "backend", "backend.app_factory"},
+            modules,
+        )
         self.assertLessEqual(len(source.splitlines()), 20)
         for forbidden in ("@app.", "sqlite3", "urllib", "socket", "threading"):
             with self.subTest(forbidden=forbidden):
@@ -713,6 +720,13 @@ class ArchitectureContractTest(unittest.TestCase):
                             ),
                             f"{path.relative_to(ROOT)} domain layer must not import configuration.",
                         )
+
+    def test_parent_package_imports_resolve_child_modules(self):
+        modules = imported_modules_from_tree(
+            ast.parse("from backend import api, repositories\n")
+        )
+        self.assertIn("backend.api", modules)
+        self.assertIn("backend.repositories", modules)
 
     def test_services_do_not_depend_transitively_on_concrete_store(self):
         for path in (BACKEND / "services").glob("*.py"):
