@@ -1,0 +1,684 @@
+"""Reviewed legacy surface allowed only while bounded-context extraction proceeds."""
+
+BACKEND_LEGACY_BASELINE: frozenset[tuple[str, str, str, str]] = frozenset(
+    tuple(line.split("|", 3))
+    for line in """
+payload|backend/dashboard_services.py|collect_dashboard_resource_snapshot|4507029a254ccbcf
+payload|backend/dashboard_services.py|collect_dashboard_resource_snapshot_from_cli|1b42e5af8d10ee3f
+payload|backend/dashboard_services.py|collect_dashboard_resource_snapshot_from_socket|50701cdf6e9c93b5
+payload|backend/dashboard_services.py|dashboard_resource_fallback|b10e912b7158a34f
+payload|backend/gdt_adapter.py|_attachment_content_type|0c96353cdab964ba
+payload|backend/gdt_adapter.py|_attachment_role|eec56c9213e1cfc0
+payload|backend/gdt_adapter.py|_coerce_measurement_value|876e7aee57d6a5ee
+payload|backend/gdt_adapter.py|_encode_gdt_text|0ee90090d2a36a52
+payload|backend/gdt_adapter.py|_gdt_clean_value|fc82c0c110853cc0
+payload|backend/gdt_adapter.py|_gdt_request_date|2a5f0e7cdd7b4bbf
+payload|backend/gdt_adapter.py|_measurement_payloads|e9247382ffdb9b11
+payload|backend/gdt_adapter.py|attachment_payloads_from_result_fields|acab6daca30fabaa
+payload|backend/gdt_adapter.py|build_gdt_6302_request|6089079804d417c4
+payload|backend/gdt_adapter.py|first_gdt_field|15d10ea2cd93dec2
+payload|backend/gdt_adapter.py|parse_gdt_6310_result|4248dc203c716b8f
+payload|backend/gdt_adapter.py|parse_gdt_dataset|5837b4fe1bd4e9ff
+payload|backend/gdt_adapter.py|parse_gdt_message|70158f8baf162856
+payload|backend/gdt_adapter.py|render_gdt_message|1e925ac1b36f2553
+payload|backend/gdt_adapter.py|render_gdt_record|2dd59ce29ec274c4
+payload|backend/gdt_adapter.py|result_order_identifiers|87896c5e9d9e39bc
+payload|backend/lab_store.py|DemoStore._attachment_payloads_from_result_fields|3997388c3ed40a75
+payload|backend/lab_store.py|DemoStore._backfill_dcm4chee_mwl_mappings|c272a191042aec9a
+payload|backend/lab_store.py|DemoStore._build_gdt_order_payload|ee254681e17219f6
+payload|backend/lab_store.py|DemoStore._build_order_orm_payload|c8f3861a177ce06d
+payload|backend/lab_store.py|DemoStore._build_patient_a04_payload|867c640c8202a5d0
+payload|backend/lab_store.py|DemoStore._build_patient_dicom_payload|2700a1e8fca3d9b8
+payload|backend/lab_store.py|DemoStore._build_patient_fhir_payload|643c1168257e619c
+payload|backend/lab_store.py|DemoStore._build_patient_gdt_payload|4ffad29421fe4e3a
+payload|backend/lab_store.py|DemoStore._build_patient_payload|820cffb26adde0f4
+payload|backend/lab_store.py|DemoStore._build_service_request_resource|d20b9879807aa58d
+payload|backend/lab_store.py|DemoStore._clean_fhir_order_text|9d50b5c4b11b2ede
+payload|backend/lab_store.py|DemoStore._create_gdt_attachment_record|39785ebb53aee5ab
+payload|backend/lab_store.py|DemoStore._create_gdt_message_record|8afaaa3099969fd6
+payload|backend/lab_store.py|DemoStore._dcm4chee_mappings_for_patient|98ef329f24fcbcc7
+payload|backend/lab_store.py|DemoStore._dcm4chee_mwl_mapping_dict|3d6585f441469636
+payload|backend/lab_store.py|DemoStore._dcm4chee_result_record_dict|b3864dcc676db01d
+payload|backend/lab_store.py|DemoStore._dcm4chee_sps_payload|561b5968fd6297f7
+payload|backend/lab_store.py|DemoStore._dicom_datetime|b772b2436eb22e9e
+payload|backend/lab_store.py|DemoStore._dicom_first_value|8f0655062d75f5cb
+payload|backend/lab_store.py|DemoStore._dicom_json_element|be8d3d02da03e9a3
+payload|backend/lab_store.py|DemoStore._dicom_sequence_first|ff311938eafbb061
+payload|backend/lab_store.py|DemoStore._ensure_gdt_patient_context|640b16080f8bd28e
+payload|backend/lab_store.py|DemoStore._fhir_clean_text|53ae80bcf375754e
+payload|backend/lab_store.py|DemoStore._fhir_codeable_concept|045c7b9d7401cc6c
+payload|backend/lab_store.py|DemoStore._fhir_identifier_token|bf0625bb4411f35a
+payload|backend/lab_store.py|DemoStore._fhir_order_datetime|bb7b185db79e2565
+payload|backend/lab_store.py|DemoStore._fhir_order_list|f48fbfb9e80e1835
+payload|backend/lab_store.py|DemoStore._fhir_order_storage_priority|c496bbf50214d96a
+payload|backend/lab_store.py|DemoStore._fhir_order_storage_timestamp|9c0693bd1b3fd112
+payload|backend/lab_store.py|DemoStore._fhir_order_values|d7e7849fc3bf5346
+payload|backend/lab_store.py|DemoStore._fhir_record_number|b01198d75052555a
+payload|backend/lab_store.py|DemoStore._fhir_reference_item|85e396d1b6be6168
+payload|backend/lab_store.py|DemoStore._fhir_reference_list|37ff829e28ad0f99
+payload|backend/lab_store.py|DemoStore._fhir_resource_with_identifier|f340cc82d0222957
+payload|backend/lab_store.py|DemoStore._fhir_sync_attempt_dict|539afb14d9912688
+payload|backend/lab_store.py|DemoStore._fhir_workflow_record_dict|f8f6a61acbd5f8bd
+payload|backend/lab_store.py|DemoStore._gdt_artifact_status|c7ab7272e0ff2eaa
+payload|backend/lab_store.py|DemoStore._gdt_attachment_filename|b0fb243cb11b87df
+payload|backend/lab_store.py|DemoStore._gdt_attachment_record_dict|d4a6d605c50a410c
+payload|backend/lab_store.py|DemoStore._gdt_birth_date|c94b064aeea74429
+payload|backend/lab_store.py|DemoStore._gdt_event_record_dict|603942b56a05c0d8
+payload|backend/lab_store.py|DemoStore._gdt_message_record_dict|7d14f1549f0c7bd4
+payload|backend/lab_store.py|DemoStore._gdt_message_record_dict_by_id|757577f914e5a867
+payload|backend/lab_store.py|DemoStore._gdt_order_record_dict|82911aa50efcd2bb
+payload|backend/lab_store.py|DemoStore._gdt_order_record_number|2ce4521dba49ad73
+payload|backend/lab_store.py|DemoStore._gdt_patient_context_number|2ad0eabf9a9823ef
+payload|backend/lab_store.py|DemoStore._gdt_patient_snapshot|e4afbe6b1a51372e
+payload|backend/lab_store.py|DemoStore._gdt_result_measurements|8f6bb36523edc0aa
+payload|backend/lab_store.py|DemoStore._order_record_dict|1812c1042abfc9e5
+payload|backend/lab_store.py|DemoStore._order_record_dicts_with_fhir|fd70c8a2706d3d94
+payload|backend/lab_store.py|DemoStore._patient_fhir_birth_date|23c3fed66ab3f7e4
+payload|backend/lab_store.py|DemoStore._patient_fhir_gender|d8a5c97c3b40b145
+payload|backend/lab_store.py|DemoStore._patient_record_dict|1cb2e873b7a7b181
+payload|backend/lab_store.py|DemoStore._patient_record_dicts_with_fhir|3e5ada0749fba714
+payload|backend/lab_store.py|DemoStore._record_gdt_event|ffddd3e1fc278bb7
+payload|backend/lab_store.py|DemoStore._result_record_dict|4ad87223c2d4f7cf
+payload|backend/lab_store.py|DemoStore._synced_patient_reference_for_fhir_order|568426ce6ed9229d
+payload|backend/lab_store.py|DemoStore._validate_fhir_order_payload|9d67e2c430031a17
+payload|backend/lab_store.py|DemoStore._validate_fhir_record_payload|6e728ad82aea7ab0
+payload|backend/lab_store.py|DemoStore._validate_gdt_8402_code|89d4a32ca801e2ac
+payload|backend/lab_store.py|DemoStore._validate_gdt_order_payload|98a270255e5a87f6
+payload|backend/lab_store.py|DemoStore._validate_gdt_patient_number|cd8df43d37f850a2
+payload|backend/lab_store.py|DemoStore._validate_order_payload|b299a5e9fa594583
+payload|backend/lab_store.py|DemoStore._validate_patient_payload|e15baf2c43fef824
+payload|backend/lab_store.py|DemoStore.build_dcm4chee_mwl_payload|e8f1105846848181
+payload|backend/lab_store.py|DemoStore.build_dcm4chee_patient_adt_payload|2bcd772efa20ee62
+payload|backend/lab_store.py|DemoStore.create_fhir_order_record|adf6ed86b59e2f82
+payload|backend/lab_store.py|DemoStore.create_fhir_workflow_record|29350dc4749bc820
+payload|backend/lab_store.py|DemoStore.create_gdt_demo_result|b03471f33a66276e
+payload|backend/lab_store.py|DemoStore.create_gdt_order_record|235398a977c0668e
+payload|backend/lab_store.py|DemoStore.create_order_service_request_fhir_workflow_record|35865d3c94dc3c4e
+payload|backend/lab_store.py|DemoStore.create_patient_fhir_workflow_record|0c729908828ab695
+payload|backend/lab_store.py|DemoStore.dcm4chee_datasets_from_response_body|f5c9c6f07a98cc33
+payload|backend/lab_store.py|DemoStore.dcm4chee_e2e_demo_order_payload|876f66393989f97c
+payload|backend/lab_store.py|DemoStore.dcm4chee_e2e_demo_patient_payload|26ed3d3063ca080b
+payload|backend/lab_store.py|DemoStore.dcm4chee_identifiers_from_dataset|b68b1dc9f9db30eb
+payload|backend/lab_store.py|DemoStore.dcm4chee_identifiers_from_payload|94c43ea5da025314
+payload|backend/lab_store.py|DemoStore.dcm4chee_identifiers_from_response_body|e8c7b2de69cfb57a
+payload|backend/lab_store.py|DemoStore.dcm4chee_mwl_verification_query_from_mapping|2a8e3c09d09e71a2
+payload|backend/lab_store.py|DemoStore.dcm4chee_patient_identifiers|622b8a8f54ee2d07
+payload|backend/lab_store.py|DemoStore.dcm4chee_result_metadata_from_dataset|a81be02c2304807a
+payload|backend/lab_store.py|DemoStore.fhir_identifier_value|1a0e1c9027147951
+payload|backend/lab_store.py|DemoStore.fhir_mapping_for_resource_type|82dfd9af8f3fa760
+payload|backend/lab_store.py|DemoStore.find_dcm4chee_mwl_mapping_for_reconciliation|45f096a47680affd
+payload|backend/lab_store.py|DemoStore.get_dcm4chee_mwl_mapping_for_order|e5e849115c1025c5
+payload|backend/lab_store.py|DemoStore.get_fhir_workflow_record|e6dc20876473aacb
+payload|backend/lab_store.py|DemoStore.get_fhir_workflow_record_by_identifier|36ecf1a91120c61e
+payload|backend/lab_store.py|DemoStore.get_gdt_order_record|e708781de3aa0cfd
+payload|backend/lab_store.py|DemoStore.list_dcm4chee_mwl_mappings_for_patient|e811c4d01dc8be0b
+payload|backend/lab_store.py|DemoStore.list_fhir_resource_mappings|dec92d676c581b88
+payload|backend/lab_store.py|DemoStore.list_fhir_sync_attempts|662e682de937836d
+payload|backend/lab_store.py|DemoStore.list_fhir_workflow_records|eb31f0368114e3d8
+payload|backend/lab_store.py|DemoStore.list_gdt_attachments|010a7fe056477a7b
+payload|backend/lab_store.py|DemoStore.list_gdt_events|f55ded651035aa3d
+payload|backend/lab_store.py|DemoStore.list_gdt_messages|8b458b561906bff8
+payload|backend/lab_store.py|DemoStore.list_gdt_order_records|10b04933fecda2b4
+payload|backend/lab_store.py|DemoStore.list_gdt_orders|4c676aa901ba37e3
+payload|backend/lab_store.py|DemoStore.list_gdt_workbench|b071ec080909da5f
+payload|backend/lab_store.py|DemoStore.mark_fhir_sync_failure|98e40af9e18ab086
+payload|backend/lab_store.py|DemoStore.mark_fhir_sync_success|5d8d7b3a237b7e49
+payload|backend/lab_store.py|DemoStore.mark_fhir_syncing|d6e757d3e3461158
+payload|backend/lab_store.py|DemoStore.ordered_fhir_workflow_records|ca941125dd3dd8c3
+payload|backend/lab_store.py|DemoStore.record_fhir_sync_attempt|4a8795ae65133f36
+payload|backend/lab_store.py|DemoStore.record_gdt_order_export|01261dbf0722bd34
+payload|backend/lab_store.py|DemoStore.record_gdt_result|230f64e16c47930a
+payload|backend/lab_store.py|DemoStore.update_dcm4chee_mwl_mapping_from_attempt|4c85e0384c775119
+payload|backend/lab_store.py|DemoStore.upsert_dcm4chee_mwl_mapping|6142ca8e1e073962
+payload|backend/lab_store.py|DemoStore.validate_lab_server_payload|5f22259aab20c5a2
+payload|backend/lab_store.py|DemoStore.validate_oie_settings_payload|1b0fbdac7cafc402
+payload|backend/lab_store.py|_encode_gdt_text|bd82c8131324df70
+payload|backend/lab_store.py|_gdt_clean_value|fc82c0c110853cc0
+payload|backend/lab_store.py|_hl7_escape|b062236ad3ab289a
+payload|backend/lab_store.py|_hl7_escape_composite|98f1ff43d8ec015b
+payload|backend/lab_store.py|first_gdt_field|d8f033c133a3a034
+payload|backend/lab_store.py|hl7_timestamp|c0a425769b5ad627
+payload|backend/lab_store.py|map_openemr_procedure_order_to_gdt_order|5be8b0934267159a
+payload|backend/lab_store.py|parse_gdt_message|57b74ee66d8c12b4
+payload|backend/lab_store.py|render_gdt_message|d49763cdbf85bae8
+payload|backend/lab_store.py|render_gdt_record|19b9104452bbd723
+sql|backend/lab_store.py|DemoStore._backfill_dcm4chee_mwl_mappings|05b364761476ae43
+sql|backend/lab_store.py|DemoStore._backfill_dcm4chee_mwl_mappings|1dc90affb50e372e
+sql|backend/lab_store.py|DemoStore._backfill_dcm4chee_mwl_mappings|20334d4b8cb3b20f
+sql|backend/lab_store.py|DemoStore._backfill_dcm4chee_mwl_mappings|37bb6d1b29477f3b
+sql|backend/lab_store.py|DemoStore._create_gdt_attachment_record|facd7f4342094d54
+sql|backend/lab_store.py|DemoStore._create_gdt_message_record|d9222b9198d9f98c
+sql|backend/lab_store.py|DemoStore._dcm4chee_mappings_for_patient|a4bf4022144dbc8d
+sql|backend/lab_store.py|DemoStore._dcm4chee_result_refresh_run_id|35b7c524a133a822
+sql|backend/lab_store.py|DemoStore._ensure_column|18fe2016fea59dc6
+sql|backend/lab_store.py|DemoStore._ensure_gdt_patient_context|6c964871b704d543
+sql|backend/lab_store.py|DemoStore._ensure_gdt_patient_context|986d0e133ece2f9d
+sql|backend/lab_store.py|DemoStore._ensure_gdt_patient_context|986d0e133ece2f9d
+sql|backend/lab_store.py|DemoStore._ensure_gdt_patient_context|b55e6cb81b60816e
+sql|backend/lab_store.py|DemoStore._ensure_gdt_patient_context|c879e0d1d206fb83
+sql|backend/lab_store.py|DemoStore._gdt_message_record_dict_by_id|390b52fe4afeec04
+sql|backend/lab_store.py|DemoStore._next_patient_mrn|16c2eda1df53f425
+sql|backend/lab_store.py|DemoStore._next_patient_mrn|1f3a5e927cc19ad1
+sql|backend/lab_store.py|DemoStore._next_patient_mrn|1f8e6b2807b53c0c
+sql|backend/lab_store.py|DemoStore._order_record_dicts_with_fhir|2eba0c09232db7f3
+sql|backend/lab_store.py|DemoStore._order_record_dicts_with_fhir|c75c5dc7db47c43a
+sql|backend/lab_store.py|DemoStore._order_record_dicts_with_fhir|dcc9d741de5ea552
+sql|backend/lab_store.py|DemoStore._patient_record_dicts_with_fhir|24ce6ac4d78ac186
+sql|backend/lab_store.py|DemoStore._patient_record_dicts_with_fhir|9c16d0f2771cd3b6
+sql|backend/lab_store.py|DemoStore._patient_record_dicts_with_fhir|cb64f528c5edae1d
+sql|backend/lab_store.py|DemoStore._patient_record_dicts_with_fhir|f3df63b8a7ddb3ee
+sql|backend/lab_store.py|DemoStore._record_gdt_event|21e98d72dc1d3dc2
+sql|backend/lab_store.py|DemoStore._seed_lab_servers|304a360f909cdbd1
+sql|backend/lab_store.py|DemoStore._seed_lab_servers|5b6a8cd3e7d9b1bf
+sql|backend/lab_store.py|DemoStore._seed_lab_servers|e61f4d878efc2bd6
+sql|backend/lab_store.py|DemoStore._seed_oie_settings_profile|43d9ec86e4ade60a
+sql|backend/lab_store.py|DemoStore._seed_patient_mrn_sequence|963b83be4bf3a994
+sql|backend/lab_store.py|DemoStore._seed_patient_mrn_sequence|d4ba64f23e8d9e40
+sql|backend/lab_store.py|DemoStore.begin_dcm4chee_result_refresh|18a134f2bd4f6662
+sql|backend/lab_store.py|DemoStore.begin_dcm4chee_result_refresh|35b7c524a133a822
+sql|backend/lab_store.py|DemoStore.begin_dcm4chee_result_refresh|8445d2e07034a7f1
+sql|backend/lab_store.py|DemoStore.begin_dcm4chee_result_refresh|91f2a12d90673ec4
+sql|backend/lab_store.py|DemoStore.begin_dcm4chee_result_refresh|a7adaa94a95f7750
+sql|backend/lab_store.py|DemoStore.begin_dcm4chee_result_refresh|b81f881db0a1c0e4
+sql|backend/lab_store.py|DemoStore.complete_dcm4chee_result_refresh|01b6544f89b6cece
+sql|backend/lab_store.py|DemoStore.complete_dcm4chee_result_refresh|25b8ccb7c1fdff1f
+sql|backend/lab_store.py|DemoStore.complete_dcm4chee_result_refresh|8445d2e07034a7f1
+sql|backend/lab_store.py|DemoStore.create_dcm4chee_mwl_attempt|0d22c7b54f21328e
+sql|backend/lab_store.py|DemoStore.create_dcm4chee_mwl_profile_failure_attempt|0d22c7b54f21328e
+sql|backend/lab_store.py|DemoStore.create_dcm4chee_mwl_verification_attempt|0d22c7b54f21328e
+sql|backend/lab_store.py|DemoStore.create_dcm4chee_order_record|93a348a8d6f63edb
+sql|backend/lab_store.py|DemoStore.create_dcm4chee_patient_sync_attempt|c0ae807f8398a190
+sql|backend/lab_store.py|DemoStore.create_fhir_order_record|a515035347a0d490
+sql|backend/lab_store.py|DemoStore.create_fhir_order_record|a92b567451d60111
+sql|backend/lab_store.py|DemoStore.create_fhir_order_record|bf64455eacd812cb
+sql|backend/lab_store.py|DemoStore.create_fhir_workflow_record|13fa5938d8f76037
+sql|backend/lab_store.py|DemoStore.create_fhir_workflow_record|4754844ed31e6cab
+sql|backend/lab_store.py|DemoStore.create_fhir_workflow_record|4f68b8bc7706e76b
+sql|backend/lab_store.py|DemoStore.create_fhir_workflow_record|fcf8529f923ad0ce
+sql|backend/lab_store.py|DemoStore.create_gdt_order_record|3bbe5683931a482b
+sql|backend/lab_store.py|DemoStore.create_gdt_order_record|901ff954f797a08a
+sql|backend/lab_store.py|DemoStore.create_gdt_order_record|a515035347a0d490
+sql|backend/lab_store.py|DemoStore.create_lab_server|b5a32dba55b435fe
+sql|backend/lab_store.py|DemoStore.create_order_record|a515035347a0d490
+sql|backend/lab_store.py|DemoStore.create_order_record|a92b567451d60111
+sql|backend/lab_store.py|DemoStore.create_order_record|bf64455eacd812cb
+sql|backend/lab_store.py|DemoStore.create_patient_record|1f3a5e927cc19ad1
+sql|backend/lab_store.py|DemoStore.create_patient_record|408f664ee6998eb4
+sql|backend/lab_store.py|DemoStore.create_patient_record|4299b3f1db7e710b
+sql|backend/lab_store.py|DemoStore.find_dcm4chee_mwl_mapping_for_reconciliation|144c12b079ab7946
+sql|backend/lab_store.py|DemoStore.find_dcm4chee_mwl_mapping_for_reconciliation|373f78b30ca40a86
+sql|backend/lab_store.py|DemoStore.find_dcm4chee_mwl_mapping_for_reconciliation|493dbc0d28a2d218
+sql|backend/lab_store.py|DemoStore.get_dcm4chee_mwl_attempt|00d8d226c56431c2
+sql|backend/lab_store.py|DemoStore.get_dcm4chee_mwl_mapping_for_order|d72bb2e29c1ef10c
+sql|backend/lab_store.py|DemoStore.get_dcm4chee_patient_sync|9ee855b8849fa02d
+sql|backend/lab_store.py|DemoStore.get_dcm4chee_patient_sync_attempt|53bbd464507f6a6f
+sql|backend/lab_store.py|DemoStore.get_dcm4chee_patient_sync_for_patient|7c2ebbe2381f66c7
+sql|backend/lab_store.py|DemoStore.get_dcm4chee_patient_sync_for_patient|ab38db2457f6fab1
+sql|backend/lab_store.py|DemoStore.get_dcm4chee_result_record|ff50ccfa36ca19f6
+sql|backend/lab_store.py|DemoStore.get_fhir_workflow_record|31e72231b9807924
+sql|backend/lab_store.py|DemoStore.get_fhir_workflow_record_by_identifier|fcf8529f923ad0ce
+sql|backend/lab_store.py|DemoStore.get_gdt_order_record|2fd9d9862aada73b
+sql|backend/lab_store.py|DemoStore.get_lab_operation|fe285d04e7f0a846
+sql|backend/lab_store.py|DemoStore.get_lab_server|fd25352e12d6dfa9
+sql|backend/lab_store.py|DemoStore.get_order_record|4a46887399c3a7d6
+sql|backend/lab_store.py|DemoStore.get_patient_record|a515035347a0d490
+sql|backend/lab_store.py|DemoStore.initialize|f70d45d7b2c60b88
+sql|backend/lab_store.py|DemoStore.latest_simulated_dcm4chee_ap_return_generation|af4432514f1ea0e7
+sql|backend/lab_store.py|DemoStore.list_dcm4chee_mwl_attempts|306766fa1454c3bd
+sql|backend/lab_store.py|DemoStore.list_dcm4chee_mwl_attempts|a555bf485292ecc1
+sql|backend/lab_store.py|DemoStore.list_dcm4chee_patient_sync_attempts|4aea353e6ebb652c
+sql|backend/lab_store.py|DemoStore.list_dcm4chee_patient_sync_attempts|5eb867199baf8d5b
+sql|backend/lab_store.py|DemoStore.list_dcm4chee_results_for_patient|9b5c89ac7a35565a
+sql|backend/lab_store.py|DemoStore.list_dcm4chee_results_for_patient|b81f881db0a1c0e4
+sql|backend/lab_store.py|DemoStore.list_dcm4chee_results_for_patient|c36961db3df90cc5
+sql|backend/lab_store.py|DemoStore.list_fhir_sync_attempts|68c599b0542708ba
+sql|backend/lab_store.py|DemoStore.list_fhir_workflow_records|097a712ab69afbd5
+sql|backend/lab_store.py|DemoStore.list_fhir_workflow_records|f8f478df6aa333b5
+sql|backend/lab_store.py|DemoStore.list_gdt_attachments|79c2f6f6adccc4f1
+sql|backend/lab_store.py|DemoStore.list_gdt_attachments|a999e3793a5522c7
+sql|backend/lab_store.py|DemoStore.list_gdt_events|7189fc32295e68c1
+sql|backend/lab_store.py|DemoStore.list_gdt_events|879c3ad5baf95075
+sql|backend/lab_store.py|DemoStore.list_gdt_events|cccca5ea5940dd09
+sql|backend/lab_store.py|DemoStore.list_gdt_messages|c8161129c1dfa781
+sql|backend/lab_store.py|DemoStore.list_gdt_messages|ce961994335b44b1
+sql|backend/lab_store.py|DemoStore.list_gdt_order_records|a3307a545d52c497
+sql|backend/lab_store.py|DemoStore.list_lab_operations|00b7e82fa7b2eb1f
+sql|backend/lab_store.py|DemoStore.list_lab_operations|fac48089b7d91743
+sql|backend/lab_store.py|DemoStore.list_lab_servers|0a0d9f402cdaf138
+sql|backend/lab_store.py|DemoStore.list_oie_results|1e0ed74d835378fa
+sql|backend/lab_store.py|DemoStore.list_order_records|5c6bf2510dcddeb3
+sql|backend/lab_store.py|DemoStore.list_order_records|f65bd141cd898518
+sql|backend/lab_store.py|DemoStore.list_patient_records|3a7455ff403319b6
+sql|backend/lab_store.py|DemoStore.list_patient_records|af0f1bd9c1994a6d
+sql|backend/lab_store.py|DemoStore.mark_fhir_sync_failure|74dd6d18c9bf6e6a
+sql|backend/lab_store.py|DemoStore.mark_fhir_sync_failure|82b24745ab95db97
+sql|backend/lab_store.py|DemoStore.mark_fhir_sync_success|914039e0394ae7e6
+sql|backend/lab_store.py|DemoStore.mark_fhir_sync_success|a1ae6ad1f1484701
+sql|backend/lab_store.py|DemoStore.mark_fhir_syncing|82b24745ab95db97
+sql|backend/lab_store.py|DemoStore.mark_fhir_syncing|99b62bed568804ac
+sql|backend/lab_store.py|DemoStore.record_dcm4chee_result_refresh_diagnostic|2bfb27af8d21e13c
+sql|backend/lab_store.py|DemoStore.record_dcm4chee_result_refresh_diagnostic|a363217f6541c871
+sql|backend/lab_store.py|DemoStore.record_dcm4chee_result_refresh_diagnostic|b88b7ed00b93afc2
+sql|backend/lab_store.py|DemoStore.record_fhir_sync_attempt|79c9522fc06a9478
+sql|backend/lab_store.py|DemoStore.record_fhir_sync_attempt|82b24745ab95db97
+sql|backend/lab_store.py|DemoStore.record_fhir_sync_attempt|e40bfe37a85c7588
+sql|backend/lab_store.py|DemoStore.record_gdt_order_export|2fd9d9862aada73b
+sql|backend/lab_store.py|DemoStore.record_gdt_order_export|f702ed89b001b8c5
+sql|backend/lab_store.py|DemoStore.record_gdt_result|32661bc7a432b1e1
+sql|backend/lab_store.py|DemoStore.record_gdt_result|c38b7cd7d2d79ce9
+sql|backend/lab_store.py|DemoStore.record_gdt_result|d4c6c3df70451d3e
+sql|backend/lab_store.py|DemoStore.record_lab_operation|8149147ebb4e6a1d
+sql|backend/lab_store.py|DemoStore.record_lab_operation|c660ba4834d5efb8
+sql|backend/lab_store.py|DemoStore.record_oie_result|2b7501c0d8fa6d54
+sql|backend/lab_store.py|DemoStore.record_oie_result|6a3222ceb0d8f206
+sql|backend/lab_store.py|DemoStore.record_oie_result|be7b48c3a14a0e78
+sql|backend/lab_store.py|DemoStore.record_oie_result|ca7bc13340e41203
+sql|backend/lab_store.py|DemoStore.record_oie_result|e5d42b92727561c7
+sql|backend/lab_store.py|DemoStore.record_oie_result_error|58ae808f7d2d4c70
+sql|backend/lab_store.py|DemoStore.record_oie_result_error|ca7bc13340e41203
+sql|backend/lab_store.py|DemoStore.update_dcm4chee_mwl_attempt_result|67b8e8482725d2f7
+sql|backend/lab_store.py|DemoStore.update_dcm4chee_mwl_attempt_result|c083742acd59b506
+sql|backend/lab_store.py|DemoStore.update_dcm4chee_mwl_mapping_from_attempt|b98bd7b6e85c7cf0
+sql|backend/lab_store.py|DemoStore.update_dcm4chee_mwl_verification_result|534e9a5116d341b6
+sql|backend/lab_store.py|DemoStore.update_dcm4chee_patient_sync_attempt_result|4b89849107b05150
+sql|backend/lab_store.py|DemoStore.update_dcm4chee_patient_sync_attempt_result|53bbd464507f6a6f
+sql|backend/lab_store.py|DemoStore.update_dcm4chee_patient_sync_from_attempt|5f5f71c78f80e36b
+sql|backend/lab_store.py|DemoStore.update_lab_server|c3f4ac591a5d195b
+sql|backend/lab_store.py|DemoStore.update_lab_server|c660ba4834d5efb8
+sql|backend/lab_store.py|DemoStore.update_lab_server_health|703cb1241020f58b
+sql|backend/lab_store.py|DemoStore.update_lab_server_health|c660ba4834d5efb8
+sql|backend/lab_store.py|DemoStore.update_order_send_result|0cb7699e22fc3c96
+sql|backend/lab_store.py|DemoStore.update_order_send_result|96a2fd3caf556046
+sql|backend/lab_store.py|DemoStore.upsert_dcm4chee_mwl_mapping|8fcb9c01c07d4082
+sql|backend/lab_store.py|DemoStore.upsert_dcm4chee_mwl_mapping|b339f790aa335032
+sql|backend/lab_store.py|DemoStore.upsert_dcm4chee_mwl_mapping|d72bb2e29c1ef10c
+sql|backend/lab_store.py|DemoStore.upsert_dcm4chee_patient_sync|70efc4b98411b2a9
+sql|backend/lab_store.py|DemoStore.upsert_dcm4chee_patient_sync|856395276d6abc57
+sql|backend/lab_store.py|DemoStore.upsert_dcm4chee_patient_sync|f56145faff433e13
+sql|backend/lab_store.py|DemoStore.upsert_dcm4chee_result_record|28a9bf2326351dd5
+sql|backend/lab_store.py|DemoStore.upsert_dcm4chee_result_record|2bfb27af8d21e13c
+sql|backend/lab_store.py|DemoStore.upsert_dcm4chee_result_record|bf642fc0c2bd214b
+sql|backend/lab_store.py|OpenEMRProcedureOrderSource._fetch_rows_with_connection|6f4f89b1e3f23e20
+transport|backend/dashboard_services.py|DockerSocketHttpConnection|a7b166a5ae8204a9
+transport|backend/dashboard_services.py|DockerSocketHttpConnection.connect|31bc0f15a6bfcadb
+transport|backend/dashboard_services.py|collect_dashboard_resource_snapshot|4507029a254ccbcf
+transport|backend/dashboard_services.py|collect_dashboard_resource_snapshot_from_cli|1b42e5af8d10ee3f
+transport|backend/dashboard_services.py|collect_dashboard_resource_snapshot_from_socket|50701cdf6e9c93b5
+transport|backend/lab_operations.py|DockerComposeLabOperationAdapter|9dddf280cbf28f37
+transport|backend/lab_operations.py|DockerComposeLabOperationAdapter.inspect|ab58bf8d93bd603a
+transport|backend/lab_operations.py|DockerComposeLabOperationAdapter.run|42d780eeb000c326
+transport|backend/lab_operations.py|DockerSocketHttpConnection|e0c11fde0161025e
+transport|backend/lab_operations.py|DockerSocketHttpConnection.connect|31bc0f15a6bfcadb
+transport|backend/lab_operations.py|DockerSocketLabOperationAdapter|9deb614a904857f4
+transport|backend/lab_operations.py|DockerSocketLabOperationAdapter.containers_for_service|8c40d23041668fa8
+transport|backend/lab_store.py|DemoStore|ecf711894cd2bf62
+transport|backend/lab_store.py|DemoStore.validate_oie_settings_payload|1b0fbdac7cafc402
+transport|backend/lab_store.py|urllib_quote_safe|8a0318c50c4a8c59
+workflow|backend/dashboard_services.py|collect_dashboard_resource_snapshot|4507029a254ccbcf
+workflow|backend/dashboard_services.py|collect_dashboard_resource_snapshot_from_cli|1b42e5af8d10ee3f
+workflow|backend/dashboard_services.py|collect_dashboard_resource_snapshot_from_socket|50701cdf6e9c93b5
+workflow|backend/dashboard_services.py|collect_docker_socket_container_stats|951ca6bf0005af7f
+workflow|backend/lab_store.py|DemoStore.begin_dcm4chee_result_refresh|476b5a85591e9cb9
+workflow|backend/lab_store.py|DemoStore.complete_dcm4chee_result_refresh|76ff23f2f4b68ecd
+workflow|backend/lab_store.py|DemoStore.create_dcm4chee_e2e_demo_fixture|57ca7ee763529e0c
+workflow|backend/lab_store.py|DemoStore.create_dcm4chee_mwl_attempt|2736ed1d7962bfd6
+workflow|backend/lab_store.py|DemoStore.create_dcm4chee_mwl_profile_failure_attempt|1cb53475a1aed08a
+workflow|backend/lab_store.py|DemoStore.create_dcm4chee_mwl_verification_attempt|047bc995ebd933d7
+workflow|backend/lab_store.py|DemoStore.create_dcm4chee_order_record|87db7151bf669852
+workflow|backend/lab_store.py|DemoStore.create_dcm4chee_patient_sync_attempt|a3c9fb17cf5414f5
+workflow|backend/lab_store.py|DemoStore.create_fhir_order_record|adf6ed86b59e2f82
+workflow|backend/lab_store.py|DemoStore.create_fhir_workflow_record|29350dc4749bc820
+workflow|backend/lab_store.py|DemoStore.create_gdt_demo_result|b03471f33a66276e
+workflow|backend/lab_store.py|DemoStore.create_gdt_order_record|235398a977c0668e
+workflow|backend/lab_store.py|DemoStore.create_lab_server|94a40902316c5890
+workflow|backend/lab_store.py|DemoStore.create_order_record|e5fe92bfa9b8f638
+workflow|backend/lab_store.py|DemoStore.create_order_service_request_fhir_workflow_record|35865d3c94dc3c4e
+workflow|backend/lab_store.py|DemoStore.create_patient_fhir_workflow_record|0c729908828ab695
+workflow|backend/lab_store.py|DemoStore.create_patient_record|6fed9b7c653e62b5
+workflow|backend/lab_store.py|DemoStore.create_simulated_dcm4chee_ap_return|8c5d238b410f5f94
+workflow|backend/lab_store.py|DemoStore.reconcile_dcm4chee_result_metadata|ac73ab56aeb48e28
+workflow|backend/lab_store.py|DemoStore.record_dcm4chee_result_refresh_diagnostic|268bc66e8b0bcd35
+workflow|backend/lab_store.py|DemoStore.record_fhir_sync_attempt|4a8795ae65133f36
+workflow|backend/lab_store.py|DemoStore.record_gdt_order_export|01261dbf0722bd34
+workflow|backend/lab_store.py|DemoStore.record_gdt_result|230f64e16c47930a
+workflow|backend/lab_store.py|DemoStore.record_lab_operation|b4ecdd51f2e86645
+workflow|backend/lab_store.py|DemoStore.record_oie_result|063651ad4d80b785
+workflow|backend/lab_store.py|DemoStore.record_oie_result_error|d2f80ee35c9fdccb
+workflow|backend/lab_store.py|DemoStore.update_dcm4chee_mwl_attempt_result|2ab005617ce32f12
+workflow|backend/lab_store.py|DemoStore.update_dcm4chee_mwl_mapping_from_attempt|4c85e0384c775119
+workflow|backend/lab_store.py|DemoStore.update_dcm4chee_mwl_verification_result|23898a9a7289b78e
+workflow|backend/lab_store.py|DemoStore.update_dcm4chee_patient_sync_attempt_result|986d960bba1a57de
+workflow|backend/lab_store.py|DemoStore.update_dcm4chee_patient_sync_from_attempt|ca1cce7fed9d147c
+workflow|backend/lab_store.py|DemoStore.update_lab_server|3ad16dc8e6271da1
+workflow|backend/lab_store.py|DemoStore.update_lab_server_health|618b49a74c338250
+workflow|backend/lab_store.py|DemoStore.update_oie_settings_profile|b7ad761adf8293b4
+workflow|backend/lab_store.py|DemoStore.update_order_send_result|5ee96774e60bd2df
+workflow|backend/lab_store.py|DemoStore.upsert_dcm4chee_mwl_mapping|6142ca8e1e073962
+workflow|backend/lab_store.py|DemoStore.upsert_dcm4chee_patient_sync|7b60ed52782c22a6
+workflow|backend/lab_store.py|DemoStore.upsert_dcm4chee_result_record|4b4bb24edd33aaaf
+workflow|backend/lab_store.py|OpenEMRProcedureOrderSource.verify_order_query|784bcec0c10aa959
+""".strip().splitlines()
+)
+
+FRONTEND_FUNCTION_BASELINE: frozenset[str] = frozenset("""
+ackPreviewText actionButton appendMedplumLiveRelatedRow appendMedplumRelatedRow
+applyDashboardPayload buildFhirOrderPreviewPayload buildGdtOrderPreviewPayload
+buildOrderPreviewPayload buildPatientDicomPreviewPayload buildPatientFhirPreviewPayload
+buildPatientGdtPreviewPayload buildPatientPreviewPayload byId childActionButton clearMedplumPreview
+compactTable copyTextFromElement createElement createGdtDemoResult createGdtPatientFromOrderFlow
+createOrderRecord createPatientRecord currentMedplumDiagnosticReportKey currentOrderMode
+dashboardServiceToggle dcm4cheeActionsForResult dcm4cheeConsoleOrders dcm4cheeConsolePatients
+dcm4cheeCopyButton dcm4cheeDetailBlock dcm4cheeDisplayStatus dcm4cheeFirstArtifact
+dcm4cheeFirstValue dcm4cheeNestedTable dcm4cheeOpenButton dcm4cheeOrderActionButtons
+dcm4cheeOrderLabel dcm4cheeOrderPatient dcm4cheeOrderPreviewPayload dcm4cheeOrderResultRecords
+dcm4cheeOrderStatus dcm4cheeOrderVerificationStatus dcm4cheePatientLabel dcm4cheePatientSection
+dcm4cheeResultKey dcm4cheeResultStatusClass dcm4cheeWorkflowStatusClass dcm4cheeWorkflowSummary
+displayGdtOrderNumber ensureDcm4cheeSelection ensureMedplumDiagnosticReports
+fetchMedplumDiagnosticReportsForCurrentSelection fhirBirthDate fhirConcept fhirGender fhirOrderField
+fhirOrderPayload fhirReferenceList fhirSyncStatusClass filteredMedplumPatients gdtActionButton
+gdtPatientFormPayload gdtPatientPreviewPayload gdtPatientSection gdtTaipeiTimestamp
+groupDcm4cheeResultsForBrowser hl7Escape hl7EscapeComposite hl7Timestamp importGdtInboxFile
+loadDcm4cheeAttemptHistory loadMedplumLiveReferencePreview loadMedplumLiveReportPreview
+loadMedplumPreview localDatetimeValue measurementSummary medplumDiagnosticReportKeyMatchesCurrent
+medplumLiveReportLabel medplumLiveReportsForPatient medplumOrderRecordsForPatient
+medplumPatientInventoryRecord medplumPatientLabel medplumPatientMrn medplumPatientSection
+medplumPreviewButton medplumRecordMatchesPatient medplumRecordReference medplumRecordReferences
+medplumRecordsForPatient medplumReportActionButton medplumResourceRollupTable
+medplumResultRecordsForPatient medplumSourceLabel medplumTimestamp medplumWorkflowLabel
+oieNestedTable oiePatientSection openGdtOrderFlow orderAccountNumber orderFormPayload orderListKey
+orderModeLabel orderPatientModeLabel orderPatientProtocolForMode orderPatientRecordsForMode
+orderRecordMode orderStateLabel orderVisitId orderVisitNumber pad patientDemoPresetForMode
+patientFormPayload patientPreviewMrn patientStateLabel refreshDashboard refreshDcm4cheeConsole
+refreshGdtBridgeConfig refreshGdtConsole refreshMedplumInventory refreshOieInventory
+refreshOieListenerStatus refreshOrderPreview refreshOrderWorkspace refreshOrders
+refreshPatientDcm4cheeResults refreshPatientPreview refreshPatients renderDashboardChild
+renderDcm4cheeAttemptHistory renderDcm4cheeConsole renderDcm4cheeExpandedOrders
+renderDcm4cheeExpandedResults renderDcm4cheeInstanceTable renderDcm4cheeOrderActions
+renderDcm4cheePatientList renderDcm4cheePreview renderDcm4cheeProfileSummary
+renderDcm4cheeResultGroup renderDcm4cheeResultTable renderDcm4cheeResultsBrowser
+renderDcm4cheeSelectedOrder renderDcm4cheeSelectedPatient renderDcm4cheeSelectors
+renderDcm4cheeSeriesDetails renderDcm4cheeStudyDetails renderDcm4cheeWorkflowStrip renderEvents
+renderGdtArtifacts renderGdtBridgeConfig renderGdtConsole renderGdtDetailSummary renderGdtInbox
+renderGdtMessage renderGdtPatientOrders renderGdtPatientResults renderGdtPatients renderGdtRecord
+renderGdtSelectedPatient renderGdtWatcherStatus renderMedplumConsole
+renderMedplumDiagnosticReportRollup renderMedplumDiagnosticReportSelect
+renderMedplumDiagnosticReportTable renderMedplumPatientList renderMedplumPatientSummary
+renderMedplumPreviewSummary renderMedplumRelatedResources renderMedplumReportGroup
+renderMedplumReportSummaryBlocks renderMedplumResourceSelect renderOieInventory
+renderOieListenerStatus renderOieOrders renderOiePreviewSummary renderOieResults
+renderOieTransmission renderOieUnmatchedResults renderOrderPatientOptions renderOrderRecordList
+renderOrderSummary renderOrderValidation renderPatientDcm4cheeResults renderPatientRecordList
+renderPatientSummaryFromPayload renderPatientSummaryFromRecord renderPatientValidation
+renderResources renderSelectedOiePatient renderServices renderSummary replaceDashboardService
+requestJson requestJsonAllowBusinessFailure resetMedplumDiagnosticReportState
+retryButtonForMedplumRecord retryDcm4cheeOrder retryMedplumRecord retryPatientFhirSync rowCell
+runAllChecks runChildServiceAction runServiceAction saveGdtBridgeConfig selectDcm4cheeOrder
+selectDcm4cheePatient selectGdtOrder selectGdtPatientForPreview selectGdtResult selectMedplumPatient
+selectOieOrder selectOieResult selectOrderRecord selectedDcm4cheeOrder selectedDcm4cheePatient
+selectedGdtPatient selectedMedplumDiagnosticReport selectedMedplumPatient
+selectedMedplumPatientReference selectedMedplumServiceRequest selectedMedplumServiceRequestReference
+selectedOiePatient selectedOrderPatient selectedOrderPatientReference selectedOrderPayloadPreview
+sendDcm4cheeOrder sendOieOrder setActiveView setFhirOrderForm setOrderForm setPatientForm setStatus
+simulateDcm4cheeApReturn splitFhirList startGdtWatcher startOieListener statusClass stopGdtWatcher
+stopOieListener summarizeDcm4cheeResultGroup taipeiTimestamp updateOrderModeFields
+updatePatientModeFields validateOrderPayload validatePatientPayload verifyDcm4cheeOrder
+writeGdtOrder
+""".split())
+
+FRONTEND_SELECTOR_FAMILY_BASELINE: frozenset[str] = frozenset("""
+#fhir-token
+#gdt-bridge-config-summary
+#gdt-payload-preview
+#gdt-watcher-summary
+.action-menu
+.action-row
+.actions-cell
+.advanced-card
+.advanced-tools
+.app-shell
+.app-sidebar
+.app-view
+.artifact-reference
+.artifact-reference-list
+.attempt-list
+.back-button
+.brand-mark
+.button
+.button-row
+.card
+.card-title
+.category-grid
+.category-tile
+.checkbox-row
+.code-area
+.compact-actions
+.compact-output
+.danger
+.dashboard-cell-subtext
+.dashboard-child-identity
+.dashboard-child-row
+.dashboard-main-grid
+.dashboard-primary-identity
+.dashboard-resource-panel
+.dashboard-search
+.dashboard-service-toggle
+.dashboard-services-panel
+.dcm4chee-browser-metadata
+.dcm4chee-browser-row
+.dcm4chee-console-grid
+.dcm4chee-diagnostic-check
+.dcm4chee-diagnostic-checks
+.dcm4chee-empty-result
+.dcm4chee-nested-table
+.dcm4chee-nested-table-wrap
+.dcm4chee-order-actions
+.dcm4chee-patient-detail-row
+.dcm4chee-patient-panel
+.dcm4chee-patient-preview
+.dcm4chee-patient-preview-heading
+.dcm4chee-patient-rollup-content
+.dcm4chee-patient-section
+.dcm4chee-patient-section-heading
+.dcm4chee-patient-sync-card
+.dcm4chee-patient-table
+.dcm4chee-patient-table-wrap
+.dcm4chee-patient-toggle
+.dcm4chee-preview-heading
+.dcm4chee-preview-output
+.dcm4chee-profile-panel
+.dcm4chee-result-actions
+.dcm4chee-result-browser
+.dcm4chee-result-browser-viewport
+.dcm4chee-result-group
+.dcm4chee-result-table-wrap
+.dcm4chee-row-kind
+.dcm4chee-selected-order-bar
+.dcm4chee-send-selection-grid
+.dcm4chee-series-row
+.dcm4chee-series-table-wrap
+.dcm4chee-study-table-wrap
+.dcm4chee-workflow-label
+.dcm4chee-workflow-panel
+.dcm4chee-workflow-step
+.dcm4chee-workflow-strip
+.dcm4chee-workspace
+.detail-block
+.detail-list
+.detail-workbench
+.direction-banner
+.eyebrow
+.feature-header
+.fhir-selection-toolbar
+.field-grid
+.form-grid
+.four-columns
+.full-width
+.full-width-field
+.gdt-advanced-tools
+.gdt-bridge-actions
+.gdt-bridge-config-grid
+.gdt-config-details
+.gdt-console
+.gdt-console-grid
+.gdt-nested-table
+.gdt-patient-detail-row
+.gdt-patient-rollup-content
+.gdt-patient-section
+.gdt-patient-section-heading
+.gdt-patient-table
+.gdt-patient-table-wrap
+.gdt-patient-toggle
+.gdt-primary-actions
+.gdt-selected-patient-panel
+.gdt-selected-patient-raw
+.gdt-shared-folder-panel
+.gdt-watcher-bar
+.gdt-workflow-strip
+.hint
+.inline-check
+.is-running
+.lab-card-facts
+.lab-console
+.lab-console-header
+.lab-empty-state
+.lab-enabled-row
+.lab-operation-output
+.lab-panel
+.lab-server-card
+.lab-server-grid
+.lab-summary-label
+.lab-summary-strip
+.lab-summary-tile
+.lab-summary-value
+.lab-workbench
+.level
+.log-entry
+.log-output
+.log-panel
+.loopback-diagram
+.medplum-console-grid
+.medplum-context-column
+.medplum-diagnostic-report-group
+.medplum-diagnostic-report-rollup
+.medplum-diagnostic-report-section
+.medplum-diagnostic-report-table
+.medplum-diagnostic-report-table-wrap
+.medplum-json-console
+.medplum-json-preview
+.medplum-nested-table
+.medplum-nested-table-wrap
+.medplum-patient-detail-row
+.medplum-patient-panel
+.medplum-patient-rollup-content
+.medplum-patient-section
+.medplum-patient-section-heading
+.medplum-patient-table
+.medplum-patient-table-wrap
+.medplum-patient-toggle
+.medplum-related-group
+.medplum-related-list
+.medplum-related-row
+.medplum-related-section
+.medplum-selected-patient-panel
+.medplum-workflow-controls
+.medplum-workflow-panel
+.medplum-workspace
+.menu-panel
+.mode-selector
+.muted
+.nav-icon
+.oie-connection-grid
+.oie-console-grid
+.oie-inventory-grid
+.oie-nested-table
+.oie-patient-detail-row
+.oie-patient-panel
+.oie-patient-rollup-content
+.oie-patient-section
+.oie-patient-section-heading
+.oie-patient-table
+.oie-patient-table-wrap
+.oie-patient-toggle
+.oie-preview-heading
+.oie-preview-output
+.oie-selected-order-bar
+.oie-send-connection-grid
+.oie-subsection-heading
+.oie-transmission-panel
+.operation-buttons
+.operation-error
+.operation-history
+.operation-history-item
+.operation-meta
+.operation-progress
+.order-local-table-wrap
+.order-workspace
+.orders-workbench
+.output-panel
+.page-header
+.page-shell
+.panel-head
+.patient-grid
+.patient-local-table-wrap
+.payload-grid
+.primary
+.progress
+.queue-actions
+.raw-details
+.recently-updated
+.record-detail
+.resource-item
+.resource-usage-list
+.secondary-action
+.section-heading
+.section-index
+.selected
+.selected-row
+.sidebar-brand
+.sidebar-link
+.sidebar-nav
+.small-button
+.small-panel
+.sop-card
+.sop-copy
+.status
+.status-pill
+.step-label
+.subtitle
+.table-wrap
+.tall-panel
+.three-columns
+.timeline-item
+.timeline-list
+.timestamp-cell
+.timestamp-date
+.timestamp-time
+.token-detail-list
+.token-inspector
+.token-toolbar
+.topbar
+.two-column
+.two-columns-grid
+.upload-grid
+.view-heading
+.warning-box
+.workbench-detail-grid
+.workbench-filter-grid
+.workbench-header
+.workbench-layout
+.workbench-table-wrap
+.workflow-strip
+""".split())
+
+CONCRETE_REPOSITORY_IMPORT_BASELINE: frozenset[tuple[str, str]] = frozenset(
+    {
+        (
+            "backend/runtime/gdt_bridge_watcher.py",
+            "backend.repositories.gdt_bridge_health",
+        ),
+        (
+            "backend/services/lab_workflow.py",
+            "backend.repositories.gdt_bridge_health",
+        ),
+    }
+)
