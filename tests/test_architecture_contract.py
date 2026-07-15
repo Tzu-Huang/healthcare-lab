@@ -98,7 +98,7 @@ FRONTEND_FUNCTION_PATTERN = re.compile(
     r"class\s+(?P<class_name>[A-Za-z_$][\w$]*)\b)",
     re.MULTILINE,
 )
-CSS_RULE_PATTERN = re.compile(r"(?:^|})\s*([^@{}][^{}]*)\{", re.MULTILINE)
+CSS_RULE_PATTERN = re.compile(r"(?:^|[{}])\s*([^@{}][^{}]*)\{", re.MULTILINE)
 CSS_FAMILY_PATTERN = re.compile(r"[.#][A-Za-z_-][\w-]*")
 FRONTEND_MODULE_PREFIX_NAME = "<module-prefix>"
 
@@ -983,6 +983,20 @@ class ArchitectureContractTest(unittest.TestCase):
         self.assertEqual("presentation", selector_violations[0].category)
         self.assertRegex(
             str(selector_violations[0]),
+            r"frontend/static/styles\.css:\d+:",
+        )
+
+        nested_selector_violations = frontend_selector_violations(
+            "frontend/static/styles.css",
+            "@media (max-width: 1px) { .brand-new-family { display: block; } }\n",
+            frozenset(),
+        )
+        self.assertEqual(
+            [".brand-new-family"],
+            [item.detail.split("'")[1] for item in nested_selector_violations],
+        )
+        self.assertRegex(
+            str(nested_selector_violations[0]),
             r"frontend/static/styles\.css:\d+:",
         )
 
