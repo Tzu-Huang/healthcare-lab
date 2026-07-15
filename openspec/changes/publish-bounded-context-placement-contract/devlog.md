@@ -73,3 +73,16 @@ No runtime implementation, endpoint, persistence schema, protocol payload, or fr
 - Resolved CSS diagnostic accuracy by retaining multiline comment newline counts during selector discovery.
 - Added both requested counterexamples; focused architecture verification passes 26 tests.
 - Full regression verification remains assigned to the next `/dev-test` run.
+
+### Round 5 - 2026-07-15
+
+- Review: `review/2026-07-15_codex-review-r5.md`
+- Verdict: changes requested.
+- Finding: one P1 frontend inventory collision remains. A prepended same-named function expression is overwritten in the definition dictionary by the reviewed later declaration, yielding no placement violation despite valid changed runtime behavior.
+- Post-fix verification remains green at 26 architecture and 225 full-suite tests, but the targeted duplicate-name counterexample returns no violations.
+
+### Round 5 Resolution - 2026-07-15
+
+- Preserved every ordered frontend definition occurrence for fingerprint checks and explicitly rejected duplicate top-level names.
+- Added changed-runtime-binding and exact-copy duplicate counterexamples; focused architecture verification passes 27 tests.
+- Full regression verification remains assigned to the next `/dev-test` run.
