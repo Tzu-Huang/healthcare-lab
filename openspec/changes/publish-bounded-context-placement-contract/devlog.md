@@ -113,3 +113,16 @@ No runtime implementation, endpoint, persistence schema, protocol payload, or fr
 - Combined direct external import discovery with the path-aware backend relative import resolver.
 - Added flat-package `..api`, `..repositories`, and repository-child fixtures; focused architecture verification passes 30 tests.
 - Full regression verification remains assigned to the next `/dev-test` run.
+
+### Round 8 - 2026-07-15
+
+- Review: `review/2026-07-15_codex-review-r8.md`
+- Verdict: changes requested.
+- Finding: one P1 layer-policy gap remains. The tests parse imports correctly but do not reject multiple documented outward edges, including API-to-client, client-to-service, repository-to-client, and domain-to-service dependencies.
+- Post-fix verification remains green at 30 architecture and 229 full-suite tests, but the documented inward matrix is not fully enforced.
+
+### Round 8 Resolution - 2026-07-15
+
+- Added and enforced an explicit allowed-layer dependency matrix across all recursive responsibility modules.
+- Preserved only the reviewed concrete-repository exceptions and added four representative outward-edge fixtures.
+- Focused architecture verification passes 32 tests; full regression verification remains assigned to the next `/dev-test` run.

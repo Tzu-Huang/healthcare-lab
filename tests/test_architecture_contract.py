@@ -26,6 +26,15 @@ RESPONSIBILITY_PACKAGES = (
     "domain",
     "templates",
 )
+ALLOWED_LAYER_DEPENDENCIES: dict[str, frozenset[str]] = {
+    "api": frozenset({"api", "services", "domain", "config"}),
+    "services": frozenset({"services", "clients", "domain", "config"}),
+    "clients": frozenset({"clients", "domain", "config"}),
+    "runtime": frozenset({"runtime", "services", "domain", "config"}),
+    "repositories": frozenset({"repositories", "domain", "config"}),
+    "domain": frozenset({"domain"}),
+    "templates": frozenset({"templates", "domain", "config"}),
+}
 HTTP_DECORATORS = {"delete", "get", "patch", "post", "put", "route"}
 SQL_PATTERN = re.compile(
     r"\b(?:ALTER\s+TABLE|CREATE\s+TABLE|DELETE\s+FROM|INSERT\s+INTO|SELECT\b|UPDATE\s+\w+)",
@@ -506,6 +515,44 @@ def layer_python_paths(package: str, backend_root: Path = BACKEND) -> list[Path]
     return sorted((backend_root / package).rglob("*.py"))
 
 
+def backend_dependency_layer(module: str) -> str | None:
+    if module == "backend.config" or module.startswith("backend.config."):
+        return "config"
+    if not module.startswith("backend."):
+        return None
+    candidate = module.split(".", 2)[1]
+    return candidate if candidate in ALLOWED_LAYER_DEPENDENCIES else None
+
+
+def layer_dependency_violations(
+    relative_path: str,
+    modules: set[str],
+    repository_baseline: frozenset[tuple[str, str]],
+) -> list[PlacementViolation]:
+    path = PurePosixPath(relative_path.replace("\\", "/"))
+    source_layer = path.parts[1] if len(path.parts) > 2 else ""
+    allowed_layers = ALLOWED_LAYER_DEPENDENCIES.get(source_layer, frozenset())
+    violations: list[PlacementViolation] = []
+    for module in sorted(modules):
+        dependency_layer = backend_dependency_layer(module)
+        if dependency_layer is None or dependency_layer in allowed_layers:
+            continue
+        if (
+            dependency_layer == "repositories"
+            and (path.as_posix(), module) in repository_baseline
+        ):
+            continue
+        violations.append(
+            PlacementViolation(
+                "dependency",
+                path,
+                1,
+                f"{source_layer} modules must not depend outward on {module!r}.",
+            )
+        )
+    return violations
+
+
 def backend_module_path(module: str) -> Path | None:
     if module == "backend":
         return BACKEND / "__init__.py"
@@ -762,6 +809,40 @@ class ArchitectureContractTest(unittest.TestCase):
                 [nested_module],
                 layer_python_paths("domain", backend_root),
             )
+
+    def test_layer_dependency_matrix_rejects_outward_imports(self):
+        fixtures = {
+            "backend/api/example.py": "backend.clients.medplum",
+            "backend/clients/example.py": "backend.services.fhir_workflow",
+            "backend/repositories/example.py": "backend.clients.dcm4chee",
+            "backend/domain/example.py": "backend.services.patient_workflow",
+        }
+        for relative_path, module in fixtures.items():
+            with self.subTest(path=relative_path, module=module):
+                violations = layer_dependency_violations(
+                    relative_path,
+                    {module},
+                    frozenset(),
+                )
+                self.assertEqual(1, len(violations))
+                self.assertEqual("dependency", violations[0].category)
+
+    def test_layer_dependencies_follow_allowed_matrix(self):
+        violations: list[PlacementViolation] = []
+        for package in RESPONSIBILITY_PACKAGES:
+            for path in layer_python_paths(package):
+                violations.extend(
+                    layer_dependency_violations(
+                        path.relative_to(ROOT).as_posix(),
+                        imported_modules(path),
+                        CONCRETE_REPOSITORY_IMPORT_BASELINE,
+                    )
+                )
+        self.assertEqual(
+            [],
+            violations,
+            "Layer dependency violations:\n" + "\n".join(map(str, violations)),
+        )
 
     def test_services_do_not_depend_transitively_on_concrete_store(self):
         for path in layer_python_paths("services"):
