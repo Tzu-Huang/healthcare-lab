@@ -98,6 +98,46 @@ class Dcm4cheeResultRepositoryTests(unittest.TestCase):
             [DCM4CHEE_RESULT_STATUS_NO_RESULT],
         )
 
+    def test_refresh_completion_failure_preserves_previous_snapshot(self) -> None:
+        patient_id = int(self.patient["id"])
+        self.store.begin_dcm4chee_result_refresh(patient_id, "generation-1")
+        first = self.store.upsert_dcm4chee_result_record(
+            self.metadata(), self.profile, patient_record_id=patient_id,
+            refresh_generation="generation-1",
+        )
+        self.store.complete_dcm4chee_result_refresh(patient_id, "generation-1")
+
+        self.store.begin_dcm4chee_result_refresh(patient_id, "generation-2")
+        self.store.upsert_dcm4chee_result_record(
+            self.metadata(modality="DOC"), self.profile, patient_record_id=patient_id,
+            refresh_generation="generation-2",
+        )
+        with self.store.connect() as connection:
+            connection.execute(
+                """CREATE TRIGGER reject_refresh_publication
+                   BEFORE UPDATE OF completed_at, results_snapshot_json
+                   ON local_dcm4chee_result_refresh_runs
+                   WHEN OLD.refresh_generation = 'generation-2'
+                   BEGIN SELECT RAISE(ABORT, 'reject refresh publication'); END"""
+            )
+
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "reject refresh publication"):
+            self.store.complete_dcm4chee_result_refresh(patient_id, "generation-2")
+
+        reopened = DemoStore(self.path)
+        visible = reopened.list_dcm4chee_results_for_patient(patient_id)
+        with reopened.connect() as connection:
+            failed_run = connection.execute(
+                """SELECT completed_at, results_snapshot_json
+                   FROM local_dcm4chee_result_refresh_runs
+                   WHERE patient_record_id = ? AND refresh_generation = ?""",
+                (patient_id, "generation-2"),
+            ).fetchone()
+        self.assertEqual([item["id"] for item in visible], [first["id"]])
+        self.assertEqual([item["modality"] for item in visible], ["ECG"])
+        self.assertEqual(failed_run["completed_at"], "")
+        self.assertEqual(failed_run["results_snapshot_json"], "[]")
+
     def test_pure_reconciliation_rejects_wrong_patient_and_reports_duplicates(self) -> None:
         mapping = dict(self.mapping)
         wrong = reconcile_result_metadata(
