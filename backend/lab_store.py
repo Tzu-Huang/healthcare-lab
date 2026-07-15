@@ -6,6 +6,7 @@ import sqlite3
 import urllib.parse
 from contextlib import contextmanager
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,8 @@ from backend.gdt_adapter import (
     render_gdt_record as adapter_render_gdt_record,
 )
 from backend.domain.errors import SimulatorValidationError
+from backend.domain import patient as patient_domain
+from backend.domain import order as order_domain
 from backend.domain.gdt import ensure_gdt_bridge_dirs
 from backend.domain.openemr import (
     OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES,
@@ -35,6 +38,12 @@ from backend.domain.openemr import (
 from backend.repositories.database import SQLiteDatabase
 from backend.repositories.lab import LabRepository
 from backend.repositories.oie import OieRepository
+from backend.repositories.enrichment import PatientEnrichmentLoader, OrderEnrichmentLoader
+from backend.repositories.identifiers import PatientIdentifierRepository
+from backend.repositories.patients import PatientRepository
+from backend.repositories.orders import OrderRepository
+from backend.templates import patient as patient_templates
+from backend.templates import order as order_templates
 from backend.repositories.oie_settings import (
     serialize_oie_settings_profile,
     validate_oie_settings_payload,
@@ -471,6 +480,42 @@ class DemoStore:
             patient_protocol=PATIENT_MODES["hl7-v2"]["protocol"],
             order_protocol=ORDER_PROTOCOL_VERSION,
         )
+        self.patient_enrichment_loader = PatientEnrichmentLoader(
+            self.database.connect,
+            fhir_projector=self._fhir_workflow_record_dict,
+            sync_projector=self._dcm4chee_patient_sync_dict,
+            result_projector=self._dcm4chee_result_record_dict,
+            json_loader=self._json_value,
+        )
+        self.order_enrichment_loader = OrderEnrichmentLoader(
+            self.database.connect,
+            fhir_projector=self._fhir_workflow_record_dict,
+            attempt_projector=self._dcm4chee_mwl_attempt_dict,
+            mapping_projector=self._dcm4chee_mwl_mapping_dict,
+        )
+        self.patient_repository = PatientRepository(
+            self.database.connect,
+            self.database.lock,
+            identifier_repository=PatientIdentifierRepository(),
+            validator=patient_domain.validate_payload,
+            payload_builder=partial(
+                patient_templates.build,
+                gdt_renderer=render_gdt_message,
+            ),
+            timestamp_factory=now_iso,
+            hl7_timestamp_factory=hl7_timestamp,
+            enrichment_loader=self.patient_enrichment_loader,
+        )
+        self.order_repository = OrderRepository(
+            self.database.connect,
+            self.database.lock,
+            validator=order_domain.validate_payload,
+            payload_builder=order_templates.build_orm,
+            timestamp_factory=now_iso,
+            hl7_timestamp_factory=hl7_timestamp,
+            enrichment_loader=self.order_enrichment_loader,
+            dcm4chee_status_view=self._dcm4chee_mwl_status_view,
+        )
 
     @contextmanager
     def connect(self):
@@ -486,391 +531,30 @@ class DemoStore:
     def update_oie_settings_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.oie_settings_repository.update(payload)
 
-    @staticmethod
-    def _clean_patient_text(value: Any, field_name: str, required: bool = False) -> str:
-        text = str(value or "").strip()
-        if required and not text:
-            raise SimulatorValidationError(f"Patient {field_name} is required.")
-        return text
 
-    @staticmethod
-    def _normalize_patient_sex(value: Any) -> str:
-        normalized = str(value or "").strip().upper()
-        if normalized not in {"M", "F", "O", "U"}:
-            raise SimulatorValidationError("Patient sex must be M, F, O, or U.")
-        return normalized
 
-    @staticmethod
-    def _normalize_patient_dob(value: Any) -> str:
-        raw = str(value or "").strip()
-        digits = "".join(character for character in raw if character.isdigit())
-        if len(digits) != 8:
-            raise SimulatorValidationError("Patient dob must be YYYYMMDD.")
-        try:
-            datetime.strptime(digits, "%Y%m%d")
-        except ValueError as exc:
-            raise SimulatorValidationError("Patient dob must be a valid YYYYMMDD date.") from exc
-        return digits
 
-    @staticmethod
-    def _patient_record_number(record_id: int) -> str:
-        return f"PAT-{record_id:06d}"
 
-    @staticmethod
-    def _patient_visit_number(record_id: int) -> str:
-        return f"VISIT-{record_id:06d}"
 
-    @staticmethod
-    def _next_patient_mrn(connection: sqlite3.Connection) -> str:
-        while True:
-            row = connection.execute(
-                "SELECT next_value FROM local_identifier_sequences WHERE name = 'patient_mrn'"
-            ).fetchone()
-            if not row:
-                DemoStore._seed_patient_mrn_sequence(connection)
-                continue
-            value = int(row["next_value"])
-            connection.execute(
-                "UPDATE local_identifier_sequences SET next_value = ? WHERE name = 'patient_mrn'",
-                (value + 1,),
-            )
-            candidate = f"MRN-{value:06d}"
-            duplicate = connection.execute(
-                "SELECT 1 FROM local_patient_records WHERE mrn = ? LIMIT 1",
-                (candidate,),
-            ).fetchone()
-            if not duplicate:
-                return candidate
 
-    @staticmethod
-    def _normalize_patient_mode(payload: dict[str, Any]) -> str:
-        mode = str(payload.get("mode", payload.get("protocolMode", "hl7-v2"))).strip().lower()
-        aliases = {
-            "hl7": "hl7-v2",
-            "hl7v2": "hl7-v2",
-            "hl7-v2.5.1": "hl7-v2",
-            "hl7-v251": "hl7-v2",
-            "fhir-r4": "fhir",
-            "gdt-2.1": "gdt",
-            "dicom-patient": "dicom",
-        }
-        normalized = aliases.get(mode, mode)
-        if normalized not in PATIENT_MODES:
-            raise SimulatorValidationError("Patient mode must be HL7 v2, FHIR, GDT, or DICOM.")
-        return normalized
 
-    @staticmethod
-    def _normalize_patient_active(value: Any) -> bool:
-        if isinstance(value, bool):
-            return value
-        normalized = str(value if value is not None else "true").strip().lower()
-        if normalized in {"", "1", "true", "yes", "y", "on", "active"}:
-            return True
-        if normalized in {"0", "false", "no", "n", "off", "inactive"}:
-            return False
-        raise SimulatorValidationError("Patient active must be true or false.")
 
-    def _validate_patient_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(payload, dict):
-            raise SimulatorValidationError("Patient payload must be a JSON object.")
-        return {
-            "mode": self._normalize_patient_mode(payload),
-            "mrn": self._clean_patient_text(payload.get("mrn"), "mrn"),
-            "first_name": self._clean_patient_text(payload.get("firstName"), "firstName", required=True),
-            "last_name": self._clean_patient_text(payload.get("lastName"), "lastName", required=True),
-            "middle_name": self._clean_patient_text(payload.get("middleName"), "middleName"),
-            "dob": self._normalize_patient_dob(payload.get("dob")),
-            "sex": self._normalize_patient_sex(payload.get("sex")),
-            "address": self._clean_patient_text(payload.get("address"), "address"),
-            "phone": self._clean_patient_text(payload.get("phone"), "phone"),
-            "email": self._clean_patient_text(payload.get("email"), "email"),
-            "fhir_active": self._normalize_patient_active(payload.get("active", payload.get("fhirActive", True))),
-            "address_line": self._clean_patient_text(payload.get("addressLine"), "addressLine"),
-            "address_city": self._clean_patient_text(payload.get("addressCity"), "addressCity"),
-            "address_state": self._clean_patient_text(payload.get("addressState"), "addressState"),
-            "address_postal_code": self._clean_patient_text(payload.get("addressPostalCode"), "addressPostalCode"),
-            "address_country": self._clean_patient_text(payload.get("addressCountry"), "addressCountry"),
-            "managing_organization_reference": self._clean_patient_text(
-                payload.get("managingOrganizationReference"),
-                "managingOrganizationReference",
-            ),
-            "managing_organization_display": self._clean_patient_text(
-                payload.get("managingOrganizationDisplay"),
-                "managingOrganizationDisplay",
-            ),
-            "visit_number": self._clean_patient_text(payload.get("visitNumber"), "visitNumber"),
-            "patient_class": self._clean_patient_text(
-                payload.get("patientClass", PATIENT_CLASS_DEFAULT),
-                "patientClass",
-            )
-            or PATIENT_CLASS_DEFAULT,
-            "assigned_location": self._clean_patient_text(payload.get("assignedLocation"), "assignedLocation"),
-            "attending_provider": self._clean_patient_text(payload.get("attendingProvider"), "attendingProvider"),
-            "account_number": self._clean_patient_text(payload.get("accountNumber"), "accountNumber"),
-        }
 
-    @staticmethod
-    def _build_patient_a04_payload(
-        values: dict[str, str], *, record_id: int, timestamp: str
-    ) -> tuple[str, str]:
-        visit_number = values["visit_number"] or DemoStore._patient_visit_number(record_id)
-        patient_name = "^".join(
-            _hl7_escape(part)
-            for part in (values["last_name"], values["first_name"], values["middle_name"])
-        ).rstrip("^")
-        control_id = f"A04{timestamp}{record_id:06d}"
-        segments = [
-            f"MSH|^~\\&|HEALTHCARE_LAB|LAB_DEMO|OIE|ADT|{timestamp}||ADT^A04^ADT_A01|{control_id}|P|{HL7_V2_MSH_SUFFIX}",
-            f"EVN|A04|{timestamp}",
-            (
-                "PID|1||"
-                f"{_hl7_escape(values['mrn'])}^^^HEALTHCARE_LAB^MR||"
-                f"{patient_name}||{_hl7_escape(values['dob'])}|{_hl7_escape(values['sex'])}|||"
-                f"{_hl7_escape_composite(values['address'])}||{_hl7_escape(values['phone'])}|||||"
-                f"{_hl7_escape(values['account_number'])}"
-            ),
-            (
-                "PV1|1|"
-                f"{_hl7_escape(values['patient_class'])}|{_hl7_escape_composite(values['assigned_location'])}||||"
-                f"{_hl7_escape_composite(values['attending_provider'])}||||||||||||"
-                f"{_hl7_escape(visit_number)}"
-            ),
-        ]
-        return "\r".join(segments), visit_number
 
-    @staticmethod
-    def _patient_fhir_gender(sex: str) -> str:
-        return {"M": "male", "F": "female", "O": "other", "U": "unknown"}[sex]
 
-    @staticmethod
-    def _patient_fhir_birth_date(dob: str) -> str:
-        return f"{dob[:4]}-{dob[4:6]}-{dob[6:]}"
 
-    @staticmethod
-    def _build_patient_fhir_payload(values: dict[str, str], *, record_id: int) -> tuple[str, str]:
-        visit_number = values["visit_number"] or DemoStore._patient_visit_number(record_id)
-        patient_name = " ".join(
-            part for part in (values["first_name"], values["middle_name"], values["last_name"]) if part
-        )
-        telecom = []
-        if values["phone"]:
-            telecom.append({"system": "phone", "value": values["phone"]})
-        if values["email"]:
-            telecom.append({"system": "email", "value": values["email"]})
-        address = {}
-        if values["address"]:
-            address["text"] = values["address"]
-        if values["address_line"]:
-            address["line"] = [values["address_line"]]
-        if values["address_city"]:
-            address["city"] = values["address_city"]
-        if values["address_state"]:
-            address["state"] = values["address_state"]
-        if values["address_postal_code"]:
-            address["postalCode"] = values["address_postal_code"]
-        if values["address_country"]:
-            address["country"] = values["address_country"]
-        resource = {
-            "resourceType": "Patient",
-            "id": DemoStore._patient_record_number(record_id),
-            "active": bool(values["fhir_active"]),
-            "meta": {
-                "profile": [
-                    "https://twcore.mohw.gov.tw/ig/twcore/StructureDefinition/Patient-twcore"
-                ],
-            },
-            "identifier": [
-                {
-                    "system": "urn:healthcare-lab:mrn",
-                    "value": values["mrn"],
-                }
-            ],
-            "name": [
-                {
-                    "use": "official",
-                    "text": patient_name,
-                    "family": values["last_name"],
-                    "given": [
-                        part for part in (values["first_name"], values["middle_name"]) if part
-                    ],
-                }
-            ],
-            "gender": DemoStore._patient_fhir_gender(values["sex"]),
-            "birthDate": DemoStore._patient_fhir_birth_date(values["dob"]),
-            "telecom": telecom,
-            "address": [address] if address else [],
-            "extension": [
-                {
-                    "url": "urn:healthcare-lab:visit-number",
-                    "valueString": visit_number,
-                }
-            ],
-        }
-        managing_organization = {}
-        if values["managing_organization_reference"]:
-            managing_organization["reference"] = values["managing_organization_reference"]
-        if values["managing_organization_display"]:
-            managing_organization["display"] = values["managing_organization_display"]
-        if managing_organization:
-            resource["managingOrganization"] = managing_organization
-        return json.dumps(resource, indent=2), visit_number
 
-    @staticmethod
-    def _build_patient_gdt_payload(
-        values: dict[str, str], *, record_id: int, timestamp: str
-    ) -> tuple[str, str]:
-        visit_number = values["visit_number"] or DemoStore._patient_visit_number(record_id)
-        birth_date = f"{values['dob'][6:]}{values['dob'][4:6]}{values['dob'][:4]}"
-        records: list[tuple[str, Any]] = [
-            ("8315", "LABGDT"),
-            ("8316", "HCLAB"),
-            ("3000", values["mrn"]),
-            ("3101", values["last_name"]),
-            ("3102", values["first_name"]),
-            ("3103", birth_date),
-        ]
-        sex_code = GDT_PATIENT_SEX_CODES.get(values["sex"])
-        if sex_code:
-            records.append(("3110", sex_code))
-        return render_gdt_message(records, set_type="6301"), visit_number
 
-    @staticmethod
-    def _build_patient_dicom_payload(values: dict[str, str], *, record_id: int) -> tuple[str, str]:
-        visit_number = values["visit_number"] or DemoStore._patient_visit_number(record_id)
-        patient_name = "^".join(
-            part for part in (values["last_name"], values["first_name"], values["middle_name"]) if part
-        )
-        dataset = {
-            "(0010,0010) PatientName": patient_name,
-            "(0010,0020) PatientID": values["mrn"],
-            "(0010,0030) PatientBirthDate": values["dob"],
-            "(0010,0040) PatientSex": values["sex"],
-            "(0010,2154) PatientTelephoneNumbers": values["phone"],
-            "(0038,0010) AdmissionID": visit_number,
-            "(0038,0500) PatientState": values["patient_class"],
-        }
-        if values["address"]:
-            dataset["(0010,1040) PatientAddress"] = values["address"]
-        return json.dumps(dataset, indent=2), visit_number
 
-    @staticmethod
-    def _build_patient_payload(
-        values: dict[str, str], *, record_id: int, timestamp: str, hl7_time: str
-    ) -> tuple[str, str]:
-        if values["mode"] == "fhir":
-            return DemoStore._build_patient_fhir_payload(values, record_id=record_id)
-        if values["mode"] == "gdt":
-            return DemoStore._build_patient_gdt_payload(values, record_id=record_id, timestamp=timestamp)
-        if values["mode"] == "dicom":
-            return DemoStore._build_patient_dicom_payload(values, record_id=record_id)
-        return DemoStore._build_patient_a04_payload(values, record_id=record_id, timestamp=hl7_time)
 
     def create_patient_record(self, payload: dict[str, Any]) -> dict[str, Any]:
-        values = self._validate_patient_payload(payload)
-        timestamp = now_iso()
-        hl7_time = hl7_timestamp()
-        with self.lock, self.connect() as connection:
-            values["mrn"] = values["mrn"] or self._next_patient_mrn(connection)
-            duplicate = connection.execute(
-                "SELECT 1 FROM local_patient_records WHERE mrn = ? LIMIT 1",
-                (values["mrn"],),
-            ).fetchone()
-            if duplicate:
-                raise SimulatorValidationError(f"Patient MRN {values['mrn']} already exists.")
-            cursor = connection.execute(
-                """
-                INSERT INTO local_patient_records (
-                    local_patient_number, protocol_version, message_type, mrn,
-                    first_name, last_name, middle_name, dob, sex, address, phone,
-                    email, fhir_active, address_line, address_city, address_state,
-                    address_postal_code, address_country, managing_organization_reference,
-                    managing_organization_display,
-                    visit_number, patient_class, assigned_location, attending_provider,
-                    account_number, validation_status, validation_messages_json,
-                    payload_hl7, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    "",
-                    PATIENT_MODES[values["mode"]]["protocol"],
-                    PATIENT_MODES[values["mode"]]["message_type"],
-                    values["mrn"],
-                    values["first_name"],
-                    values["last_name"],
-                    values["middle_name"],
-                    values["dob"],
-                    values["sex"],
-                    values["address"],
-                    values["phone"],
-                    values["email"],
-                    int(values["fhir_active"]),
-                    values["address_line"],
-                    values["address_city"],
-                    values["address_state"],
-                    values["address_postal_code"],
-                    values["address_country"],
-                    values["managing_organization_reference"],
-                    values["managing_organization_display"],
-                    values["visit_number"],
-                    values["patient_class"],
-                    values["assigned_location"],
-                    values["attending_provider"],
-                    values["account_number"],
-                    "valid",
-                    "[]",
-                    "",
-                    timestamp,
-                    timestamp,
-                ),
-            )
-            record_id = int(cursor.lastrowid)
-            local_patient_number = self._patient_record_number(record_id)
-            payload_hl7, visit_number = self._build_patient_payload(
-                values,
-                record_id=record_id,
-                timestamp=timestamp,
-                hl7_time=hl7_time,
-            )
-            connection.execute(
-                """
-                UPDATE local_patient_records
-                SET local_patient_number = ?, visit_number = ?, payload_hl7 = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (local_patient_number, visit_number, payload_hl7, timestamp, record_id),
-            )
-        return self.get_patient_record(record_id)
+        return self.patient_repository.create_patient_record(payload)
 
     def list_patient_records(self, protocol_version: str = "") -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            if protocol_version:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_patient_records
-                    WHERE protocol_version = ?
-                    ORDER BY created_at DESC, id DESC
-                    """,
-                    (protocol_version,),
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_patient_records
-                    ORDER BY created_at DESC, id DESC
-                    """
-                ).fetchall()
-        return self._patient_record_dicts_with_fhir(rows)
+        return self.patient_repository.list_patient_records(protocol_version)
 
     def get_patient_record(self, record_id: int) -> dict[str, Any]:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM local_patient_records WHERE id = ?",
-                (record_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(record_id)
-        return self._patient_record_dicts_with_fhir([row])[0]
+        return self.patient_repository.get_patient_record(record_id)
 
     def create_patient_fhir_workflow_record(self, patient_record: dict[str, Any]) -> dict[str, Any]:
         if patient_record.get("protocolVersion") != "FHIR R4":
@@ -899,6 +583,17 @@ class DemoStore:
     @staticmethod
     def _order_account_number(record_id: int) -> str:
         return f"ACC-ORD-{record_id:06d}"
+
+    @staticmethod
+    def _normalize_requested_at(value: Any) -> str:
+        return order_domain.normalize_requested_at(value, default_factory=hl7_timestamp)
+
+    @staticmethod
+    def _clean_order_text(value: Any, field_name: str, required: bool = False) -> str:
+        return order_domain.clean_text(value, field_name, required)
+
+
+
 
     @staticmethod
     def _dcm4chee_local_order_number(record_id: int) -> str:
@@ -1375,78 +1070,9 @@ class DemoStore:
                 ).fetchall()
         return [self._dcm4chee_patient_sync_attempt_dict(row) for row in rows]
 
-    @staticmethod
-    def _clean_order_text(value: Any, field_name: str, required: bool = False) -> str:
-        text = str(value or "").strip()
-        if required and not text:
-            raise SimulatorValidationError(f"Order {field_name} is required.")
-        return text
 
-    @staticmethod
-    def _normalize_order_priority(value: Any) -> str:
-        normalized = str(value or "R").strip().upper() or "R"
-        if normalized not in ORDER_ALLOWED_PRIORITIES:
-            raise SimulatorValidationError(
-                f"Order priority must be one of: {', '.join(ORDER_ALLOWED_PRIORITIES)}."
-            )
-        return normalized
 
-    @staticmethod
-    def _normalize_requested_at(value: Any) -> str:
-        raw = str(value or "").strip()
-        if not raw:
-            return hl7_timestamp()
-        digits = "".join(character for character in raw if character.isdigit())
-        if len(digits) not in {8, 12, 14}:
-            raise SimulatorValidationError(
-                "Order requested time must be YYYYMMDD, YYYYMMDDHHMM, or YYYYMMDDHHMMSS."
-            )
-        try:
-            datetime.strptime(digits[:8], "%Y%m%d")
-            if len(digits) >= 12:
-                datetime.strptime(digits[:12], "%Y%m%d%H%M")
-            if len(digits) == 14:
-                datetime.strptime(digits, "%Y%m%d%H%M%S")
-        except ValueError as exc:
-            raise SimulatorValidationError("Order requested time is not a valid HL7 timestamp.") from exc
-        return digits
 
-    def _validate_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(payload, dict):
-            raise SimulatorValidationError("Order payload must be a JSON object.")
-        try:
-            patient_record_id = int(payload.get("patientRecordId"))
-        except (TypeError, ValueError) as exc:
-            raise SimulatorValidationError("Order patientRecordId is required.") from exc
-        return {
-            "patient_record_id": patient_record_id,
-            "priority": self._normalize_order_priority(payload.get("priority")),
-            "requested_at": self._normalize_requested_at(payload.get("requestedAt")),
-            "ordering_provider": self._clean_order_text(
-                payload.get("orderingProvider", ORDER_DEFAULT_PROVIDER),
-                "orderingProvider",
-            )
-            or ORDER_DEFAULT_PROVIDER,
-            "clinical_indication": self._clean_order_text(payload.get("clinicalIndication"), "clinicalIndication"),
-            "order_code": self._clean_order_text(payload.get("orderCode", ORDER_DEFAULT_CODE), "orderCode") or ORDER_DEFAULT_CODE,
-            "order_code_text": self._clean_order_text(
-                payload.get("orderCodeText", ORDER_DEFAULT_TEXT),
-                "orderCodeText",
-            )
-            or ORDER_DEFAULT_TEXT,
-            "alternate_code": self._clean_order_text(payload.get("alternateCode", ORDER_DEFAULT_ALT_CODE), "alternateCode")
-            or ORDER_DEFAULT_ALT_CODE,
-            "alternate_code_text": self._clean_order_text(
-                payload.get("alternateCodeText", ORDER_DEFAULT_ALT_TEXT),
-                "alternateCodeText",
-            )
-            or ORDER_DEFAULT_ALT_TEXT,
-            "alternate_code_system": self._clean_order_text(
-                payload.get("alternateCodeSystem", ORDER_DEFAULT_ALT_SYSTEM),
-                "alternateCodeSystem",
-            )
-            or ORDER_DEFAULT_ALT_SYSTEM,
-        }
 
     @staticmethod
     def _fhir_order_values(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1624,55 +1250,6 @@ class DemoStore:
             "authored_on": authored_on,
         }
 
-    @staticmethod
-    def _build_order_orm_payload(values: dict[str, Any], *, record_id: int, timestamp: str) -> str:
-        order_number = values["local_order_number"] or DemoStore._order_record_number(record_id)
-        visit_id = values["visit_id"] or DemoStore._order_visit_id(record_id)
-        account_number = values["account_number"] or DemoStore._order_account_number(record_id)
-        patient_name = "^".join(
-            _hl7_escape(part)
-            for part in (values["last_name"], values["first_name"], values["middle_name"])
-        ).rstrip("^")
-        universal_service_id = "^".join(
-            _hl7_escape(part)
-            for part in (
-                values["order_code"],
-                values["order_code_text"],
-                "L",
-                values["alternate_code"],
-                values["alternate_code_text"],
-                values["alternate_code_system"],
-            )
-        )
-        control_id = f"ORM{timestamp}{record_id:06d}"
-        segments = [
-            f"MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|{timestamp}||ORM^O01^ORM_O01|{control_id}|P|{HL7_V2_MSH_SUFFIX}",
-            (
-                "PID|1||"
-                f"{_hl7_escape(values['mrn'])}^^^HEALTHCARE_LAB^MR||"
-                f"{patient_name}||{_hl7_escape(values['dob'])}|{_hl7_escape(values['sex'])}|||||||||||"
-                f"{_hl7_escape(account_number)}"
-            ),
-            (
-                "PV1|1|"
-                f"{_hl7_escape(values['patient_class'])}|{_hl7_escape_composite(values['assigned_location'])}"
-                f"||||{_hl7_escape_composite(values['ordering_provider'])}||||||||||||{_hl7_escape(visit_id)}"
-            ),
-            (
-                "ORC|NW|"
-                f"{_hl7_escape(order_number)}||{_hl7_escape(values['filler_order_number'])}|||"
-                f"^^^{_hl7_escape(values['requested_at'])}^{_hl7_escape(values['priority'])}||{timestamp}|||"
-                f"{_hl7_escape_composite(values['ordering_provider'])}"
-            ),
-            (
-                "OBR|1|"
-                f"{_hl7_escape(order_number)}|{_hl7_escape(values['filler_order_number'])}|"
-                f"{universal_service_id}|{_hl7_escape(values['priority'])}|{_hl7_escape(values['requested_at'])}"
-                f"||||||||{_hl7_escape(values['clinical_indication'])}|||"
-                f"{_hl7_escape_composite(values['ordering_provider'])}"
-            ),
-        ]
-        return "\r".join(segments)
 
     @classmethod
     def _build_service_request_resource(
@@ -1835,106 +1412,7 @@ class DemoStore:
         return resource
 
     def create_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
-        values = self._validate_order_payload(payload)
-        timestamp = now_iso()
-        hl7_time = hl7_timestamp()
-        with self.lock, self.connect() as connection:
-            patient_row = connection.execute(
-                "SELECT * FROM local_patient_records WHERE id = ?",
-                (values["patient_record_id"],),
-            ).fetchone()
-            if not patient_row:
-                raise KeyError(values["patient_record_id"])
-            cursor = connection.execute(
-                """
-                INSERT INTO local_order_records (
-                    local_order_number, patient_record_id, protocol_version, message_type,
-                    order_status, mrn, first_name, last_name, middle_name, dob, sex,
-                    visit_id, patient_class, assigned_location, account_number,
-                    placer_order_number, filler_order_number, priority, requested_at,
-                    ordering_provider, clinical_indication, order_code, order_code_text,
-                    alternate_code, alternate_code_text, alternate_code_system,
-                    validation_status, validation_messages_json, payload_hl7,
-                    created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    "",
-                    values["patient_record_id"],
-                    ORDER_PROTOCOL_VERSION,
-                    ORDER_MESSAGE_TYPE,
-                    ORDER_STATUS_READY,
-                    patient_row["mrn"],
-                    patient_row["first_name"],
-                    patient_row["last_name"],
-                    patient_row["middle_name"],
-                    patient_row["dob"],
-                    patient_row["sex"],
-                    patient_row["visit_number"],
-                    patient_row["patient_class"],
-                    patient_row["assigned_location"],
-                    patient_row["account_number"],
-                    "",
-                    "",
-                    values["priority"],
-                    values["requested_at"],
-                    values["ordering_provider"],
-                    values["clinical_indication"],
-                    values["order_code"],
-                    values["order_code_text"],
-                    values["alternate_code"],
-                    values["alternate_code_text"],
-                    values["alternate_code_system"],
-                    "valid",
-                    "[]",
-                    "",
-                    timestamp,
-                    timestamp,
-                ),
-            )
-            record_id = int(cursor.lastrowid)
-            local_order_number = self._order_record_number(record_id)
-            visit_id = patient_row["visit_number"] or self._order_visit_id(record_id)
-            account_number = patient_row["account_number"] or self._order_account_number(record_id)
-            payload_values = {
-                **values,
-                "local_order_number": local_order_number,
-                "filler_order_number": "",
-                "mrn": patient_row["mrn"],
-                "first_name": patient_row["first_name"],
-                "last_name": patient_row["last_name"],
-                "middle_name": patient_row["middle_name"],
-                "dob": patient_row["dob"],
-                "sex": patient_row["sex"],
-                "visit_id": visit_id,
-                "patient_class": patient_row["patient_class"],
-                "assigned_location": patient_row["assigned_location"],
-                "account_number": account_number,
-            }
-            payload_hl7 = self._build_order_orm_payload(
-                payload_values,
-                record_id=record_id,
-                timestamp=hl7_time,
-            )
-            connection.execute(
-                """
-                UPDATE local_order_records
-                SET local_order_number = ?, placer_order_number = ?, visit_id = ?,
-                    account_number = ?, payload_hl7 = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    local_order_number,
-                    local_order_number,
-                    visit_id,
-                    account_number,
-                    payload_hl7,
-                    timestamp,
-                    record_id,
-                ),
-            )
-        return self.get_order_record(record_id)
+        return self.order_repository.create_order_record(payload)
 
     def create_dcm4chee_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
         item = self.create_order_record(payload)
@@ -3855,34 +3333,10 @@ class DemoStore:
         )
 
     def list_order_records(self, protocol_version: str = "") -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            if protocol_version:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_order_records
-                    WHERE protocol_version = ?
-                    ORDER BY created_at DESC, id DESC
-                    """,
-                    (protocol_version,),
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_order_records
-                    ORDER BY created_at DESC, id DESC
-                    """
-                ).fetchall()
-        return self._order_record_dicts_with_fhir(rows)
+        return self.order_repository.list_order_records(protocol_version)
 
     def get_order_record(self, record_id: int) -> dict[str, Any]:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM local_order_records WHERE id = ?",
-                (record_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(record_id)
-        return self._order_record_dicts_with_fhir([row])[0]
+        return self.order_repository.get_order_record(record_id)
 
     def update_order_send_result(
         self,
@@ -3895,34 +3349,15 @@ class DemoStore:
         ack_payload: str = "",
         transport_error: str = "",
     ) -> dict[str, Any]:
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            row = connection.execute(
-                "SELECT id FROM local_order_records WHERE id = ?",
-                (record_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(record_id)
-            connection.execute(
-                """
-                UPDATE local_order_records
-                SET order_status = ?, ack_code = ?, ack_control_id = ?, ack_text = ?,
-                    ack_payload = ?, transport_error = ?, last_sent_at = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    order_status,
-                    ack_code,
-                    ack_control_id,
-                    ack_text,
-                    ack_payload,
-                    transport_error,
-                    timestamp,
-                    timestamp,
-                    record_id,
-                ),
-            )
-        return self.get_order_record(record_id)
+        return self.order_repository.update_order_send_result(
+            record_id,
+            order_status=order_status,
+            ack_code=ack_code,
+            ack_control_id=ack_control_id,
+            ack_text=ack_text,
+            ack_payload=ack_payload,
+            transport_error=transport_error,
+        )
 
     def list_oie_local_order_inventory(self) -> list[dict[str, Any]]:
         return self.list_order_records(ORDER_PROTOCOL_VERSION)
@@ -4875,143 +4310,7 @@ class DemoStore:
     def list_oie_results(self) -> list[dict[str, Any]]:
         return self.oie_repository.list_oie_results()
 
-    def _order_record_dicts_with_fhir(self, rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
-        source_ids = [str(row["id"]) for row in rows]
-        fhir_by_source_id: dict[str, dict[str, dict[str, Any]]] = {}
-        dcm4chee_by_source_id: dict[str, dict[str, Any]] = {}
-        dcm4chee_mapping_by_source_id: dict[str, dict[str, Any]] = {}
-        if source_ids:
-            placeholders = ", ".join("?" for _ in source_ids)
-            with self.connect() as connection:
-                fhir_rows = connection.execute(
-                    f"""
-                    SELECT * FROM local_fhir_workflow_records
-                    WHERE local_source_type = 'local_order_records'
-                    AND local_source_id IN ({placeholders})
-                    AND resource_type = 'ServiceRequest'
-                    """,
-                    source_ids,
-                ).fetchall()
-                dcm4chee_rows = connection.execute(
-                    f"""
-                    SELECT * FROM local_dcm4chee_mwl_attempts
-                    WHERE order_record_id IN ({placeholders})
-                    ORDER BY attempted_at DESC, id DESC
-                    """,
-                    [int(source_id) for source_id in source_ids],
-                ).fetchall()
-                dcm4chee_mapping_rows = connection.execute(
-                    f"""
-                    SELECT * FROM local_dcm4chee_mwl_mappings
-                    WHERE order_record_id IN ({placeholders})
-                    """,
-                    [int(source_id) for source_id in source_ids],
-                ).fetchall()
-            for fhir_row in fhir_rows:
-                source_id = str(fhir_row["local_source_id"])
-                fhir_by_source_id.setdefault(source_id, {})[fhir_row["resource_type"]] = (
-                    self._fhir_workflow_record_dict(fhir_row)
-                )
-            for dcm4chee_row in dcm4chee_rows:
-                source_id = str(dcm4chee_row["order_record_id"])
-                if source_id not in dcm4chee_by_source_id:
-                    dcm4chee_by_source_id[source_id] = self._dcm4chee_mwl_attempt_dict(dcm4chee_row)
-            for mapping_row in dcm4chee_mapping_rows:
-                source_id = str(mapping_row["order_record_id"])
-                dcm4chee_mapping_by_source_id[source_id] = self._dcm4chee_mwl_mapping_dict(mapping_row)
-        return [
-            self._order_record_dict(
-                row,
-                fhir_by_source_id.get(str(row["id"]), {}),
-                dcm4chee_by_source_id.get(str(row["id"])),
-                dcm4chee_mapping_by_source_id.get(str(row["id"])),
-            )
-            for row in rows
-        ]
 
-    @staticmethod
-    def _order_record_dict(
-        row: sqlite3.Row,
-        fhir_records: dict[str, dict[str, Any]] | None = None,
-        dcm4chee_attempt: dict[str, Any] | None = None,
-        dcm4chee_mapping: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        validation_messages = json.loads(row["validation_messages_json"] or "[]")
-        summary_name = " ".join(
-            part for part in (row["first_name"], row["middle_name"], row["last_name"]) if part
-        )
-        fhir_records = fhir_records or {}
-        service_request = fhir_records.get("ServiceRequest")
-        return {
-            "id": row["id"],
-            "localOrderNumber": row["local_order_number"],
-            "patientRecordId": row["patient_record_id"],
-            "protocolVersion": row["protocol_version"],
-            "messageType": row["message_type"],
-            "status": row["order_status"],
-            "patient": {
-                "mrn": row["mrn"],
-                "firstName": row["first_name"],
-                "lastName": row["last_name"],
-                "middleName": row["middle_name"],
-                "dob": row["dob"],
-                "sex": row["sex"],
-            },
-            "summary": {
-                "mrn": row["mrn"],
-                "name": summary_name,
-                "dob": row["dob"],
-                "sex": row["sex"],
-                "visitNumber": row["visit_id"],
-                "visitId": row["visit_id"],
-                "orderCode": row["order_code"],
-                "orderText": row["order_code_text"],
-            },
-            "visitNumber": row["visit_id"],
-            "visitId": row["visit_id"],
-            "patientClass": row["patient_class"],
-            "assignedLocation": row["assigned_location"],
-            "accountNumber": row["account_number"],
-            "placerOrderNumber": row["placer_order_number"],
-            "fillerOrderNumber": row["filler_order_number"],
-            "priority": row["priority"],
-            "requestedAt": row["requested_at"],
-            "orderingProvider": row["ordering_provider"],
-            "clinicalIndication": row["clinical_indication"],
-            "orderCode": row["order_code"],
-            "orderCodeText": row["order_code_text"],
-            "alternateCode": row["alternate_code"],
-            "alternateCodeText": row["alternate_code_text"],
-            "alternateCodeSystem": row["alternate_code_system"],
-            "fhir": {
-                "serviceRequest": service_request,
-            }
-            if row["protocol_version"] == FHIR_ORDER_PROTOCOL_VERSION
-            else None,
-            "dcm4chee": {
-                "mwl": DemoStore._dcm4chee_mwl_status_view(dcm4chee_attempt, dcm4chee_mapping)
-                if dcm4chee_attempt or dcm4chee_mapping
-                else None,
-            }
-            if row["protocol_version"] == DCM4CHEE_ORDER_PROTOCOL_VERSION or dcm4chee_attempt or dcm4chee_mapping
-            else None,
-            "validation": {
-                "status": row["validation_status"],
-                "messages": validation_messages,
-            },
-            "payload": row["payload_hl7"],
-            "ack": {
-                "code": row["ack_code"],
-                "controlId": row["ack_control_id"],
-                "text": row["ack_text"],
-                "payload": row["ack_payload"],
-            },
-            "transportError": row["transport_error"],
-            "lastSentAt": row["last_sent_at"],
-            "createdAt": row["created_at"],
-            "updatedAt": row["updated_at"],
-            "localOnly": True,
-        }
 
     @staticmethod
     def _dcm4chee_result_record_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -5842,164 +5141,7 @@ class DemoStore:
             "updatedAt": row["updated_at"],
         }
 
-    def _patient_record_dicts_with_fhir(self, rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
-        source_ids = [str(row["id"]) for row in rows]
-        fhir_by_source_id: dict[str, dict[str, Any]] = {}
-        dcm4chee_by_source_id: dict[str, dict[str, Any]] = {}
-        dcm4chee_results_by_source_id: dict[str, list[dict[str, Any]]] = {}
-        if source_ids:
-            placeholders = ", ".join("?" for _ in source_ids)
-            with self.connect() as connection:
-                fhir_rows = connection.execute(
-                    f"""
-                    SELECT * FROM local_fhir_workflow_records
-                    WHERE local_source_type = 'local_patient_records'
-                    AND local_source_id IN ({placeholders})
-                    AND resource_type = 'Patient'
-                    """,
-                    source_ids,
-                ).fetchall()
-                dcm4chee_rows = connection.execute(
-                    f"""
-                    SELECT * FROM local_dcm4chee_patient_syncs
-                    WHERE patient_record_id IN ({placeholders})
-                    ORDER BY updated_at DESC, id DESC
-                    """,
-                    [int(source_id) for source_id in source_ids],
-                ).fetchall()
-                dcm4chee_result_rows = connection.execute(
-                    f"""
-                    SELECT * FROM local_dcm4chee_result_records
-                    WHERE patient_record_id IN ({placeholders})
-                    ORDER BY last_refreshed_at DESC, id DESC
-                    """,
-                    [int(source_id) for source_id in source_ids],
-                ).fetchall()
-                dcm4chee_result_refresh_rows = connection.execute(
-                    f"""
-                    SELECT patient_record_id, completed_at, results_snapshot_json
-                    FROM local_dcm4chee_result_refresh_runs
-                    WHERE patient_record_id IN ({placeholders})
-                    ORDER BY id DESC
-                    """,
-                    [int(source_id) for source_id in source_ids],
-                ).fetchall()
-            for fhir_row in fhir_rows:
-                fhir_by_source_id[str(fhir_row["local_source_id"])] = self._fhir_workflow_record_dict(fhir_row)
-            for dcm4chee_row in dcm4chee_rows:
-                source_id = str(dcm4chee_row["patient_record_id"])
-                if source_id not in dcm4chee_by_source_id:
-                    dcm4chee_by_source_id[source_id] = self._dcm4chee_patient_sync_dict(dcm4chee_row)
-            dcm4chee_result_run_patient_ids: set[str] = set()
-            for refresh_row in dcm4chee_result_refresh_rows:
-                source_id = str(refresh_row["patient_record_id"])
-                dcm4chee_result_run_patient_ids.add(source_id)
-                if refresh_row["completed_at"] and source_id not in dcm4chee_results_by_source_id:
-                    snapshot = self._json_value(refresh_row["results_snapshot_json"], [])
-                    dcm4chee_results_by_source_id[source_id] = snapshot if isinstance(snapshot, list) else []
-            latest_result_generation_by_source_id: dict[str, str] = {}
-            for dcm4chee_result_row in dcm4chee_result_rows:
-                source_id = str(dcm4chee_result_row["patient_record_id"])
-                if source_id in dcm4chee_result_run_patient_ids:
-                    continue
-                generation = str(dcm4chee_result_row["refresh_generation"] or "")
-                if generation and source_id not in latest_result_generation_by_source_id:
-                    latest_result_generation_by_source_id[source_id] = generation
-            for dcm4chee_result_row in dcm4chee_result_rows:
-                source_id = str(dcm4chee_result_row["patient_record_id"])
-                if source_id in dcm4chee_result_run_patient_ids:
-                    continue
-                latest_generation = latest_result_generation_by_source_id.get(source_id)
-                if latest_generation and dcm4chee_result_row["refresh_generation"] != latest_generation:
-                    continue
-                dcm4chee_results_by_source_id.setdefault(source_id, []).append(
-                    self._dcm4chee_result_record_dict(dcm4chee_result_row)
-                )
-        return [
-            self._patient_record_dict(
-                row,
-                fhir_by_source_id.get(str(row["id"])),
-                dcm4chee_by_source_id.get(str(row["id"])),
-                dcm4chee_results_by_source_id.get(str(row["id"]), []),
-            )
-            for row in rows
-        ]
 
-    @staticmethod
-    def _patient_record_dict(
-        row: sqlite3.Row,
-        fhir_record: dict[str, Any] | None = None,
-        dcm4chee_patient_sync: dict[str, Any] | None = None,
-        dcm4chee_results: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
-        validation_messages = json.loads(row["validation_messages_json"] or "[]")
-        dcm4chee_results = dcm4chee_results or []
-        patient = {
-            "mrn": row["mrn"],
-            "firstName": row["first_name"],
-            "lastName": row["last_name"],
-            "middleName": row["middle_name"],
-            "dob": row["dob"],
-            "sex": row["sex"],
-            "address": row["address"],
-            "phone": row["phone"],
-            "email": row["email"],
-            "active": bool(row["fhir_active"]),
-            "addressLine": row["address_line"],
-            "addressCity": row["address_city"],
-            "addressState": row["address_state"],
-            "addressPostalCode": row["address_postal_code"],
-            "addressCountry": row["address_country"],
-            "managingOrganizationReference": row["managing_organization_reference"],
-            "managingOrganizationDisplay": row["managing_organization_display"],
-        }
-        summary_name = " ".join(
-            part for part in (row["first_name"], row["middle_name"], row["last_name"]) if part
-        )
-        fhir = None
-        if fhir_record:
-            fhir = {
-                "recordId": fhir_record["id"],
-                "localFhirRecordNumber": fhir_record["localFhirRecordNumber"],
-                "resourceType": fhir_record["resourceType"],
-                "identifier": fhir_record["identifier"],
-                "medplum": fhir_record["medplum"],
-                "sync": fhir_record["sync"],
-                "localOnly": fhir_record["localOnly"],
-            }
-        return {
-            "id": row["id"],
-            "localPatientNumber": row["local_patient_number"],
-            "protocolVersion": row["protocol_version"],
-            "messageType": row["message_type"],
-            "patient": patient,
-            "summary": {
-                "mrn": row["mrn"],
-                "name": summary_name,
-                "dob": row["dob"],
-                "sex": row["sex"],
-                "visitNumber": row["visit_number"],
-            },
-            "visitNumber": row["visit_number"],
-            "patientClass": row["patient_class"],
-            "assignedLocation": row["assigned_location"],
-            "attendingProvider": row["attending_provider"],
-            "accountNumber": row["account_number"],
-            "validation": {
-                "status": row["validation_status"],
-                "messages": validation_messages,
-            },
-            "payload": row["payload_hl7"],
-            "fhir": fhir,
-            "dcm4chee": {
-                **({"patient": dcm4chee_patient_sync} if dcm4chee_patient_sync else {}),
-                "dicomResults": dcm4chee_results,
-                "resultCount": len(dcm4chee_results),
-            },
-            "createdAt": row["created_at"],
-            "updatedAt": row["updated_at"],
-            "localOnly": True,
-        }
 
     @staticmethod
     def _dcm4chee_patient_sync_dict(row: sqlite3.Row) -> dict[str, Any]:
