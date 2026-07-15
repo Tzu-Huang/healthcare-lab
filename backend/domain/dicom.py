@@ -436,6 +436,7 @@ def identifiers_from_payload(
     timestamp_factory: Callable[[], str],
 ) -> dict[str, str]:
     order_id = int(order["id"])
+    patient = order.get("patient") if isinstance(order.get("patient"), dict) else {}
     mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
     dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
     sps = sps_payload(payload)
@@ -446,7 +447,7 @@ def identifiers_from_payload(
         "mwl_ae_title": str(mwl.get("aeTitle") or "").strip(),
         "scheduled_station_ae_title": dicom_first_value(sps, "00400001", str(mwl.get("defaultScheduledStationAETitle") or "").strip()),
         "local_dcm4chee_order_number": local_order_number(order_id),
-        "patient_id": dicom_first_value(payload, "00100020", str(order.get("mrn") or "").strip()),
+        "patient_id": dicom_first_value(payload, "00100020", str(patient.get("mrn") or "").strip()),
         "issuer_of_patient_id": dicom_first_value(payload, "00100021", str(profile.get("profileName") or "HEALTHCARE_LAB").strip()),
         "accession_number": dicom_first_value(payload, "00080050", accession_number(order_id)),
         "requested_procedure_id": dicom_first_value(payload, "00401001", requested_procedure_id(order_id)),

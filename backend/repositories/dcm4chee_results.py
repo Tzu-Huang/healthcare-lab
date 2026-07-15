@@ -95,6 +95,9 @@ class Dcm4cheeResultRepository:
         return reconcile_result_metadata(
             metadata, mappings, profile_name=profile_name, server_identity=server_identity
         )
+
+    def reconcile_dcm4chee_result_metadata(self, *args, **kwargs) -> dict[str, Any]:
+        return self._reconcile_result_metadata(*args, **kwargs)
     def upsert_dcm4chee_result_record(
         self,
         metadata: dict[str, str],

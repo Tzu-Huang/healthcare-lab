@@ -5,8 +5,8 @@
 - [x] 1.3 Add characterization tests for reconciliation precedence, wrong-patient rejection, duplicate candidates, simulated results, and evidence projection.
 - [x] 1.4 Add characterization tests for result refresh generations, completed-snapshot publication, stale-result supersession, diagnostics, and run ordering.
 - [x] 1.5 Add disposable legacy-database characterization for deterministic MWL mapping backfill and attempt linking.
-- [ ] 1.6 Prove the verification fixtures cannot resolve to or mutate a repository `instance/*.db` and use transport doubles instead of live external services.
-- [ ] 1.7 Run the focused characterization suite; stop only if evidence proves a documented hard-stop conflict, otherwise resolve ordinary failures within scope.
+- [x] 1.6 Prove the verification fixtures cannot resolve to or mutate a repository `instance/*.db` and use transport doubles instead of live external services.
+- [x] 1.7 Run the focused characterization suite; stop only if evidence proves a documented hard-stop conflict, otherwise resolve ordinary failures within scope.
 
 ## 2. Extract Pure DICOM Rules and Payload Collaborators
 
@@ -52,9 +52,9 @@
 
 ## 7. Architecture Cleanup and YOLO-Safe Verification
 
-- [ ] 7.1 Remove only architecture legacy-baseline entries corresponding to extracted dcm4chee SQL, projections, payloads, parsing, and workflow implementation; do not add or refresh exceptions.
-- [ ] 7.2 Run focused domain, template, repository, service, database, migration/backfill, API, and integration tests using disposable resources and external-service doubles only.
-- [ ] 7.3 Run Python compilation, architecture contract tests, the full automated regression suite, `git diff --check`, and strict OpenSpec validation.
-- [ ] 7.4 Confirm the final diff contains no schema/index/data migration, real `instance/*.db` access, live-service call, new dependency, secret, public API change, deterministic payload change, or unrelated bounded-context extraction.
-- [ ] 7.5 Keep implementation commits focused and reversible, stage only intended files, preserve unrelated worktree changes, and never bypass a failing verification gate.
-- [ ] 7.6 If and only if a documented hard-stop condition is proven, stop with evidence; otherwise autonomously resolve ordinary test, typing, import, fixture, and composition failures and complete verification.
+- [x] 7.1 Remove only architecture legacy-baseline entries corresponding to extracted dcm4chee SQL, projections, payloads, parsing, and workflow implementation; do not add or refresh exceptions.
+- [x] 7.2 Run focused domain, template, repository, service, database, migration/backfill, API, and integration tests using disposable resources and external-service doubles only.
+- [x] 7.3 Run Python compilation, architecture contract tests, the full automated regression suite, `git diff --check`, and strict OpenSpec validation.
+- [x] 7.4 Confirm the final diff contains no schema/index/data migration, real `instance/*.db` access, live-service call, new dependency, secret, public API change, deterministic payload change, or unrelated bounded-context extraction.
+- [x] 7.5 Keep implementation commits focused and reversible, stage only intended files, preserve unrelated worktree changes, and never bypass a failing verification gate.
+- [x] 7.6 If and only if a documented hard-stop condition is proven, stop with evidence; otherwise autonomously resolve ordinary test, typing, import, fixture, and composition failures and complete verification.
