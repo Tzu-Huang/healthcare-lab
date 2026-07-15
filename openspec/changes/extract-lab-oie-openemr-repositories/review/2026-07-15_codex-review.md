@@ -1,30 +1,29 @@
-# Code Review: ZAC-57 (Round 3)
+# Code Review: ZAC-57 (Round 4)
 
 ## Findings
 
-### [P1] Allow only the retained facade mapping and exact composition arguments
+### [P1] Scope composition exemptions to the exact DemoStore class shell
 
-`tests/test_architecture_contract.py:281` recognizes the delegate shape but does not bind the enclosing `DemoStore` method name to an approved target method, so a newly added facade such as `delete_everything -> self.lab_repository.delete_everything()` is silently exempt. Likewise, the initializer check at line 356 compares only the assigned constructor name; arbitrary literal payloads can be inserted into repository constructor arguments while the aggregate class and initializer remain exempt. Both probes currently produce zero violations. Define the exact retained method-to-target mapping and validate the current constructor positional/keyword argument AST shapes (or an equivalently strict signature) so facade growth and hidden initializer payload/workflow changes fail the architecture contract.
+`tests/test_architecture_contract.py:434` applies `is_repository_compatibility_delegate` before checking the collector's enclosing symbol, so an approved-shaped function outside `DemoStore` reports zero violations. In addition, the class exemption at line 413 depends only on the class name and initializer; adding a base class, decorator, or class-level state leaves the collected candidate set unchanged. Restrict delegate exemptions to methods whose enclosing symbol is exactly `DemoStore`, and require the exempt class shell to have no bases, decorators, keywords, or non-method state. Add negative fixtures for standalone/foreign delegates and structural class mutations.
 
 ## Missing Tests and Residual Risks
 
-- There is no negative fixture for a new mechanically thin `DemoStore` facade method targeting an approved repository.
-- There is no negative fixture for changed positional or keyword arguments on an otherwise approved repository constructor assignment.
+- No fixture currently proves that an approved-shaped delegate outside `DemoStore` is rejected.
+- No fixture currently proves that base classes, decorators, or class-level payload/state invalidate the aggregate class exemption.
 - Review did not contact live OpenEMR/OIE services or run Docker, deployment, push, merge, or release actions.
 
 ## Prior Finding Status
 
-- Resolved: delegate receiver/composer lookalikes and nested calls are rejected.
-- Resolved: the legacy baseline diff against `main` contains removals only, with no replacement fingerprints.
-- Resolved: direct OIE settings test-module execution imports its exception dependency before starting the runner.
+- Resolved: retained facade methods are bound to exact repository targets.
+- Resolved: repository composition constructor arguments are protected by reviewed AST fingerprints.
+- Resolved: baseline changes remain removal-only and direct OIE settings module execution passes.
 
 ## Verification Reviewed
 
 - Focused extraction and isolation suite: 45 tests passed.
-- Architecture contract suite: 36 tests passed, but the two uncovered probes above bypass it.
-- Full automated suite: 262 tests passed with `instance/healthcare-lab.db` hash and timestamp unchanged.
-- New-facade and modified-initializer probes: zero violations reported.
+- Architecture contract suite: 36 tests passed, but the context and class-shell probes bypass it.
+- Full automated suite: 262 tests passed with `instance/healthcare-lab.db` unchanged.
 
 ## Verdict
 
-Changes requested. Bind architecture exemptions to the exact retained facade and composition surface before `/dev-done`.
+Changes requested. Close the remaining exemption-scope gap before `/dev-done`.
