@@ -9,6 +9,7 @@ from tests.architecture_legacy_baseline import (
     BACKEND_LEGACY_BASELINE,
     CONCRETE_REPOSITORY_IMPORT_BASELINE,
     FRONTEND_FUNCTION_BASELINE,
+    FRONTEND_FUNCTION_NAME_INVENTORY,
     FRONTEND_SELECTOR_FAMILY_BASELINE,
 )
 
@@ -131,6 +132,18 @@ class LegacyCandidate:
             self.line,
             detail,
         )
+
+
+@dataclass(frozen=True)
+class FrontendDefinition:
+    name: str
+    line: int
+    fingerprint: str
+    category: str
+
+    @property
+    def baseline_key(self) -> tuple[str, str]:
+        return (self.name, self.fingerprint)
 
 
 def stable_fingerprint(value: ast.AST | str) -> str:
@@ -321,39 +334,53 @@ def legacy_backend_violations(
     ]
 
 
-def frontend_top_level_functions(source: str) -> dict[str, int]:
-    functions: dict[str, int] = {}
-    for match in FRONTEND_FUNCTION_PATTERN.finditer(source):
-        name = match.group("declaration", "assignment", "class_name")
-        name = next(value for value in name if value)
-        functions[name] = source.count("\n", 0, match.start()) + 1
-    return functions
-
-
-def frontend_function_category(name: str, source_line: str = "") -> str:
+def frontend_definition_category(name: str, body: str = "") -> str:
     lowered = name.lower()
-    if any(part in lowered for part in ("request", "fetch", "send")) or "fetch(" in source_line:
+    if any(part in lowered for part in ("request", "fetch", "send")) or "fetch(" in body:
         return "transport"
     if any(part in lowered for part in ("build", "parse", "payload", "preview", "render")):
         return "payload"
     return "workflow"
 
 
+def frontend_top_level_definitions(source: str) -> dict[str, FrontendDefinition]:
+    matches = list(FRONTEND_FUNCTION_PATTERN.finditer(source))
+    definitions: dict[str, FrontendDefinition] = {}
+    for index, match in enumerate(matches):
+        name = match.group("declaration", "assignment", "class_name")
+        name = next(value for value in name if value)
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(source)
+        body = source[match.start() : end].strip()
+        definitions[name] = FrontendDefinition(
+            name=name,
+            line=source.count("\n", 0, match.start()) + 1,
+            fingerprint=stable_fingerprint(body),
+            category=frontend_definition_category(name, body),
+        )
+    return definitions
+
+
+def frontend_top_level_functions(source: str) -> dict[str, int]:
+    return {
+        name: definition.line
+        for name, definition in frontend_top_level_definitions(source).items()
+    }
+
+
 def frontend_function_violations(
     relative_path: str,
     source: str,
-    baseline: frozenset[str],
+    baseline: frozenset[tuple[str, str]],
 ) -> list[PlacementViolation]:
-    lines = source.splitlines()
     return [
         PlacementViolation(
-            frontend_function_category(name, lines[line - 1] if line <= len(lines) else ""),
+            definition.category,
             PurePosixPath(relative_path),
-            line,
-            f"New top-level frontend function {name!r} must move to frontend/static/js/.",
+            definition.line,
+            f"New or changed top-level frontend definition {name!r} must move to frontend/static/js/.",
         )
-        for name, line in sorted(frontend_top_level_functions(source).items())
-        if name not in baseline
+        for name, definition in sorted(frontend_top_level_definitions(source).items())
+        if definition.baseline_key not in baseline
     ]
 
 
@@ -825,8 +852,16 @@ class ArchitectureContractTest(unittest.TestCase):
         )
         self.assertEqual(
             FRONTEND_FUNCTION_BASELINE,
-            frozenset(frontend_top_level_functions(js_source)),
-            "Remove frontend function baseline entries when globals move to owned modules.",
+            frozenset(
+                definition.baseline_key
+                for definition in frontend_top_level_definitions(js_source).values()
+            ),
+            "Remove frontend definition baseline entries when globals move to owned modules.",
+        )
+        self.assertEqual(
+            FRONTEND_FUNCTION_NAME_INVENTORY,
+            frozenset(frontend_top_level_definitions(js_source)),
+            "Keep the readable frontend name inventory aligned with definition fingerprints.",
         )
 
         css_path = ROOT / "frontend" / "static" / "styles.css"
@@ -918,6 +953,21 @@ class ArchitectureContractTest(unittest.TestCase):
             str(selector_violations[0]),
             r"frontend/static/styles\.css:\d+:",
         )
+
+    def test_changed_frontend_definition_body_is_rejected(self):
+        original = "function renderServices() { return true; }\n"
+        original_baseline = frozenset(
+            definition.baseline_key
+            for definition in frontend_top_level_definitions(original).values()
+        )
+        changed = "function renderServices() { return fetch('/api/new-monolith'); }\n"
+        violations = frontend_function_violations(
+            "frontend/static/app.js",
+            changed,
+            original_baseline,
+        )
+        self.assertEqual(1, len(violations))
+        self.assertEqual("transport", violations[0].category)
 
     def test_placement_failures_name_category_path_and_line(self):
         fixtures = {

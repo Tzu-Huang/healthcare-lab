@@ -31,3 +31,17 @@ No runtime implementation, endpoint, persistence schema, protocol payload, or fr
 - Resolved the frontend findings by inventorying function expressions, `const`/`let`/`var` arrows, top-level classes, and every class/ID selector token.
 - Added the requested counterexample fixtures; focused architecture verification passes 22 tests.
 - Full regression verification remains assigned to the next `/dev-test` run.
+
+### Round 2 — 2026-07-15
+
+- Review: `review/2026-07-15_codex-review-r2.md`
+- Verdict: changes requested.
+- Findings: two P1 enforcement bypasses remain. Existing frontend function bodies are not fingerprinted, and backend module-level transport, payload, or workflow implementation is not classified.
+- Post-fix verification remains green at 22 focused and 221 full-suite tests, but targeted counterexamples return no placement violations.
+
+### Round 2 Resolution — 2026-07-15
+
+- Resolved backend module-body coverage in `95aac95` with fingerprinted top-level statements and category-specific detection.
+- Resolved frontend body coverage with name-plus-fingerprint baselines while retaining a readable name inventory.
+- Added changed-existing-function and module-level transport/payload/workflow fixtures; focused architecture verification passes 24 tests.
+- Full regression verification remains assigned to the next `/dev-test` run.
