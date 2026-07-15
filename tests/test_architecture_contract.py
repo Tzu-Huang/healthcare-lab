@@ -349,21 +349,30 @@ def frontend_definition_category(name: str, body: str = "") -> str:
     return "workflow"
 
 
-def frontend_top_level_definitions(source: str) -> dict[str, FrontendDefinition]:
+def frontend_top_level_definition_occurrences(source: str) -> list[FrontendDefinition]:
     matches = list(FRONTEND_FUNCTION_PATTERN.finditer(source))
-    definitions: dict[str, FrontendDefinition] = {}
+    definitions: list[FrontendDefinition] = []
     for index, match in enumerate(matches):
         name = match.group("declaration", "assignment", "class_name")
         name = next(value for value in name if value)
         end = matches[index + 1].start() if index + 1 < len(matches) else len(source)
         body = source[match.start() : end].strip()
-        definitions[name] = FrontendDefinition(
-            name=name,
-            line=source.count("\n", 0, match.start()) + 1,
-            fingerprint=stable_source_fingerprint(body),
-            category=frontend_definition_category(name, body),
+        definitions.append(
+            FrontendDefinition(
+                name=name,
+                line=source.count("\n", 0, match.start()) + 1,
+                fingerprint=stable_source_fingerprint(body),
+                category=frontend_definition_category(name, body),
+            )
         )
     return definitions
+
+
+def frontend_top_level_definitions(source: str) -> dict[str, FrontendDefinition]:
+    return {
+        definition.name: definition
+        for definition in frontend_top_level_definition_occurrences(source)
+    }
 
 
 def frontend_definition_inventory(source: str) -> frozenset[tuple[str, str]]:
@@ -377,7 +386,7 @@ def frontend_definition_inventory(source: str) -> frozenset[tuple[str, str]]:
     }
     inventory.update(
         definition.baseline_key
-        for definition in frontend_top_level_definitions(source).values()
+        for definition in frontend_top_level_definition_occurrences(source)
     )
     return frozenset(inventory)
 
@@ -394,17 +403,29 @@ def frontend_function_violations(
     source: str,
     baseline: frozenset[tuple[str, str]],
 ) -> list[PlacementViolation]:
-    definitions = frontend_top_level_definitions(source)
+    definitions = frontend_top_level_definition_occurrences(source)
     violations = [
         PlacementViolation(
             definition.category,
             PurePosixPath(relative_path),
             definition.line,
-            f"New or changed top-level frontend definition {name!r} must move to frontend/static/js/.",
+            f"New or changed top-level frontend definition {definition.name!r} must move to frontend/static/js/.",
         )
-        for name, definition in sorted(definitions.items())
+        for definition in definitions
         if definition.baseline_key not in baseline
     ]
+    seen_names: set[str] = set()
+    for definition in definitions:
+        if definition.name in seen_names:
+            violations.append(
+                PlacementViolation(
+                    definition.category,
+                    PurePosixPath(relative_path),
+                    definition.line,
+                    f"Duplicate top-level frontend definition {definition.name!r} must move to frontend/static/js/.",
+                )
+            )
+        seen_names.add(definition.name)
     first_definition = FRONTEND_FUNCTION_PATTERN.search(source)
     prefix_end = first_definition.start() if first_definition else len(source)
     prefix_key = (
@@ -1039,6 +1060,30 @@ class ArchitectureContractTest(unittest.TestCase):
         )
         self.assertEqual(1, len(violations))
         self.assertEqual("payload", violations[0].category)
+
+    def test_duplicate_frontend_definition_name_is_rejected(self):
+        original = "function renderServices() { return true; }\n"
+        baseline = frontend_definition_inventory(original)
+        changed = (
+            "var renderServices = function () { return fetch('/api/new-monolith'); };\n"
+            + original
+        )
+        violations = frontend_function_violations(
+            "frontend/static/app.js",
+            changed,
+            baseline,
+        )
+        self.assertIn("transport", {item.category for item in violations})
+        self.assertTrue(any("Duplicate" in item.detail for item in violations))
+
+        exact_duplicate_violations = frontend_function_violations(
+            "frontend/static/app.js",
+            original + original,
+            baseline,
+        )
+        self.assertTrue(
+            any("Duplicate" in item.detail for item in exact_duplicate_violations)
+        )
 
     def test_frontend_module_prefix_growth_is_rejected(self):
         original = "const byId = (id) => document.getElementById(id);\n"
