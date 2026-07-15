@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from backend.domain.errors import SimulatorValidationError
 from backend.lab_store import DemoStore
 from backend.repositories.oie_settings import OieSettingsRepository
 
@@ -141,4 +142,3 @@ class OieSettingsRepositoryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-from backend.domain.errors import SimulatorValidationError
