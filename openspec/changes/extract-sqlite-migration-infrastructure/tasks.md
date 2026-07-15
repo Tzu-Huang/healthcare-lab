@@ -1,9 +1,9 @@
 ## 1. Characterize Existing Database Semantics
 
-- [ ] 1.1 Add temporary-database tests that pin the five-second timeout, `sqlite3.Row`, foreign-key enforcement, successful commit, exceptional rollback, and connection close behavior.
-- [ ] 1.2 Add tests proving the existing shared reentrant lock is used by `DemoStore` and extracted repository writes while current read behavior remains compatible.
-- [ ] 1.3 Add fresh, current-unversioned, and representative partial legacy database fixtures that preserve application rows and user-managed values.
-- [ ] 1.4 Pin repeatable dcm4chee mapping repair, MRN sequence advancement, lab-server enrichment, and OIE default-seed behavior before moving implementation.
+- [x] 1.1 Add temporary-database tests that pin the five-second timeout, `sqlite3.Row`, foreign-key enforcement, successful commit, exceptional rollback, and connection close behavior.
+- [x] 1.2 Add tests proving the existing shared reentrant lock is used by `DemoStore` and extracted repository writes while current read behavior remains compatible.
+- [x] 1.3 Add fresh, current-unversioned, and representative partial legacy database fixtures that preserve application rows and user-managed values.
+- [x] 1.4 Pin repeatable dcm4chee mapping repair, MRN sequence advancement, lab-server enrichment, and OIE default-seed behavior before moving implementation.
 
 ## 2. Introduce Shared SQLite Infrastructure
 
