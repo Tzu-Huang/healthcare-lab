@@ -21,6 +21,6 @@
 ## 4. Verify Behavior Preservation
 
 - [x] 4.1 Run focused architecture contract tests and confirm every failure diagnostic contains category, path, and line.
-- [ ] 4.2 Run the full Python regression suite and Python compilation checks.
-- [ ] 4.3 Run frontend syntax checks and any repository Compose or smoke contract checks affected by the documentation and test changes.
-- [ ] 4.4 Run `git diff --check` and strict OpenSpec validation, and record that runtime behavior, APIs, persistence, protocols, and UI behavior are unchanged.
+- [x] 4.2 Run the full Python regression suite and Python compilation checks.
+- [x] 4.3 Run frontend syntax checks and any repository Compose or smoke contract checks affected by the documentation and test changes.
+- [x] 4.4 Run `git diff --check` and strict OpenSpec validation, and record that runtime behavior, APIs, persistence, protocols, and UI behavior are unchanged.
