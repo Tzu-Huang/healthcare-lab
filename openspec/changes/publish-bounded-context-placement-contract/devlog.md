@@ -59,3 +59,17 @@ No runtime implementation, endpoint, persistence schema, protocol payload, or fr
 - Resolved nested CSS selector coverage by recognizing the first rule after an opening block brace.
 - Added both requested counterexamples; focused architecture verification passes 25 tests.
 - Full regression verification remains assigned to the next `/dev-test` run.
+
+### Round 4 - 2026-07-15
+
+- Review: `review/2026-07-15_codex-review-r4.md`
+- Verdict: changes requested.
+- Findings: one P1 frontend fingerprint false negative caused by normalizing whitespace inside JavaScript literals, and one P2 CSS diagnostic line shift caused by deleting multiline comment newlines.
+- Post-fix verification remains green at 25 architecture and 224 full-suite tests, but targeted counterexamples expose both uncovered cases.
+
+### Round 4 Resolution - 2026-07-15
+
+- Resolved JavaScript literal-whitespace coverage in `f34dd2d` with line-ending-only source fingerprints and a regenerated frontend baseline.
+- Resolved CSS diagnostic accuracy by retaining multiline comment newline counts during selector discovery.
+- Added both requested counterexamples; focused architecture verification passes 26 tests.
+- Full regression verification remains assigned to the next `/dev-test` run.

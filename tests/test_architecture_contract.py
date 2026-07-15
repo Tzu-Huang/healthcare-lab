@@ -425,7 +425,12 @@ def frontend_function_violations(
 
 
 def frontend_selector_families(source: str) -> dict[str, int]:
-    source_without_comments = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
+    source_without_comments = re.sub(
+        r"/\*.*?\*/",
+        lambda match: "\n" * match.group(0).count("\n"),
+        source,
+        flags=re.DOTALL,
+    )
     families: dict[str, int] = {}
     for match in CSS_RULE_PATTERN.finditer(source_without_comments):
         prelude = match.group(1)
@@ -1004,6 +1009,13 @@ class ArchitectureContractTest(unittest.TestCase):
             str(nested_selector_violations[0]),
             r"frontend/static/styles\.css:\d+:",
         )
+
+        commented_selector_violations = frontend_selector_violations(
+            "frontend/static/styles.css",
+            "/* first\nsecond\nthird */\n.new-family { display: block; }\n",
+            frozenset(),
+        )
+        self.assertEqual(4, commented_selector_violations[0].line)
 
     def test_changed_frontend_definition_body_is_rejected(self):
         original = "function renderServices() { return true; }\n"
