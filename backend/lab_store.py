@@ -66,6 +66,7 @@ from backend.repositories.oie_settings import (
     validate_oie_settings_payload,
 )
 from backend.services.oie_workflow import compose_oie_workbench
+from backend.services.dcm4chee_coordination import Dcm4cheeWorkflowCoordinator
 from backend.repositories.maintenance import (
     seed_lab_servers,
     seed_oie_settings_profile,
@@ -574,6 +575,25 @@ class DemoStore:
             hl7_timestamp_factory=hl7_timestamp,
             enrichment_loader=self.order_enrichment_loader,
             dcm4chee_status_view=dicom_domain.mwl_status_view,
+        )
+        self.dcm4chee_workflow_coordinator = Dcm4cheeWorkflowCoordinator(
+            patient_create=self.patient_repository.create_patient_record,
+            patient_get=self.patient_repository.get_patient_record,
+            order_create=self.order_repository.create_dcm4chee_order_record,
+            order_get=self.order_repository.get_order_record,
+            patient_sync_get=self.dcm4chee_patient_sync_repository.get_dcm4chee_patient_sync_for_patient,
+            mwl_get=self.dcm4chee_mwl_repository.get_dcm4chee_mwl_mapping_for_order,
+            mwl_upsert=self.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping,
+            result_list=self.dcm4chee_result_repository.list_dcm4chee_results_for_patient,
+            result_begin=self.dcm4chee_result_repository.begin_dcm4chee_result_refresh,
+            result_upsert=self.dcm4chee_result_repository.upsert_dcm4chee_result_record,
+            result_complete=self.dcm4chee_result_repository.complete_dcm4chee_result_refresh,
+            latest_simulated_generation=self.dcm4chee_result_repository.latest_simulated_dcm4chee_ap_return_generation,
+            mwl_payload_builder=lambda order, profile, **kwargs: dicom_templates.build_mwl_payload(
+                order, profile, uid_root=kwargs.get("uid_root", DCM4CHEE_DEFAULT_UID_ROOT),
+                timestamp_factory=hl7_timestamp,
+            ),
+            timestamp_factory=now_iso,
         )
 
     @contextmanager
@@ -1084,26 +1104,7 @@ class DemoStore:
         return self.order_repository.create_order_record(payload)
 
     def create_dcm4chee_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
-        item = self.create_order_record(payload)
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            connection.execute(
-                """
-                UPDATE local_order_records
-                SET protocol_version = ?, message_type = ?, order_status = ?,
-                    payload_hl7 = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    DCM4CHEE_ORDER_PROTOCOL_VERSION,
-                    DCM4CHEE_ORDER_MESSAGE_TYPE,
-                    "Created",
-                    "",
-                    timestamp,
-                    int(item["id"]),
-                ),
-            )
-        return self.get_order_record(int(item["id"]))
+        return self.order_repository.create_dcm4chee_order_record(payload)
 
     @staticmethod
     def _dicom_first_value(payload: dict[str, Any], tag: str, default: str = "") -> str:
@@ -1203,214 +1204,20 @@ class DemoStore:
 
     @staticmethod
     def dcm4chee_e2e_demo_patient_payload() -> dict[str, Any]:
-        return {
-            "mode": "dicom",
-            "mrn": "MRN-DCM-E2E-001",
-            "firstName": "Avery",
-            "middleName": "Lee",
-            "lastName": "Morgan",
-            "dob": "19850412",
-            "sex": "F",
-            "patientClass": "O",
-            "assignedLocation": "CARDIOLOGY^ROOM1",
-            "visitNumber": "VISIT-DCM-E2E-001",
-        }
+        return Dcm4cheeWorkflowCoordinator.dcm4chee_e2e_demo_patient_payload()
 
     @staticmethod
     def dcm4chee_e2e_demo_order_payload(patient_record_id: int) -> dict[str, Any]:
-        return {
-            "mode": "dicom",
-            "patientRecordId": int(patient_record_id),
-            "requestedAt": "20260713103000",
-            "orderingProvider": ORDER_DEFAULT_PROVIDER,
-            "orderCode": ORDER_DEFAULT_CODE,
-            "orderCodeText": ORDER_DEFAULT_TEXT,
-            "clinicalIndication": "ZAC-42 production-like dcm4chee E2E verification fixture",
-        }
+        return Dcm4cheeWorkflowCoordinator.dcm4chee_e2e_demo_order_payload(patient_record_id)
 
-    def create_dcm4chee_e2e_demo_fixture(
-        self,
-        profile: dict[str, Any],
-        *,
-        uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT,
-    ) -> dict[str, Any]:
-        patient = self.create_patient_record(self.dcm4chee_e2e_demo_patient_payload())
-        order = self.create_dcm4chee_order_record(self.dcm4chee_e2e_demo_order_payload(int(patient["id"])))
-        payload = self.build_dcm4chee_mwl_payload(order, profile, uid_root=uid_root)
-        mapping = self.upsert_dcm4chee_mwl_mapping(
-            int(order["id"]),
-            profile,
-            uid_root=uid_root,
-            request_payload=payload,
-            sync_status=DCM4CHEE_MWL_STATUS_PENDING,
-        )
-        patient = self.get_patient_record(int(patient["id"]))
-        order = self.get_order_record(int(order["id"]))
-        return {
-            "patient": patient,
-            "order": order,
-            "mapping": mapping,
-            "evidence": self.dcm4chee_e2e_evidence_for_order(int(order["id"]), profile),
-        }
+    def create_dcm4chee_e2e_demo_fixture(self, *args, **kwargs):
+        return self.dcm4chee_workflow_coordinator.create_dcm4chee_e2e_demo_fixture(*args, **kwargs)
 
-    def dcm4chee_e2e_evidence_for_order(self, order_record_id: int, profile: dict[str, Any]) -> dict[str, Any]:
-        order = self.get_order_record(int(order_record_id))
-        patient = self.get_patient_record(int(order["patientRecordId"]))
-        mapping = self.get_dcm4chee_mwl_mapping_for_order(int(order_record_id)) or {}
-        patient_sync = self.get_dcm4chee_patient_sync_for_patient(int(patient["id"]), profile)
-        results = self.list_dcm4chee_results_for_patient(int(patient["id"]))
-        order_results = [
-            item for item in results
-            if str(item.get("orderRecordId") or "") == str(order_record_id)
-            or (mapping.get("studyInstanceUid") and item.get("studyInstanceUid") == mapping.get("studyInstanceUid"))
-            or (mapping.get("accessionNumber") and item.get("accessionNumber") == mapping.get("accessionNumber"))
-        ]
-        dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
-        mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
-        dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
-        verification = mapping.get("verification") if isinstance(mapping.get("verification"), dict) else {}
-        return {
-            "mode": "dcm4chee-production-like-e2e",
-            "patientRecordId": patient["id"],
-            "orderRecordId": order["id"],
-            "profileName": profile.get("profileName", ""),
-            "identifiers": {
-                "patientId": mapping.get("patientId") or (patient.get("summary") or {}).get("mrn", ""),
-                "issuerOfPatientId": mapping.get("issuerOfPatientId") or profile.get("profileName", ""),
-                "accessionNumber": mapping.get("accessionNumber", ""),
-                "requestedProcedureId": mapping.get("requestedProcedureId", ""),
-                "scheduledProcedureStepId": mapping.get("scheduledProcedureStepId", ""),
-                "studyInstanceUid": mapping.get("studyInstanceUid", ""),
-                "seriesInstanceUid": next((item.get("seriesInstanceUid") for item in order_results if item.get("seriesInstanceUid")), ""),
-                "sopInstanceUid": next((item.get("sopInstanceUid") for item in order_results if item.get("sopInstanceUid")), ""),
-            },
-            "aeTitles": {
-                "archiveCalledAETitle": dimse.get("calledAETitle", ""),
-                "healthcareLabCallingAETitle": dimse.get("callingAETitle", ""),
-                "mwlAETitle": mwl.get("aeTitle", ""),
-                "scheduledStationAETitle": mapping.get("scheduledStationAETitle") or mwl.get("defaultScheduledStationAETitle", ""),
-            },
-            "endpoints": {
-                "mwlRestUrl": f"{str(dicomweb.get('baseUrl') or '').rstrip('/')}/mwlitems" if dicomweb.get("baseUrl") else "",
-                "qidoRsUrl": dicomweb.get("qidoRsUrl", ""),
-                "wadoRsUrl": dicomweb.get("wadoRsUrl", ""),
-                "webUiUrl": profile.get("webUiUrl", ""),
-            },
-            "steps": {
-                "patientPrecondition": (patient_sync or {}).get("status") or "not_synced",
-                "mwlCreate": mapping.get("status") or "not_created",
-                "mwlQueryable": verification.get("status") or DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED,
-                "apReturn": "recorded" if order_results else "not_recorded",
-                "resultReconciliation": next((item.get("reconciliationStatus") for item in order_results if item.get("reconciliationStatus")), DCM4CHEE_RESULT_STATUS_NO_RESULT),
-                "uiVisibleResult": bool(order_results),
-            },
-            "results": order_results,
-            "generatedAt": now_iso(),
-        }
+    def dcm4chee_e2e_evidence_for_order(self, *args, **kwargs):
+        return self.dcm4chee_workflow_coordinator.dcm4chee_e2e_evidence_for_order(*args, **kwargs)
 
-    def create_simulated_dcm4chee_ap_return(
-        self,
-        order_record_id: int,
-        profile: dict[str, Any],
-        *,
-        result_type: str = "both",
-        artifact_url: str = "",
-        artifact_path: str = "",
-    ) -> dict[str, Any]:
-        order = self.get_order_record(int(order_record_id))
-        if order.get("protocolVersion") != DCM4CHEE_ORDER_PROTOCOL_VERSION:
-            raise SimulatorValidationError("Order record is not DICOM MWL mode.")
-        mapping = self.get_dcm4chee_mwl_mapping_for_order(int(order_record_id))
-        if not mapping:
-            payload = self.build_dcm4chee_mwl_payload(order, profile)
-            mapping = self.upsert_dcm4chee_mwl_mapping(
-                int(order_record_id),
-                profile,
-                request_payload=payload,
-                sync_status=DCM4CHEE_MWL_STATUS_PENDING,
-            )
-        result_type = str(result_type or "both").strip().lower()
-        if result_type not in {"both", "pdf", "dicom"}:
-            raise SimulatorValidationError("Simulated AP return type must be pdf, dicom, or both.")
-        generation = (
-            self.latest_simulated_dcm4chee_ap_return_generation(int(order_record_id))
-            if result_type in {"pdf", "dicom"}
-            else ""
-        ) or f"simulated-ap-return-{now_iso()}"
-        self.begin_dcm4chee_result_refresh(
-            int(order["patientRecordId"]),
-            generation,
-            promote_existing=True,
-        )
-        base_metadata = {
-            "study_instance_uid": str(mapping.get("studyInstanceUid") or ""),
-            "accession_number": str(mapping.get("accessionNumber") or ""),
-            "patient_id": str(mapping.get("patientId") or ""),
-            "issuer_of_patient_id": str(mapping.get("issuerOfPatientId") or ""),
-            "requested_procedure_id": str(mapping.get("requestedProcedureId") or ""),
-            "scheduled_procedure_step_id": str(mapping.get("scheduledProcedureStepId") or ""),
-            "modality": "ECG",
-            "study_datetime": "20260713104500",
-        }
-        created: list[dict[str, Any]] = []
-        if result_type in {"both", "dicom"}:
-            metadata = {
-                **base_metadata,
-                "series_instance_uid": f"{base_metadata['study_instance_uid']}.1",
-                "sop_instance_uid": f"{base_metadata['study_instance_uid']}.1.1",
-                "series_datetime": "20260713104600",
-                "instance_datetime": "20260713104630",
-            }
-            created.append(
-                self.upsert_dcm4chee_result_record(
-                    metadata,
-                    profile,
-                    patient_record_id=int(order["patientRecordId"]),
-                    query_url="simulated://ap-return/dicom",
-                    query_payload={"source": DCM4CHEE_RESULT_SOURCE_SIMULATED_AP, "type": "dicom"},
-                    raw_metadata={"source": DCM4CHEE_RESULT_SOURCE_SIMULATED_AP, "type": "dicom", "metadata": metadata},
-                    refresh_generation=generation,
-                )
-            )
-        if result_type in {"both", "pdf"}:
-            url = artifact_url or "http://localhost/reports/dcm4chee-simulated-ecg-report.pdf"
-            path = artifact_path or "reports/dcm4chee-simulated-ecg-report.pdf"
-            metadata = {
-                **base_metadata,
-                "series_instance_uid": f"{base_metadata['study_instance_uid']}.9001",
-                "sop_instance_uid": f"{base_metadata['study_instance_uid']}.9001.1",
-                "modality": "DOC",
-                "series_datetime": "20260713104700",
-                "instance_datetime": "20260713104730",
-            }
-            created.append(
-                self.upsert_dcm4chee_result_record(
-                    metadata,
-                    profile,
-                    patient_record_id=int(order["patientRecordId"]),
-                    query_url="simulated://ap-return/pdf",
-                    query_payload={"source": DCM4CHEE_RESULT_SOURCE_SIMULATED_AP, "type": "pdf"},
-                    raw_metadata={
-                        "source": DCM4CHEE_RESULT_SOURCE_SIMULATED_AP,
-                        "type": "pdf",
-                        "metadata": metadata,
-                        "artifact": {
-                            "label": "Simulated AP ECG PDF",
-                            "mediaType": "application/pdf",
-                            "url": url,
-                            "path": path,
-                            "role": "ap-return-report",
-                        },
-                    },
-                    refresh_generation=generation,
-                )
-            )
-        self.complete_dcm4chee_result_refresh(int(order["patientRecordId"]), generation)
-        return {
-            "items": created,
-            "evidence": self.dcm4chee_e2e_evidence_for_order(int(order_record_id), profile),
-            "refreshGeneration": generation,
-        }
+    def create_simulated_dcm4chee_ap_return(self, *args, **kwargs):
+        return self.dcm4chee_workflow_coordinator.create_simulated_dcm4chee_ap_return(*args, **kwargs)
 
     def latest_simulated_dcm4chee_ap_return_generation(self, *args, **kwargs):
         return self.dcm4chee_result_repository.latest_simulated_dcm4chee_ap_return_generation(*args, **kwargs)
