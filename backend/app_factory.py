@@ -390,7 +390,7 @@ def create_app(database_path: str | None = None) -> Flask:
         result_refresh=refresh_patient_dcm4chee_results,
         order_sync=sync_order_to_dcm4chee_mwl,
         order_verify=verify_order_dcm4chee_mwl,
-        patient_sender=send_hl7_mllp_message,
+        patient_sender=lambda *args, **kwargs: send_hl7_mllp_message(*args, **kwargs),
     )
 
     app.register_blueprint(
