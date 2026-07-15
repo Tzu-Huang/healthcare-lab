@@ -1,8 +1,16 @@
 import ast
+import hashlib
 import re
 import unittest
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+
+from tests.architecture_legacy_baseline import (
+    BACKEND_LEGACY_BASELINE,
+    CONCRETE_REPOSITORY_IMPORT_BASELINE,
+    FRONTEND_FUNCTION_BASELINE,
+    FRONTEND_SELECTOR_FAMILY_BASELINE,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,9 +31,63 @@ SQL_PATTERN = re.compile(
 )
 PROTOCOL_CALLS = {
     "socket.create_connection",
+    "subprocess.run",
     "urllib.request.urlopen",
     "urlopen",
 }
+CATCH_ALL_BACKEND_PATHS = (
+    "backend/lab_store.py",
+    "backend/gdt_adapter.py",
+    "backend/dashboard_services.py",
+    "backend/lab_operations.py",
+)
+PAYLOAD_NAME_PARTS = (
+    "ack",
+    "attachment",
+    "dataset",
+    "dicom",
+    "fhir",
+    "gdt",
+    "hl7",
+    "identifier",
+    "mapping",
+    "measurement",
+    "message",
+    "payload",
+    "record_dict",
+    "resource",
+    "oru",
+)
+WORKFLOW_NAME_PREFIXES = (
+    "begin_",
+    "collect_",
+    "complete_",
+    "create_",
+    "execute_",
+    "export_",
+    "import_",
+    "reconcile_",
+    "record_",
+    "refresh_",
+    "retry_",
+    "run_",
+    "send_",
+    "start_",
+    "stop_",
+    "sync_",
+    "update_",
+    "upsert_",
+    "verify_",
+    "write_",
+)
+TRANSPORT_ROOTS = {"http", "requests", "socket", "subprocess", "urllib"}
+FRONTEND_FUNCTION_PATTERN = re.compile(
+    r"^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(|"
+    r"^const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^\n]*\)|[A-Za-z_$][\w$]*)\s*=>",
+    re.MULTILINE,
+)
+CSS_RULE_PATTERN = re.compile(r"(?:^|})\s*([^@{}][^{}]*)\{", re.MULTILINE)
+CSS_FAMILY_PATTERN = re.compile(r"[.#][A-Za-z_-][\w-]*")
 
 
 @dataclass(frozen=True)
@@ -37,6 +99,188 @@ class PlacementViolation:
 
     def __str__(self) -> str:
         return f"[{self.category}] {self.path}:{self.line}: {self.detail}"
+
+
+@dataclass(frozen=True, order=True)
+class LegacyCandidate:
+    category: str
+    path: str
+    symbol: str
+    fingerprint: str
+    line: int
+
+    @property
+    def baseline_key(self) -> tuple[str, str, str, str]:
+        return (self.category, self.path, self.symbol, self.fingerprint)
+
+    def violation(self, detail: str) -> PlacementViolation:
+        return PlacementViolation(
+            self.category,
+            PurePosixPath(self.path),
+            self.line,
+            detail,
+        )
+
+
+def stable_fingerprint(value: ast.AST | str) -> str:
+    if isinstance(value, ast.AST):
+        payload = ast.dump(value, annotate_fields=True, include_attributes=False)
+    else:
+        payload = re.sub(r"\s+", " ", value).strip()
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def root_name(node: ast.AST) -> str:
+    while isinstance(node, ast.Attribute):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else ""
+
+
+def definition_has_transport(node: ast.AST) -> bool:
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call) and dotted_name(child.func) in PROTOCOL_CALLS:
+            return True
+        if isinstance(child, ast.Attribute) and root_name(child) in TRANSPORT_ROOTS:
+            return True
+    return False
+
+
+class LegacyCandidateCollector(ast.NodeVisitor):
+    def __init__(self, path: str):
+        self.path = path
+        self.symbols: list[str] = []
+        self.candidates: set[LegacyCandidate] = set()
+
+    @property
+    def symbol(self) -> str:
+        return ".".join(self.symbols) if self.symbols else "<module>"
+
+    def add(self, category: str, node: ast.AST, *, fingerprint: ast.AST | str | None = None) -> None:
+        self.candidates.add(
+            LegacyCandidate(
+                category,
+                self.path,
+                self.symbol,
+                stable_fingerprint(fingerprint if fingerprint is not None else node),
+                getattr(node, "lineno", 1),
+            )
+        )
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.symbols.append(node.name)
+        if definition_has_transport(node) or node.name.endswith(("Adapter", "Connection")):
+            self.add("transport", node)
+        self.generic_visit(node)
+        self.symbols.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function(node)
+
+    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        self.symbols.append(node.name)
+        lowered = node.name.lower()
+        if any(part in lowered for part in PAYLOAD_NAME_PARTS):
+            self.add("payload", node)
+        if lowered.startswith(WORKFLOW_NAME_PREFIXES):
+            self.add("workflow", node)
+        if definition_has_transport(node):
+            self.add("transport", node)
+        self.generic_visit(node)
+        self.symbols.pop()
+
+    def visit_Constant(self, node: ast.Constant) -> None:
+        if isinstance(node.value, str) and SQL_PATTERN.search(node.value):
+            self.add("sql", node, fingerprint=node.value)
+
+
+def legacy_backend_candidates(relative_path: str, source: str) -> set[LegacyCandidate]:
+    collector = LegacyCandidateCollector(relative_path.replace("\\", "/"))
+    collector.visit(ast.parse(source, filename=relative_path))
+    return collector.candidates
+
+
+def legacy_backend_violations(
+    relative_path: str,
+    source: str,
+    baseline: frozenset[tuple[str, str, str, str]],
+) -> list[PlacementViolation]:
+    candidates = legacy_backend_candidates(relative_path, source)
+    return [
+        item.violation(
+            f"New {item.category} implementation must move to its named bounded-context owner; "
+            f"legacy symbol {item.symbol!r} is not in the reviewed baseline."
+        )
+        for item in sorted(candidates)
+        if item.baseline_key not in baseline
+    ]
+
+
+def frontend_top_level_functions(source: str) -> dict[str, int]:
+    functions: dict[str, int] = {}
+    for match in FRONTEND_FUNCTION_PATTERN.finditer(source):
+        name = match.group(1) or match.group(2)
+        functions[name] = source.count("\n", 0, match.start()) + 1
+    return functions
+
+
+def frontend_function_category(name: str, source_line: str = "") -> str:
+    lowered = name.lower()
+    if any(part in lowered for part in ("request", "fetch", "send")) or "fetch(" in source_line:
+        return "transport"
+    if any(part in lowered for part in ("build", "parse", "payload", "preview", "render")):
+        return "payload"
+    return "workflow"
+
+
+def frontend_function_violations(
+    relative_path: str,
+    source: str,
+    baseline: frozenset[str],
+) -> list[PlacementViolation]:
+    lines = source.splitlines()
+    return [
+        PlacementViolation(
+            frontend_function_category(name, lines[line - 1] if line <= len(lines) else ""),
+            PurePosixPath(relative_path),
+            line,
+            f"New top-level frontend function {name!r} must move to frontend/static/js/.",
+        )
+        for name, line in sorted(frontend_top_level_functions(source).items())
+        if name not in baseline
+    ]
+
+
+def frontend_selector_families(source: str) -> dict[str, int]:
+    source_without_comments = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
+    families: dict[str, int] = {}
+    for match in CSS_RULE_PATTERN.finditer(source_without_comments):
+        prelude = match.group(1)
+        line = source_without_comments.count("\n", 0, match.start(1)) + 1
+        for selector in prelude.split(","):
+            family = CSS_FAMILY_PATTERN.search(selector)
+            if family:
+                families.setdefault(family.group(0), line)
+    return families
+
+
+def frontend_selector_violations(
+    relative_path: str,
+    source: str,
+    baseline: frozenset[str],
+) -> list[PlacementViolation]:
+    return [
+        PlacementViolation(
+            "presentation",
+            PurePosixPath(relative_path),
+            line,
+            f"New selector family {family!r} must move to frontend/static/css/.",
+        )
+        for family, line in sorted(frontend_selector_families(source).items())
+        if family not in baseline
+    ]
 
 
 def imported_modules_from_tree(tree: ast.AST) -> set[str]:
@@ -327,6 +571,23 @@ class ArchitectureContractTest(unittest.TestCase):
                         f"{path.relative_to(ROOT)} must not depend outward on runtime modules.",
                     )
 
+    def test_only_reviewed_modules_import_concrete_repositories(self):
+        actual: set[tuple[str, str]] = set()
+        for package in ("api", "services", "clients", "runtime", "domain", "templates"):
+            for path in (BACKEND / package).glob("*.py"):
+                relative_path = path.relative_to(ROOT).as_posix()
+                for module in imported_modules(path):
+                    if module == "backend.repositories" or module.startswith(
+                        "backend.repositories."
+                    ):
+                        actual.add((relative_path, module))
+        self.assertEqual(
+            CONCRETE_REPOSITORY_IMPORT_BASELINE,
+            actual,
+            "Only reviewed legacy imports may bypass repository ports; new cross-context "
+            "coordination belongs in an explicit service.",
+        )
+
     def test_lab_repository_port_declares_consumed_operations(self):
         path = BACKEND / "services" / "lab_workflow.py"
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -420,6 +681,117 @@ class ArchitectureContractTest(unittest.TestCase):
             500,
             "backend/app_factory.py must remain a compact composition root.",
         )
+
+    def test_backend_catch_all_modules_match_reviewed_legacy_baseline(self):
+        actual: set[tuple[str, str, str, str]] = set()
+        violations: list[PlacementViolation] = []
+        for relative_path in CATCH_ALL_BACKEND_PATHS:
+            source = (ROOT / relative_path).read_text(encoding="utf-8")
+            candidates = legacy_backend_candidates(relative_path, source)
+            actual.update(item.baseline_key for item in candidates)
+            violations.extend(
+                legacy_backend_violations(
+                    relative_path,
+                    source,
+                    BACKEND_LEGACY_BASELINE,
+                )
+            )
+        self.assertEqual(
+            [],
+            violations,
+            "Catch-all placement violations:\n" + "\n".join(map(str, violations)),
+        )
+        self.assertEqual(
+            BACKEND_LEGACY_BASELINE,
+            actual,
+            "Remove reviewed baseline entries in the same change that extracts legacy implementation.",
+        )
+
+    def test_frontend_entrypoints_match_reviewed_legacy_inventories(self):
+        js_path = ROOT / "frontend" / "static" / "app.js"
+        js_source = js_path.read_text(encoding="utf-8")
+        function_violations = frontend_function_violations(
+            "frontend/static/app.js",
+            js_source,
+            FRONTEND_FUNCTION_BASELINE,
+        )
+        self.assertEqual(
+            [],
+            function_violations,
+            "Frontend placement violations:\n" + "\n".join(map(str, function_violations)),
+        )
+        self.assertEqual(
+            FRONTEND_FUNCTION_BASELINE,
+            frozenset(frontend_top_level_functions(js_source)),
+            "Remove frontend function baseline entries when globals move to owned modules.",
+        )
+
+        css_path = ROOT / "frontend" / "static" / "styles.css"
+        css_source = css_path.read_text(encoding="utf-8")
+        selector_violations = frontend_selector_violations(
+            "frontend/static/styles.css",
+            css_source,
+            FRONTEND_SELECTOR_FAMILY_BASELINE,
+        )
+        self.assertEqual(
+            [],
+            selector_violations,
+            "Frontend placement violations:\n" + "\n".join(map(str, selector_violations)),
+        )
+        self.assertEqual(
+            FRONTEND_SELECTOR_FAMILY_BASELINE,
+            frozenset(frontend_selector_families(css_source)),
+            "Remove selector-family baseline entries when styles move to owned modules.",
+        )
+
+    def test_catch_all_violation_fixtures_name_category_path_and_line(self):
+        fixtures = {
+            "sql": "def lookup():\n    return 'SELECT * FROM patient'\n",
+            "payload": "def build_patient_payload():\n    return {'resourceType': 'Patient'}\n",
+            "workflow": "def sync_patient():\n    return True\n",
+            "transport": "def fetch_patient():\n    return urllib.request.urlopen('http://example')\n",
+        }
+        for category, source in fixtures.items():
+            with self.subTest(category=category):
+                violations = legacy_backend_violations(
+                    "backend/lab_store.py",
+                    source,
+                    frozenset(),
+                )
+                matches = [item for item in violations if item.category == category]
+                self.assertTrue(matches)
+                message = str(matches[0])
+                self.assertIn(f"[{category}]", message)
+                self.assertIn("backend/lab_store.py", message)
+                self.assertRegex(message, r":\d+:")
+
+    def test_compatibility_delegation_and_incremental_extraction_are_allowed(self):
+        facade = "from backend.domain.patient import normalize_patient as normalize_patient\n"
+        self.assertEqual(
+            [],
+            legacy_backend_violations("backend/lab_store.py", facade, frozenset()),
+        )
+        self.assertEqual(
+            set(),
+            legacy_backend_candidates("backend/lab_store.py", ""),
+        )
+
+    def test_new_frontend_globals_and_selector_families_are_rejected(self):
+        function_violations = frontend_function_violations(
+            "frontend/static/app.js",
+            "async function fetchNewPatient() { return fetch('/api/patients'); }\n",
+            frozenset(),
+        )
+        self.assertEqual("transport", function_violations[0].category)
+        self.assertRegex(str(function_violations[0]), r"frontend/static/app\.js:\d+:")
+
+        selector_violations = frontend_selector_violations(
+            "frontend/static/styles.css",
+            ".new-patient-card { display: block; }\n",
+            frozenset(),
+        )
+        self.assertEqual("presentation", selector_violations[0].category)
+        self.assertRegex(str(selector_violations[0]), r"frontend/static/styles\.css:\d+:")
 
     def test_placement_failures_name_category_path_and_line(self):
         fixtures = {
