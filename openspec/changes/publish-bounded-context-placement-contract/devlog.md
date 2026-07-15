@@ -45,3 +45,17 @@ No runtime implementation, endpoint, persistence schema, protocol payload, or fr
 - Resolved frontend body coverage with name-plus-fingerprint baselines while retaining a readable name inventory.
 - Added changed-existing-function and module-level transport/payload/workflow fixtures; focused architecture verification passes 24 tests.
 - Full regression verification remains assigned to the next `/dev-test` run.
+
+### Round 3 - 2026-07-15
+
+- Review: `review/2026-07-15_codex-review-r3.md`
+- Verdict: changes requested.
+- Findings: two P1 frontend enforcement bypasses remain. Source before the first matched definition is not fingerprinted, and the first selector nested inside a CSS block at-rule is not inventoried.
+- Full post-fix verification remains green at 24 architecture and 223 full-suite tests, but targeted counterexamples return no placement violations.
+
+### Round 3 Resolution - 2026-07-15
+
+- Resolved frontend source-prefix coverage in `0a04647` with a stable module-prefix fingerprint and a prepended-global counterexample.
+- Resolved nested CSS selector coverage by recognizing the first rule after an opening block brace.
+- Added both requested counterexamples; focused architecture verification passes 25 tests.
+- Full regression verification remains assigned to the next `/dev-test` run.
