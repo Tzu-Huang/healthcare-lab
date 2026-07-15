@@ -21,9 +21,9 @@
 
 ## 4. Extract Backfill and Seed Orchestration
 
-- [ ] 4.1 Move the additive column helper and dcm4chee historical mapping backfill to repository-layer migration/maintenance ownership while preserving duplicate-column race handling and conditional repair behavior.
-- [ ] 4.2 Move MRN sequence, lab-server, and OIE settings seed orchestration behind the shared initializer without overwriting existing user-managed values.
-- [ ] 4.3 Prove repeated initialization neither duplicates rows nor decreases sequences, replaces mappings, or resets edited configuration.
+- [x] 4.1 Move the additive column helper and dcm4chee historical mapping backfill to repository-layer migration/maintenance ownership while preserving duplicate-column race handling and conditional repair behavior.
+- [x] 4.2 Move MRN sequence, lab-server, and OIE settings seed orchestration behind the shared initializer without overwriting existing user-managed values.
+- [x] 4.3 Prove repeated initialization neither duplicates rows nor decreases sequences, replaces mappings, or resets edited configuration.
 
 ## 5. Delegate DemoStore Compatibility
 
