@@ -47,6 +47,6 @@
 
 - [x] 7.1 Remove architecture legacy-baseline entries corresponding to extracted patient, identifier, generic order, validation, and payload implementation; do not add or refresh replacement exceptions.
 - [x] 7.2 Run focused domain, template, repository, service, database, API, and integration tests using only disposable databases and external-service doubles.
-- [ ] 7.3 Run the full automated regression suite, Python compilation checks, frontend syntax checks if affected, architecture contract tests, and strict OpenSpec validation.
-- [ ] 7.4 Confirm the final diff contains no schema/data migration, new runtime dependency, API or deterministic payload change, real `instance/*.db` access, or complete FHIR/GDT/dcm4chee extraction.
-- [ ] 7.5 If and only if a documented hard-stop condition is proven, stop with evidence; otherwise autonomously resolve ordinary failures and complete all verification.
+- [x] 7.3 Run the full automated regression suite, Python compilation checks, frontend syntax checks if affected, architecture contract tests, and strict OpenSpec validation.
+- [x] 7.4 Confirm the final diff contains no schema/data migration, new runtime dependency, API or deterministic payload change, real `instance/*.db` access, or complete FHIR/GDT/dcm4chee extraction.
+- [x] 7.5 If and only if a documented hard-stop condition is proven, stop with evidence; otherwise autonomously resolve ordinary failures and complete all verification.
