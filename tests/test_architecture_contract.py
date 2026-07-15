@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 
 from tests.architecture_legacy_baseline import (
     BACKEND_LEGACY_BASELINE,
+    COMPATIBILITY_FACADE_CALLER_BASELINE,
     CONCRETE_REPOSITORY_IMPORT_BASELINE,
     FRONTEND_FUNCTION_BASELINE,
     FRONTEND_FUNCTION_NAME_INVENTORY,
@@ -57,6 +58,14 @@ CATCH_ALL_BACKEND_PATHS = (
     "backend/gdt_adapter.py",
     "backend/dashboard_services.py",
     "backend/lab_operations.py",
+)
+COMPATIBILITY_FACADE_MODULES = frozenset(
+    {
+        "backend.dashboard_services",
+        "backend.gdt_adapter",
+        "backend.lab_operations",
+        "backend.lab_store",
+    }
 )
 PAYLOAD_NAME_PARTS = (
     "ack",
@@ -553,6 +562,24 @@ def layer_dependency_violations(
     return violations
 
 
+def compatibility_facade_caller_violations(
+    relative_path: str,
+    modules: set[str],
+    baseline: frozenset[tuple[str, str]],
+) -> list[PlacementViolation]:
+    path = PurePosixPath(relative_path.replace("\\", "/"))
+    return [
+        PlacementViolation(
+            "dependency",
+            path,
+            1,
+            f"New callers must import the owner of compatibility facade {module!r} directly.",
+        )
+        for module in sorted(modules & COMPATIBILITY_FACADE_MODULES)
+        if (path.as_posix(), module) not in baseline
+    ]
+
+
 def backend_module_path(module: str) -> Path | None:
     if module == "backend":
         return BACKEND / "__init__.py"
@@ -843,6 +870,52 @@ class ArchitectureContractTest(unittest.TestCase):
             violations,
             "Layer dependency violations:\n" + "\n".join(map(str, violations)),
         )
+
+    def test_only_reviewed_modules_import_compatibility_facades(self):
+        actual: set[tuple[str, str]] = set()
+        violations: list[PlacementViolation] = []
+        for path in sorted(BACKEND.rglob("*.py")):
+            relative_path = path.relative_to(ROOT).as_posix()
+            modules = imported_modules(path)
+            actual.update(
+                (relative_path, module)
+                for module in modules & COMPATIBILITY_FACADE_MODULES
+            )
+            violations.extend(
+                compatibility_facade_caller_violations(
+                    relative_path,
+                    modules,
+                    COMPATIBILITY_FACADE_CALLER_BASELINE,
+                )
+            )
+        self.assertEqual(
+            [],
+            violations,
+            "Compatibility facade caller violations:\n" + "\n".join(map(str, violations)),
+        )
+        self.assertEqual(
+            COMPATIBILITY_FACADE_CALLER_BASELINE,
+            actual,
+            "Remove facade caller baseline entries when existing callers migrate to owners.",
+        )
+
+    def test_new_compatibility_facade_callers_are_rejected(self):
+        fixtures = {
+            "backend/services/new_gdt.py": "backend.gdt_adapter",
+            "backend/clients/new_docker.py": "backend.lab_operations",
+            "backend/services/new_dashboard.py": "backend.dashboard_services",
+            "backend/runtime/new_store.py": "backend.lab_store",
+        }
+        for relative_path, module in fixtures.items():
+            with self.subTest(path=relative_path, module=module):
+                violations = compatibility_facade_caller_violations(
+                    relative_path,
+                    {module},
+                    frozenset(),
+                )
+                self.assertEqual(1, len(violations))
+                self.assertEqual("dependency", violations[0].category)
+                self.assertIn(module, violations[0].detail)
 
     def test_services_do_not_depend_transitively_on_concrete_store(self):
         for path in layer_python_paths("services"):

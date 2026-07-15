@@ -126,3 +126,16 @@ No runtime implementation, endpoint, persistence schema, protocol payload, or fr
 - Added and enforced an explicit allowed-layer dependency matrix across all recursive responsibility modules.
 - Preserved only the reviewed concrete-repository exceptions and added four representative outward-edge fixtures.
 - Focused architecture verification passes 32 tests; full regression verification remains assigned to the next `/dev-test` run.
+
+### Round 9 - 2026-07-15
+
+- Review: `review/2026-07-15_codex-review-r9.md`
+- Verdict: changes requested.
+- Finding: one P1 compatibility-seam gap remains. Root compatibility modules are outside the recognized layer matrix, so new callers of `gdt_adapter`, `lab_operations`, `dashboard_services`, or `lab_store` are not rejected.
+- Latest verification remains green at 32 architecture and 231 full-suite tests, but targeted facade-import counterexamples return no placement violations.
+
+### Round 9 Resolution - 2026-07-15
+
+- Added an exact compatibility-facade caller baseline covering all six current backend caller/module pairs.
+- Added recursive live-tree enforcement and one negative fixture for each of the four root facades.
+- Focused architecture verification passes 34 tests; full regression verification remains assigned to the next `/dev-test` run.
