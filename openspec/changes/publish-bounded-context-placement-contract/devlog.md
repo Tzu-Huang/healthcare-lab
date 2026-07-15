@@ -100,3 +100,16 @@ No runtime implementation, endpoint, persistence schema, protocol payload, or fr
 - Resolved nested package coverage with a shared recursive layer iterator used by dependency and placement checks.
 - Added parent-package and nested-module fixtures; focused architecture verification passes 29 tests.
 - Full regression verification remains assigned to the next `/dev-test` run.
+
+### Round 7 - 2026-07-15
+
+- Review: `review/2026-07-15_codex-review-r7.md`
+- Verdict: changes requested.
+- Finding: one P1 relative-import bypass remains. Direct dependency checks do not resolve `ImportFrom.level`, so relative API and repository imports are not classified as backend modules.
+- Post-fix verification remains green at 29 architecture and 228 full-suite tests, but targeted relative-import counterexamples return no prohibited modules.
+
+### Round 7 Resolution - 2026-07-15
+
+- Combined direct external import discovery with the path-aware backend relative import resolver.
+- Added flat-package `..api`, `..repositories`, and repository-child fixtures; focused architecture verification passes 30 tests.
+- Full regression verification remains assigned to the next `/dev-test` run.

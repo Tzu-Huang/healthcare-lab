@@ -496,7 +496,10 @@ def imported_modules_from_tree(tree: ast.AST) -> set[str]:
 
 def imported_modules(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    return imported_modules_from_tree(tree)
+    return imported_modules_from_tree(tree) | resolved_backend_imports_from_tree(
+        tree,
+        path,
+    )
 
 
 def layer_python_paths(package: str, backend_root: Path = BACKEND) -> list[Path]:
@@ -516,8 +519,7 @@ def backend_module_path(module: str) -> Path | None:
     return package_path if package_path.is_file() else None
 
 
-def resolved_backend_imports(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+def resolved_backend_imports_from_tree(tree: ast.AST, path: Path) -> set[str]:
     relative = path.relative_to(ROOT).with_suffix("")
     module_parts = list(relative.parts)
     if module_parts[-1] == "__init__":
@@ -547,6 +549,11 @@ def resolved_backend_imports(path: Path) -> set[str]:
                     if backend_module_path(candidate):
                         modules.add(candidate)
     return modules
+
+
+def resolved_backend_imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return resolved_backend_imports_from_tree(tree, path)
 
 
 def transitive_backend_imports(path: Path) -> set[str]:
@@ -729,6 +736,18 @@ class ArchitectureContractTest(unittest.TestCase):
     def test_parent_package_imports_resolve_child_modules(self):
         modules = imported_modules_from_tree(
             ast.parse("from backend import api, repositories\n")
+        )
+        self.assertIn("backend.api", modules)
+        self.assertIn("backend.repositories", modules)
+
+    def test_relative_imports_resolve_absolute_backend_modules(self):
+        tree = ast.parse(
+            "from .. import api, repositories\n"
+            "from ..repositories import patient\n"
+        )
+        modules = resolved_backend_imports_from_tree(
+            tree,
+            ROOT / "backend" / "domain" / "patient.py",
         )
         self.assertIn("backend.api", modules)
         self.assertIn("backend.repositories", modules)
