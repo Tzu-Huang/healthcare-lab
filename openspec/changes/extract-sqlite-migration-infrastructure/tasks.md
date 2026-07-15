@@ -35,5 +35,5 @@
 
 - [x] 6.1 Confirm the implementation contains no application-table or application-row deletion, table rebuild, column removal, stricter legacy constraint, real `instance/*.db` access, or public API change; stop for review if any is required.
 - [x] 6.2 Run focused database and repository tests after each extraction stage and stop rather than weaken assertions when transaction, lock, seed, backfill, or legacy-data compatibility differs.
-- [ ] 6.3 Run the full repository and integration suites, Python compilation, architecture contracts, `git diff --check`, and strict OpenSpec validation.
-- [ ] 6.4 Commit implementation in focused stages so characterization, infrastructure, migrations, maintenance, and compatibility delegation can each be reviewed or reverted independently.
+- [x] 6.3 Run the full repository and integration suites, Python compilation, architecture contracts, `git diff --check`, and strict OpenSpec validation.
+- [x] 6.4 Commit implementation in focused stages so characterization, infrastructure, migrations, maintenance, and compatibility delegation can each be reviewed or reverted independently.
