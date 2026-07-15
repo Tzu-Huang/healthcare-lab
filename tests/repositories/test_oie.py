@@ -9,7 +9,7 @@ class OieRepositoryCharacterizationTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.store = DemoStore(Path(self.directory.name) / "oie.db")
-        self.repository = self.store
+        self.repository = self.store.oie_repository
 
     def tearDown(self):
         self.directory.cleanup()
@@ -57,6 +57,10 @@ class OieRepositoryCharacterizationTests(unittest.TestCase):
 
     def test_store_and_database_share_write_lock(self):
         self.assertIs(self.store.lock, self.store.database.lock)
+        self.assertIs(self.repository.lock, self.store.database.lock)
+
+    def test_store_compatibility_delegates_match_direct_repository(self):
+        self.assertEqual(self.store.list_oie_results(), self.repository.list_oie_results())
 
 
 if __name__ == "__main__":
