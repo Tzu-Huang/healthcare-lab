@@ -274,7 +274,7 @@ def create_app(database_path: str | None = None) -> Flask:
         create_lab_servers_blueprint(
             LabServerWorkflowService(
                 app,
-                store,
+                store.lab_repository,
                 health_checker=lambda target_store, server_id: run_lab_server_health_check(
                     target_store, server_id
                 ),

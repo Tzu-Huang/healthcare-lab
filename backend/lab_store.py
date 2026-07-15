@@ -41,6 +41,7 @@ from backend.domain.openemr import (
     parse_openemr_allowed_procedure_codes,
 )
 from backend.repositories.database import SQLiteDatabase
+from backend.repositories.lab import LabRepository
 from backend.repositories.maintenance import (
     backfill_dcm4chee_mwl_mappings,
     seed_lab_servers,
@@ -700,6 +701,11 @@ class DemoStore:
             profile_name=OIE_SETTINGS_PROFILE_NAME,
             validator=self.validate_oie_settings_payload,
             serializer=self._oie_settings_profile_dict,
+            timestamp_factory=now_iso,
+        )
+        self.lab_repository = LabRepository(
+            self.database.connect,
+            self.database.lock,
             timestamp_factory=now_iso,
         )
 
@@ -6989,6 +6995,33 @@ class DemoStore:
             "startedAt": row["started_at"],
             "completedAt": row["completed_at"],
         }
+
+    # Compatibility-only lab seams. New composition uses ``lab_repository`` directly.
+    def list_lab_servers(self) -> list[dict[str, Any]]:
+        return self.lab_repository.list_servers()
+
+    def get_lab_server(self, server_id: int) -> dict[str, Any]:
+        return self.lab_repository.get_server(server_id)
+
+    def create_lab_server(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.lab_repository.create_server(payload)
+
+    def update_lab_server(self, server_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.lab_repository.update_server(server_id, payload)
+
+    def update_lab_server_health(self, server_id: int, **values: Any) -> dict[str, Any]:
+        return self.lab_repository.update_health(server_id, **values)
+
+    def record_lab_operation(self, server_id: int | None, **values: Any) -> dict[str, Any]:
+        return self.lab_repository.record_operation(server_id, **values)
+
+    def get_lab_operation(self, operation_id: int) -> dict[str, Any]:
+        return self.lab_repository.get_operation(operation_id)
+
+    def list_lab_operations(
+        self, server_id: int | None = None, *, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        return self.lab_repository.list_operations(server_id, limit=limit)
 
     def list_gdt_orders(self) -> list[dict[str, Any]]:
         return [

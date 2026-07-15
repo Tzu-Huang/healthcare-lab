@@ -62,7 +62,7 @@ class ApplicationPort(Protocol):
 
 
 class LabRepositoryPort(Protocol):
-    """Structural port implemented by DemoStore during the compatibility migration."""
+    """Lab control-plane persistence consumed by the lab server workflow."""
 
     def get_lab_server(self, server_id: int) -> dict[str, Any]: ...
 
@@ -104,9 +104,6 @@ class LabRepositoryPort(Protocol):
     def list_lab_operations(
         self, server_id: int | None = None, *, limit: int = 20
     ) -> list[dict[str, Any]]: ...
-
-    def list_gdt_orders(self) -> list[dict[str, Any]]: ...
-
 
 def current_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(

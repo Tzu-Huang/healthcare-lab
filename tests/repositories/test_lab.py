@@ -10,7 +10,7 @@ class LabRepositoryCharacterizationTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.store = DemoStore(Path(self.directory.name) / "lab.db")
-        self.repository = self.store
+        self.repository = self.store.lab_repository
 
     def tearDown(self):
         self.directory.cleanup()
@@ -70,6 +70,12 @@ class LabRepositoryCharacterizationTests(unittest.TestCase):
 
     def test_store_and_database_share_write_lock(self):
         self.assertIs(self.store.lock, self.store.database.lock)
+        self.assertIs(self.repository.lock, self.store.database.lock)
+
+    def test_store_compatibility_delegates_match_direct_repository(self):
+        self.assertEqual(self.store.list_lab_servers(), self.repository.list_servers())
+        server_id = self.store.list_lab_servers()[0]["id"]
+        self.assertEqual(self.store.get_lab_server(server_id), self.repository.get_server(server_id))
 
 
 if __name__ == "__main__":
