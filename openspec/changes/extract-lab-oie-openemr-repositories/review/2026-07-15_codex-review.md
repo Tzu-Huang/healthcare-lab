@@ -1,29 +1,31 @@
-# Code Review: ZAC-57 (Round 5)
+# Code Review: ZAC-57 (Final)
 
 ## Findings
 
-### [P3] Remove the extra blank line at EOF
+No findings.
 
-`backend/clients/openemr.py:209` adds a blank line after the module's terminating newline, so `git diff --check main...HEAD` reports `new blank line at EOF`. Remove the extra line so the branch passes the standard diff hygiene check.
+## Review Summary
 
-## Missing Tests and Residual Risks
+The complete `main...HEAD` diff was reviewed after all five fix rounds. Lab and OIE persistence ownership is extracted behind narrow repositories, OpenEMR query ownership is isolated in the client/domain layers, runtime import no longer initializes the default database, compatibility seams are explicit, and architecture enforcement now permits only the exact retained DemoStore composition surface.
 
-- No functional test gap was found in this round.
-- Live OpenEMR/OIE services and Docker/deployment actions remain intentionally untested.
+Previously identified interpreter portability, test relocation/import ordering, architecture baseline churn, delegate/composition bypasses, class-shell exemption scope, and diff hygiene issues are resolved.
 
-## Prior Finding Status
+## Verification
 
-- Resolved: compatibility delegates are limited to the exact retained DemoStore method-to-target mapping.
-- Resolved: repository constructor arguments and the plain DemoStore class shell are enforced.
-- Resolved: all architecture bypass probes now report violations; the legacy baseline remains removal-only.
-
-## Verification Reviewed
-
-- Focused extraction scope: 45 passed.
+- Focused repository/client/service/runtime/integration scope: 45 passed.
 - Architecture contract: 37 passed.
-- Full automated suite: 263 passed with `instance/healthcare-lab.db` unchanged.
-- Guard probes for standalone, new-facade, lookalike, and nested-work cases all report violations.
+- Full automated suite: 263 passed.
+- Direct OIE settings module execution: 4 passed.
+- `instance/healthcare-lab.db` SHA-256 and `LastWriteTimeUtc` remained unchanged.
+- The legacy architecture baseline diff against `main` contains removals only.
+- `git diff --check main...HEAD` passes.
+- Worktree was clean immediately after verification.
+
+## Residual Risks
+
+- Live OpenEMR/OIE connectivity and Docker lifecycle behavior were not exercised; these remain intentionally outside the safe local automated scope.
+- Deployment, push, merge, and release actions were not performed.
 
 ## Verdict
 
-Changes requested for the one-line diff hygiene fix before `/dev-done`.
+Approved. ZAC-57 is ready for `/dev-done`.
