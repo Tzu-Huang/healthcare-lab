@@ -66,8 +66,8 @@ catch-all|backend/lab_operations.py|DockerSocketLabOperationAdapter.inspect|cabb
 catch-all|backend/lab_operations.py|DockerSocketLabOperationAdapter.is_available|e826e37d83b3258f
 catch-all|backend/lab_operations.py|DockerSocketLabOperationAdapter.request|ea583b15ddc107fa
 catch-all|backend/lab_operations.py|DockerSocketLabOperationAdapter.run|febe223fac88622c
-catch-all|backend/lab_store.py|DemoStore|ecf711894cd2bf62
-catch-all|backend/lab_store.py|DemoStore.__init__|c68e7bb0e8bbf541
+catch-all|backend/lab_store.py|DemoStore|57243b5d040dc490
+catch-all|backend/lab_store.py|DemoStore.__init__|d369d5b35ca9d929
 catch-all|backend/lab_store.py|DemoStore._attachment_payloads_from_result_fields|3997388c3ed40a75
 catch-all|backend/lab_store.py|DemoStore._backfill_dcm4chee_mwl_mappings|c272a191042aec9a
 catch-all|backend/lab_store.py|DemoStore._build_gdt_order_payload|ee254681e17219f6
@@ -178,7 +178,7 @@ catch-all|backend/lab_store.py|DemoStore.begin_dcm4chee_result_refresh|476b5a855
 catch-all|backend/lab_store.py|DemoStore.build_dcm4chee_mwl_payload|e8f1105846848181
 catch-all|backend/lab_store.py|DemoStore.build_dcm4chee_patient_adt_payload|2bcd772efa20ee62
 catch-all|backend/lab_store.py|DemoStore.complete_dcm4chee_result_refresh|76ff23f2f4b68ecd
-catch-all|backend/lab_store.py|DemoStore.connect|e988ac659f5a5be0
+catch-all|backend/lab_store.py|DemoStore.connect|db95eb9c330f888d
 catch-all|backend/lab_store.py|DemoStore.create_dcm4chee_e2e_demo_fixture|57ca7ee763529e0c
 catch-all|backend/lab_store.py|DemoStore.create_dcm4chee_mwl_attempt|2736ed1d7962bfd6
 catch-all|backend/lab_store.py|DemoStore.create_dcm4chee_mwl_profile_failure_attempt|1cb53475a1aed08a
@@ -224,7 +224,7 @@ catch-all|backend/lab_store.py|DemoStore.get_lab_server|3f41b4932cf6ae8a
 catch-all|backend/lab_store.py|DemoStore.get_oie_settings_profile|a087b9e1dfdb7d01
 catch-all|backend/lab_store.py|DemoStore.get_order_record|daef472608f0d03b
 catch-all|backend/lab_store.py|DemoStore.get_patient_record|0fbea348a10854c8
-catch-all|backend/lab_store.py|DemoStore.initialize|77dd50cb5025eb8c
+catch-all|backend/lab_store.py|DemoStore.initialize|ad274e4de852a6a0
 catch-all|backend/lab_store.py|DemoStore.latest_simulated_dcm4chee_ap_return_generation|0e651338e07f1973
 catch-all|backend/lab_store.py|DemoStore.list_dcm4chee_mwl_attempts|3968a1c299b298eb
 catch-all|backend/lab_store.py|DemoStore.list_dcm4chee_mwl_mappings_for_patient|e811c4d01dc8be0b
@@ -505,8 +505,8 @@ sql|backend/lab_store.py|DemoStore.complete_dcm4chee_result_refresh|01b6544f89b6
 sql|backend/lab_store.py|DemoStore.complete_dcm4chee_result_refresh|25b8ccb7c1fdff1f
 sql|backend/lab_store.py|DemoStore.complete_dcm4chee_result_refresh|76ff23f2f4b68ecd
 sql|backend/lab_store.py|DemoStore.complete_dcm4chee_result_refresh|8445d2e07034a7f1
-sql|backend/lab_store.py|DemoStore.connect|c409d1b0a511a840
-sql|backend/lab_store.py|DemoStore.connect|e988ac659f5a5be0
+sql|backend/lab_store.py|DemoStore.initialize|ad274e4de852a6a0
+sql|backend/lab_store.py|DemoStore.initialize|f70d45d7b2c60b88
 sql|backend/lab_store.py|DemoStore.create_dcm4chee_mwl_attempt|0d22c7b54f21328e
 sql|backend/lab_store.py|DemoStore.create_dcm4chee_mwl_attempt|2736ed1d7962bfd6
 sql|backend/lab_store.py|DemoStore.create_dcm4chee_mwl_profile_failure_attempt|0d22c7b54f21328e
@@ -571,8 +571,6 @@ sql|backend/lab_store.py|DemoStore.get_order_record|4a46887399c3a7d6
 sql|backend/lab_store.py|DemoStore.get_order_record|daef472608f0d03b
 sql|backend/lab_store.py|DemoStore.get_patient_record|0fbea348a10854c8
 sql|backend/lab_store.py|DemoStore.get_patient_record|a515035347a0d490
-sql|backend/lab_store.py|DemoStore.initialize|77dd50cb5025eb8c
-sql|backend/lab_store.py|DemoStore.initialize|f70d45d7b2c60b88
 sql|backend/lab_store.py|DemoStore.latest_simulated_dcm4chee_ap_return_generation|0e651338e07f1973
 sql|backend/lab_store.py|DemoStore.latest_simulated_dcm4chee_ap_return_generation|af4432514f1ea0e7
 sql|backend/lab_store.py|DemoStore.list_dcm4chee_mwl_attempts|306766fa1454c3bd
@@ -698,7 +696,7 @@ transport|backend/lab_operations.py|DockerSocketHttpConnection|e0c11fde0161025e
 transport|backend/lab_operations.py|DockerSocketHttpConnection.connect|31bc0f15a6bfcadb
 transport|backend/lab_operations.py|DockerSocketLabOperationAdapter|9deb614a904857f4
 transport|backend/lab_operations.py|DockerSocketLabOperationAdapter.containers_for_service|8c40d23041668fa8
-transport|backend/lab_store.py|DemoStore|ecf711894cd2bf62
+transport|backend/lab_store.py|DemoStore|57243b5d040dc490
 transport|backend/lab_store.py|DemoStore.dcm4chee_result_links|822902b77035761d
 transport|backend/lab_store.py|DemoStore.validate_oie_settings_payload|1b0fbdac7cafc402
 transport|backend/lab_store.py|urllib_quote_safe|8a0318c50c4a8c59

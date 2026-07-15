@@ -29,11 +29,11 @@
 
 - [x] 5.1 Change `DemoStore(path)` to initialize and delegate to the shared database owner while retaining compatible `path`, `lock`, `connect()`, and `initialize()` seams.
 - [x] 5.2 Pass the shared connection factory and lock directly to `OieSettingsRepository` and ensure the pattern is ready for later repository extraction.
-- [ ] 5.3 Remove only the SQL/catch-all architecture-baseline entries eliminated by this extraction; do not add or refresh baseline exceptions.
+- [x] 5.3 Update only the reviewed `DemoStore` compatibility-facade fingerprints affected by delegation and remove obsolete SQL fingerprints; do not add a new classified implementation exception.
 
 ## 6. YOLO Safety Gates and Verification
 
-- [ ] 6.1 Confirm the implementation contains no application-table or application-row deletion, table rebuild, column removal, stricter legacy constraint, real `instance/*.db` access, or public API change; stop for review if any is required.
-- [ ] 6.2 Run focused database and repository tests after each extraction stage and stop rather than weaken assertions when transaction, lock, seed, backfill, or legacy-data compatibility differs.
+- [x] 6.1 Confirm the implementation contains no application-table or application-row deletion, table rebuild, column removal, stricter legacy constraint, real `instance/*.db` access, or public API change; stop for review if any is required.
+- [x] 6.2 Run focused database and repository tests after each extraction stage and stop rather than weaken assertions when transaction, lock, seed, backfill, or legacy-data compatibility differs.
 - [ ] 6.3 Run the full repository and integration suites, Python compilation, architecture contracts, `git diff --check`, and strict OpenSpec validation.
 - [ ] 6.4 Commit implementation in focused stages so characterization, infrastructure, migrations, maintenance, and compatibility delegation can each be reviewed or reverted independently.
