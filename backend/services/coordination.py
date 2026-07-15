@@ -102,9 +102,14 @@ class ConfiguredWorkflowOperations:
         return self._order_sync(
             self._order,
             *args,
-            patient_syncer=self.sync_patient_dicom,
+            patient_syncer=self.sync_order_patient,
             **kwargs,
         )
+
+    def sync_order_patient(
+        self, _order_coordination: Any, *args: Any, **kwargs: Any
+    ) -> dict[str, Any]:
+        return self.sync_patient_dicom(*args, **kwargs)
 
     def verify_order_dicom(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return self._order_verify(self._order, *args, **kwargs)
