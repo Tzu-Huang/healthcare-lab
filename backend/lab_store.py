@@ -47,6 +47,12 @@ from backend.repositories.dcm4chee_patient_sync import (
     project_patient_sync_attempt_dict,
     project_patient_sync_dict,
 )
+from backend.repositories.dcm4chee_mwl import (
+    Dcm4cheeMwlRepository,
+    backfill_dcm4chee_mwl_mappings,
+    project_mwl_attempt,
+    project_mwl_mapping,
+)
 from backend.templates import patient as patient_templates
 from backend.templates import order as order_templates
 from backend.repositories.oie_settings import (
@@ -55,7 +61,6 @@ from backend.repositories.oie_settings import (
 )
 from backend.services.oie_workflow import compose_oie_workbench
 from backend.repositories.maintenance import (
-    backfill_dcm4chee_mwl_mappings,
     seed_lab_servers,
     seed_oie_settings_profile,
     seed_patient_mrn_sequence,
@@ -490,6 +495,20 @@ class DemoStore:
             self.database.lock,
             patient_loader=lambda record_id: self.patient_repository.get_patient_record(record_id),
             identifiers=self.dcm4chee_patient_identifiers,
+            timestamp_factory=now_iso,
+        )
+        self.dcm4chee_mwl_repository = Dcm4cheeMwlRepository(
+            self.database.connect,
+            self.database.lock,
+            order_loader=lambda record_id: self.order_repository.get_order_record(record_id),
+            identifiers_from_payload=self.dcm4chee_identifiers_from_payload,
+            payload_builder=self.build_dcm4chee_mwl_payload,
+            uid_normalizer=self.normalize_dcm4chee_uid_root,
+            study_uid_builder=self.dcm4chee_study_instance_uid,
+            local_order_number=self._dcm4chee_local_order_number,
+            accession_number=self._dcm4chee_accession_number,
+            requested_procedure_id=self._dcm4chee_requested_procedure_id,
+            scheduled_procedure_step_id=self._dcm4chee_scheduled_procedure_step_id,
             timestamp_factory=now_iso,
         )
         self.patient_enrichment_loader = PatientEnrichmentLoader(
@@ -1341,242 +1360,17 @@ class DemoStore:
         }
         return {key: value for key, value in query.items() if value}
 
-    def upsert_dcm4chee_mwl_mapping(
-        self,
-        order_record_id: int,
-        profile: dict[str, Any],
-        *,
-        uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT,
-        request_payload: dict[str, Any] | None = None,
-        sync_status: str = DCM4CHEE_MWL_STATUS_PENDING,
-        increment_retry: bool = False,
-    ) -> dict[str, Any]:
-        order = self.get_order_record(order_record_id)
-        identifiers = self.dcm4chee_identifiers_from_payload(
-            order,
-            profile,
-            uid_root=uid_root,
-            payload=request_payload,
-        )
-        now = now_iso()
-        request_payload_json = json.dumps(request_payload or {}, sort_keys=True)
-        with self.lock, self.connect() as connection:
-            existing = connection.execute(
-                "SELECT * FROM local_dcm4chee_mwl_mappings WHERE order_record_id = ?",
-                (int(order_record_id),),
-            ).fetchone()
-            if existing:
-                connection.execute(
-                    """
-                    UPDATE local_dcm4chee_mwl_mappings
-                    SET profile_name = ?, server_identity = ?, mwl_ae_title = ?,
-                        scheduled_station_ae_title = ?, local_dcm4chee_order_number = ?,
-                        patient_id = ?, issuer_of_patient_id = ?, accession_number = ?,
-                        requested_procedure_id = ?, scheduled_procedure_step_id = ?,
-                        study_instance_uid = ?, worklist_label = ?, uid_root = ?,
-                        sync_status = ?, retry_count = retry_count + ?,
-                        latest_request_payload_json = CASE WHEN ? != '{}' THEN ? ELSE latest_request_payload_json END,
-                        updated_at = ?
-                    WHERE order_record_id = ?
-                    """,
-                    (
-                        identifiers["profile_name"],
-                        identifiers["server_identity"],
-                        identifiers["mwl_ae_title"],
-                        identifiers["scheduled_station_ae_title"],
-                        identifiers["local_dcm4chee_order_number"],
-                        identifiers["patient_id"],
-                        identifiers["issuer_of_patient_id"],
-                        identifiers["accession_number"],
-                        identifiers["requested_procedure_id"],
-                        identifiers["scheduled_procedure_step_id"],
-                        identifiers["study_instance_uid"],
-                        identifiers["worklist_label"],
-                        identifiers["uid_root"],
-                        sync_status,
-                        1 if increment_retry else 0,
-                        request_payload_json,
-                        request_payload_json,
-                        now,
-                        int(order_record_id),
-                    ),
-                )
-            else:
-                connection.execute(
-                    """
-                    INSERT INTO local_dcm4chee_mwl_mappings (
-                        order_record_id, profile_name, server_identity, mwl_ae_title,
-                        scheduled_station_ae_title, local_dcm4chee_order_number,
-                        patient_id, issuer_of_patient_id, accession_number,
-                        requested_procedure_id, scheduled_procedure_step_id,
-                        study_instance_uid, worklist_label, uid_root, sync_status,
-                        retry_count, latest_request_payload_json, created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        int(order_record_id),
-                        identifiers["profile_name"],
-                        identifiers["server_identity"],
-                        identifiers["mwl_ae_title"],
-                        identifiers["scheduled_station_ae_title"],
-                        identifiers["local_dcm4chee_order_number"],
-                        identifiers["patient_id"],
-                        identifiers["issuer_of_patient_id"],
-                        identifiers["accession_number"],
-                        identifiers["requested_procedure_id"],
-                        identifiers["scheduled_procedure_step_id"],
-                        identifiers["study_instance_uid"],
-                        identifiers["worklist_label"],
-                        identifiers["uid_root"],
-                        sync_status,
-                        1 if increment_retry else 0,
-                        request_payload_json,
-                        now,
-                        now,
-                    ),
-                )
-        return self.get_dcm4chee_mwl_mapping_for_order(int(order_record_id))
+    def upsert_dcm4chee_mwl_mapping(self, *args, **kwargs) -> dict[str, Any]:
+        return self.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(*args, **kwargs)
 
-    def update_dcm4chee_mwl_mapping_from_attempt(
-        self,
-        order_record_id: int,
-        *,
-        attempt_id: int | None,
-        sync_status: str,
-        http_status: int | None = None,
-        response_body: str = "",
-        error_type: str = "",
-        error_text: str = "",
-        error_payload: dict[str, Any] | None = None,
-        readback_payload: dict[str, Any] | list[Any] | None = None,
-        identifiers: dict[str, str] | None = None,
-    ) -> dict[str, Any]:
-        identifiers = {key: value for key, value in (identifiers or {}).items() if value}
-        assignments = []
-        values: list[Any] = []
-        for key, column in (
-            ("patient_id", "patient_id"),
-            ("issuer_of_patient_id", "issuer_of_patient_id"),
-            ("accession_number", "accession_number"),
-            ("requested_procedure_id", "requested_procedure_id"),
-            ("scheduled_procedure_step_id", "scheduled_procedure_step_id"),
-            ("study_instance_uid", "study_instance_uid"),
-            ("worklist_label", "worklist_label"),
-            ("scheduled_station_ae_title", "scheduled_station_ae_title"),
-        ):
-            if identifiers.get(key):
-                assignments.append(f"{column} = ?")
-                values.append(identifiers[key])
-        timestamp = now_iso()
-        readback_json = json.dumps(readback_payload or {}, sort_keys=True)
-        error_payload_json = json.dumps(error_payload or {}, sort_keys=True)
-        assignments.extend(
-            [
-                "sync_status = ?",
-                "last_sync_at = ?",
-                "last_attempt_id = ?",
-                "last_http_status = ?",
-                "last_response_body = ?",
-                "last_error_type = ?",
-                "last_error_text = ?",
-                "last_error_payload_json = ?",
-                "latest_readback_payload_json = CASE WHEN ? != '{}' THEN ? ELSE latest_readback_payload_json END",
-                "updated_at = ?",
-            ]
-        )
-        values.extend(
-            [
-                sync_status,
-                timestamp,
-                attempt_id,
-                http_status,
-                response_body,
-                error_type,
-                error_text,
-                error_payload_json,
-                readback_json,
-                readback_json,
-                timestamp,
-                int(order_record_id),
-            ]
-        )
-        with self.lock, self.connect() as connection:
-            connection.execute(
-                f"""
-                UPDATE local_dcm4chee_mwl_mappings
-                SET {", ".join(assignments)}
-                WHERE order_record_id = ?
-                """,
-                values,
-            )
-        return self.get_dcm4chee_mwl_mapping_for_order(int(order_record_id))
+    def update_dcm4chee_mwl_mapping_from_attempt(self, *args, **kwargs):
+        return self.dcm4chee_mwl_repository.update_dcm4chee_mwl_mapping_from_attempt(*args, **kwargs)
 
-    def get_dcm4chee_mwl_mapping_for_order(self, order_record_id: int) -> dict[str, Any] | None:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM local_dcm4chee_mwl_mappings WHERE order_record_id = ?",
-                (int(order_record_id),),
-            ).fetchone()
-        return self._dcm4chee_mwl_mapping_dict(row) if row else None
+    def get_dcm4chee_mwl_mapping_for_order(self, *args, **kwargs):
+        return self.dcm4chee_mwl_repository.get_dcm4chee_mwl_mapping_for_order(*args, **kwargs)
 
-    def find_dcm4chee_mwl_mapping_for_reconciliation(
-        self,
-        *,
-        study_instance_uid: str = "",
-        accession_number: str = "",
-        requested_procedure_id: str = "",
-        scheduled_procedure_step_id: str = "",
-        profile_name: str = "",
-        server_identity: str = "",
-    ) -> dict[str, Any] | None:
-        study_uid = str(study_instance_uid or "").strip()
-        accession = str(accession_number or "").strip()
-        requested_procedure = str(requested_procedure_id or "").strip()
-        sps_id = str(scheduled_procedure_step_id or "").strip()
-        profile = str(profile_name or "").strip()
-        server = str(server_identity or "").strip()
-        with self.connect() as connection:
-            if study_uid:
-                row = connection.execute(
-                    """
-                    SELECT * FROM local_dcm4chee_mwl_mappings
-                    WHERE study_instance_uid = ?
-                    ORDER BY updated_at DESC, id DESC
-                    LIMIT 1
-                    """,
-                    (study_uid,),
-                ).fetchone()
-                if row:
-                    return self._dcm4chee_mwl_mapping_dict(row)
-            if accession and profile and server:
-                row = connection.execute(
-                    """
-                    SELECT * FROM local_dcm4chee_mwl_mappings
-                    WHERE accession_number = ? AND profile_name = ? AND server_identity = ?
-                    ORDER BY updated_at DESC, id DESC
-                    LIMIT 1
-                    """,
-                    (accession, profile, server),
-                ).fetchone()
-                if row:
-                    return self._dcm4chee_mwl_mapping_dict(row)
-            if requested_procedure and sps_id and profile and server:
-                row = connection.execute(
-                    """
-                    SELECT * FROM local_dcm4chee_mwl_mappings
-                    WHERE requested_procedure_id = ?
-                    AND scheduled_procedure_step_id = ?
-                    AND profile_name = ?
-                    AND server_identity = ?
-                    ORDER BY updated_at DESC, id DESC
-                    LIMIT 1
-                    """,
-                    (requested_procedure, sps_id, profile, server),
-                ).fetchone()
-                if row:
-                    return self._dcm4chee_mwl_mapping_dict(row)
-        return None
+    def find_dcm4chee_mwl_mapping_for_reconciliation(self, *args, **kwargs):
+        return self.dcm4chee_mwl_repository.find_dcm4chee_mwl_mapping_for_reconciliation(*args, **kwargs)
 
     @classmethod
     def dcm4chee_result_metadata_from_dataset(cls, dataset: dict[str, Any]) -> dict[str, str]:
@@ -1700,20 +1494,10 @@ class DemoStore:
         return True
 
     def _dcm4chee_mappings_for_patient(self, patient_record_id: int) -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT m.* FROM local_dcm4chee_mwl_mappings m
-                JOIN local_order_records o ON o.id = m.order_record_id
-                WHERE o.patient_record_id = ?
-                ORDER BY m.updated_at DESC, m.id DESC
-                """,
-                (int(patient_record_id),),
-            ).fetchall()
-        return [self._dcm4chee_mwl_mapping_dict(row) for row in rows]
+        return self.dcm4chee_mwl_repository.list_dcm4chee_mwl_mappings_for_patient(patient_record_id)
 
-    def list_dcm4chee_mwl_mappings_for_patient(self, patient_record_id: int) -> list[dict[str, Any]]:
-        return self._dcm4chee_mappings_for_patient(patient_record_id)
+    def list_dcm4chee_mwl_mappings_for_patient(self, *args, **kwargs):
+        return self.dcm4chee_mwl_repository.list_dcm4chee_mwl_mappings_for_patient(*args, **kwargs)
 
     def reconcile_dcm4chee_result_metadata(
         self,
@@ -2647,334 +2431,26 @@ class DemoStore:
             ).fetchall()
         return [self._dcm4chee_result_record_dict(row) for row in rows]
 
-    def create_dcm4chee_mwl_attempt(
-        self,
-        order_record_id: int,
-        profile: dict[str, Any],
-        *,
-        uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT,
-        request_url: str = "",
-        request_payload: dict[str, Any] | None = None,
-        attempt_status: str = DCM4CHEE_MWL_STATUS_PENDING,
-        error_type: str = "",
-        error_text: str = "",
-        http_status: int | None = None,
-        response_body: str = "",
-        operation_type: str = DCM4CHEE_MWL_OPERATION_CREATE,
-        mapping_id: int | None = None,
-    ) -> dict[str, Any]:
-        order = self.get_order_record(order_record_id)
-        generated_payload = request_payload or self.build_dcm4chee_mwl_payload(
-            order,
-            profile,
-            uid_root=uid_root,
-        )
-        order_id = int(order["id"])
-        mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
-        dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
-        uid_root_text = self.normalize_dcm4chee_uid_root(uid_root)
-        study_uid = str(generated_payload["0020000D"]["Value"][0])
-        accession_number = str(generated_payload["00080050"]["Value"][0])
-        requested_procedure_id = str(generated_payload["00401001"]["Value"][0])
-        sps_item = generated_payload["00400100"]["Value"][0]
-        scheduled_procedure_step_id = str(sps_item["00400009"]["Value"][0])
-        scheduled_station_ae_title = str(sps_item["00400001"]["Value"][0])
-        now = now_iso()
-        with self.lock, self.connect() as connection:
-            cursor = connection.execute(
-                """
-                INSERT INTO local_dcm4chee_mwl_attempts (
-                    mapping_id, operation_type, order_record_id, profile_name,
-                    server_identity, mwl_ae_title, scheduled_station_ae_title, local_dcm4chee_order_number,
-                    accession_number, requested_procedure_id,
-                    scheduled_procedure_step_id, study_instance_uid, uid_root,
-                    request_url, request_payload_json, http_status, response_body,
-                    attempt_status, error_type, error_text, attempted_at,
-                    completed_at, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    mapping_id,
-                    operation_type,
-                    order_id,
-                    str(profile.get("profileName") or "").strip(),
-                    str(dimse.get("calledAETitle") or mwl.get("aeTitle") or "").strip(),
-                    str(mwl.get("aeTitle") or "").strip(),
-                    scheduled_station_ae_title,
-                    self._dcm4chee_local_order_number(order_id),
-                    accession_number,
-                    requested_procedure_id,
-                    scheduled_procedure_step_id,
-                    study_uid,
-                    uid_root_text,
-                    request_url,
-                    json.dumps(generated_payload, sort_keys=True),
-                    http_status,
-                    response_body,
-                    attempt_status,
-                    error_type,
-                    error_text,
-                    now,
-                    now if attempt_status != DCM4CHEE_MWL_STATUS_PENDING else "",
-                    now,
-                    now,
-                ),
-            )
-            attempt_id = int(cursor.lastrowid)
-        return self.get_dcm4chee_mwl_attempt(attempt_id)
+    def create_dcm4chee_mwl_attempt(self, *args, **kwargs):
+        return self.dcm4chee_mwl_repository.create_dcm4chee_mwl_attempt(*args, **kwargs)
 
-    def create_dcm4chee_mwl_profile_failure_attempt(
-        self,
-        order_record_id: int,
-        profile: dict[str, Any],
-        *,
-        uid_root: Any = DCM4CHEE_DEFAULT_UID_ROOT,
-        request_url: str = "",
-        diagnostics: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        order = self.get_order_record(order_record_id)
-        order_id = int(order["id"])
-        mwl = profile.get("mwl") if isinstance(profile.get("mwl"), dict) else {}
-        dimse = profile.get("dimse") if isinstance(profile.get("dimse"), dict) else {}
-        uid_root_text = self.normalize_dcm4chee_uid_root(uid_root)
-        mapping = self.upsert_dcm4chee_mwl_mapping(
-            order_id,
-            profile,
-            uid_root=uid_root_text,
-            sync_status=DCM4CHEE_MWL_STATUS_FAILED,
-        )
-        study_uid = self.dcm4chee_study_instance_uid(
-            uid_root_text,
-            order_record_id=order_id,
-            timestamp=str(order.get("requestedAt") or ""),
-        )
-        now = now_iso()
-        diagnostic_payload = diagnostics or {}
-        with self.lock, self.connect() as connection:
-            cursor = connection.execute(
-                """
-                INSERT INTO local_dcm4chee_mwl_attempts (
-                    mapping_id, operation_type, order_record_id, profile_name,
-                    server_identity, mwl_ae_title, scheduled_station_ae_title, local_dcm4chee_order_number,
-                    accession_number, requested_procedure_id,
-                    scheduled_procedure_step_id, study_instance_uid, uid_root,
-                    request_url, request_payload_json, http_status, response_body,
-                    attempt_status, error_type, error_text, attempted_at,
-                    completed_at, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    int(mapping["id"]),
-                    DCM4CHEE_MWL_OPERATION_CREATE,
-                    order_id,
-                    str(profile.get("profileName") or "").strip(),
-                    str(dimse.get("calledAETitle") or mwl.get("aeTitle") or "").strip(),
-                    str(mwl.get("aeTitle") or "").strip(),
-                    str(mwl.get("defaultScheduledStationAETitle") or "").strip(),
-                    self._dcm4chee_local_order_number(order_id),
-                    self._dcm4chee_accession_number(order_id),
-                    self._dcm4chee_requested_procedure_id(order_id),
-                    self._dcm4chee_scheduled_procedure_step_id(order_id),
-                    study_uid,
-                    uid_root_text,
-                    request_url,
-                    "{}",
-                    None,
-                    json.dumps(diagnostic_payload, sort_keys=True),
-                    DCM4CHEE_MWL_STATUS_FAILED,
-                    "profile_invalid",
-                    str(diagnostic_payload.get("summary") or "dcm4chee profile is incomplete or invalid."),
-                    now,
-                    now,
-                    now,
-                    now,
-                ),
-            )
-            attempt_id = int(cursor.lastrowid)
-        self.update_dcm4chee_mwl_mapping_from_attempt(
-            order_id,
-            attempt_id=attempt_id,
-            sync_status=DCM4CHEE_MWL_STATUS_FAILED,
-            response_body=json.dumps(diagnostic_payload, sort_keys=True),
-            error_type="profile_invalid",
-            error_text=str(diagnostic_payload.get("summary") or "dcm4chee profile is incomplete or invalid."),
-            error_payload=diagnostic_payload,
-        )
-        return self.get_dcm4chee_mwl_attempt(attempt_id)
+    def create_dcm4chee_mwl_profile_failure_attempt(self, *args, **kwargs):
+        return self.dcm4chee_mwl_repository.create_dcm4chee_mwl_profile_failure_attempt(*args, **kwargs)
 
-    def update_dcm4chee_mwl_attempt_result(
-        self,
-        attempt_id: int,
-        *,
-        attempt_status: str,
-        http_status: int | None = None,
-        response_body: str = "",
-        error_type: str = "",
-        error_text: str = "",
-    ) -> dict[str, Any]:
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            row = connection.execute(
-                "SELECT id FROM local_dcm4chee_mwl_attempts WHERE id = ?",
-                (attempt_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(attempt_id)
-            connection.execute(
-                """
-                UPDATE local_dcm4chee_mwl_attempts
-                SET attempt_status = ?, http_status = ?, response_body = ?,
-                    error_type = ?, error_text = ?, completed_at = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    attempt_status,
-                    http_status,
-                    response_body,
-                    error_type,
-                    error_text,
-                    timestamp,
-                    timestamp,
-                    attempt_id,
-                ),
-            )
-        return self.get_dcm4chee_mwl_attempt(attempt_id)
+    def update_dcm4chee_mwl_attempt_result(self, *args, **kwargs):
+        return self.dcm4chee_mwl_repository.update_dcm4chee_mwl_attempt_result(*args, **kwargs)
 
-    def get_dcm4chee_mwl_attempt(self, attempt_id: int) -> dict[str, Any]:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM local_dcm4chee_mwl_attempts WHERE id = ?",
-                (attempt_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(attempt_id)
-        return self._dcm4chee_mwl_attempt_dict(row)
+    def get_dcm4chee_mwl_attempt(self, *args, **kwargs):
+        return self.dcm4chee_mwl_repository.get_dcm4chee_mwl_attempt(*args, **kwargs)
 
-    def list_dcm4chee_mwl_attempts(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            if order_record_id is None:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_dcm4chee_mwl_attempts
-                    ORDER BY attempted_at DESC, id DESC
-                    """
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_dcm4chee_mwl_attempts
-                    WHERE order_record_id = ?
-                    ORDER BY attempted_at DESC, id DESC
-                    """,
-                    (order_record_id,),
-                ).fetchall()
-        return [self._dcm4chee_mwl_attempt_dict(row) for row in rows]
+    def list_dcm4chee_mwl_attempts(self, *args, **kwargs):
+        return self.dcm4chee_mwl_repository.list_dcm4chee_mwl_attempts(*args, **kwargs)
 
-    def create_dcm4chee_mwl_verification_attempt(
-        self,
-        order_record_id: int,
-        mapping: dict[str, Any],
-        *,
-        request_url: str,
-        query_criteria: dict[str, str],
-        attempt_status: str = DCM4CHEE_MWL_STATUS_PENDING,
-        error_type: str = "",
-        error_text: str = "",
-        http_status: int | None = None,
-        response_body: str = "",
-    ) -> dict[str, Any]:
-        now = now_iso()
-        with self.lock, self.connect() as connection:
-            cursor = connection.execute(
-                """
-                INSERT INTO local_dcm4chee_mwl_attempts (
-                    mapping_id, operation_type, order_record_id, profile_name,
-                    server_identity, mwl_ae_title, scheduled_station_ae_title, local_dcm4chee_order_number,
-                    accession_number, requested_procedure_id,
-                    scheduled_procedure_step_id, study_instance_uid, uid_root,
-                    request_url, request_payload_json, http_status, response_body,
-                    attempt_status, error_type, error_text, attempted_at,
-                    completed_at, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    int(mapping["id"]) if mapping.get("id") else None,
-                    DCM4CHEE_MWL_OPERATION_VERIFY,
-                    int(order_record_id),
-                    str(mapping.get("profileName") or "").strip(),
-                    str(mapping.get("serverIdentity") or "").strip(),
-                    str(mapping.get("mwlAETitle") or "").strip(),
-                    str(mapping.get("scheduledStationAETitle") or "").strip(),
-                    str(mapping.get("localDcm4cheeOrderNumber") or "").strip(),
-                    str(mapping.get("accessionNumber") or "").strip(),
-                    str(mapping.get("requestedProcedureId") or "").strip(),
-                    str(mapping.get("scheduledProcedureStepId") or "").strip(),
-                    str(mapping.get("studyInstanceUid") or "").strip(),
-                    str(mapping.get("uidRoot") or "").strip(),
-                    request_url,
-                    json.dumps(query_criteria, sort_keys=True),
-                    http_status,
-                    response_body,
-                    attempt_status,
-                    error_type,
-                    error_text,
-                    now,
-                    now if attempt_status != DCM4CHEE_MWL_STATUS_PENDING else "",
-                    now,
-                    now,
-                ),
-            )
-            attempt_id = int(cursor.lastrowid)
-        return self.get_dcm4chee_mwl_attempt(attempt_id)
+    def create_dcm4chee_mwl_verification_attempt(self, *args, **kwargs):
+        return self.dcm4chee_mwl_repository.create_dcm4chee_mwl_verification_attempt(*args, **kwargs)
 
-    def update_dcm4chee_mwl_verification_result(
-        self,
-        order_record_id: int,
-        *,
-        attempt_id: int,
-        verification_status: str,
-        method: str,
-        query_criteria: dict[str, Any],
-        match_payload: dict[str, Any] | None = None,
-        error_type: str = "",
-        error_text: str = "",
-        error_payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            connection.execute(
-                """
-                UPDATE local_dcm4chee_mwl_mappings
-                SET verification_status = ?,
-                    last_verification_at = ?,
-                    last_verification_method = ?,
-                    last_verification_attempt_id = ?,
-                    last_verification_query_json = ?,
-                    last_verification_match_json = ?,
-                    last_verification_error_type = ?,
-                    last_verification_error_text = ?,
-                    last_verification_error_payload_json = ?,
-                    updated_at = ?
-                WHERE order_record_id = ?
-                """,
-                (
-                    verification_status,
-                    timestamp,
-                    method,
-                    int(attempt_id),
-                    json.dumps(query_criteria, sort_keys=True),
-                    json.dumps(match_payload or {}, sort_keys=True),
-                    error_type,
-                    error_text,
-                    json.dumps(error_payload or {}, sort_keys=True),
-                    timestamp,
-                    int(order_record_id),
-                ),
-            )
-        return self.get_dcm4chee_mwl_mapping_for_order(int(order_record_id))
+    def update_dcm4chee_mwl_verification_result(self, *args, **kwargs):
+        return self.dcm4chee_mwl_repository.update_dcm4chee_mwl_verification_result(*args, **kwargs)
 
     def _synced_patient_reference_for_fhir_order(self, patient_record_id: int) -> str:
         patient = self.get_patient_record(patient_record_id)
@@ -4121,93 +3597,11 @@ class DemoStore:
 
     @staticmethod
     def _dcm4chee_mwl_attempt_dict(row: sqlite3.Row) -> dict[str, Any]:
-        request_payload = DemoStore._json_value(row["request_payload_json"], {})
-        return {
-            "id": row["id"],
-            "mappingId": row["mapping_id"] if "mapping_id" in row.keys() else None,
-            "operationType": row["operation_type"] if "operation_type" in row.keys() else DCM4CHEE_MWL_OPERATION_CREATE,
-            "orderRecordId": row["order_record_id"],
-            "profileName": row["profile_name"],
-            "serverIdentity": row["server_identity"],
-            "mwlAETitle": row["mwl_ae_title"],
-            "scheduledStationAETitle": row["scheduled_station_ae_title"],
-            "localDcm4cheeOrderNumber": row["local_dcm4chee_order_number"],
-            "accessionNumber": row["accession_number"],
-            "requestedProcedureId": row["requested_procedure_id"],
-            "scheduledProcedureStepId": row["scheduled_procedure_step_id"],
-            "studyInstanceUid": row["study_instance_uid"],
-            "uidRoot": row["uid_root"],
-            "requestUrl": row["request_url"],
-            "requestPayload": request_payload,
-            "httpStatus": row["http_status"],
-            "responseBody": row["response_body"],
-            "status": row["attempt_status"],
-            "errorType": row["error_type"],
-            "error": row["error_text"],
-            "attemptedAt": row["attempted_at"],
-            "completedAt": row["completed_at"],
-            "createdAt": row["created_at"],
-            "updatedAt": row["updated_at"],
-        }
+        return project_mwl_attempt(row)
 
     @staticmethod
     def _dcm4chee_mwl_mapping_dict(row: sqlite3.Row) -> dict[str, Any]:
-        return {
-            "id": row["id"],
-            "orderRecordId": row["order_record_id"],
-            "profileName": row["profile_name"],
-            "serverIdentity": row["server_identity"],
-            "mwlAETitle": row["mwl_ae_title"],
-            "scheduledStationAETitle": row["scheduled_station_ae_title"],
-            "localDcm4cheeOrderNumber": row["local_dcm4chee_order_number"],
-            "patientId": row["patient_id"],
-            "issuerOfPatientId": row["issuer_of_patient_id"],
-            "accessionNumber": row["accession_number"],
-            "requestedProcedureId": row["requested_procedure_id"],
-            "scheduledProcedureStepId": row["scheduled_procedure_step_id"],
-            "studyInstanceUid": row["study_instance_uid"],
-            "worklistLabel": row["worklist_label"],
-            "uidRoot": row["uid_root"],
-            "status": row["sync_status"],
-            "lastSyncAt": row["last_sync_at"],
-            "retryCount": row["retry_count"],
-            "lastAttemptId": row["last_attempt_id"],
-            "lastHttpStatus": row["last_http_status"],
-            "lastResponseBody": row["last_response_body"],
-            "lastErrorType": row["last_error_type"],
-            "lastError": row["last_error_text"],
-            "lastErrorPayload": DemoStore._json_value(row["last_error_payload_json"], {}),
-            "latestRequestPayload": DemoStore._json_value(row["latest_request_payload_json"], {}),
-            "latestReadbackPayload": DemoStore._json_value(row["latest_readback_payload_json"], {}),
-            "verification": {
-                "status": row["verification_status"] if "verification_status" in row.keys() else DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED,
-                "lastVerifiedAt": row["last_verification_at"] if "last_verification_at" in row.keys() else "",
-                "method": row["last_verification_method"] if "last_verification_method" in row.keys() else "",
-                "attemptId": row["last_verification_attempt_id"] if "last_verification_attempt_id" in row.keys() else None,
-                "query": DemoStore._json_value(
-                    row["last_verification_query_json"] if "last_verification_query_json" in row.keys() else "{}",
-                    {},
-                ),
-                "match": DemoStore._json_value(
-                    row["last_verification_match_json"] if "last_verification_match_json" in row.keys() else "{}",
-                    {},
-                ),
-                "errorType": row["last_verification_error_type"]
-                if "last_verification_error_type" in row.keys()
-                else "",
-                "error": row["last_verification_error_text"]
-                if "last_verification_error_text" in row.keys()
-                else "",
-                "errorPayload": DemoStore._json_value(
-                    row["last_verification_error_payload_json"]
-                    if "last_verification_error_payload_json" in row.keys()
-                    else "{}",
-                    {},
-                ),
-            },
-            "createdAt": row["created_at"],
-            "updatedAt": row["updated_at"],
-        }
+        return project_mwl_mapping(row)
 
     @staticmethod
     def _dcm4chee_mwl_status_view(
