@@ -1,7 +1,9 @@
 # Codex Review: ZAC-55 bounded-context placement contract
 
-Base: `main`  
-Head: `feature/ZAC-55_publish-bounded-context-placement-contract` (`6909704`)  
+Base: `main`
+
+Head: `feature/ZAC-55_publish-bounded-context-placement-contract` (`6909704`)
+
 Verdict: **Changes requested**
 
 ## Findings
