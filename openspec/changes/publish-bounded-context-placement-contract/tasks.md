@@ -1,13 +1,13 @@
 ## 1. Publish the Placement Contract
 
-- [ ] 1.1 Inventory the SQL, payload, workflow, transport, runtime, persistence, domain, template, HTTP, and composition responsibilities retained in the named large modules.
-- [ ] 1.2 Document target backend, frontend, and test trees for patient, order, FHIR, GDT, OIE, dcm4chee, and lab control-plane contexts.
-- [ ] 1.3 Add a responsibility matrix that records each current source, category, named destination, mirrored test location, and compatibility-facade status.
-- [ ] 1.4 Document dependency direction and the bounded-context/layer placement decision process for engineers and Codex.
+- [x] 1.1 Inventory the SQL, payload, workflow, transport, runtime, persistence, domain, template, HTTP, and composition responsibilities retained in the named large modules.
+- [x] 1.2 Document target backend, frontend, and test trees for patient, order, FHIR, GDT, OIE, dcm4chee, and lab control-plane contexts.
+- [x] 1.3 Add a responsibility matrix that records each current source, category, named destination, mirrored test location, and compatibility-facade status.
+- [x] 1.4 Document dependency direction and the bounded-context/layer placement decision process for engineers and Codex.
 
 ## 2. Define Compatibility and Legacy Baselines
 
-- [ ] 2.1 Enumerate allowed compatibility facades, their owning destinations, and the existing callers they temporarily support.
+- [x] 2.1 Enumerate allowed compatibility facades, their owning destinations, and the existing callers they temporarily support.
 - [ ] 2.2 Add an explicit reviewed baseline for classified legacy implementation in backend catch-all modules.
 - [ ] 2.3 Add explicit inventories for retained top-level frontend functions and selectors so existing monolithic assets may shrink but do not gain new responsibility.
 
