@@ -383,6 +383,25 @@ def sps_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return values[0] if isinstance(values, list) and values and isinstance(values[0], dict) else {}
 
 
+def historical_mwl_identifiers(
+    payload: dict[str, Any],
+    *,
+    patient_id_default: str = "",
+    issuer_default: str = "",
+    worklist_label_default: str = "",
+    scheduled_station_default: str = "",
+) -> dict[str, str]:
+    """Project historical MWL identifiers without coupling SQL to DICOM tags."""
+    sps = sps_payload(payload)
+    return {
+        "patient_id": dicom_first_value(payload, "00100020", patient_id_default),
+        "issuer_of_patient_id": dicom_first_value(payload, "00100021", issuer_default),
+        "worklist_label": dicom_first_value(payload, "00741202", worklist_label_default),
+        "scheduled_station_ae_title": scheduled_station_default
+        or dicom_first_value(sps, "00400001"),
+    }
+
+
 def identifiers_from_dataset(dataset: dict[str, Any]) -> dict[str, str]:
     dataset = dataset.get("attrs") if isinstance(dataset.get("attrs"), dict) else dataset
     if not isinstance(dataset, dict):

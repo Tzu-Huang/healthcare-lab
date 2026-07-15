@@ -189,7 +189,7 @@ DEMO_STORE_COMPATIBILITY_DELEGATES = {
     "complete_dcm4chee_result_refresh": "self.dcm4chee_result_repository.complete_dcm4chee_result_refresh",
     "get_dcm4chee_result_record": "self.dcm4chee_result_repository.get_dcm4chee_result_record",
     "list_dcm4chee_results_for_patient": "self.dcm4chee_result_repository.list_dcm4chee_results_for_patient",
-    "create_dcm4chee_mwl_attempt": "self.dcm4chee_mwl_repository.create_dcm4chee_mwl_attempt",
+    "create_dcm4chee_mwl_attempt": "self.dcm4chee_mwl_attempt_coordinator.create_dcm4chee_mwl_attempt",
     "create_dcm4chee_mwl_profile_failure_attempt": "self.dcm4chee_mwl_repository.create_dcm4chee_mwl_profile_failure_attempt",
     "update_dcm4chee_mwl_attempt_result": "self.dcm4chee_mwl_repository.update_dcm4chee_mwl_attempt_result",
     "get_dcm4chee_mwl_attempt": "self.dcm4chee_mwl_repository.get_dcm4chee_mwl_attempt",
@@ -219,19 +219,20 @@ DEMO_STORE_COMPATIBILITY_DELEGATES = {
 # They are intentionally outside the legacy baseline: changing any constructor
 # argument makes the architecture contract fail instead of refreshing an exception.
 DEMO_STORE_COMPOSITION_VALUE_FINGERPRINTS = {
-    "database": "63ceadc3d76eac94",
+    "database": "5979162a436ce5d4",
     "path": "015349d13b08340d",
     "lock": "30935000bde9d350",
     "oie_settings_repository": "5f4116db8565a374",
     "lab_repository": "85f04e6f44d60b76",
     "oie_repository": "ad1c97844d445ea8",
     "dcm4chee_patient_sync_repository": "fb8720abca7159cf",
-    "dcm4chee_mwl_repository": "dae489aac86c77c4",
+    "dcm4chee_mwl_repository": "83a4c1060cc842df",
     "dcm4chee_result_repository": "18dc17af50d84965",
     "patient_enrichment_loader": "fccd49d023acd2ed",
     "order_enrichment_loader": "93f14a62bd2a259d",
     "patient_repository": "d00640c6f67b5a6e",
     "order_repository": "2b69d9b81e5ec1af",
+    "dcm4chee_mwl_attempt_coordinator": "966bfd884af0c95b",
     "dcm4chee_workflow_coordinator": "00f62904b387adde",
 }
 OIE_WORKBENCH_COMPOSITION_CALLS = (

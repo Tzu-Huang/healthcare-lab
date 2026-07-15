@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from backend.domain.errors import SimulatorValidationError
@@ -17,6 +18,55 @@ DCM4CHEE_RESULT_SOURCE_SIMULATED_AP = "simulated_ap_return"
 ORDER_DEFAULT_CODE = "ECG12"
 ORDER_DEFAULT_TEXT = "12 Lead ECG"
 ORDER_DEFAULT_PROVIDER = "1001^WANG^AMY"
+
+
+class Dcm4cheeMwlAttemptCoordinator:
+    """Prepare protocol payloads before handing persistence-ready values to MWL storage."""
+
+    def __init__(
+        self,
+        *,
+        order_loader: Callable[[int], dict[str, Any]],
+        payload_builder: Callable[..., dict[str, Any]],
+        attempt_creator: Callable[..., dict[str, Any]],
+    ) -> None:
+        self._get_order = order_loader
+        self._build_payload = payload_builder
+        self._create_attempt = attempt_creator
+
+    def create_dcm4chee_mwl_attempt(
+        self,
+        order_record_id: int,
+        profile: dict[str, Any],
+        *,
+        uid_root: str = DCM4CHEE_DEFAULT_UID_ROOT,
+        request_url: str = "",
+        request_payload: dict[str, Any] | None = None,
+        attempt_status: str = DCM4CHEE_MWL_STATUS_PENDING,
+        error_type: str = "",
+        error_text: str = "",
+        http_status: int | None = None,
+        response_body: str = "",
+        operation_type: str = "create",
+        mapping_id: int | None = None,
+    ) -> dict[str, Any]:
+        payload = request_payload or self._build_payload(
+            self._get_order(order_record_id), profile, uid_root=uid_root
+        )
+        return self._create_attempt(
+            order_record_id,
+            profile,
+            uid_root=uid_root,
+            request_url=request_url,
+            request_payload=payload,
+            attempt_status=attempt_status,
+            error_type=error_type,
+            error_text=error_text,
+            http_status=http_status,
+            response_body=response_body,
+            operation_type=operation_type,
+            mapping_id=mapping_id,
+        )
 
 
 class Dcm4cheeWorkflowCoordinator:

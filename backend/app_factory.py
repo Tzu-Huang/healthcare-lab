@@ -259,7 +259,7 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     order_coordination = OrderProtocolCoordinator(
         build_dcm4chee_mwl_payload=store.build_dcm4chee_mwl_payload,
-        create_dcm4chee_mwl_attempt=store.dcm4chee_mwl_repository.create_dcm4chee_mwl_attempt,
+        create_dcm4chee_mwl_attempt=store.dcm4chee_mwl_attempt_coordinator.create_dcm4chee_mwl_attempt,
         create_dcm4chee_mwl_profile_failure_attempt=store.dcm4chee_mwl_repository.create_dcm4chee_mwl_profile_failure_attempt,
         create_dcm4chee_mwl_verification_attempt=store.dcm4chee_mwl_repository.create_dcm4chee_mwl_verification_attempt,
         create_dcm4chee_order_record=store.order_repository.create_dcm4chee_order_record,
