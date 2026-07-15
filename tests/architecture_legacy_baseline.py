@@ -66,8 +66,6 @@ catch-all|backend/lab_operations.py|DockerSocketLabOperationAdapter.inspect|cabb
 catch-all|backend/lab_operations.py|DockerSocketLabOperationAdapter.is_available|e826e37d83b3258f
 catch-all|backend/lab_operations.py|DockerSocketLabOperationAdapter.request|ea583b15ddc107fa
 catch-all|backend/lab_operations.py|DockerSocketLabOperationAdapter.run|febe223fac88622c
-catch-all|backend/lab_store.py|DemoStore|7f51a457c42931b3
-catch-all|backend/lab_store.py|DemoStore.__init__|b85e49a5517796bc
 catch-all|backend/lab_store.py|DemoStore._attachment_payloads_from_result_fields|3997388c3ed40a75
 catch-all|backend/lab_store.py|DemoStore._build_gdt_order_payload|ee254681e17219f6
 catch-all|backend/lab_store.py|DemoStore._build_order_orm_payload|c8f3861a177ce06d
@@ -597,7 +595,6 @@ transport|backend/lab_operations.py|DockerSocketHttpConnection|e0c11fde0161025e
 transport|backend/lab_operations.py|DockerSocketHttpConnection.connect|31bc0f15a6bfcadb
 transport|backend/lab_operations.py|DockerSocketLabOperationAdapter|9deb614a904857f4
 transport|backend/lab_operations.py|DockerSocketLabOperationAdapter.containers_for_service|8c40d23041668fa8
-transport|backend/lab_store.py|DemoStore|7f51a457c42931b3
 transport|backend/lab_store.py|DemoStore.dcm4chee_result_links|822902b77035761d
 transport|backend/lab_store.py|urllib_quote_safe|8a0318c50c4a8c59
 workflow|backend/dashboard_services.py|collect_dashboard_resource_snapshot|4507029a254ccbcf
