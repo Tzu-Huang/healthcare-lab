@@ -15,3 +15,19 @@
 - `git diff --check`: passed.
 
 No runtime implementation, endpoint, persistence schema, protocol payload, or frontend behavior changed; this change adds documentation and test-time enforcement only.
+
+## Code Review
+
+### Round 1 — 2026-07-15
+
+- Review: `review/2026-07-15_codex-review.md`
+- Verdict: changes requested.
+- Findings: four P1 enforcement bypasses covering partial SQL detection, name-only payload/workflow classification, transport aliases, and frontend function expressions; one P2 gap where descendant selector classes are not inventoried.
+- Existing checks remain green, but additional counterexample fixtures and stronger syntax-aware classification are required before completion.
+
+### Round 1 Resolution — 2026-07-15
+
+- Resolved the backend scanner findings in `5f81eac` with definition-wide catch-all fingerprints, SQL execution detection, conservative/expanded SQL pattern separation, and import-alias-aware transport classification.
+- Resolved the frontend findings by inventorying function expressions, `const`/`let`/`var` arrows, top-level classes, and every class/ID selector token.
+- Added the requested counterexample fixtures; focused architecture verification passes 22 tests.
+- Full regression verification remains assigned to the next `/dev-test` run.
