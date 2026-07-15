@@ -86,3 +86,17 @@ No runtime implementation, endpoint, persistence schema, protocol payload, or fr
 - Preserved every ordered frontend definition occurrence for fingerprint checks and explicitly rejected duplicate top-level names.
 - Added changed-runtime-binding and exact-copy duplicate counterexamples; focused architecture verification passes 27 tests.
 - Full regression verification remains assigned to the next `/dev-test` run.
+
+### Round 6 - 2026-07-15
+
+- Review: `review/2026-07-15_codex-review-r6.md`
+- Verdict: changes requested.
+- Findings: one P1 import-parser bypass for `from backend import api/repositories`, plus one P2 discovery gap where non-recursive dependency checks skip nested layer packages.
+- Post-fix verification remains green at 27 architecture and 226 full-suite tests, but targeted import counterexamples are not rejected.
+
+### Round 6 Resolution - 2026-07-15
+
+- Resolved parent-package module aliases in `85c4dec` by expanding imported names that map to real backend modules or packages.
+- Resolved nested package coverage with a shared recursive layer iterator used by dependency and placement checks.
+- Added parent-package and nested-module fixtures; focused architecture verification passes 29 tests.
+- Full regression verification remains assigned to the next `/dev-test` run.

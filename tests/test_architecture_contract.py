@@ -4,6 +4,7 @@ import re
 import unittest
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from tempfile import TemporaryDirectory
 
 from tests.architecture_legacy_baseline import (
     BACKEND_LEGACY_BASELINE,
@@ -498,6 +499,10 @@ def imported_modules(path: Path) -> set[str]:
     return imported_modules_from_tree(tree)
 
 
+def layer_python_paths(package: str, backend_root: Path = BACKEND) -> list[Path]:
+    return sorted((backend_root / package).rglob("*.py"))
+
+
 def backend_module_path(module: str) -> Path | None:
     if module == "backend":
         return BACKEND / "__init__.py"
@@ -698,7 +703,7 @@ class ArchitectureContractTest(unittest.TestCase):
 
     def test_lower_layers_do_not_import_flask_or_api_modules(self):
         for package in ("clients", "repositories", "domain", "templates"):
-            for path in (BACKEND / package).glob("*.py"):
+            for path in layer_python_paths(package):
                 modules = imported_modules(path)
                 with self.subTest(path=path.relative_to(ROOT)):
                     self.assertFalse(
@@ -728,8 +733,19 @@ class ArchitectureContractTest(unittest.TestCase):
         self.assertIn("backend.api", modules)
         self.assertIn("backend.repositories", modules)
 
+    def test_layer_module_discovery_is_recursive(self):
+        with TemporaryDirectory() as temporary_directory:
+            backend_root = Path(temporary_directory)
+            nested_module = backend_root / "domain" / "patient" / "model.py"
+            nested_module.parent.mkdir(parents=True)
+            nested_module.write_text("from backend import api\n", encoding="utf-8")
+            self.assertEqual(
+                [nested_module],
+                layer_python_paths("domain", backend_root),
+            )
+
     def test_services_do_not_depend_transitively_on_concrete_store(self):
-        for path in (BACKEND / "services").glob("*.py"):
+        for path in layer_python_paths("services"):
             modules = transitive_backend_imports(path)
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertNotIn(
@@ -739,7 +755,7 @@ class ArchitectureContractTest(unittest.TestCase):
                 )
 
     def test_api_modules_do_not_import_concrete_store(self):
-        for path in (BACKEND / "api").glob("*.py"):
+        for path in layer_python_paths("api"):
             modules = imported_modules(path)
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertNotIn(
@@ -749,7 +765,7 @@ class ArchitectureContractTest(unittest.TestCase):
                 )
 
     def test_api_modules_do_not_import_operation_adapters(self):
-        for path in (BACKEND / "api").glob("*.py"):
+        for path in layer_python_paths("api"):
             modules = imported_modules(path)
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertNotIn(
@@ -759,7 +775,7 @@ class ArchitectureContractTest(unittest.TestCase):
                 )
 
     def test_runtime_does_not_import_concrete_store(self):
-        for path in (BACKEND / "runtime").glob("*.py"):
+        for path in layer_python_paths("runtime"):
             modules = imported_modules(path)
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertNotIn(
@@ -770,7 +786,7 @@ class ArchitectureContractTest(unittest.TestCase):
 
     def test_services_and_repositories_do_not_import_runtime(self):
         for package in ("services", "repositories"):
-            for path in (BACKEND / package).glob("*.py"):
+            for path in layer_python_paths(package):
                 modules = imported_modules(path)
                 with self.subTest(path=path.relative_to(ROOT)):
                     self.assertFalse(
@@ -784,7 +800,7 @@ class ArchitectureContractTest(unittest.TestCase):
     def test_only_reviewed_modules_import_concrete_repositories(self):
         actual: set[tuple[str, str]] = set()
         for package in ("api", "services", "clients", "runtime", "domain", "templates"):
-            for path in (BACKEND / package).glob("*.py"):
+            for path in layer_python_paths(package):
                 relative_path = path.relative_to(ROOT).as_posix()
                 for module in imported_modules(path):
                     if module == "backend.repositories" or module.startswith(
@@ -851,7 +867,7 @@ class ArchitectureContractTest(unittest.TestCase):
     def test_responsibility_packages_obey_placement_contract(self):
         violations: list[PlacementViolation] = []
         for package in RESPONSIBILITY_PACKAGES:
-            for path in (BACKEND / package).glob("*.py"):
+            for path in layer_python_paths(package):
                 violations.extend(
                     placement_violations(
                         path.relative_to(ROOT).as_posix(),
