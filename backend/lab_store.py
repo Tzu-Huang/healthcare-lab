@@ -5,7 +5,6 @@ import json
 import math
 import re
 import sqlite3
-import threading
 import urllib.parse
 from contextlib import contextmanager
 from datetime import datetime
@@ -41,6 +40,14 @@ from backend.domain.openemr import (
     OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES,
     parse_openemr_allowed_procedure_codes,
 )
+from backend.repositories.database import SQLiteDatabase
+from backend.repositories.maintenance import (
+    backfill_dcm4chee_mwl_mappings,
+    seed_lab_servers,
+    seed_oie_settings_profile,
+    seed_patient_mrn_sequence,
+)
+from backend.repositories.schema import APPLICATION_MIGRATIONS, ensure_application_schema
 from backend.domain.lab import (
     LAB_HEALTH_STATUSES,
     LAB_OPERATION_ACTIONS,
@@ -652,14 +659,44 @@ class OpenEMRProcedureOrderSource:
 
 class DemoStore:
     def __init__(self, path: str | Path):
-        self.path = str(path)
-        self.lock = threading.RLock()
+        self.database = SQLiteDatabase(
+            path,
+            migrations=APPLICATION_MIGRATIONS,
+            maintenance=(
+                ensure_application_schema,
+                lambda connection: backfill_dcm4chee_mwl_mappings(
+                    connection,
+                    order_default_text=ORDER_DEFAULT_TEXT,
+                    create_operation=DCM4CHEE_MWL_OPERATION_CREATE,
+                ),
+                seed_patient_mrn_sequence,
+                lambda connection: seed_lab_servers(
+                    connection,
+                    defaults=DEFAULT_LAB_SERVERS,
+                    operation_metadata=DEFAULT_LAB_OPERATION_METADATA,
+                    timestamp_factory=now_iso,
+                ),
+                lambda connection: seed_oie_settings_profile(
+                    connection,
+                    profile_name=OIE_SETTINGS_PROFILE_NAME,
+                    management_api_base_url=OIE_MANAGEMENT_API_BASE_URL,
+                    management_api_username=OIE_MANAGEMENT_API_USERNAME,
+                    management_api_password=OIE_MANAGEMENT_API_PASSWORD,
+                    management_api_timeout_seconds=OIE_MANAGEMENT_API_TIMEOUT_SECONDS,
+                    result_listener_host=OIE_RESULT_LISTENER_HOST,
+                    result_listener_port=OIE_RESULT_LISTENER_PORT,
+                    timestamp_factory=now_iso,
+                ),
+            ),
+        )
+        self.path = self.database.path
+        self.lock = self.database.lock
         self.initialize()
         from backend.repositories.oie_settings import OieSettingsRepository
 
         self.oie_settings_repository = OieSettingsRepository(
-            self.connect,
-            self.lock,
+            self.database.connect,
+            self.database.lock,
             profile_name=OIE_SETTINGS_PROFILE_NAME,
             validator=self.validate_oie_settings_payload,
             serializer=self._oie_settings_profile_dict,
@@ -668,16 +705,12 @@ class DemoStore:
 
     @contextmanager
     def connect(self):
-        connection = sqlite3.connect(self.path, timeout=5)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        try:
+        with self.database.connect() as connection:
             yield connection
-            connection.commit()
-        finally:
-            connection.close()
 
     def initialize(self) -> None:
+        self.database.initialize()
+        return
         with self.lock, self.connect() as connection:
             connection.executescript(
                 """

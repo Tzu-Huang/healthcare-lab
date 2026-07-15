@@ -614,9 +614,15 @@ def create_application_indexes(connection: sqlite3.Connection) -> None:
     execute_sql_script(connection, INDEX_SCHEMA_SQL)
 
 
+def ensure_application_schema(connection: sqlite3.Connection) -> None:
+    """Repair missing application objects even when a legacy ledger exists."""
+    create_application_tables(connection)
+    add_legacy_columns(connection)
+    create_application_indexes(connection)
+
+
 APPLICATION_MIGRATIONS = (
     Migration(1, "create-application-tables", create_application_tables),
     Migration(2, "add-legacy-columns", add_legacy_columns),
     Migration(3, "create-application-indexes", create_application_indexes),
 )
-
