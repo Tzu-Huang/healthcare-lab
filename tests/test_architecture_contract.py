@@ -29,6 +29,12 @@ SQL_PATTERN = re.compile(
     r"\b(?:ALTER\s+TABLE|CREATE\s+TABLE|DELETE\s+FROM|INSERT\s+INTO|SELECT\b|UPDATE\s+\w+)",
     re.IGNORECASE,
 )
+CATCH_ALL_SQL_PATTERN = re.compile(
+    r"^\s*(?:ALTER|ATTACH|BEGIN|COMMIT|CREATE|DELETE|DETACH|DROP|END|EXPLAIN|"
+    r"INSERT|PRAGMA|REINDEX|RELEASE|REPLACE|ROLLBACK|SAVEPOINT|SELECT|UPDATE|VACUUM|WITH)\b",
+    re.IGNORECASE,
+)
+SQL_EXECUTION_METHODS = {"execute", "executemany", "executescript"}
 PROTOCOL_CALLS = {
     "socket.create_connection",
     "subprocess.run",
@@ -57,6 +63,7 @@ PAYLOAD_NAME_PARTS = (
     "record_dict",
     "resource",
     "oru",
+    "serialize",
 )
 WORKFLOW_NAME_PREFIXES = (
     "begin_",
@@ -66,6 +73,7 @@ WORKFLOW_NAME_PREFIXES = (
     "execute_",
     "export_",
     "import_",
+    "process_",
     "reconcile_",
     "record_",
     "refresh_",
@@ -80,7 +88,7 @@ WORKFLOW_NAME_PREFIXES = (
     "verify_",
     "write_",
 )
-TRANSPORT_ROOTS = {"http", "requests", "socket", "subprocess", "urllib"}
+TRANSPORT_MODULES = ("http", "requests", "socket", "subprocess", "urllib")
 FRONTEND_FUNCTION_PATTERN = re.compile(
     r"^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(|"
     r"^const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^\n]*\)|[A-Za-z_$][\w$]*)\s*=>",
@@ -136,18 +144,52 @@ def root_name(node: ast.AST) -> str:
     return node.id if isinstance(node, ast.Name) else ""
 
 
-def definition_has_transport(node: ast.AST) -> bool:
+def import_aliases_from_tree(tree: ast.AST) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for item in node.names:
+                local_name = item.asname or item.name.split(".", 1)[0]
+                aliases[local_name] = item.name if item.asname else local_name
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for item in node.names:
+                aliases[item.asname or item.name] = f"{node.module}.{item.name}"
+    return aliases
+
+
+def resolve_imported_name(node: ast.AST, aliases: dict[str, str]) -> str:
+    name = dotted_name(node)
+    head, separator, tail = name.partition(".")
+    resolved_head = aliases.get(head, head)
+    return f"{resolved_head}.{tail}" if separator else resolved_head
+
+
+def definition_has_transport(node: ast.AST, aliases: dict[str, str]) -> bool:
     for child in ast.walk(node):
-        if isinstance(child, ast.Call) and dotted_name(child.func) in PROTOCOL_CALLS:
-            return True
-        if isinstance(child, ast.Attribute) and root_name(child) in TRANSPORT_ROOTS:
-            return True
+        if isinstance(child, ast.Call):
+            call_name = resolve_imported_name(child.func, aliases)
+            if call_name in PROTOCOL_CALLS or call_name.startswith(TRANSPORT_MODULES):
+                return True
+        if isinstance(child, ast.Attribute):
+            attribute_name = resolve_imported_name(child, aliases)
+            if attribute_name.startswith(TRANSPORT_MODULES):
+                return True
     return False
 
 
+def definition_has_sql_execution(node: ast.AST) -> bool:
+    return any(
+        isinstance(child, ast.Call)
+        and isinstance(child.func, ast.Attribute)
+        and child.func.attr in SQL_EXECUTION_METHODS
+        for child in ast.walk(node)
+    )
+
+
 class LegacyCandidateCollector(ast.NodeVisitor):
-    def __init__(self, path: str):
+    def __init__(self, path: str, aliases: dict[str, str]):
         self.path = path
+        self.aliases = aliases
         self.symbols: list[str] = []
         self.candidates: set[LegacyCandidate] = set()
 
@@ -168,7 +210,8 @@ class LegacyCandidateCollector(ast.NodeVisitor):
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self.symbols.append(node.name)
-        if definition_has_transport(node) or node.name.endswith(("Adapter", "Connection")):
+        self.add("catch-all", node)
+        if definition_has_transport(node, self.aliases) or node.name.endswith(("Adapter", "Connection")):
             self.add("transport", node)
         self.generic_visit(node)
         self.symbols.pop()
@@ -182,23 +225,30 @@ class LegacyCandidateCollector(ast.NodeVisitor):
     def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         self.symbols.append(node.name)
         lowered = node.name.lower()
+        self.add("catch-all", node)
         if any(part in lowered for part in PAYLOAD_NAME_PARTS):
             self.add("payload", node)
         if lowered.startswith(WORKFLOW_NAME_PREFIXES):
             self.add("workflow", node)
-        if definition_has_transport(node):
+        if definition_has_sql_execution(node):
+            self.add("sql", node)
+        if definition_has_transport(node, self.aliases):
             self.add("transport", node)
         self.generic_visit(node)
         self.symbols.pop()
 
     def visit_Constant(self, node: ast.Constant) -> None:
-        if isinstance(node.value, str) and SQL_PATTERN.search(node.value):
+        if isinstance(node.value, str) and CATCH_ALL_SQL_PATTERN.search(node.value):
             self.add("sql", node, fingerprint=node.value)
 
 
 def legacy_backend_candidates(relative_path: str, source: str) -> set[LegacyCandidate]:
-    collector = LegacyCandidateCollector(relative_path.replace("\\", "/"))
-    collector.visit(ast.parse(source, filename=relative_path))
+    tree = ast.parse(source, filename=relative_path)
+    collector = LegacyCandidateCollector(
+        relative_path.replace("\\", "/"),
+        import_aliases_from_tree(tree),
+    )
+    collector.visit(tree)
     return collector.candidates
 
 
@@ -746,10 +796,17 @@ class ArchitectureContractTest(unittest.TestCase):
 
     def test_catch_all_violation_fixtures_name_category_path_and_line(self):
         fixtures = {
-            "sql": "def lookup():\n    return 'SELECT * FROM patient'\n",
-            "payload": "def build_patient_payload():\n    return {'resourceType': 'Patient'}\n",
-            "workflow": "def sync_patient():\n    return True\n",
-            "transport": "def fetch_patient():\n    return urllib.request.urlopen('http://example')\n",
+            "sql": (
+                "def configure(connection):\n"
+                "    connection.execute('PRAGMA journal_mode=WAL')\n"
+            ),
+            "payload": "def serialize_patient():\n    return {'resourceType': 'Patient'}\n",
+            "workflow": "def process_patient():\n    return True\n",
+            "transport": (
+                "import http.client as hc\n"
+                "def contact():\n"
+                "    return hc.HTTPConnection('host')\n"
+            ),
         }
         for category, source in fixtures.items():
             with self.subTest(category=category):
@@ -812,6 +869,14 @@ class ArchitectureContractTest(unittest.TestCase):
                 self.assertIn(f"[{category}]", message)
                 self.assertIn(path, message)
                 self.assertRegex(message, r":\d+:")
+
+    def test_neutrally_named_catch_all_definition_is_rejected(self):
+        violations = legacy_backend_violations(
+            "backend/lab_store.py",
+            "def helper(value):\n    return value\n",
+            frozenset(),
+        )
+        self.assertIn("catch-all", {item.category for item in violations})
 
 
 if __name__ == "__main__":
