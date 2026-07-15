@@ -100,6 +100,7 @@ FRONTEND_FUNCTION_PATTERN = re.compile(
 )
 CSS_RULE_PATTERN = re.compile(r"(?:^|})\s*([^@{}][^{}]*)\{", re.MULTILINE)
 CSS_FAMILY_PATTERN = re.compile(r"[.#][A-Za-z_-][\w-]*")
+FRONTEND_MODULE_PREFIX_NAME = "<module-prefix>"
 
 
 @dataclass(frozen=True)
@@ -360,6 +361,22 @@ def frontend_top_level_definitions(source: str) -> dict[str, FrontendDefinition]
     return definitions
 
 
+def frontend_definition_inventory(source: str) -> frozenset[tuple[str, str]]:
+    first_definition = FRONTEND_FUNCTION_PATTERN.search(source)
+    prefix_end = first_definition.start() if first_definition else len(source)
+    inventory = {
+        (
+            FRONTEND_MODULE_PREFIX_NAME,
+            stable_fingerprint(source[:prefix_end]),
+        )
+    }
+    inventory.update(
+        definition.baseline_key
+        for definition in frontend_top_level_definitions(source).values()
+    )
+    return frozenset(inventory)
+
+
 def frontend_top_level_functions(source: str) -> dict[str, int]:
     return {
         name: definition.line
@@ -372,16 +389,34 @@ def frontend_function_violations(
     source: str,
     baseline: frozenset[tuple[str, str]],
 ) -> list[PlacementViolation]:
-    return [
+    definitions = frontend_top_level_definitions(source)
+    violations = [
         PlacementViolation(
             definition.category,
             PurePosixPath(relative_path),
             definition.line,
             f"New or changed top-level frontend definition {name!r} must move to frontend/static/js/.",
         )
-        for name, definition in sorted(frontend_top_level_definitions(source).items())
+        for name, definition in sorted(definitions.items())
         if definition.baseline_key not in baseline
     ]
+    first_definition = FRONTEND_FUNCTION_PATTERN.search(source)
+    prefix_end = first_definition.start() if first_definition else len(source)
+    prefix_key = (
+        FRONTEND_MODULE_PREFIX_NAME,
+        stable_fingerprint(source[:prefix_end]),
+    )
+    if prefix_key not in baseline:
+        violations.insert(
+            0,
+            PlacementViolation(
+                "state",
+                PurePosixPath(relative_path),
+                1,
+                "New or changed top-level frontend module prefix must move to frontend/static/js/.",
+            ),
+        )
+    return violations
 
 
 def frontend_selector_families(source: str) -> dict[str, int]:
@@ -852,10 +887,7 @@ class ArchitectureContractTest(unittest.TestCase):
         )
         self.assertEqual(
             FRONTEND_FUNCTION_BASELINE,
-            frozenset(
-                definition.baseline_key
-                for definition in frontend_top_level_definitions(js_source).values()
-            ),
+            frontend_definition_inventory(js_source),
             "Remove frontend definition baseline entries when globals move to owned modules.",
         )
         self.assertEqual(
@@ -956,10 +988,7 @@ class ArchitectureContractTest(unittest.TestCase):
 
     def test_changed_frontend_definition_body_is_rejected(self):
         original = "function renderServices() { return true; }\n"
-        original_baseline = frozenset(
-            definition.baseline_key
-            for definition in frontend_top_level_definitions(original).values()
-        )
+        original_baseline = frontend_definition_inventory(original)
         changed = "function renderServices() { return fetch('/api/new-monolith'); }\n"
         violations = frontend_function_violations(
             "frontend/static/app.js",
@@ -968,6 +997,18 @@ class ArchitectureContractTest(unittest.TestCase):
         )
         self.assertEqual(1, len(violations))
         self.assertEqual("transport", violations[0].category)
+
+    def test_frontend_module_prefix_growth_is_rejected(self):
+        original = "const byId = (id) => document.getElementById(id);\n"
+        changed = "const NEW_PATIENT_PAYLOAD = { resourceType: 'Patient' };\n" + original
+        violations = frontend_function_violations(
+            "frontend/static/app.js",
+            changed,
+            frontend_definition_inventory(original),
+        )
+        self.assertEqual(1, len(violations))
+        self.assertEqual("state", violations[0].category)
+        self.assertRegex(str(violations[0]), r"frontend/static/app\.js:1:")
 
     def test_placement_failures_name_category_path_and_line(self):
         fixtures = {
