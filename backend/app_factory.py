@@ -48,6 +48,7 @@ from backend.clients.medplum import (
 )
 from backend.clients import dcm4chee as dcm4chee_client
 from backend.clients import oie as oie_client
+from backend.clients.openemr import OpenEMRProcedureOrderSource
 from backend.clients.health import (
     DOCKER_COMPOSE_APPLICATION_URLS,
     run_http_smoke,
@@ -166,7 +167,6 @@ from backend.lab_store import (
     ORDER_STATUS_ERROR,
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_TRANSPORT_ERROR,
-    OpenEMRProcedureOrderSource,
     SimulatorValidationError,
     ensure_gdt_bridge_dirs,
     parse_openemr_allowed_procedure_codes,

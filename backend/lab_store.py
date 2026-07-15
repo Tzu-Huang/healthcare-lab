@@ -659,6 +659,17 @@ class OpenEMRProcedureOrderSource:
             return [dict(row) for row in cursor.fetchall()]
 
 
+# Compatibility re-exports; direct composition imports the owning modules.
+from backend.clients.openemr import OpenEMRProcedureOrderSource
+from backend.domain.openemr import (
+    map_openemr_procedure_order_to_gdt_order,
+    normalize_openemr_dob,
+    normalize_openemr_gender,
+    openemr_provider_name,
+    openemr_row_source_key,
+)
+
+
 class DemoStore:
     def __init__(self, path: str | Path):
         self.database = SQLiteDatabase(
