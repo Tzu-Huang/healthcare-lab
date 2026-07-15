@@ -13,11 +13,11 @@
 
 ## 3. Build Ordered Migration Infrastructure
 
-- [ ] 3.1 Add a stable ordered migration registry and internal ledger containing migration version, name, and successful application timestamp.
-- [ ] 3.2 Ensure each migration is recorded only after successful completion, later versions stop on failure, and a corrected rerun resumes deterministically.
-- [ ] 3.3 Extract all 21 existing application table declarations into idempotent schema migrations without changing their columns, constraints, or defaults.
-- [ ] 3.4 Move every additive column upgrade into ordered migrations and create all 17 indexes only after their required tables and columns exist.
-- [ ] 3.5 Add schema parity and rerun tests for fresh, current-unversioned, partial legacy, and injected-failure databases.
+- [x] 3.1 Add a stable ordered migration registry and internal ledger containing migration version, name, and successful application timestamp.
+- [x] 3.2 Ensure each migration is recorded only after successful completion, later versions stop on failure, and a corrected rerun resumes deterministically.
+- [x] 3.3 Extract all 21 existing application table declarations into idempotent schema migrations without changing their columns, constraints, or defaults.
+- [x] 3.4 Move every additive column upgrade into ordered migrations and create all 17 indexes only after their required tables and columns exist.
+- [x] 3.5 Add schema parity and rerun tests for fresh, current-unversioned, partial legacy, and injected-failure databases.
 
 ## 4. Extract Backfill and Seed Orchestration
 
