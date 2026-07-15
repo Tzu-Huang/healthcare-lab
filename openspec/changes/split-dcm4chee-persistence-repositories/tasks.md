@@ -2,8 +2,8 @@
 
 - [x] 1.1 Add disposable-database characterization tests for patient-sync mappings, attempts, ACK/error projection, retry increments, and success/failure transitions.
 - [x] 1.2 Add characterization tests for MWL mapping creation, stable identifiers, attempts, readback-before-repost, verification outcomes, and retry classification.
-- [ ] 1.3 Add characterization tests for reconciliation precedence, wrong-patient rejection, duplicate candidates, simulated results, and evidence projection.
-- [ ] 1.4 Add characterization tests for result refresh generations, completed-snapshot publication, stale-result supersession, diagnostics, and run ordering.
+- [x] 1.3 Add characterization tests for reconciliation precedence, wrong-patient rejection, duplicate candidates, simulated results, and evidence projection.
+- [x] 1.4 Add characterization tests for result refresh generations, completed-snapshot publication, stale-result supersession, diagnostics, and run ordering.
 - [x] 1.5 Add disposable legacy-database characterization for deterministic MWL mapping backfill and attempt linking.
 - [ ] 1.6 Prove the verification fixtures cannot resolve to or mutate a repository `instance/*.db` and use transport doubles instead of live external services.
 - [ ] 1.7 Run the focused characterization suite; stop only if evidence proves a documented hard-stop conflict, otherwise resolve ordinary failures within scope.
@@ -34,12 +34,12 @@
 
 ## 5. Extract Result Repository and Enrichment Reads
 
-- [ ] 5.1 Add `backend/repositories/dcm4chee_results.py` using the shared connection factory and lock and an explicit narrow MWL lookup collaborator.
-- [ ] 5.2 Move result record upsert/get/list, result-key, reconciliation persistence, duplicate diagnostic, and row-projection behavior into the result repository or injected pure policy.
-- [ ] 5.3 Move result refresh-run, generation comparison, begin/complete publication, diagnostic, and stale-result SQL into the result repository.
-- [ ] 5.4 Remove direct dcm4chee SQL from patient/order enrichment loaders and route projections through explicitly injected patient-sync, MWL, and result loaders.
-- [ ] 5.5 Add focused tests for reconciliation precedence, patient mismatch, duplicates, refresh atomicity, completed snapshots, generation ordering, diagnostics, enrichment, and rollback.
-- [ ] 5.6 Convert retained result `DemoStore` methods to mechanical delegates with no SQL, parsing, or cross-context orchestration.
+- [x] 5.1 Add `backend/repositories/dcm4chee_results.py` using the shared connection factory and lock and an explicit narrow MWL lookup collaborator.
+- [x] 5.2 Move result record upsert/get/list, result-key, reconciliation persistence, duplicate diagnostic, and row-projection behavior into the result repository or injected pure policy.
+- [x] 5.3 Move result refresh-run, generation comparison, begin/complete publication, diagnostic, and stale-result SQL into the result repository.
+- [x] 5.4 Remove direct dcm4chee SQL from patient/order enrichment loaders and route projections through explicitly injected patient-sync, MWL, and result loaders.
+- [x] 5.5 Add focused tests for reconciliation precedence, patient mismatch, duplicates, refresh atomicity, completed snapshots, generation ordering, diagnostics, enrichment, and rollback.
+- [x] 5.6 Convert retained result `DemoStore` methods to mechanical delegates with no SQL, parsing, or cross-context orchestration.
 
 ## 6. Narrow Ports and Cross-Context Coordination
 

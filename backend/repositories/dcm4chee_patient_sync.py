@@ -382,3 +382,22 @@ class Dcm4cheePatientSyncRepository:
                         (int(patient_record_id),),
                     ).fetchall()
             return [project_patient_sync_attempt_dict(row) for row in rows]
+
+    def load_latest_for_patients(self, patient_record_ids: list[int]) -> dict[int, dict[str, Any] | None]:
+        ids = [int(value) for value in patient_record_ids]
+        result: dict[int, dict[str, Any] | None] = {record_id: None for record_id in ids}
+        if not ids:
+            return result
+        placeholders = ", ".join("?" for _ in ids)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""SELECT * FROM local_dcm4chee_patient_syncs
+                    WHERE patient_record_id IN ({placeholders})
+                    ORDER BY updated_at DESC, id DESC""",
+                ids,
+            ).fetchall()
+        for row in rows:
+            record_id = int(row["patient_record_id"])
+            if result[record_id] is None:
+                result[record_id] = project_patient_sync_dict(row)
+        return result

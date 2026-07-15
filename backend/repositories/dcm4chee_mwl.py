@@ -444,6 +444,31 @@ class Dcm4cheeMwlRepository:
                 (int(patient_record_id),),
             ).fetchall()
         return [project_mwl_mapping(row) for row in rows]
+
+    def load_for_orders(self, order_record_ids: list[int]) -> dict[int, dict[str, Any]]:
+        ids = [int(value) for value in order_record_ids]
+        result = {record_id: {"attempt": None, "mapping": None} for record_id in ids}
+        if not ids:
+            return result
+        placeholders = ", ".join("?" for _ in ids)
+        with self._connect() as connection:
+            attempt_rows = connection.execute(
+                f"""SELECT * FROM local_dcm4chee_mwl_attempts
+                    WHERE order_record_id IN ({placeholders})
+                    ORDER BY attempted_at DESC, id DESC""",
+                ids,
+            ).fetchall()
+            mapping_rows = connection.execute(
+                f"SELECT * FROM local_dcm4chee_mwl_mappings WHERE order_record_id IN ({placeholders})",
+                ids,
+            ).fetchall()
+        for row in attempt_rows:
+            item = result[int(row["order_record_id"])]
+            if item["attempt"] is None:
+                item["attempt"] = project_mwl_attempt(row)
+        for row in mapping_rows:
+            result[int(row["order_record_id"])]["mapping"] = project_mwl_mapping(row)
+        return result
     def create_dcm4chee_mwl_attempt(
         self,
         order_record_id: int,

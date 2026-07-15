@@ -6,6 +6,13 @@ from typing import Any
 
 from backend.domain.errors import ValidationError
 from backend.domain.validation import require_http_url
+from backend.domain.statuses import (
+    DCM4CHEE_RESULT_STATUS_AMBIGUOUS,
+    DCM4CHEE_RESULT_STATUS_MATCHED,
+    DCM4CHEE_RESULT_STATUS_MISSING_ACCESSION,
+    DCM4CHEE_RESULT_STATUS_UNLINKED,
+    DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
+)
 
 DCM4CHEE_AUTH_MODES = ("none", "basic", "bearer", "oauth2", "mtls")
 
@@ -136,4 +143,149 @@ def validate_dcm4chee_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "status": "Healthy" if valid else "Down",
         "summary": "dcm4chee profile is valid." if valid else "dcm4chee profile is incomplete or invalid.",
         "checks": checks,
+    }
+
+
+# Reconciliation policy is pure: callers provide the candidate MWL mappings.
+def patient_matches(mapping: dict[str, Any], metadata: dict[str, str]) -> bool:
+    patient_id = str(metadata.get("patient_id") or "").strip()
+    issuer = str(metadata.get("issuer_of_patient_id") or "").strip()
+    expected_patient_id = str(mapping.get("patientId") or "").strip()
+    expected_issuer = str(mapping.get("issuerOfPatientId") or "").strip()
+    if patient_id and expected_patient_id and patient_id != expected_patient_id:
+        return False
+    if issuer and expected_issuer and issuer != expected_issuer:
+        return False
+    return True
+
+def reconcile_result_metadata(
+    metadata: dict[str, str],
+    mappings: list[dict[str, Any]],
+    *,
+    profile_name: str = "",
+    server_identity: str = "",
+) -> dict[str, Any]:
+    if not mappings:
+        return {
+            "status": DCM4CHEE_RESULT_STATUS_UNLINKED,
+            "method": "",
+            "strength": "none",
+            "mapping": None,
+            "diagnostic": {"reason": "no_local_dcm4chee_mapping"},
+        }
+
+    study_uid = str(metadata.get("study_instance_uid") or "").strip()
+    accession = str(metadata.get("accession_number") or "").strip()
+    requested = str(metadata.get("requested_procedure_id") or "").strip()
+    sps = str(metadata.get("scheduled_procedure_step_id") or "").strip()
+    profile = str(profile_name or "").strip()
+    server = str(server_identity or "").strip()
+
+    def in_namespace(mapping: dict[str, Any]) -> bool:
+        return (
+            (not profile or mapping.get("profileName") == profile)
+            and (not server or mapping.get("serverIdentity") == server)
+        )
+
+    candidates: list[tuple[str, str, dict[str, Any]]] = []
+    if study_uid:
+        candidates = [
+            ("study_instance_uid", "strong", mapping)
+            for mapping in mappings
+            if str(mapping.get("studyInstanceUid") or "").strip() == study_uid
+        ]
+    if not candidates and accession:
+        same_accession = [
+            mapping
+            for mapping in mappings
+            if in_namespace(mapping)
+            and str(mapping.get("accessionNumber") or "").strip() == accession
+        ]
+        wrong_patient = [mapping for mapping in same_accession if not patient_matches(mapping, metadata)]
+        if wrong_patient:
+            return {
+                "status": DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
+                "method": "accession_number",
+                "strength": "strong",
+                "mapping": None,
+                "diagnostic": {
+                    "reason": "patient_identity_mismatch",
+                    "candidateMappingIds": [item["id"] for item in wrong_patient],
+                },
+            }
+        candidates = [("accession_number", "strong", mapping) for mapping in same_accession]
+    if not candidates and requested and sps:
+        same_procedure = [
+            mapping
+            for mapping in mappings
+            if in_namespace(mapping)
+            and str(mapping.get("requestedProcedureId") or "").strip() == requested
+            and str(mapping.get("scheduledProcedureStepId") or "").strip() == sps
+        ]
+        wrong_patient = [mapping for mapping in same_procedure if not patient_matches(mapping, metadata)]
+        if wrong_patient:
+            return {
+                "status": DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
+                "method": "requested_procedure_step",
+                "strength": "strong",
+                "mapping": None,
+                "diagnostic": {
+                    "reason": "patient_identity_mismatch",
+                    "candidateMappingIds": [item["id"] for item in wrong_patient],
+                },
+            }
+        candidates = [("requested_procedure_step", "strong", mapping) for mapping in same_procedure]
+    if not candidates:
+        weak_candidates = [
+            mapping
+            for mapping in mappings
+            if patient_matches(mapping, metadata)
+        ]
+        if len(weak_candidates) == 1:
+            candidates = [("patient_identity", "weak", weak_candidates[0])]
+        elif len(weak_candidates) > 1:
+            return {
+                "status": DCM4CHEE_RESULT_STATUS_AMBIGUOUS,
+                "method": "patient_identity",
+                "strength": "weak",
+                "mapping": None,
+                "diagnostic": {
+                    "reason": "multiple_weak_candidates",
+                    "candidateMappingIds": [item["id"] for item in weak_candidates],
+                },
+            }
+        elif not accession:
+            return {
+                "status": DCM4CHEE_RESULT_STATUS_MISSING_ACCESSION,
+                "method": "",
+                "strength": "none",
+                "mapping": None,
+                "diagnostic": {"reason": "missing_accession_and_no_strong_identifier"},
+            }
+        else:
+            return {
+                "status": DCM4CHEE_RESULT_STATUS_UNLINKED,
+                "method": "",
+                "strength": "none",
+                "mapping": None,
+                "diagnostic": {"reason": "no_matching_mapping"},
+            }
+    if len(candidates) > 1:
+        return {
+            "status": DCM4CHEE_RESULT_STATUS_AMBIGUOUS,
+            "method": candidates[0][0],
+            "strength": candidates[0][1],
+            "mapping": None,
+            "diagnostic": {
+                "reason": "multiple_strong_candidates",
+                "candidateMappingIds": [item[2]["id"] for item in candidates],
+            },
+        }
+    method, strength, mapping = candidates[0]
+    return {
+        "status": DCM4CHEE_RESULT_STATUS_MATCHED,
+        "method": method,
+        "strength": strength,
+        "mapping": mapping,
+        "diagnostic": {"reason": "matched", "mappingId": mapping["id"]},
     }
