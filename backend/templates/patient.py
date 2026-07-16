@@ -6,20 +6,15 @@ import json
 from typing import Any, Callable
 
 from backend.domain.patient import record_number, visit_number
+from backend.templates.hl7 import HL7_V2_MSH_SUFFIX, escape, escape_composite
 
-HL7_MSH_SUFFIX = "2.5.1||||||UNICODE UTF-8"
+HL7_MSH_SUFFIX = HL7_V2_MSH_SUFFIX
 GDT_PATIENT_SEX_CODES = {"M": "1", "F": "2"}
 
-
-def hl7_escape(value: Any) -> str:
-    text = str(value if value is not None else "")
-    return (text.replace("\\", "\\E\\").replace("|", "\\F\\").replace("^", "\\S\\")
-            .replace("&", "\\T\\").replace("~", "\\R\\").replace("\r\n", "\n")
-            .replace("\r", "\n").replace("\n", "\\.br\\"))
-
-
-def hl7_escape_composite(value: Any) -> str:
-    return "^".join(hl7_escape(component) for component in str(value if value is not None else "").split("^"))
+# Retained template-level aliases for compatibility callers; implementation is
+# owned by backend.templates.hl7.
+hl7_escape = escape
+hl7_escape_composite = escape_composite
 
 
 def build_hl7(values: dict[str, Any], *, record_id: int, timestamp: str) -> tuple[str, str]:
