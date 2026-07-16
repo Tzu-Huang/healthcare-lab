@@ -13,12 +13,14 @@ from backend.domain.oie_channels import (
     UTF8_WIRE_VALUE,
 )
 from backend.templates.oie_channels import (
+    __all__ as public_template_api,
     compile_managed_routes,
+    compile_orm_to_ap,
+    compile_oru_to_hlab,
     normalized_state,
     normalized_state_from_payload,
     orm_to_ap_config,
     oru_to_hlab_config,
-    render_channel,
     sanitized_canonical,
 )
 
@@ -52,11 +54,11 @@ class ManagedOieChannelTemplateTests(unittest.TestCase):
 
     def test_generated_payload_preserves_complete_canonical_structure(self):
         canonical = ET.parse(ROOT / "docs" / "Dashboard_to_OIE_to_AP.xml").getroot()
-        generated = ET.fromstring(render_channel(orm_to_ap_config("ap.internal")))
+        generated = ET.fromstring(compile_orm_to_ap("ap.internal"))
         self.assertEqual(_structure(canonical), _structure(generated))
 
     def test_orm_payload_preserves_fixed_topology_and_explicit_utf8(self):
-        root = ET.fromstring(render_channel(orm_to_ap_config("ap.internal")))
+        root = ET.fromstring(compile_orm_to_ap("ap.internal"))
         self.assertEqual("HLAB_ORM_TO_AP", root.findtext("name"))
         self.assertEqual("6600", root.findtext("sourceConnector/properties/listenerConnectorProperties/port"))
         destination = root.find("destinationConnectors/connector")
@@ -69,7 +71,7 @@ class ManagedOieChannelTemplateTests(unittest.TestCase):
         self.assertEqual("TCP Sender", destination.findtext("transportName"))
 
     def test_oru_payload_has_indefinite_ten_second_queue(self):
-        root = ET.fromstring(render_channel(oru_to_hlab_config()))
+        root = ET.fromstring(compile_oru_to_hlab())
         destination = root.find("destinationConnectors/connector")
         queue = destination.find("properties/destinationConnectorProperties")
         self.assertEqual("lab-app", destination.findtext("properties/remoteAddress"))
@@ -83,18 +85,25 @@ class ManagedOieChannelTemplateTests(unittest.TestCase):
         self.assertEqual("5000", destination.findtext("properties/responseTimeout"))
 
     def test_public_interfaces_do_not_accept_generic_payload_extensions(self):
-        parameters = set(inspect.signature(orm_to_ap_config).parameters)
         forbidden = {"connectors", "destinations", "filters", "transformers", "scripts", "credentials", "payload", "xml"}
-        self.assertFalse(parameters & forbidden)
+        self.assertNotIn("render_channel", public_template_api)
+        for compiler in (compile_orm_to_ap, compile_oru_to_hlab, compile_managed_routes):
+            parameters = set(inspect.signature(compiler).parameters)
+            self.assertFalse(parameters & forbidden)
+            self.assertNotIn("config", parameters)
         with self.assertRaises(TypeError):
-            orm_to_ap_config("ap.internal", scripts=["return true"])
+            compile_orm_to_ap("ap.internal", scripts=["return true"])
+        with self.assertRaises(TypeError):
+            compile_oru_to_hlab(destination_host="attacker.internal")
+        with self.assertRaises(TypeError):
+            compile_oru_to_hlab(queue_enabled=False)
 
     def test_route_pair_compilation_checks_listener_conflicts(self):
         with self.assertRaisesRegex(ValueError, "listener.port conflict"):
             compile_managed_routes("ap.internal", listener_port=6661)
 
     def test_normalization_ignores_server_metadata(self):
-        payload = render_channel(orm_to_ap_config("ap.internal"))
+        payload = compile_orm_to_ap("ap.internal")
         root = ET.fromstring(payload)
         expected = normalized_state_from_payload(payload)
         root.find("id").text = "server-assigned-id"
@@ -122,7 +131,7 @@ class ManagedOieChannelTemplateTests(unittest.TestCase):
                 )
 
     def test_payload_and_normalized_state_are_secret_free_and_deterministic(self):
-        payload = render_channel(orm_to_ap_config("ap.internal"))
+        payload = compile_orm_to_ap("ap.internal")
         normalized = normalized_state_from_payload(payload)
         self.assertEqual(normalized, normalized_state_from_payload(payload))
         combined = (payload + repr(normalized)).lower()

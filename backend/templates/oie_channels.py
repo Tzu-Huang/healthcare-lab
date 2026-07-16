@@ -25,6 +25,17 @@ _CANONICAL_EXPORTS = {
     ManagedChannelType.ORU_TO_HLAB: _ROOT / "docs" / "AP_RESULT_TO_LAB.xml",
 }
 
+__all__ = [
+    "compile_managed_routes",
+    "compile_orm_to_ap",
+    "compile_oru_to_hlab",
+    "normalized_state",
+    "normalized_state_from_payload",
+    "orm_to_ap_config",
+    "oru_to_hlab_config",
+    "sanitized_canonical",
+]
+
 
 def orm_to_ap_config(
     ap_host: str,
@@ -74,10 +85,52 @@ def compile_managed_routes(ap_host: str, **orm_overrides: Any) -> tuple[str, str
     orm = orm_to_ap_config(ap_host, **orm_overrides)
     oru = oru_to_hlab_config()
     validate_route_set(orm, oru)
-    return render_channel(orm), render_channel(oru)
+    return _render_channel(orm), _render_channel(oru)
 
 
-def render_channel(config: ManagedChannelConfig) -> str:
+def compile_orm_to_ap(
+    ap_host: str,
+    *,
+    listener_port: int = 6600,
+    destination_port: int = 6671,
+    send_timeout_ms: int = 5000,
+    response_timeout_ms: int = 5000,
+    enabled: bool = True,
+    initial_state: InitialState = InitialState.STARTED,
+) -> str:
+    return _render_channel(
+        orm_to_ap_config(
+            ap_host,
+            listener_port=listener_port,
+            destination_port=destination_port,
+            send_timeout_ms=send_timeout_ms,
+            response_timeout_ms=response_timeout_ms,
+            enabled=enabled,
+            initial_state=initial_state,
+        )
+    )
+
+
+def compile_oru_to_hlab(
+    *,
+    listener_port: int = 6661,
+    send_timeout_ms: int = 5000,
+    response_timeout_ms: int = 5000,
+    enabled: bool = True,
+    initial_state: InitialState = InitialState.STARTED,
+) -> str:
+    return _render_channel(
+        oru_to_hlab_config(
+            listener_port=listener_port,
+            send_timeout_ms=send_timeout_ms,
+            response_timeout_ms=response_timeout_ms,
+            enabled=enabled,
+            initial_state=initial_state,
+        )
+    )
+
+
+def _render_channel(config: ManagedChannelConfig) -> str:
     validate_route_set(config)
     root = _canonical_root(config.logical_type)
     root.set("version", OIE_VERSION)
@@ -182,7 +235,7 @@ def sanitized_canonical(logical_type: ManagedChannelType) -> str:
     """Return canonical evidence with runtime identity and environment data removed."""
     sample_host = "ap.internal" if logical_type is ManagedChannelType.ORM_TO_AP else "lab-app"
     config = orm_to_ap_config(sample_host) if logical_type is ManagedChannelType.ORM_TO_AP else oru_to_hlab_config()
-    return render_channel(config)
+    return _render_channel(config)
 
 
 def _canonical_root(logical_type: ManagedChannelType) -> ET.Element:
