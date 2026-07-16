@@ -29,7 +29,7 @@
 ## 4. dcm4chee Presentation and Protocol Ownership
 
 - [x] 4.1 Move dcm4chee patient-sync and attempt row projectors from the patient-sync repository to the DICOM mapper with exact JSON characterization.
-- [ ] 4.2 Move dcm4chee MWL mapping and attempt row projectors from the MWL repository to the DICOM mapper with exact retry, verification, and enrichment characterization.
+- [x] 4.2 Move dcm4chee MWL mapping and attempt row projectors from the MWL repository to the DICOM mapper with exact retry, verification, and enrichment characterization.
 - [ ] 4.3 Move dcm4chee result and refresh-snapshot row projectors from the result repository to the DICOM mapper with exact reconciliation and generation characterization.
 - [ ] 4.4 Consolidate duplicated DICOM constants, identifier mapping wrappers, and presentation helpers under their existing domain, template, or mapper owners without changing payloads or response interpretation.
 - [ ] 4.5 Convert retained `DemoStore` dcm4chee projector and builder helpers to documented re-exports or mechanical delegates and shrink the legacy baseline without adding replacement exceptions.
