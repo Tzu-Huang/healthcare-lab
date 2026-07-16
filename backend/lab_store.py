@@ -51,12 +51,15 @@ from backend.services import protocol_compatibility as protocol_compat
 from backend import protocol_composition
 from backend.repositories.orders import OrderRepository
 from backend.repositories.dcm4chee_patient_sync import Dcm4cheePatientSyncRepository
-from backend.mappers.dicom import project_patient_sync, project_patient_sync_attempt
+from backend.mappers.dicom import (
+    project_mwl_attempt,
+    project_mwl_mapping,
+    project_patient_sync,
+    project_patient_sync_attempt,
+)
 from backend.repositories.dcm4chee_mwl import (
     Dcm4cheeMwlRepository,
     backfill_dcm4chee_mwl_mappings,
-    project_mwl_attempt,
-    project_mwl_mapping,
 )
 from backend.repositories.dcm4chee_results import (
     Dcm4cheeResultRepository,
