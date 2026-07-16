@@ -158,6 +158,21 @@ class FhirPreviewService:
         return {"item": item, "resource": fallback, "source": "local-submitted", "live": {"fetched": False, "statusCode": None, "reference": reference, "error": ""}}
 
 
+class FhirDiagnosticReportService:
+    """Coordinate DiagnosticReport retrieval through an injected FHIR client."""
+
+    def __init__(self, *, medplum_base_url: Callable[[], str], auth_manager: Callable[[], Any], diagnostic_fetcher: Callable[..., dict[str, Any]]) -> None:
+        self._medplum_base_url = medplum_base_url
+        self._auth_manager = auth_manager
+        self._diagnostic_fetcher = diagnostic_fetcher
+
+    def diagnostic_reports(self, *, patient_reference: str = "", service_request_reference: str = "", base_url: str = "") -> dict[str, Any]:
+        resolved = str(base_url or self._medplum_base_url()).strip()
+        if not resolved:
+            raise ValueError("Medplum FHIR base URL is required.")
+        return self._diagnostic_fetcher(resolved, "", patient_reference=patient_reference, service_request_reference=service_request_reference, auth_manager=self._auth_manager())
+
+
 class FhirWorkflowService:
     def __init__(
         self,
@@ -195,6 +210,7 @@ class FhirWorkflowService:
         )
         self.inventory_service = FhirInventoryService(repository, inventory_types=inventory_types, inventory_mapper=inventory_mapper)
         self.preview_service = FhirPreviewService(repository, inventory_types=inventory_types, medplum_base_url=medplum_base_url, auth_manager=auth_manager, base_url_normalizer=base_url_normalizer, reference_url_builder=reference_url_builder, json_request=json_request, upstream_status=upstream_status)
+        self.diagnostic_service = FhirDiagnosticReportService(medplum_base_url=medplum_base_url, auth_manager=auth_manager, diagnostic_fetcher=diagnostic_fetcher)
 
     def operation_outcome(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._operation_outcome(payload)
@@ -215,15 +231,10 @@ class FhirWorkflowService:
         service_request_reference: str = "",
         base_url: str = "",
     ) -> dict[str, Any]:
-        resolved_base_url = str(base_url or self._medplum_base_url()).strip()
-        if not resolved_base_url:
-            raise ValueError("Medplum FHIR base URL is required.")
-        return self._diagnostic_fetcher(
-            resolved_base_url,
-            "",
+        return self.diagnostic_service.diagnostic_reports(
             patient_reference=patient_reference,
             service_request_reference=service_request_reference,
-            auth_manager=self._auth_manager(),
+            base_url=base_url,
         )
 
     def _fetch_live_reference(
