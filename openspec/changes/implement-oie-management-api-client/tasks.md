@@ -33,4 +33,4 @@
 - [x] 5.2 Add the narrow settings-to-client configuration adapter/factory, conservatively mapping the existing persisted timeout to bounded client behavior without changing `/api/oie/settings`.
 - [x] 5.3 Wire the client at the composition boundary for later service consumption without performing login, diagnostics, or Channel mutation during application startup.
 - [x] 5.4 Add focused composition tests proving the configured password reaches only client construction, public settings remain secret-safe, and no database or live OIE dependency is required by client tests.
-- [ ] 5.5 Run the complete regression suite and final architecture/OpenSpec checks, recording that ZAC-47 templates, ZAC-48 lifecycle orchestration, ZAC-49 listener behavior, and ZAC-50 UI remain out of scope.
+- [x] 5.5 Run the complete regression suite and final architecture/OpenSpec checks, recording that ZAC-47 templates, ZAC-48 lifecycle orchestration, ZAC-49 listener behavior, and ZAC-50 UI remain out of scope.

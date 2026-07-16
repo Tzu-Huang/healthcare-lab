@@ -96,8 +96,6 @@ API client while remaining isolated from the ZAC-61 settings ownership work.
 - Follow-ups: none
 - Next action: commit only review/devlog workflow records, then run `/dev-done`
 
-## Review Fixes
-
 ## Phase B Integration
 
 - Rebased ZAC-46 onto `main` at `c8cb1cf`, which contains the archived ZAC-61
@@ -109,6 +107,28 @@ API client while remaining isolated from the ZAC-61 settings ownership work.
   `backend/app_factory.py`.
 - No ZAC-61 ownership or compatibility code required conflict resolution during
   the rebase.
+- Added a private repository configuration read and a service-layer adapter that
+  constructs the persistence-neutral client configuration. The persisted timeout
+  is applied to both connect and read bounds, while the public settings projection
+  remains unchanged and secret-safe.
+- Registered the constructed client in `app.extensions` without login,
+  diagnostics, Channel mutation, or any live OIE request during startup.
+- Phase B intentionally excludes ZAC-47 managed templates, ZAC-48 lifecycle
+  orchestration, ZAC-49 listener behavior, and ZAC-50 UI.
+
+### Apply Verification (2026-07-16)
+
+- Tested head: `afe543f`
+- Status: `pass`
+- Checks:
+  - pass — `python -m unittest discover -s tests -v`: 383 tests passed.
+  - pass — `python -m compileall -q backend tests`.
+  - pass — `git diff --check`.
+  - pass — `openspec validate implement-oie-management-api-client --strict`.
+  - pass — focused composition, repository, domain, client, and secret-safe API
+    checks use fakes or disposable storage and make no live OIE request.
+
+## Review Fixes
 
 ### Fix 1 (2026-07-16)
 
