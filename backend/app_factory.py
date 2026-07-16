@@ -421,9 +421,7 @@ def create_app(database_path: str | None = None) -> Flask:
             )
         )
     )
-    app.register_blueprint(
-        create_orders_blueprint(
-            OrderWorkflowService(
+    order_service = OrderWorkflowService(
                 store.order_repository,
                 app.config,
                 fhir_capability=workflow_operations.order_fhir,
@@ -435,7 +433,13 @@ def create_app(database_path: str | None = None) -> Flask:
                 dcm_sync=workflow_operations.sync_order_dicom,
                 dcm_verify=workflow_operations.verify_order_dicom,
                 dcm_profile=dcm4chee_profile_from_config,
-            )
+    )
+    app.register_blueprint(
+        create_orders_blueprint(
+            order_service,
+            order_service.mwl_sync_service,
+            order_service.mwl_verification_service,
+            order_service.evidence_service,
         )
     )
     fhir_service = FhirWorkflowService(
