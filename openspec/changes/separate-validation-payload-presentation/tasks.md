@@ -37,7 +37,7 @@
 ## 5. Lab and OIE Consistency Cleanup
 
 - [x] 5.1 Move Lab server payload validation into the Lab domain owner and Lab server/operation row presentation into the Lab mapper while preserving validation errors and API projections.
-- [ ] 5.2 Move OIE settings validation into the OIE domain owner and settings/result presentation into OIE mappers while preserving password handling, duplicate behavior, and public JSON.
+- [x] 5.2 Move OIE settings validation into the OIE domain owner and settings/result presentation into OIE mappers while preserving password handling, duplicate behavior, and public JSON.
 - [ ] 5.3 Keep GDT bridge directory readiness validation in its approved health/infrastructure owner and add a focused architecture assertion preventing accidental reclassification.
 - [ ] 5.4 Update Lab/OIE repository construction and compatibility delegates to invoke the new pure owners without changing locks, transactions, listener behavior, or workbench coordination.
 
