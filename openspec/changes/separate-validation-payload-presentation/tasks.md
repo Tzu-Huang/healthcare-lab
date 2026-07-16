@@ -18,8 +18,8 @@
 
 ## 3. GDT Domain, Template, Mapper, and Ledger Boundaries
 
-- [ ] 3.1 Characterize GDT `6302` text byte-for-byte, parsed/canonical results, validation notices, persistence candidates, patient snapshots, attachment metadata, workbench projections, and atomic result rollback.
-- [ ] 3.2 Move outbound GDT `6302` construction to `backend/templates/gdt.py` while keeping parsing, encoding validation, required-field rules, and inbound `6310` interpretation in the GDT domain owner.
+- [x] 3.1 Characterize GDT `6302` text byte-for-byte, parsed/canonical results, validation notices, persistence candidates, patient snapshots, attachment metadata, workbench projections, and atomic result rollback.
+- [x] 3.2 Move outbound GDT `6302` construction to `backend/templates/gdt.py` while keeping parsing, encoding validation, required-field rules, and inbound `6310` interpretation in the GDT domain owner.
 - [ ] 3.3 Move GDT patient/order number rules and persistence preparation out of `GdtWorkflowRepository` into pure domain collaborators without changing collision, matching, or transaction behavior.
 - [ ] 3.4 Move GDT patient snapshot, attachment filename/shape mapping, and order/message/attachment/event/workbench presentation into the GDT mapper.
 - [ ] 3.5 Wire `GdtWorkflowRepository` to the pure template/domain/mapper collaborators while retaining cohesive five-table SQL ownership and atomic writes.

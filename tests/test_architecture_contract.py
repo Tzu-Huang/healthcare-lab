@@ -30,7 +30,7 @@ RESPONSIBILITY_PACKAGES = (
 )
 ALLOWED_LAYER_DEPENDENCIES: dict[str, frozenset[str]] = {
     "api": frozenset({"api", "services", "domain", "config"}),
-    "services": frozenset({"services", "clients", "domain", "mappers", "config"}),
+    "services": frozenset({"services", "clients", "domain", "templates", "mappers", "config"}),
     "clients": frozenset({"clients", "domain", "config"}),
     "runtime": frozenset({"runtime", "services", "domain", "config"}),
     "repositories": frozenset({"repositories", "domain", "templates", "mappers", "config"}),

@@ -2,7 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backend.domain.gdt_protocol import build_gdt_6302_request, parse_gdt_6310_result, render_gdt_message
+from backend.domain.gdt_protocol import parse_gdt_6310_result, render_gdt_message
+from backend.templates.gdt import build_gdt_6302_request
 from backend.lab_store import DemoStore
 from backend.repositories.gdt_workflow import GdtWorkflowRepository
 
