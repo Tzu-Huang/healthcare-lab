@@ -57,15 +57,19 @@ Healthcare Lab SHALL provide authenticated operations for current-user informati
 
 ### Requirement: The client provides Channel mutation primitives
 
-Healthcare Lab SHALL provide authenticated Channel create, update, delete, deploy, redeploy, and undeploy primitives without deciding ownership, generating Channel templates, or automatically sequencing a managed lifecycle.
+Healthcare Lab SHALL provide authenticated Channel create, update, delete, deploy, redeploy-all, and undeploy primitives without deciding ownership, generating Channel templates, or automatically sequencing a managed lifecycle.
 
 #### Scenario: Create or delete a Channel
 - **WHEN** a caller supplies a valid OIE Channel payload or identifier
 - **THEN** the client performs the requested create or delete operation and returns the normalized OIE outcome
 
-#### Scenario: Deploy, redeploy, or undeploy a Channel
-- **WHEN** a caller requests a deployment-state operation for a Channel identifier
+#### Scenario: Deploy or undeploy a Channel
+- **WHEN** a caller requests deploy or undeploy for a Channel identifier
 - **THEN** the client performs exactly that requested primitive and returns its normalized outcome
+
+#### Scenario: Redeploy all Channels
+- **WHEN** a caller requests the OIE redeploy-all primitive
+- **THEN** the client invokes the declared redeploy-all operation and returns its normalized outcome
 
 #### Scenario: Update uses safe conflict behavior
 - **WHEN** a caller updates a Channel without specifying an override value

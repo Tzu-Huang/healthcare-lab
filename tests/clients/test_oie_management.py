@@ -190,7 +190,7 @@ class OieManagementClientTests(unittest.TestCase):
         client.update_channel("c1", {"id": "c1", "revision": 3}, override=True)
         client.delete_channel("c1")
         client.deploy("c1")
-        client.redeploy("c1")
+        client.redeploy_all()
         client.undeploy("c1")
         self.assertTrue(transport.requests[1]["url"].endswith("/server/version"))
         requests = transport.requests[2:]
@@ -198,7 +198,8 @@ class OieManagementClientTests(unittest.TestCase):
         self.assertTrue(requests[1]["url"].endswith("/channels/c1?override=false"))
         self.assertTrue(requests[2]["url"].endswith("/channels/c1?override=true"))
         self.assertEqual("application/json", requests[0]["headers"]["Content-Type"])
-        self.assertEqual(requests[4]["url"], requests[5]["url"])
+        self.assertTrue(requests[4]["url"].endswith("/channels/c1/_deploy"))
+        self.assertTrue(requests[5]["url"].endswith("/channels/_redeployAll"))
         self.assertTrue(requests[6]["url"].endswith("/channels/c1/_undeploy"))
 
     def test_failure_categories_are_stable_and_raw_secrets_are_discarded(self):

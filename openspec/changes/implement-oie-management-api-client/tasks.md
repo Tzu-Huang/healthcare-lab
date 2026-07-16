@@ -1,6 +1,6 @@
 ## 1. Evidence and Client Contracts
 
-- [x] 1.1 Record authoritative OIE 4.5.2 evidence for login/logout, current-user, system-info, Channel CRUD, deploy/redeploy/undeploy, status, ports-in-use, request headers, encodings, and response shapes before implementing endpoints.
+- [x] 1.1 Record authoritative OIE 4.5.2 evidence for login/logout, current-user, system-info, Channel CRUD, deploy/redeploy-all/undeploy, status, ports-in-use, request headers, encodings, and response shapes before implementing endpoints.
 - [x] 1.2 Add focused characterization tests for the persistence-neutral client configuration, authenticated lifecycle, normalized results, error categories, and secret-safe representations without opening network sockets.
 - [x] 1.3 Define inward OIE Management configuration, normalized result, version-support, and stable error contracts without Flask, SQLite, repository, mapper, or public Settings JSON dependencies.
 
@@ -17,7 +17,7 @@
 - [x] 3.2 Implement Channel list/get and Channel-status/ports-in-use operations with normalized identifiers, revisions, and status values.
 - [x] 3.3 Implement Channel create and delete primitives using the verified OIE 4.5.2 request and response contracts.
 - [x] 3.4 Implement Channel update with `override=false` by default and preserve revision conflict as an explicit non-overriding failure.
-- [x] 3.5 Implement deploy, redeploy, and undeploy as exact caller-selected primitives without lifecycle sequencing or ownership decisions.
+- [x] 3.5 Implement deploy, redeploy-all, and undeploy as exact caller-selected primitives without lifecycle sequencing or ownership decisions.
 
 ## 4. Failure Mapping and Phase A Verification
 
