@@ -222,7 +222,7 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
     def test_service_request_builder_failure_rolls_back_local_order(self):
         patient, _ = self.create_synced_patient()
         with patch(
-            "backend.services.protocol_compatibility.build_service_request_resource",
+            "backend.protocol_composition.build_service_request_resource",
             side_effect=RuntimeError("service request build failed"),
         ):
             with self.assertRaisesRegex(RuntimeError, "service request build failed"):

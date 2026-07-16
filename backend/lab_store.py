@@ -48,6 +48,7 @@ from backend.repositories.enrichment import PatientEnrichmentLoader, OrderEnrich
 from backend.repositories.identifiers import PatientIdentifierRepository
 from backend.repositories.patients import PatientRepository
 from backend.services import protocol_compatibility as protocol_compat
+from backend import protocol_composition
 from backend.repositories.orders import OrderRepository
 from backend.repositories.dcm4chee_patient_sync import (
     Dcm4cheePatientSyncRepository,
@@ -593,7 +594,7 @@ class DemoStore:
         return self.patient_repository.get_patient_record(record_id)
 
     def create_patient_fhir_workflow_record(self, patient_record: dict[str, Any]) -> dict[str, Any]:
-        return protocol_compat.create_patient_fhir_record(self.database, self.patient_repository, now_iso, patient_record)
+        return protocol_composition.create_patient_fhir_record(self.database, self.patient_repository, now_iso, patient_record)
 
     def list_oie_local_adt_inventory(self) -> list[dict[str, Any]]:
         return self.list_patient_records(PATIENT_MODES["hl7-v2"]["protocol"])
@@ -753,7 +754,7 @@ class DemoStore:
 
     @classmethod
     def _build_service_request_resource(cls, values: dict[str, Any], *, record_id: int, local_order_number: str, patient_reference: str) -> dict[str, Any]:
-        return protocol_compat.build_service_request_resource(values, record_id=record_id, local_order_number=local_order_number, patient_reference=patient_reference)
+        return protocol_composition.build_service_request_resource(values, record_id=record_id, local_order_number=local_order_number, patient_reference=patient_reference)
 
     def create_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.order_repository.create_order_record(payload)
@@ -912,13 +913,13 @@ class DemoStore:
         return self.dcm4chee_mwl_repository.update_dcm4chee_mwl_verification_result(*args, **kwargs)
 
     def _synced_patient_reference_for_fhir_order(self, patient_record_id: int) -> str:
-        return protocol_compat.synced_fhir_patient_reference(self.database, self.patient_repository, self.order_repository, now_iso, hl7_timestamp, patient_record_id)
+        return protocol_composition.synced_fhir_patient_reference(self.database, self.patient_repository, self.order_repository, now_iso, hl7_timestamp, patient_record_id)
 
     def create_fhir_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return protocol_compat.create_fhir_order(self.database, self.patient_repository, self.order_repository, now_iso, hl7_timestamp, payload)
+        return protocol_composition.create_fhir_order(self.database, self.patient_repository, self.order_repository, now_iso, hl7_timestamp, payload)
 
     def create_order_service_request_fhir_workflow_record(self, order: dict[str, Any]) -> dict[str, Any]:
-        return protocol_compat.create_order_fhir_record(self.database, self.patient_repository, self.order_repository, now_iso, hl7_timestamp, order)
+        return protocol_composition.create_order_fhir_record(self.database, self.patient_repository, self.order_repository, now_iso, hl7_timestamp, order)
 
     def list_order_records(self, protocol_version: str = "") -> list[dict[str, Any]]:
         return self.order_repository.list_order_records(protocol_version)
@@ -992,31 +993,31 @@ class DemoStore:
 
 
     def create_gdt_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return protocol_compat.create_gdt_order(self.database, self.patient_repository, now_iso, hl7_timestamp, payload)
+        return protocol_composition.create_gdt_order(self.database, self.patient_repository, now_iso, hl7_timestamp, payload)
 
     def list_gdt_order_records(self) -> list[dict[str, Any]]:
-        return protocol_compat.list_gdt_order_records(self.database, self.patient_repository, now_iso, hl7_timestamp)
+        return protocol_composition.list_gdt_order_records(self.database, self.patient_repository, now_iso, hl7_timestamp)
 
     def get_gdt_order_record(self, record_id: int) -> dict[str, Any]:
-        return protocol_compat.get_gdt_order(self.database, self.patient_repository, now_iso, hl7_timestamp, record_id)
+        return protocol_composition.get_gdt_order(self.database, self.patient_repository, now_iso, hl7_timestamp, record_id)
 
     def list_gdt_messages(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
-        return protocol_compat.list_gdt_messages(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id)
+        return protocol_composition.list_gdt_messages(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id)
 
     def list_gdt_events(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
-        return protocol_compat.list_gdt_events(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id)
+        return protocol_composition.list_gdt_events(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id)
 
     def list_gdt_attachments(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
-        return protocol_compat.list_gdt_attachments(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id)
+        return protocol_composition.list_gdt_attachments(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id)
 
     def record_gdt_order_export(self, order_record_id: int, *, export_path: str, status: str, error_text: str = "") -> dict[str, Any]:
-        return protocol_compat.record_gdt_export(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id, export_path=export_path, status=status, error_text=error_text)
+        return protocol_composition.record_gdt_export(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id, export_path=export_path, status=status, error_text=error_text)
 
     def create_gdt_demo_result(self, order_record_id: int) -> dict[str, Any]:
-        return protocol_compat.create_gdt_demo(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id)
+        return protocol_composition.create_gdt_demo(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id)
 
     def list_gdt_workbench(self, *, bridge_inbox: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        return protocol_compat.build_gdt_workbench(self.database, self.patient_repository, now_iso, hl7_timestamp, bridge_inbox)
+        return protocol_composition.build_gdt_workbench(self.database, self.patient_repository, now_iso, hl7_timestamp, bridge_inbox)
 
     @staticmethod
     def _attachment_payloads_from_result_fields(fields: dict[str, list[str]]) -> list[dict[str, str]]:
@@ -1027,7 +1028,7 @@ class DemoStore:
         return protocol_compat.gdt_result_measurements(fields)
 
     def record_gdt_result(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return protocol_compat.persist_gdt_result(self.database, self.patient_repository, now_iso, hl7_timestamp, payload)
+        return protocol_composition.persist_gdt_result(self.database, self.patient_repository, now_iso, hl7_timestamp, payload)
 
     # Compatibility-only OIE result seams.
     def list_oie_workbench(self) -> dict[str, Any]:
@@ -1110,34 +1111,34 @@ class DemoStore:
         return protocol_compat.normalize_fhir_record_payload(payload)
 
     def create_fhir_workflow_record(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return protocol_compat.create_fhir_record(self.database, now_iso, payload)
+        return protocol_composition.create_fhir_record(self.database, now_iso, payload)
 
     def list_fhir_workflow_records(self, sync_status: str = "") -> list[dict[str, Any]]:
-        return protocol_compat.list_fhir_records(self.database, now_iso, sync_status)
+        return protocol_composition.list_fhir_records(self.database, now_iso, sync_status)
 
     def get_fhir_workflow_record(self, record_id: int) -> dict[str, Any]:
-        return protocol_compat.get_fhir_record(self.database, now_iso, record_id)
+        return protocol_composition.get_fhir_record(self.database, now_iso, record_id)
 
     def get_fhir_workflow_record_by_identifier(self, *, resource_type: str, identifier_system: str, identifier_value: str) -> dict[str, Any]:
-        return protocol_compat.get_fhir_record_by_identifier(self.database, now_iso, resource_type=resource_type, identifier_system=identifier_system, identifier_value=identifier_value)
+        return protocol_composition.get_fhir_record_by_identifier(self.database, now_iso, resource_type=resource_type, identifier_system=identifier_system, identifier_value=identifier_value)
 
     def mark_fhir_syncing(self, record_id: int) -> dict[str, Any]:
-        return protocol_compat.mark_fhir_record_syncing(self.database, now_iso, record_id)
+        return protocol_composition.mark_fhir_record_syncing(self.database, now_iso, record_id)
 
     def mark_fhir_sync_success(self, record_id: int, *, medplum_resource_id: str, medplum_resource_reference: str = "") -> dict[str, Any]:
-        return protocol_compat.mark_fhir_record_success(self.database, now_iso, record_id, medplum_resource_id=medplum_resource_id, medplum_resource_reference=medplum_resource_reference)
+        return protocol_composition.mark_fhir_record_success(self.database, now_iso, record_id, medplum_resource_id=medplum_resource_id, medplum_resource_reference=medplum_resource_reference)
 
     def mark_fhir_sync_failure(self, record_id: int, *, error_text: str, operation_outcome: dict[str, Any] | None = None) -> dict[str, Any]:
-        return protocol_compat.mark_fhir_record_failure(self.database, now_iso, record_id, error_text=error_text, operation_outcome=operation_outcome)
+        return protocol_composition.mark_fhir_record_failure(self.database, now_iso, record_id, error_text=error_text, operation_outcome=operation_outcome)
 
     def record_fhir_sync_attempt(self, record_id: int, *, method: str, request_url: str, request_payload: dict[str, Any] | None = None, http_status: int | None = None, response_payload: dict[str, Any] | None = None, operation_outcome: dict[str, Any] | None = None, error_text: str = "") -> dict[str, Any]:
-        return protocol_compat.create_fhir_sync_attempt(self.database, now_iso, record_id, method=method, request_url=request_url, request_payload=request_payload, http_status=http_status, response_payload=response_payload, operation_outcome=operation_outcome, error_text=error_text)
+        return protocol_composition.create_fhir_sync_attempt(self.database, now_iso, record_id, method=method, request_url=request_url, request_payload=request_payload, http_status=http_status, response_payload=response_payload, operation_outcome=operation_outcome, error_text=error_text)
 
     def list_fhir_sync_attempts(self, record_id: int) -> list[dict[str, Any]]:
-        return protocol_compat.list_fhir_record_attempts(self.database, now_iso, record_id)
+        return protocol_composition.list_fhir_record_attempts(self.database, now_iso, record_id)
 
     def ordered_fhir_workflow_records(self, record_ids: list[int]) -> list[dict[str, Any]]:
-        return protocol_compat.order_fhir_records(self.database, now_iso, record_ids)
+        return protocol_composition.order_fhir_records(self.database, now_iso, record_ids)
 
     def _fhir_workflow_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         return protocol_compat.project_fhir_workflow_record(row)
@@ -1210,4 +1211,4 @@ class DemoStore:
         return self.lab_repository.list_operations(server_id, limit=limit)
 
     def list_gdt_orders(self) -> list[dict[str, Any]]:
-        return protocol_compat.list_gdt_inventory(self.database, self.patient_repository, now_iso, hl7_timestamp)
+        return protocol_composition.list_gdt_inventory(self.database, self.patient_repository, now_iso, hl7_timestamp)

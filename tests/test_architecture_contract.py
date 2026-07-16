@@ -121,7 +121,7 @@ CSS_RULE_PATTERN = re.compile(r"(?:^|[{}])\s*([^@{}][^{}]*)\{", re.MULTILINE)
 CSS_FAMILY_PATTERN = re.compile(r"[.#][A-Za-z_-][\w-]*")
 FRONTEND_MODULE_PREFIX_NAME = "<module-prefix>"
 DEMO_STORE_COMPATIBILITY_DELEGATES = {
-    "create_patient_fhir_workflow_record": "protocol_compat.create_patient_fhir_record",
+    "create_patient_fhir_workflow_record": "protocol_composition.create_patient_fhir_record",
     "_fhir_order_values": "protocol_compat.fhir_order_values",
     "_clean_fhir_order_text": "protocol_compat.fhir_order_clean_text",
     "_fhir_order_list": "protocol_compat.fhir_order_list",
@@ -132,10 +132,10 @@ DEMO_STORE_COMPATIBILITY_DELEGATES = {
     "_fhir_order_storage_timestamp": "protocol_compat.fhir_order_storage_timestamp",
     "_fhir_order_storage_priority": "protocol_compat.fhir_order_storage_priority",
     "_validate_fhir_order_payload": "protocol_compat.validate_fhir_order_payload",
-    "_build_service_request_resource": "protocol_compat.build_service_request_resource",
-    "_synced_patient_reference_for_fhir_order": "protocol_compat.synced_fhir_patient_reference",
-    "create_fhir_order_record": "protocol_compat.create_fhir_order",
-    "create_order_service_request_fhir_workflow_record": "protocol_compat.create_order_fhir_record",
+    "_build_service_request_resource": "protocol_composition.build_service_request_resource",
+    "_synced_patient_reference_for_fhir_order": "protocol_composition.synced_fhir_patient_reference",
+    "create_fhir_order_record": "protocol_composition.create_fhir_order",
+    "create_order_service_request_fhir_workflow_record": "protocol_composition.create_order_fhir_record",
     "_gdt_order_record_number": "protocol_compat.gdt_order_number",
     "_gdt_patient_context_number": "protocol_compat.gdt_patient_number",
     "_validate_gdt_patient_number": "protocol_compat.validate_gdt_override",
@@ -145,18 +145,18 @@ DEMO_STORE_COMPATIBILITY_DELEGATES = {
     "_validate_gdt_8402_code": "protocol_compat.validate_gdt_code",
     "_validate_gdt_order_payload": "protocol_compat.normalize_gdt_payload",
     "_gdt_birth_date": "protocol_compat.gdt_birth_date",
-    "create_gdt_order_record": "protocol_compat.create_gdt_order",
-    "list_gdt_order_records": "protocol_compat.list_gdt_order_records",
-    "get_gdt_order_record": "protocol_compat.get_gdt_order",
-    "list_gdt_messages": "protocol_compat.list_gdt_messages",
-    "list_gdt_events": "protocol_compat.list_gdt_events",
-    "list_gdt_attachments": "protocol_compat.list_gdt_attachments",
-    "record_gdt_order_export": "protocol_compat.record_gdt_export",
-    "create_gdt_demo_result": "protocol_compat.create_gdt_demo",
-    "list_gdt_workbench": "protocol_compat.build_gdt_workbench",
+    "create_gdt_order_record": "protocol_composition.create_gdt_order",
+    "list_gdt_order_records": "protocol_composition.list_gdt_order_records",
+    "get_gdt_order_record": "protocol_composition.get_gdt_order",
+    "list_gdt_messages": "protocol_composition.list_gdt_messages",
+    "list_gdt_events": "protocol_composition.list_gdt_events",
+    "list_gdt_attachments": "protocol_composition.list_gdt_attachments",
+    "record_gdt_order_export": "protocol_composition.record_gdt_export",
+    "create_gdt_demo_result": "protocol_composition.create_gdt_demo",
+    "list_gdt_workbench": "protocol_composition.build_gdt_workbench",
     "_attachment_payloads_from_result_fields": "protocol_compat.gdt_attachment_payloads",
     "_gdt_result_measurements": "protocol_compat.gdt_result_measurements",
-    "record_gdt_result": "protocol_compat.persist_gdt_result",
+    "record_gdt_result": "protocol_composition.persist_gdt_result",
     "_json_value": "protocol_compat.json_value",
     "_fhir_record_number": "protocol_compat.fhir_record_number",
     "_fhir_clean_text": "protocol_compat.fhir_clean_text",
@@ -166,19 +166,19 @@ DEMO_STORE_COMPATIBILITY_DELEGATES = {
     "fhir_identifier_value": "protocol_compat.fhir_identifier_value",
     "_fhir_resource_with_identifier": "protocol_compat.fhir_resource_with_identifier",
     "_validate_fhir_record_payload": "protocol_compat.normalize_fhir_record_payload",
-    "create_fhir_workflow_record": "protocol_compat.create_fhir_record",
-    "list_fhir_workflow_records": "protocol_compat.list_fhir_records",
-    "get_fhir_workflow_record": "protocol_compat.get_fhir_record",
-    "get_fhir_workflow_record_by_identifier": "protocol_compat.get_fhir_record_by_identifier",
-    "mark_fhir_syncing": "protocol_compat.mark_fhir_record_syncing",
-    "mark_fhir_sync_success": "protocol_compat.mark_fhir_record_success",
-    "mark_fhir_sync_failure": "protocol_compat.mark_fhir_record_failure",
-    "record_fhir_sync_attempt": "protocol_compat.create_fhir_sync_attempt",
-    "list_fhir_sync_attempts": "protocol_compat.list_fhir_record_attempts",
-    "ordered_fhir_workflow_records": "protocol_compat.order_fhir_records",
+    "create_fhir_workflow_record": "protocol_composition.create_fhir_record",
+    "list_fhir_workflow_records": "protocol_composition.list_fhir_records",
+    "get_fhir_workflow_record": "protocol_composition.get_fhir_record",
+    "get_fhir_workflow_record_by_identifier": "protocol_composition.get_fhir_record_by_identifier",
+    "mark_fhir_syncing": "protocol_composition.mark_fhir_record_syncing",
+    "mark_fhir_sync_success": "protocol_composition.mark_fhir_record_success",
+    "mark_fhir_sync_failure": "protocol_composition.mark_fhir_record_failure",
+    "record_fhir_sync_attempt": "protocol_composition.create_fhir_sync_attempt",
+    "list_fhir_sync_attempts": "protocol_composition.list_fhir_record_attempts",
+    "ordered_fhir_workflow_records": "protocol_composition.order_fhir_records",
     "_fhir_workflow_record_dict": "protocol_compat.project_fhir_workflow_record",
     "_fhir_sync_attempt_dict": "protocol_compat.project_fhir_sync_attempt",
-    "list_gdt_orders": "protocol_compat.list_gdt_inventory",
+    "list_gdt_orders": "protocol_composition.list_gdt_inventory",
     "get_oie_settings_profile": "self.oie_settings_repository.get",
     "update_oie_settings_profile": "self.oie_settings_repository.update",
     "list_oie_workbench": "compose_oie_workbench",
@@ -793,6 +793,33 @@ def imported_modules_from_tree(tree: ast.AST) -> set[str]:
     return modules
 
 
+def hidden_backend_import_violations(
+    relative_path: str, tree: ast.AST,
+) -> list[PlacementViolation]:
+    aliases = import_aliases_from_tree(tree)
+    path = PurePosixPath(relative_path.replace("\\", "/"))
+    violations: list[PlacementViolation] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        loader = resolve_imported_name(node.func, aliases)
+        if loader not in {"importlib.import_module", "__import__"}:
+            continue
+        module = node.args[0].value if (
+            node.args and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ) else None
+        if module is not None and not module.startswith("backend"):
+            continue
+        detail = (
+            f"Dynamic loading hides backend dependency {module!r}."
+            if module is not None
+            else "Dynamic loading uses a non-literal module and can hide backend dependencies."
+        )
+        violations.append(PlacementViolation("dependency", path, node.lineno, detail))
+    return violations
+
+
 def imported_modules(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     return imported_modules_from_tree(tree) | resolved_backend_imports_from_tree(
@@ -1150,6 +1177,45 @@ class ArchitectureContractTest(unittest.TestCase):
             [],
             violations,
             "Layer dependency violations:\n" + "\n".join(map(str, violations)),
+        )
+
+    def test_responsibility_packages_cannot_hide_backend_dependencies(self):
+        violations: list[PlacementViolation] = []
+        for package in RESPONSIBILITY_PACKAGES:
+            for path in layer_python_paths(package):
+                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+                violations.extend(
+                    hidden_backend_import_violations(
+                        path.relative_to(ROOT).as_posix(), tree,
+                    )
+                )
+        self.assertEqual(
+            [],
+            violations,
+            "Hidden dependency violations:\n" + "\n".join(map(str, violations)),
+        )
+
+    def test_hidden_backend_dependency_detection_covers_dynamic_loaders(self):
+        fixtures = (
+            "from importlib import import_module\nimport_module('backend.repositories.lab')\n",
+            "from importlib import import_module as load\nload('backend.templates.fhir')\n",
+            "import importlib\nimportlib.import_module(module_name)\n",
+            "__import__('backend.services.lab_workflow')\n",
+        )
+        for source in fixtures:
+            with self.subTest(source=source):
+                violations = hidden_backend_import_violations(
+                    "backend/services/example.py", ast.parse(source),
+                )
+                self.assertEqual(1, len(violations))
+                self.assertEqual("dependency", violations[0].category)
+
+        self.assertEqual(
+            [],
+            hidden_backend_import_violations(
+                "backend/services/example.py",
+                ast.parse("from importlib import import_module\nimport_module('decimal')\n"),
+            ),
         )
 
     def test_only_reviewed_modules_import_compatibility_facades(self):
