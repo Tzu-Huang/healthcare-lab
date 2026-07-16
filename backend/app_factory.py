@@ -138,6 +138,7 @@ from backend.services.lab_workflow import (
     derive_lab_overall_status,
     run_lab_smoke_check,
     run_lab_operation,
+    run_lab_server_health_check,
 )
 from backend.lab_store import (
     DCM4CHEE_MWL_OPERATION_CREATE,
@@ -347,14 +348,20 @@ def create_app(database_path: str | None = None) -> Flask:
     app.register_blueprint(
         create_lab_servers_blueprint(
             *lab_server_services(
-                app, store, operation_runner=lambda **values: run_lab_operation(**values)
+                app,
+                store,
+                operation_runner=lambda **values: run_lab_operation(**values),
+                health_checker=lambda repository, server_id: run_lab_server_health_check(repository, server_id),
             )
         )
     )
     app.register_blueprint(
         create_dashboard_blueprint(
             *dashboard_services(
-                app, store, operation_runner=lambda **values: run_lab_operation(**values)
+                app,
+                store,
+                operation_runner=lambda **values: run_lab_operation(**values),
+                health_checker=lambda repository, server_id: run_lab_server_health_check(repository, server_id),
             )
         )
     )
