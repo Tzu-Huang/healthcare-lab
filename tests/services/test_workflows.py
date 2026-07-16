@@ -11,6 +11,8 @@ from backend.domain.statuses import (
 from backend.services.fhir_workflow import FhirWorkflowService
 from backend.services.gdt_workflow import GdtConfigurationConflict, GdtWorkflowService
 from backend.services.lab_workflow import (
+    DashboardActionService,
+    DashboardSnapshotService,
     DashboardWorkflowService,
     LabHealthService,
     LabOperationService,
@@ -116,6 +118,14 @@ class WorkflowServiceTest(unittest.TestCase):
         self.assertIsInstance(service.health, LabHealthService)
         self.assertIsInstance(service.operations, LabOperationService)
         self.assertIsInstance(service.smoke, LabSmokeService)
+
+    def test_dashboard_compatibility_service_composes_focused_use_case_owners(self):
+        service = DashboardWorkflowService(
+            object(), LabWorkflowRepository([]), health_check=Mock(), operation_runner=Mock()
+        )
+
+        self.assertIsInstance(service.snapshot_service, DashboardSnapshotService)
+        self.assertIsInstance(service.action_service, DashboardActionService)
 
     def test_patient_missing_medplum_records_sync_failure(self):
         repository = PatientRepository()

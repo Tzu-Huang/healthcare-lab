@@ -279,8 +279,24 @@ class LabServerWorkflowService:
     def smoke_all_servers(self) -> list[dict[str, Any]]: return self.smoke.smoke_all_servers()
 
 
-class DashboardWorkflowService:
-    """Coordinate dashboard snapshots, health checks, and grouped operations."""
+class DashboardSnapshotService:
+    """Own dashboard resource, summary, event, and restart-preview assembly."""
+
+    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort) -> None:
+        self.app = app
+        self.repository = repository
+
+    def snapshot(self) -> dict[str, Any]:
+        resources = collect_dashboard_resource_snapshot()
+        items = dashboard_all_group_items(self.app, self.repository)
+        return {"items": items, "summary": dashboard_summary(items, resources), "resources": resources, "events": dashboard_events(self.repository, items, resources)}
+
+    def restart_preview(self, service_id: str) -> dict[str, Any]:
+        return dashboard_group_item(self.app, self.repository, service_id)["restartPreview"]
+
+
+class DashboardActionService:
+    """Own dashboard bulk health and grouped operation use cases."""
 
     def __init__(
         self,
@@ -295,25 +311,7 @@ class DashboardWorkflowService:
         self._health_check = health_check
         self._operation_runner = operation_runner
 
-    def _snapshot_payload(
-        self, items: list[dict[str, Any]], resources: dict[str, Any]
-    ) -> dict[str, Any]:
-        return {
-            "items": items,
-            "summary": dashboard_summary(items, resources),
-            "resources": resources,
-            "events": dashboard_events(self.repository, items, resources),
-        }
-
-    def snapshot(self) -> dict[str, Any]:
-        resources = collect_dashboard_resource_snapshot()
-        items = dashboard_all_group_items(self.app, self.repository)
-        return self._snapshot_payload(items, resources)
-
-    def restart_preview(self, service_id: str) -> dict[str, Any]:
-        return dashboard_group_item(self.app, self.repository, service_id)["restartPreview"]
-
-    def check_all(self) -> dict[str, Any]:
+    def check_all(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         results = []
         for service_id in LAB_DASHBOARD_SERVICE_GROUPS:
             try:
@@ -325,7 +323,7 @@ class DashboardWorkflowService:
                 )
             except (KeyError, SimulatorValidationError, LabOperationError) as exc:
                 results.append({"serviceId": service_id, "error": str(exc)})
-        return {"results": results, **self.snapshot()}
+        return {"results": results, **snapshot}
 
     def run_action(
         self, service_id: str, action: str, *, lines: int = 200
@@ -356,6 +354,22 @@ class DashboardWorkflowService:
             "operation": result["operation"],
             "output": result["output"],
         }
+
+
+class DashboardWorkflowService:
+    """Compatibility composition seam for focused dashboard use cases."""
+
+    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort, *, health_check: Callable[[LabRepositoryPort, str], list[dict[str, Any]]], operation_runner: Callable[..., dict[str, Any]]) -> None:
+        self.snapshot_service = DashboardSnapshotService(app, repository)
+        self.action_service = DashboardActionService(app, repository, health_check=health_check, operation_runner=operation_runner)
+        self.app = app
+        self.repository = repository
+
+    def snapshot(self) -> dict[str, Any]: return self.snapshot_service.snapshot()
+    def restart_preview(self, service_id: str) -> dict[str, Any]: return self.snapshot_service.restart_preview(service_id)
+    def check_all(self) -> dict[str, Any]: return self.action_service.check_all(self.snapshot())
+    def run_action(self, service_id: str, action: str, *, lines: int = 200) -> dict[str, Any]: return self.action_service.run_action(service_id, action, lines=lines)
+    def run_child_action(self, service_id: str, child_id: str, action: str, *, lines: int = 200) -> dict[str, Any]: return self.action_service.run_child_action(service_id, child_id, action, lines=lines)
 
     def run_child_action(
         self,
