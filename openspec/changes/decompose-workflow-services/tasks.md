@@ -28,7 +28,7 @@
 - [x] 4.2 Extract focused dcm4chee patient and MWL coordinators with explicit patient, order, ledger, template, and client capability ports.
 - [x] 4.3 Extract focused order-verification and result-refresh coordinators while preserving status transitions, reconciliation, returned projections, and callback behavior.
 - [x] 4.4 Extract focused evidence and simulated-return coordination without moving repository SQL, DICOM payload rules, or external transport ownership.
-- [ ] 4.5 Rewire Order APIs, cross-context callers, and application composition to the focused coordinators and add mirrored focused tests.
+- [x] 4.5 Rewire Order APIs, cross-context callers, and application composition to the focused coordinators and add mirrored focused tests.
 
 ## 5. Patient and GDT Cohesion Review
 
