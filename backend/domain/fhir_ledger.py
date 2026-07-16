@@ -170,3 +170,20 @@ def normalize_record_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def record_number(record_id: int) -> str:
     return f"FHIR-{record_id:06d}"
 
+
+__all__ = [
+    "FHIR_IDENTIFIER_SYSTEMS",
+    "FHIR_RESOURCE_DEPENDENCY_ORDER",
+    "FHIR_RESOURCE_MAPPINGS",
+    "FHIR_SUPPORTED_RESOURCE_TYPES",
+    "clean_text",
+    "identifier_token",
+    "identifier_value",
+    "json_value",
+    "list_resource_mappings",
+    "mapping_for_resource_type",
+    "normalize_record_payload",
+    "record_number",
+    "resource_with_identifier",
+]
+

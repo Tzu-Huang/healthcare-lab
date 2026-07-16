@@ -88,3 +88,6 @@ def visit_id(record_id: int) -> str:
 def account_number(record_id: int) -> str:
     return f"ACC-ORD-{record_id:06d}"
 
+
+__all__ = ["account_number", "record_number", "validate_payload", "visit_id"]
+

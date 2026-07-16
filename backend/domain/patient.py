@@ -105,3 +105,6 @@ def visit_number(record_id: int) -> str:
 def mrn(value: int) -> str:
     return f"MRN-{value:06d}"
 
+
+__all__ = ["mrn", "record_number", "validate_payload", "visit_number"]
+
