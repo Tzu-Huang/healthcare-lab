@@ -7,6 +7,8 @@ from contextlib import AbstractContextManager
 from sqlite3 import Connection, Row
 from typing import Any
 
+from backend.repositories.fhir_ledger import load_fhir_sources
+
 ConnectionFactory = Callable[[], AbstractContextManager[Connection]]
 
 
@@ -25,16 +27,15 @@ class PatientEnrichmentLoader:
         result = {record_id: {"fhir": None, "sync": None, "results": []} for record_id in ids}
         if not ids:
             return result
-        placeholders = ", ".join("?" for _ in ids)
-        with self._connect() as connection:
-            fhir_rows = connection.execute(
-                f"""SELECT * FROM local_fhir_workflow_records
-                    WHERE local_source_type = 'local_patient_records'
-                    AND local_source_id IN ({placeholders}) AND resource_type = 'Patient'""",
-                [str(value) for value in ids],
-            ).fetchall()
-        for row in fhir_rows:
-            result[int(row["local_source_id"])]["fhir"] = self._fhir_projector(row)
+        fhir = load_fhir_sources(
+            self._connect,
+            ids,
+            source_type="local_patient_records",
+            resource_type="Patient",
+            projector=self._fhir_projector,
+        )
+        for record_id, item in fhir.items():
+            result[record_id]["fhir"] = item
         syncs = self._load_patient_syncs(ids)
         results = self._load_results(ids)
         for record_id in ids:
@@ -56,16 +57,15 @@ class OrderEnrichmentLoader:
         result = {record_id: {"fhir": {}, "attempt": None, "mapping": None} for record_id in ids}
         if not ids:
             return result
-        placeholders = ", ".join("?" for _ in ids)
-        with self._connect() as connection:
-            fhir_rows = connection.execute(
-                f"""SELECT * FROM local_fhir_workflow_records
-                    WHERE local_source_type = 'local_order_records'
-                    AND local_source_id IN ({placeholders}) AND resource_type = 'ServiceRequest'""",
-                [str(value) for value in ids],
-            ).fetchall()
-        for row in fhir_rows:
-            result[int(row["local_source_id"])]["fhir"][row["resource_type"]] = self._fhir_projector(row)
+        fhir = load_fhir_sources(
+            self._connect,
+            ids,
+            source_type="local_order_records",
+            resource_type="ServiceRequest",
+            projector=self._fhir_projector,
+        )
+        for record_id, item in fhir.items():
+            result[record_id]["fhir"][item["resourceType"]] = item
         mwl = self._load_mwl(ids)
         for record_id in ids:
             result[record_id]["attempt"] = mwl.get(record_id, {}).get("attempt")
