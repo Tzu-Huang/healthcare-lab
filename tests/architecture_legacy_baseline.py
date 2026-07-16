@@ -51,8 +51,6 @@ catch-all|backend/lab_store.py|DemoStore.connect|db95eb9c330f888d
 catch-all|backend/lab_store.py|DemoStore.initialize|1ec55384df4f5277
 catch-all|backend/lab_store.py|DemoStore.list_oie_local_adt_inventory|a08d55ca7a0e3b85
 catch-all|backend/lab_store.py|DemoStore.list_oie_local_order_inventory|436e0fbb175ab391
-catch-all|backend/lab_store.py|_encode_gdt_text|bd82c8131324df70
-catch-all|backend/lab_store.py|_gdt_clean_value|fc82c0c110853cc0
 catch-all|backend/lab_store.py|_hl7_escape|b062236ad3ab289a
 catch-all|backend/lab_store.py|_hl7_escape_composite|98f1ff43d8ec015b
 catch-all|backend/lab_store.py|first_gdt_field|d8f033c133a3a034
@@ -67,8 +65,6 @@ payload|backend/dashboard_services.py|collect_dashboard_resource_snapshot_from_c
 payload|backend/dashboard_services.py|collect_dashboard_resource_snapshot_from_socket|50701cdf6e9c93b5
 payload|backend/dashboard_services.py|dashboard_resource_fallback|b10e912b7158a34f
 payload|backend/lab_store.py|DemoStore._result_record_dict|4ad87223c2d4f7cf
-payload|backend/lab_store.py|_encode_gdt_text|bd82c8131324df70
-payload|backend/lab_store.py|_gdt_clean_value|fc82c0c110853cc0
 payload|backend/lab_store.py|_hl7_escape|b062236ad3ab289a
 payload|backend/lab_store.py|_hl7_escape_composite|98f1ff43d8ec015b
 payload|backend/lab_store.py|first_gdt_field|d8f033c133a3a034

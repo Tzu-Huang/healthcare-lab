@@ -343,19 +343,6 @@ def _hl7_escape_composite(value: Any) -> str:
     )
 
 
-def _gdt_clean_value(value: Any) -> str:
-    return str(value if value is not None else "").strip().replace("\r", " ").replace("\n", " ")
-
-
-def _encode_gdt_text(value: str) -> bytes:
-    try:
-        return value.encode(GDT_DEFAULT_ENCODING)
-    except UnicodeEncodeError as exc:
-        raise SimulatorValidationError(
-            "GDT 2.1 patient fields must use ANSI/ISO-8859-1 compatible characters."
-        ) from exc
-
-
 def render_gdt_record(code: str, value: Any) -> bytes:
     try:
         return adapter_render_gdt_record(code, value)

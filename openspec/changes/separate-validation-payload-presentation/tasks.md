@@ -23,8 +23,8 @@
 - [x] 3.3 Move GDT patient/order number rules and persistence preparation out of `GdtWorkflowRepository` into pure domain collaborators without changing collision, matching, or transaction behavior.
 - [x] 3.4 Move GDT patient snapshot, attachment filename/shape mapping, and order/message/attachment/event/workbench presentation into the GDT mapper.
 - [x] 3.5 Wire `GdtWorkflowRepository` to the pure template/domain/mapper collaborators while retaining cohesive five-table SQL ownership and atomic writes.
-- [ ] 3.6 Convert retained `backend/gdt_adapter.py` and `DemoStore` GDT helpers to documented re-exports or mechanical delegates with no duplicate implementation.
-- [ ] 3.7 Add targeted GDT typed boundary models only for reused normalized or persistence shapes not already covered by `GdtAdapterResult`.
+- [x] 3.6 Convert retained `backend/gdt_adapter.py` and `DemoStore` GDT helpers to documented re-exports or mechanical delegates with no duplicate implementation.
+- [x] 3.7 Add targeted GDT typed boundary models only for reused normalized or persistence shapes not already covered by `GdtAdapterResult`.
 
 ## 4. dcm4chee Presentation and Protocol Ownership
 

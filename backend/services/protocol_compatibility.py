@@ -6,7 +6,9 @@ from typing import Any
 
 from backend.domain import fhir_ledger as fhir_domain
 from backend.domain import fhir_order
+from backend.domain import gdt_workflow as gdt_workflow_domain
 from backend.mappers import fhir as fhir_mappers
+from backend.mappers import gdt as gdt_mappers
 from backend.domain.gdt_protocol import (
     attachment_payloads_from_result_fields,
     first_gdt_field,
@@ -36,21 +38,10 @@ def validate_fhir_order_payload(payload, *, timestamp_factory, storage_timestamp
     )
 
 
-def gdt_order_number(record_id: int) -> str:
-    return f"GDT-ORD-{record_id:06d}"
-
-
-def gdt_patient_number(patient_record_id: int) -> str:
-    return f"GDT-PAT-{patient_record_id:06d}"
-
-
-def gdt_birth_date(dob: str) -> str:
-    return f"{dob[6:]}{dob[4:6]}{dob[:4]}"
-
-
-def gdt_attachment_filename(url: str, path: str = "") -> str:
-    source = path or url
-    return source.rstrip("/").replace("\\", "/").split("/")[-1] if source else ""
+gdt_order_number = gdt_workflow_domain.order_number
+gdt_patient_number = gdt_workflow_domain.patient_number
+gdt_birth_date = gdt_workflow_domain.birth_date
+gdt_attachment_filename = gdt_mappers.attachment_filename
 
 
 def gdt_result_measurements(fields: dict[str, list[str]]) -> dict[str, str]:

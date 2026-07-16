@@ -15,9 +15,9 @@ callers and must delegate or re-export the final owner.
 | FHIR | ledger validation and identifier policy | `backend/domain/fhir_ledger.py` | FHIR repository, template, protocol compatibility | unchanged |
 | FHIR | workflow and attempt presentation | `backend/domain/fhir_ledger.py:project_workflow_record`, `project_sync_attempt` | FHIR repository; `backend/services/protocol_compatibility.py` retained by `DemoStore` | `backend/mappers/fhir.py` |
 | GDT | parsing, encoding validation, required fields, inbound 6310 interpretation | `backend/domain/gdt_protocol.py` | GDT repository; `backend/gdt_adapter.py` and `DemoStore` compatibility paths | unchanged |
-| GDT | outbound 6302 construction | `backend/domain/gdt_protocol.py:build_gdt_6302_request` | GDT workflow/composition and compatibility paths | `backend/templates/gdt.py` |
-| GDT | numbering and persistence preparation | `backend/repositories/gdt_workflow.py` plus protocol compatibility helpers | GDT repository and `DemoStore` delegates | pure collaborators in `backend/domain/gdt_workflow.py` |
-| GDT | snapshots, attachments, and workbench presentation | `backend/repositories/gdt_workflow.py` plus protocol compatibility helpers | GDT repository, coordination, and `DemoStore` delegates | `backend/mappers/gdt.py` |
+| GDT | outbound 6302 construction | `backend/templates/gdt.py` | GDT workflow/composition and `backend/gdt_adapter.py` re-export | unchanged |
+| GDT | numbering and persistence preparation | `backend/domain/gdt_workflow.py` | GDT repository and `DemoStore` delegates through protocol compatibility aliases | unchanged |
+| GDT | snapshots, attachments, and workbench presentation | `backend/mappers/gdt.py` | GDT repository and `DemoStore` delegates through protocol compatibility aliases | unchanged |
 | dcm4chee | identifiers, reconciliation, and status policy | `backend/domain/dicom.py` | DICOM repositories, templates, services, compatibility delegates | unchanged |
 | dcm4chee | ADT and MWL construction | `backend/templates/dicom.py` | DICOM services and compatibility delegates | unchanged |
 | dcm4chee | Patient-sync and attempt presentation | `backend/repositories/dcm4chee_patient_sync.py` | repository and `DemoStore` delegates | `backend/mappers/dicom.py` |
