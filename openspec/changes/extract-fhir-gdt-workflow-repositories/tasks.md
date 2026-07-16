@@ -9,17 +9,17 @@
 
 ## 2. Pure FHIR and GDT Collaborators
 
-- [x] 2.1 Move or reuse FHIR validation, identifier/resource mapping, JSON normalization, and row-independent projection rules in framework-independent domain modules with representative tests.
-- [x] 2.2 Move deterministic FHIR Patient/ServiceRequest ledger payload construction to template collaborators without changing serialized resource content or identifiers.
+- [ ] 2.1 Move or reuse FHIR validation, identifier/resource mapping, JSON normalization, and row-independent projection rules in framework-independent domain modules with representative tests.
+- [ ] 2.2 Move deterministic FHIR Patient/ServiceRequest ledger payload construction to template collaborators without changing serialized resource content or identifiers.
 - [ ] 2.3 Consolidate GDT validation, 6302 construction, 6310 parsing, attachment interpretation, rendering, and encoding behavior in adapters/templates with deterministic regression tests.
-- [ ] 2.4 Confirm pure FHIR/GDT collaborators import neither Flask nor SQLite and perform no Medplum transport, bridge filesystem mutation, or repository access.
-- [ ] 2.5 Run the nearest domain, template, and adapter tests and commit only the explicit collaborator/test paths after they pass.
+- [x] 2.4 Confirm pure FHIR/GDT collaborators import neither Flask nor SQLite and perform no Medplum transport, bridge filesystem mutation, or repository access.
+- [x] 2.5 Run the nearest domain, template, and adapter tests and commit only the explicit collaborator/test paths after they pass.
 
 ## 3. FHIR Ledger Repository
 
 - [x] 3.1 Introduce `FhirLedgerRepository` using the shared connection factory and application write lock, with no `DemoStore` dependency.
-- [x] 3.2 Move workflow-record create/update/read/list, identifier lookup, dependency ordering, sync state transitions, and row projection into the FHIR ledger owner.
-- [x] 3.3 Move sync-attempt create/list/projection and request/response/OperationOutcome audit persistence into the FHIR ledger owner.
+- [ ] 3.2 Move workflow-record create/update/read/list, identifier lookup, dependency ordering, sync state transitions, and row projection into the FHIR ledger owner.
+- [ ] 3.3 Move sync-attempt create/list/projection and request/response/OperationOutcome audit persistence into the FHIR ledger owner.
 - [ ] 3.4 Move patient/order FHIR batch enrichment reads behind narrow FHIR ledger loaders and remove independent FHIR-table SQL from generic enrichment modules.
 - [x] 3.5 Add direct repository tests for FHIR transactions, state transitions, attempts, enrichment batching, ordering, missing records, and compatibility projections.
 - [x] 3.6 Run focused FHIR repository and characterization tests, inspect the diff for schema or behavior drift, and commit only the explicit FHIR repository/test paths after they pass.
@@ -35,12 +35,12 @@
 
 ## 5. GDT Workflow Repository
 
-- [ ] 5.1 Introduce `GdtWorkflowRepository` using the shared connection factory and application write lock, with no `DemoStore` dependency.
+- [x] 5.1 Introduce `GdtWorkflowRepository` using the shared connection factory and application write lock, with no `DemoStore` dependency.
 - [ ] 5.2 Move GDT patient-context, order, message, attachment, and workflow-event SQL plus row projections into the cohesive repository owner.
 - [ ] 5.3 Move normalized-result matching, unmatched-result persistence, attachment/event recording, order updates, and stored-data workbench aggregation into repository-controlled transactions.
 - [ ] 5.4 Keep raw GDT parsing/rendering and 6302/6310 interpretation in adapter/template collaborators and pass only validated normalized data across the repository boundary.
 - [ ] 5.5 Keep bridge discovery, file claim/disposition, filesystem paths, and watcher lifecycle in service/runtime collaborators while narrowing the persistence port.
-- [ ] 5.6 Add direct repository tests for exact matching precedence, ambiguous/unmatched results, attachments, event scoping, workbench projection, missing records, and multi-table rollback.
+- [x] 5.6 Add direct repository tests for exact matching precedence, ambiguous/unmatched results, attachments, event scoping, workbench projection, missing records, and multi-table rollback.
 - [ ] 5.7 Run focused GDT repository, adapter, service, runtime, and integration tests using temporary paths, inspect for matching/filesystem behavior drift, and commit only the explicit GDT paths after they pass.
 
 ## 6. Compatibility Facade and Architecture Enforcement
