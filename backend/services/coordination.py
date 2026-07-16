@@ -49,6 +49,9 @@ class ConfiguredWorkflowOperations:
         *,
         patient: Any,
         order: Any,
+        patient_fhir: Any,
+        order_fhir: Any,
+        fhir_ledger: Any,
         fhir_sync: Callable[..., Any],
         patient_sync: Callable[..., Any],
         result_refresh: Callable[..., Any],
@@ -58,6 +61,7 @@ class ConfiguredWorkflowOperations:
     ) -> None:
         self._patient = patient
         self._order = order
+        self._fhir_ledger = fhir_ledger
         self._fhir_sync = fhir_sync
         self._patient_sync = patient_sync
         self._result_refresh = result_refresh
@@ -65,14 +69,14 @@ class ConfiguredWorkflowOperations:
         self._order_verify = order_verify
         self._patient_sender = patient_sender
         self.patient_fhir = PatientFhirOperations(
-            patient.create_patient_fhir_workflow_record,
-            patient.mark_fhir_sync_failure,
+            patient_fhir.create_patient_fhir_workflow_record,
+            fhir_ledger.mark_fhir_sync_failure,
         )
         self.fixture = DcmFixtureOperations(patient.create_dcm4chee_e2e_demo_fixture)
         self.order_fhir = OrderFhirOperations(
-            order.create_fhir_order_record,
-            order.create_order_service_request_fhir_workflow_record,
-            order.mark_fhir_sync_failure,
+            order_fhir.create_fhir_order_record,
+            order_fhir.create_order_service_request_fhir_workflow_record,
+            fhir_ledger.mark_fhir_sync_failure,
         )
         self.dcm_order = DcmOrderOperations(
             order.create_dcm4chee_order_record,
@@ -85,10 +89,10 @@ class ConfiguredWorkflowOperations:
         )
 
     def sync_patient_fhir(self, record_id: int, **kwargs: Any) -> dict[str, Any]:
-        return self._fhir_sync(self._patient, record_id, **kwargs)
+        return self._fhir_sync(self._fhir_ledger, record_id, **kwargs)
 
     def sync_order_fhir(self, record_id: int, **kwargs: Any) -> dict[str, Any]:
-        return self._fhir_sync(self._order, record_id, **kwargs)
+        return self._fhir_sync(self._fhir_ledger, record_id, **kwargs)
 
     def sync_patient_dicom(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return self._patient_sync(

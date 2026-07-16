@@ -48,6 +48,29 @@ class FhirRepositoryPort(Protocol):
 
     def list_fhir_sync_attempts(self, record_id: int) -> list[dict[str, Any]]: ...
 
+    def ordered_fhir_workflow_records(self, record_ids: list[int]) -> list[dict[str, Any]]: ...
+
+    def mark_fhir_syncing(self, record_id: int) -> dict[str, Any]: ...
+
+    def mark_fhir_sync_success(
+        self, record_id: int, *, medplum_resource_id: str,
+        medplum_resource_reference: str = "",
+    ) -> dict[str, Any]: ...
+
+    def mark_fhir_sync_failure(
+        self, record_id: int, *, error_text: str,
+        operation_outcome: dict[str, Any] | None = None,
+    ) -> dict[str, Any]: ...
+
+    def record_fhir_sync_attempt(
+        self, record_id: int, *, method: str, request_url: str,
+        request_payload: dict[str, Any] | None = None,
+        http_status: int | None = None,
+        response_payload: dict[str, Any] | None = None,
+        operation_outcome: dict[str, Any] | None = None,
+        error_text: str = "",
+    ) -> dict[str, Any]: ...
+
 
 class FhirWorkflowService:
     def __init__(
