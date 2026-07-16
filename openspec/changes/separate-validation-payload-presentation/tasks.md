@@ -43,9 +43,9 @@
 
 ## 6. Verification and Safety Audit
 
-- [ ] 6.1 Run focused domain, template, mapper, repository, service wiring, compatibility, and architecture tests after each bounded-context migration using disposable SQLite databases and external-service doubles only.
-- [ ] 6.2 Audit generated HL7, FHIR, GDT, and DICOM payloads and persisted JSON for byte-for-byte or deep-structure compatibility, explaining only pre-existing controlled nondeterminism.
-- [ ] 6.3 Audit API projections, validation errors, ordering, defaults, transaction rollback, schema hashes, and the real `instance/*.db` metadata to prove no public, persistence, or data mutation occurred.
-- [ ] 6.4 Confirm architecture legacy baselines and compatibility caller inventories only shrink, no allowlist/fingerprint is broadened, and every temporary export has an owner and retained-caller record.
-- [ ] 6.5 Run the complete unittest suite, mapper and architecture contracts, Python compilation, frontend syntax checks if touched, `git diff --check`, and strict OpenSpec validation.
-- [ ] 6.6 Record YOLO-mode safety evidence: no live services, deployment actions, destructive operations, dependencies, schema/data changes, unsafe dirty-worktree overlap, or unrelated ZAC-62 through ZAC-65 work occurred.
+- [x] 6.1 Run focused domain, template, mapper, repository, service wiring, compatibility, and architecture tests after each bounded-context migration using disposable SQLite databases and external-service doubles only.
+- [x] 6.2 Audit generated HL7, FHIR, GDT, and DICOM payloads and persisted JSON for byte-for-byte or deep-structure compatibility, explaining only pre-existing controlled nondeterminism.
+- [x] 6.3 Audit API projections, validation errors, ordering, defaults, transaction rollback, schema hashes, and the real `instance/*.db` metadata to prove no public, persistence, or data mutation occurred.
+- [x] 6.4 Confirm architecture legacy baselines and compatibility caller inventories only shrink, no allowlist/fingerprint is broadened, and every temporary export has an owner and retained-caller record.
+- [x] 6.5 Run the complete unittest suite, mapper and architecture contracts, Python compilation, frontend syntax checks if touched, `git diff --check`, and strict OpenSpec validation.
+- [x] 6.6 Record YOLO-mode safety evidence: no live services, deployment actions, destructive operations, dependencies, schema/data changes, unsafe dirty-worktree overlap, or unrelated ZAC-62 through ZAC-65 work occurred.

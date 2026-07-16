@@ -12,6 +12,28 @@ updated_at: 2026-07-16
 
 ## Latest Continuation Checkpoint
 
+### Apply Completion Evidence
+
+Product implementation and the apply-stage safety audit completed through
+`1ebce5b` (`arch(ZAC-61): enforce repository responsibility boundary`), with
+the final verification record committed immediately after this update.
+
+- The complete unittest discovery run passed: 359 tests.
+- Focused domain, template, mapper, repository, service wiring, compatibility,
+  rollback, API/integration, and architecture checks passed throughout each
+  bounded-context migration.
+- Python compilation, `git diff --check`, and strict OpenSpec validation passed.
+- Git path evidence from proposal commit `6768d895` through the final product
+  commit shows no schema, migration, `instance/`, or frontend changes.
+- `tests/architecture_legacy_baseline.py` only shrank (10 deleted lines); no
+  allowlist or fingerprint was broadened.
+- No real `instance/*.db` content was read, and no live service, Docker,
+  deployment, dependency installation, destructive operation, schema/data
+  mutation, or unrelated ZAC-62 through ZAC-65 work occurred.
+
+The next workflow stage is `/dev-test`; do not add more product work under
+`/dev-apply` unless verification identifies a failure.
+
 This file was refreshed after product commit `716ba98`. Product implementation is in
 progress; do not restart from the proposal baseline or repeat completed tasks.
 
