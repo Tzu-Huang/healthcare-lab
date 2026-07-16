@@ -12,12 +12,35 @@ from backend.domain.oie_channels import (
 )
 class ManagedOieChannelDomainTests(unittest.TestCase):
     def test_accepts_private_ipv4_and_internal_dns(self):
-        for host in ("192.168.30.15", "10.0.0.8", "ap-host", "ap.internal", "ap.local"):
+        for host in (
+            "192.168.30.15",
+            "10.0.0.8",
+            "172.16.0.1",
+            "172.31.255.254",
+            "ap-host",
+            "ap.internal",
+            "ap.local",
+        ):
             with self.subTest(host=host):
                 self.assertEqual(host, _orm_config(host).destination.host)
 
     def test_rejects_unsafe_or_public_hosts_with_field_specific_error(self):
-        for host in ("", " https://ap.internal", "https://ap.internal", "user@ap", "ap:6671", "ap/path", "8.8.8.8", "example.com"):
+        for host in (
+            "",
+            " https://ap.internal",
+            "https://ap.internal",
+            "user@ap",
+            "ap:6671",
+            "ap/path",
+            "0.0.0.0",
+            "127.0.0.1",
+            "169.254.1.1",
+            "224.0.0.1",
+            "240.0.0.1",
+            "100.64.0.1",
+            "8.8.8.8",
+            "example.com",
+        ):
             with self.subTest(host=host):
                 with self.assertRaisesRegex(ValidationError, "destination.host"):
                     _orm_config(host)
