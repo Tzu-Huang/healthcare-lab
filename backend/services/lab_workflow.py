@@ -117,27 +117,19 @@ def current_timestamp() -> str:
     )
 
 
-class LabServerWorkflowService:
-    """Coordinate Lab Server registry, health, and operation use cases."""
+class LabRegistryService:
+    """Own Lab Server metadata and registry use cases."""
 
     def __init__(
         self,
         app: ApplicationPort,
         repository: LabRepositoryPort,
         *,
-        operation_repository: LabOperationStorePort | None = None,
-        health_checker: Callable[[LabRepositoryPort, int], dict[str, Any]],
         availability_decorator: Callable[[ApplicationPort, dict[str, Any]], dict[str, Any]],
-        operation_runner: Callable[..., dict[str, Any]],
-        operator_resolver: Callable[[], str],
     ) -> None:
         self.app = app
         self.repository = repository
-        self.operation_repository = operation_repository or repository
-        self._health_checker = health_checker
         self._availability_decorator = availability_decorator
-        self._operation_runner = operation_runner
-        self._operator_resolver = operator_resolver
 
     def metadata(self) -> dict[str, list[str]]:
         return {
@@ -161,6 +153,19 @@ class LabServerWorkflowService:
     def update_server(self, server_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         return self._decorate(self.repository.update_lab_server(server_id, payload))
 
+
+class LabHealthService:
+    """Own single-server and bulk Lab health use cases."""
+
+    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort, *, health_checker: Callable[[LabRepositoryPort, int], dict[str, Any]], availability_decorator: Callable[[ApplicationPort, dict[str, Any]], dict[str, Any]]) -> None:
+        self.app = app
+        self.repository = repository
+        self._health_checker = health_checker
+        self._availability_decorator = availability_decorator
+
+    def _decorate(self, item: dict[str, Any]) -> dict[str, Any]:
+        return self._availability_decorator(self.app, item)
+
     def check_server(self, server_id: int) -> dict[str, Any]:
         return self._decorate(self._health_checker(self.repository, server_id))
 
@@ -174,6 +179,16 @@ class LabServerWorkflowService:
             )
             items.append(self._decorate(checked))
         return items
+
+
+class LabOperationService:
+    """Own Lab operation history and execution use cases."""
+
+    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort, operation_repository: LabOperationStorePort, *, operation_runner: Callable[..., dict[str, Any]]) -> None:
+        self.app = app
+        self.repository = repository
+        self.operation_repository = operation_repository
+        self._operation_runner = operation_runner
 
     def operation_history(self, server_id: int, *, limit: int = 20) -> list[dict[str, Any]]:
         self.repository.get_lab_server(server_id)
@@ -189,6 +204,17 @@ class LabServerWorkflowService:
             action=action,
             lines=lines,
         )
+
+
+class LabSmokeService:
+    """Own bulk Lab smoke coordination and partial-failure collection."""
+
+    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort, operation_repository: LabOperationStorePort, *, operation_runner: Callable[..., dict[str, Any]], operator_resolver: Callable[[], str]) -> None:
+        self.app = app
+        self.repository = repository
+        self.operation_repository = operation_repository
+        self._operation_runner = operation_runner
+        self._operator_resolver = operator_resolver
 
     def smoke_all_servers(self) -> list[dict[str, Any]]:
         results = []
@@ -228,6 +254,29 @@ class LabServerWorkflowService:
             except SimulatorValidationError as exc:
                 results.append({"server": item, "operation": None, "error": str(exc)})
         return results
+
+
+class LabServerWorkflowService:
+    """Compatibility composition seam for the focused Lab use-case services."""
+
+    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort, *, operation_repository: LabOperationStorePort | None = None, health_checker: Callable[[LabRepositoryPort, int], dict[str, Any]], availability_decorator: Callable[[ApplicationPort, dict[str, Any]], dict[str, Any]], operation_runner: Callable[..., dict[str, Any]], operator_resolver: Callable[[], str]) -> None:
+        operation_store = operation_repository or repository
+        self.registry = LabRegistryService(app, repository, availability_decorator=availability_decorator)
+        self.health = LabHealthService(app, repository, health_checker=health_checker, availability_decorator=availability_decorator)
+        self.operations = LabOperationService(app, repository, operation_store, operation_runner=operation_runner)
+        self.smoke = LabSmokeService(app, repository, operation_store, operation_runner=operation_runner, operator_resolver=operator_resolver)
+        self.app = app
+
+    def metadata(self) -> dict[str, list[str]]: return self.registry.metadata()
+    def list_servers(self) -> list[dict[str, Any]]: return self.registry.list_servers()
+    def create_server(self, payload: dict[str, Any]) -> dict[str, Any]: return self.registry.create_server(payload)
+    def get_server(self, server_id: int) -> dict[str, Any]: return self.registry.get_server(server_id)
+    def update_server(self, server_id: int, payload: dict[str, Any]) -> dict[str, Any]: return self.registry.update_server(server_id, payload)
+    def check_server(self, server_id: int) -> dict[str, Any]: return self.health.check_server(server_id)
+    def check_all_servers(self) -> list[dict[str, Any]]: return self.health.check_all_servers()
+    def operation_history(self, server_id: int, *, limit: int = 20) -> list[dict[str, Any]]: return self.operations.operation_history(server_id, limit=limit)
+    def execute_operation(self, server_id: int, action: str, *, lines: int = 200) -> dict[str, Any]: return self.operations.execute_operation(server_id, action, lines=lines)
+    def smoke_all_servers(self) -> list[dict[str, Any]]: return self.smoke.smoke_all_servers()
 
 
 class DashboardWorkflowService:
