@@ -4,7 +4,12 @@ from backend.domain.statuses import (
     DCM4CHEE_MWL_OPERATION_CREATE,
     DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED,
 )
-from backend.mappers.dicom import project_mwl_attempt, project_mwl_mapping
+from backend.mappers.dicom import (
+    project_mwl_attempt,
+    project_mwl_mapping,
+    project_result_record,
+    project_result_snapshot,
+)
 
 
 class DicomMwlMapperTests(unittest.TestCase):
@@ -52,6 +57,40 @@ class DicomMwlMapperTests(unittest.TestCase):
             "status": DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED, "lastVerifiedAt": "", "method": "",
             "attemptId": None, "query": {}, "match": {}, "errorType": "", "error": "", "errorPayload": {},
         })
+
+    def test_result_projection_preserves_reconciliation_artifact_and_generation(self):
+        columns = [
+            "id", "result_key", "patient_record_id", "order_record_id", "mapping_id", "profile_name",
+            "server_identity", "source_ae_title", "study_instance_uid", "series_instance_uid", "sop_instance_uid",
+            "accession_number", "patient_id", "issuer_of_patient_id", "requested_procedure_id",
+            "scheduled_procedure_step_id", "modality", "study_datetime", "series_datetime", "instance_datetime",
+            "viewer_url", "study_retrieve_url", "series_retrieve_url", "instance_retrieve_url",
+            "reconciliation_status", "match_method", "match_strength", "query_url", "query_payload_json",
+            "diagnostic_payload_json", "raw_metadata_json", "refresh_generation", "first_seen_at",
+            "last_refreshed_at", "created_at", "updated_at",
+        ]
+        row = {column: f"value-{column}" for column in columns}
+        row.update({
+            "id": 7, "patient_record_id": 8, "order_record_id": 9, "mapping_id": 10,
+            "query_payload_json": '{"query":true}', "diagnostic_payload_json": '{"reason":"matched"}',
+            "raw_metadata_json": '{"source":"qido","type":"instance","artifact":{"mime":"application/pdf"}}',
+            "refresh_generation": "generation-2",
+        })
+
+        projected = project_result_record(row)
+
+        self.assertEqual(projected["reconciliationStatus"], "value-reconciliation_status")
+        self.assertEqual(projected["queryPayload"], {"query": True})
+        self.assertEqual(projected["diagnostic"], {"reason": "matched"})
+        self.assertEqual(projected["source"], "qido")
+        self.assertEqual(projected["sourceType"], "instance")
+        self.assertEqual(projected["artifact"], {"mime": "application/pdf"})
+        self.assertEqual(projected["refreshGeneration"], "generation-2")
+
+    def test_refresh_snapshot_projection_preserves_list_and_rejects_invalid_shapes(self):
+        self.assertEqual(project_result_snapshot('[{"id":2},{"id":1}]'), [{"id": 2}, {"id": 1}])
+        self.assertEqual(project_result_snapshot('{"id":1}'), [])
+        self.assertEqual(project_result_snapshot("not-json"), [])
 
 
 if __name__ == "__main__":

@@ -13,61 +13,9 @@ from typing import Any
 from backend.domain.dicom import reconcile_result_metadata
 from backend.domain.errors import SimulatorValidationError
 from backend.domain.statuses import DCM4CHEE_RESULT_STATUS_UNLINKED
+from backend.mappers.dicom import project_result_record, project_result_snapshot
 
 ConnectionFactory = Callable[[], AbstractContextManager[Connection]]
-
-
-def _json_value(value: str, fallback: Any) -> Any:
-    try:
-        return json.loads(value or "")
-    except (TypeError, ValueError):
-        return fallback
-
-def project_result_record(row: sqlite3.Row) -> dict[str, Any]:
-    raw_metadata = _json_value(row["raw_metadata_json"], {})
-    diagnostic = _json_value(row["diagnostic_payload_json"], {})
-    artifact = raw_metadata.get("artifact") if isinstance(raw_metadata.get("artifact"), dict) else {}
-    return {
-        "id": row["id"],
-        "resultKey": row["result_key"],
-        "patientRecordId": row["patient_record_id"],
-        "orderRecordId": row["order_record_id"],
-        "mappingId": row["mapping_id"],
-        "profileName": row["profile_name"],
-        "serverIdentity": row["server_identity"],
-        "sourceAETitle": row["source_ae_title"],
-        "studyInstanceUid": row["study_instance_uid"],
-        "seriesInstanceUid": row["series_instance_uid"],
-        "sopInstanceUid": row["sop_instance_uid"],
-        "accessionNumber": row["accession_number"],
-        "patientId": row["patient_id"],
-        "issuerOfPatientId": row["issuer_of_patient_id"],
-        "requestedProcedureId": row["requested_procedure_id"],
-        "scheduledProcedureStepId": row["scheduled_procedure_step_id"],
-        "modality": row["modality"],
-        "studyDateTime": row["study_datetime"],
-        "seriesDateTime": row["series_datetime"],
-        "instanceDateTime": row["instance_datetime"],
-        "viewerUrl": row["viewer_url"],
-        "studyRetrieveUrl": row["study_retrieve_url"],
-        "seriesRetrieveUrl": row["series_retrieve_url"],
-        "instanceRetrieveUrl": row["instance_retrieve_url"],
-        "reconciliationStatus": row["reconciliation_status"],
-        "matchMethod": row["match_method"],
-        "matchStrength": row["match_strength"],
-        "queryUrl": row["query_url"],
-        "queryPayload": _json_value(row["query_payload_json"], {}),
-        "diagnostic": diagnostic,
-        "rawMetadata": raw_metadata,
-        "source": raw_metadata.get("source", "") if isinstance(raw_metadata, dict) else "",
-        "sourceType": raw_metadata.get("type", "") if isinstance(raw_metadata, dict) else "",
-        "artifact": artifact,
-        "refreshGeneration": row["refresh_generation"] if "refresh_generation" in row.keys() else "",
-        "firstSeenAt": row["first_seen_at"],
-        "lastRefreshedAt": row["last_refreshed_at"],
-        "createdAt": row["created_at"],
-        "updatedAt": row["updated_at"],
-        }
 
 
 class Dcm4cheeResultRepository:
@@ -366,8 +314,7 @@ class Dcm4cheeResultRepository:
                 (int(patient_record_id),),
             ).fetchone()
             if latest:
-                snapshot = _json_value(latest["results_snapshot_json"], [])
-                return snapshot if isinstance(snapshot, list) else []
+                return project_result_snapshot(latest["results_snapshot_json"])
             has_run = connection.execute(
                 """
                 SELECT 1 FROM local_dcm4chee_result_refresh_runs
@@ -413,8 +360,7 @@ class Dcm4cheeResultRepository:
             record_id = int(row["patient_record_id"])
             refresh_run_patients.add(record_id)
             if row["completed_at"] and record_id not in selected_snapshots:
-                snapshot = _json_value(row["results_snapshot_json"], [])
-                result[record_id] = snapshot if isinstance(snapshot, list) else []
+                result[record_id] = project_result_snapshot(row["results_snapshot_json"])
                 selected_snapshots.add(record_id)
         generations: dict[int, str] = {}
         for row in result_rows:

@@ -56,15 +56,13 @@ from backend.mappers.dicom import (
     project_mwl_mapping,
     project_patient_sync,
     project_patient_sync_attempt,
+    project_result_record,
 )
 from backend.repositories.dcm4chee_mwl import (
     Dcm4cheeMwlRepository,
     backfill_dcm4chee_mwl_mappings,
 )
-from backend.repositories.dcm4chee_results import (
-    Dcm4cheeResultRepository,
-    project_result_record,
-)
+from backend.repositories.dcm4chee_results import Dcm4cheeResultRepository
 from backend.templates import patient as patient_templates
 from backend.templates import order as order_templates
 from backend.templates import dicom as dicom_templates
