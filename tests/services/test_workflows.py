@@ -12,7 +12,11 @@ from backend.services.fhir_workflow import FhirWorkflowService
 from backend.services.gdt_workflow import GdtConfigurationConflict, GdtWorkflowService
 from backend.services.lab_workflow import (
     DashboardWorkflowService,
+    LabHealthService,
+    LabOperationService,
+    LabRegistryService,
     LabServerWorkflowService,
+    LabSmokeService,
 )
 from backend.services.oie_workflow import OieTransportError, OieWorkflowService
 from backend.services.order_workflow import OrderWorkflowService
@@ -105,6 +109,14 @@ class LabWorkflowRepository:
 
 
 class WorkflowServiceTest(unittest.TestCase):
+    def test_lab_compatibility_service_composes_focused_use_case_owners(self):
+        service = self._lab_service(LabWorkflowRepository([]))
+
+        self.assertIsInstance(service.registry, LabRegistryService)
+        self.assertIsInstance(service.health, LabHealthService)
+        self.assertIsInstance(service.operations, LabOperationService)
+        self.assertIsInstance(service.smoke, LabSmokeService)
+
     def test_patient_missing_medplum_records_sync_failure(self):
         repository = PatientRepository()
         service = PatientWorkflowService(
