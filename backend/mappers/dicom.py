@@ -96,6 +96,58 @@ def project_mwl_mapping(row: RowMapping) -> dict[str, Any]:
     }
 
 
+def project_result_record(row: RowMapping) -> dict[str, Any]:
+    raw_metadata = _json_value(row["raw_metadata_json"], {})
+    diagnostic = _json_value(row["diagnostic_payload_json"], {})
+    artifact = raw_metadata.get("artifact") if isinstance(raw_metadata.get("artifact"), dict) else {}
+    return {
+        "id": row["id"],
+        "resultKey": row["result_key"],
+        "patientRecordId": row["patient_record_id"],
+        "orderRecordId": row["order_record_id"],
+        "mappingId": row["mapping_id"],
+        "profileName": row["profile_name"],
+        "serverIdentity": row["server_identity"],
+        "sourceAETitle": row["source_ae_title"],
+        "studyInstanceUid": row["study_instance_uid"],
+        "seriesInstanceUid": row["series_instance_uid"],
+        "sopInstanceUid": row["sop_instance_uid"],
+        "accessionNumber": row["accession_number"],
+        "patientId": row["patient_id"],
+        "issuerOfPatientId": row["issuer_of_patient_id"],
+        "requestedProcedureId": row["requested_procedure_id"],
+        "scheduledProcedureStepId": row["scheduled_procedure_step_id"],
+        "modality": row["modality"],
+        "studyDateTime": row["study_datetime"],
+        "seriesDateTime": row["series_datetime"],
+        "instanceDateTime": row["instance_datetime"],
+        "viewerUrl": row["viewer_url"],
+        "studyRetrieveUrl": row["study_retrieve_url"],
+        "seriesRetrieveUrl": row["series_retrieve_url"],
+        "instanceRetrieveUrl": row["instance_retrieve_url"],
+        "reconciliationStatus": row["reconciliation_status"],
+        "matchMethod": row["match_method"],
+        "matchStrength": row["match_strength"],
+        "queryUrl": row["query_url"],
+        "queryPayload": _json_value(row["query_payload_json"], {}),
+        "diagnostic": diagnostic,
+        "rawMetadata": raw_metadata,
+        "source": raw_metadata.get("source", "") if isinstance(raw_metadata, dict) else "",
+        "sourceType": raw_metadata.get("type", "") if isinstance(raw_metadata, dict) else "",
+        "artifact": artifact,
+        "refreshGeneration": row["refresh_generation"] if "refresh_generation" in row.keys() else "",
+        "firstSeenAt": row["first_seen_at"],
+        "lastRefreshedAt": row["last_refreshed_at"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+
+def project_result_snapshot(value: str) -> list[dict[str, Any]]:
+    snapshot = _json_value(value, [])
+    return snapshot if isinstance(snapshot, list) else []
+
+
 def project_patient_sync(row: RowMapping) -> dict[str, Any]:
     status = str(row["sync_status"] or "")
     retryable = status in {DCM4CHEE_PATIENT_SYNC_STATUS_PENDING, DCM4CHEE_PATIENT_SYNC_STATUS_FAILED}
