@@ -18,7 +18,7 @@
 
 - [x] 3.1 Characterize FHIR sync, inventory/query, preview, DiagnosticReport, retry/status, patient/order enrichment, error mapping, and ledger transition behavior.
 - [x] 3.2 Extract focused FHIR sync and retry/status coordination using explicit ledger, template, transport, and core-record capabilities.
-- [ ] 3.3 Extract focused FHIR inventory/query and preview coordination without moving transport, resource construction, or row presentation into services.
+- [x] 3.3 Extract focused FHIR inventory/query and preview coordination without moving transport, resource construction, or row presentation into services.
 - [ ] 3.4 Extract focused DiagnosticReport coordination and preserve order/result linking, refresh behavior, errors, and public projections.
 - [ ] 3.5 Rewire FHIR APIs, Patient/Order callers, and application composition to the focused services and add mirrored focused tests.
 
