@@ -62,11 +62,14 @@ class UrllibOieTransport:
 
     def __init__(self, tls_mode: OieTlsMode) -> None:
         self._cookies = http.cookiejar.CookieJar()
-        context = (
-            ssl.create_default_context()
-            if tls_mode is OieTlsMode.VERIFIED
-            else ssl._create_unverified_context()  # explicitly selected local-lab policy
-        )
+        if tls_mode is OieTlsMode.VERIFIED:
+            context = ssl.create_default_context()
+        elif tls_mode is OieTlsMode.LOCAL_SELF_SIGNED:
+            context = ssl._create_unverified_context()  # explicitly selected local-lab policy
+        else:
+            raise OieManagementError(
+                OieErrorCategory.VALIDATION, "Unknown OIE TLS mode; refusing insecure fallback."
+            )
         self._opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(self._cookies),
             urllib.request.HTTPSHandler(context=context),
@@ -111,6 +114,7 @@ class OieManagementClient:
         self._transport = transport or UrllibOieTransport(config.tls_mode)
         self._authenticated = False
         self._closed = False
+        self._version_support: OieVersionSupport | None = None
 
     def __repr__(self) -> str:
         return (
@@ -132,9 +136,28 @@ class OieManagementClient:
             "POST", "/users/_login", body=body,
             content_type="application/x-www-form-urlencoded", require_auth=False,
         )
+        try:
+            status = str(self._json_mapping(response).get("status", "")).strip().upper()
+        except OieManagementError:
+            self._authenticated = False
+            self._version_support = None
+            self._transport.clear()
+            raise
+        if status not in {"SUCCESS", "SUCCESS_GRACE_PERIOD"}:
+            self._authenticated = False
+            self._transport.clear()
+            if status == "FAIL_VERSION_MISMATCH":
+                category = OieErrorCategory.UNSUPPORTED_VERSION
+                detail = "OIE rejected login because the client version is incompatible."
+            elif status in {"FAIL", "FAIL_EXPIRED", "FAIL_LOCKED_OUT"}:
+                category = OieErrorCategory.AUTHENTICATION
+                detail = "OIE rejected the configured credentials."
+            else:
+                category = OieErrorCategory.UNEXPECTED_RESPONSE
+                detail = "OIE login returned an unknown status."
+            raise OieManagementError(category, detail)
         self._authenticated = True
-        if response.body:
-            self._json_mapping(response)
+        self._version_support = None
         return OieResult("login")
 
     def logout(self) -> OieResult:
@@ -144,6 +167,7 @@ class OieManagementClient:
             return OieResult("logout")
         finally:
             self._authenticated = False
+            self._version_support = None
             self._transport.clear()
 
     def close(self) -> None:
@@ -158,43 +182,54 @@ class OieManagementClient:
             self._closed = True
 
     def current_user(self) -> OieResult:
-        return self._mapping_result("current-user", self._send("GET", "/users/current"))
+        value = self._json_mapping(self._send("GET", "/users/current"))
+        self._require_fields(value, "current user", {"id": (int, str), "username": str})
+        return self._mapping_value_result("current-user", value)
 
     def system_info(self) -> OieResult:
-        return self._mapping_result("system-info", self._send("GET", "/system/info"))
+        value = self._json_mapping(self._send("GET", "/system/info"))
+        self._require_fields(value, "system information", {"jvmVersion": str, "osName": str, "dbName": str})
+        return self._mapping_value_result("system-info", value)
 
     def server_version(self) -> OieVersionSupport:
         response = self._send("GET", "/server/version")
         return classify_oie_version(response.body.decode("utf-8", errors="replace"))
 
     def require_supported_version(self) -> OieVersionSupport:
-        support = self.server_version()
+        support = self._version_support or self.server_version()
         if not support.supported:
             raise OieManagementError(
                 OieErrorCategory.UNSUPPORTED_VERSION,
                 f"OIE version {support.version!r} is unsupported; expected 4.5.2.",
             )
+        self._version_support = support
         return support
 
     def list_channels(self) -> OieResult:
-        return self._sequence_result("list-channels", self._send("GET", "/channels"))
+        return self._sequence_result(
+            "list-channels", self._send("GET", "/channels"),
+            required={"id": str, "revision": int},
+        )
 
     def get_channel(self, channel_id: str) -> OieResult:
         channel_id = self._identifier(channel_id)
-        return self._mapping_result(
-            "get-channel", self._send("GET", f"/channels/{self._quote(channel_id)}"), channel_id
-        )
+        value = self._json_mapping(self._send("GET", f"/channels/{self._quote(channel_id)}"))
+        self._require_fields(value, "channel", {"id": str, "revision": int})
+        return self._mapping_value_result("get-channel", value, channel_id)
 
     def channel_status(self, channel_id: str) -> OieResult:
         channel_id = self._identifier(channel_id)
-        return self._mapping_result(
-            "channel-status",
-            self._send("GET", f"/channels/{self._quote(channel_id)}/status"),
-            channel_id,
+        value = self._json_mapping(
+            self._send("GET", f"/channels/{self._quote(channel_id)}/status")
         )
+        self._require_fields(value, "channel status", {"channelId": str, "state": str})
+        return OieResult("channel-status", channel_id, status=str(value["state"]), values=value)
 
     def ports_in_use(self) -> OieResult:
-        return self._sequence_result("ports-in-use", self._send("GET", "/channels/portsInUse"))
+        return self._sequence_result(
+            "ports-in-use", self._send("GET", "/channels/portsInUse"),
+            required={"id": str, "name": str, "port": (str, int)},
+        )
 
     def create_channel(self, channel: Mapping[str, Any]) -> OieResult:
         response = self._send_json("POST", "/channels/", channel)
@@ -214,6 +249,7 @@ class OieManagementClient:
 
     def delete_channel(self, channel_id: str) -> OieResult:
         channel_id = self._identifier(channel_id)
+        self.require_supported_version()
         self._send("DELETE", f"/channels/{self._quote(channel_id)}")
         return OieResult("delete-channel", identifier=channel_id)
 
@@ -228,6 +264,7 @@ class OieManagementClient:
 
     def _primitive(self, operation: str, channel_id: str, action: str) -> OieResult:
         channel_id = self._identifier(channel_id)
+        self.require_supported_version()
         self._send("POST", f"/channels/{self._quote(channel_id)}/{action}")
         return OieResult(operation, identifier=channel_id)
 
@@ -240,6 +277,7 @@ class OieManagementClient:
             raise OieManagementError(
                 OieErrorCategory.VALIDATION, "Channel payload must be JSON serializable."
             ) from None
+        self.require_supported_version()
         return self._send(
             method, path, body=body,
             content_type="application/json",
@@ -333,21 +371,56 @@ class OieManagementClient:
             )
         return self._redact_mapping(value)
 
-    def _mapping_result(self, operation: str, response: HttpResponse, identifier: str = "") -> OieResult:
-        value = self._json_mapping(response)
+    @staticmethod
+    def _require_fields(
+        value: Mapping[str, Any],
+        label: str,
+        required: Mapping[str, type | tuple[type, ...]],
+    ) -> None:
+        invalid = [
+            key for key, expected in required.items()
+            if key not in value
+            or not isinstance(value[key], expected)
+            or (isinstance(value[key], str) and not value[key].strip())
+        ]
+        if invalid:
+            raise OieManagementError(
+                OieErrorCategory.UNEXPECTED_RESPONSE,
+                f"OIE {label} response lacked required structure.",
+            )
+
+    def _mapping_value_result(
+        self, operation: str, value: Mapping[str, Any], identifier: str = ""
+    ) -> OieResult:
         result_id = identifier or str(value.get("id", ""))
         revision_value = value.get("revision")
         revision = revision_value if isinstance(revision_value, int) else None
         status = str(value.get("status", ""))
         return OieResult(operation, result_id, revision, status, value)
 
-    def _sequence_result(self, operation: str, response: HttpResponse) -> OieResult:
+    def _sequence_result(
+        self,
+        operation: str,
+        response: HttpResponse,
+        *,
+        required: Mapping[str, type | tuple[type, ...]],
+    ) -> OieResult:
         value = self._json(response)
         if not isinstance(value, list):
             raise OieManagementError(
                 OieErrorCategory.UNEXPECTED_RESPONSE, "OIE response was not a list."
             )
-        return OieResult(operation, values={"items": tuple(self._redact_value(item) for item in value)})
+        normalized = []
+        for item in value:
+            if not isinstance(item, Mapping):
+                raise OieManagementError(
+                    OieErrorCategory.UNEXPECTED_RESPONSE,
+                    f"OIE {operation} response contained an invalid item.",
+                )
+            redacted = self._redact_mapping(item)
+            self._require_fields(redacted, operation, required)
+            normalized.append(redacted)
+        return OieResult(operation, values={"items": tuple(normalized)})
 
     @classmethod
     def _redact_mapping(cls, value: Mapping[str, Any]) -> Mapping[str, Any]:

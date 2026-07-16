@@ -80,6 +80,11 @@ class OieManagementConfig:
                 OieErrorCategory.VALIDATION,
                 "OIE username and password are required.",
             )
+        if not isinstance(self.tls_mode, OieTlsMode):
+            raise OieManagementError(
+                OieErrorCategory.VALIDATION,
+                "OIE TLS mode must be an explicit OieTlsMode value.",
+            )
         for label, value in (
             ("connect timeout", self.connect_timeout),
             ("read timeout", self.read_timeout),
