@@ -1,6 +1,6 @@
 ## 1. Safety Baseline and Characterization
 
-- [ ] 1.1 Record the starting branch, clean/known worktree state, exact in-scope files, existing architecture-baseline entries, and disposable test-resource strategy before product-code edits.
+- [x] 1.1 Record the starting branch, clean/known worktree state, exact in-scope files, existing architecture-baseline entries, and disposable test-resource strategy before product-code edits.
 - [ ] 1.2 Add or strengthen focused FHIR characterization for ledger upsert/idempotency, changed-payload requeueing, dependency ordering, state transitions, sync attempts, OperationOutcome details, Medplum references, and projection ordering.
 - [ ] 1.3 Add or strengthen FHIR-mode order characterization for synced-Patient requirements, deterministic ServiceRequest content, local-order ownership, ledger creation sequence, and sync-failure preservation.
 - [ ] 1.4 Add or strengthen focused GDT characterization for patient-number snapshots, order/message/event creation, exact result matching precedence, unmatched results, attachments, event isolation, and workbench projections.
