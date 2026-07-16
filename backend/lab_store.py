@@ -50,11 +50,8 @@ from backend.repositories.patients import PatientRepository
 from backend.services import protocol_compatibility as protocol_compat
 from backend import protocol_composition
 from backend.repositories.orders import OrderRepository
-from backend.repositories.dcm4chee_patient_sync import (
-    Dcm4cheePatientSyncRepository,
-    project_patient_sync_attempt_dict,
-    project_patient_sync_dict,
-)
+from backend.repositories.dcm4chee_patient_sync import Dcm4cheePatientSyncRepository
+from backend.mappers.dicom import project_patient_sync, project_patient_sync_attempt
 from backend.repositories.dcm4chee_mwl import (
     Dcm4cheeMwlRepository,
     backfill_dcm4chee_mwl_mappings,
@@ -1163,11 +1160,11 @@ class DemoStore:
 
     @staticmethod
     def _dcm4chee_patient_sync_dict(row: sqlite3.Row) -> dict[str, Any]:
-        return project_patient_sync_dict(row)
+        return project_patient_sync(row)
 
     @staticmethod
     def _dcm4chee_patient_sync_attempt_dict(row: sqlite3.Row) -> dict[str, Any]:
-        return project_patient_sync_attempt_dict(row)
+        return project_patient_sync_attempt(row)
 
 
     # Compatibility-only lab seams. New composition uses ``lab_repository`` directly.
