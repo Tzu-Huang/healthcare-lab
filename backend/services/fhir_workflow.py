@@ -173,6 +173,22 @@ class FhirDiagnosticReportService:
         return self._diagnostic_fetcher(resolved, "", patient_reference=patient_reference, service_request_reference=service_request_reference, auth_manager=self._auth_manager())
 
 
+class FhirRecordService:
+    """Own creation and retrieval of local FHIR workflow records."""
+
+    def __init__(self, repository: FhirRepositoryPort) -> None:
+        self._repository = repository
+
+    def create_record(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._repository.create_fhir_workflow_record(payload)
+
+    def get_record(self, record_id: int) -> dict[str, Any]:
+        item = self._repository.get_fhir_workflow_record(record_id)
+        if item["resourceType"] == "Task":
+            raise ValueError("FHIR Task workflow records are no longer supported.")
+        return item
+
+
 class FhirWorkflowService:
     def __init__(
         self,
@@ -211,6 +227,7 @@ class FhirWorkflowService:
         self.inventory_service = FhirInventoryService(repository, inventory_types=inventory_types, inventory_mapper=inventory_mapper)
         self.preview_service = FhirPreviewService(repository, inventory_types=inventory_types, medplum_base_url=medplum_base_url, auth_manager=auth_manager, base_url_normalizer=base_url_normalizer, reference_url_builder=reference_url_builder, json_request=json_request, upstream_status=upstream_status)
         self.diagnostic_service = FhirDiagnosticReportService(medplum_base_url=medplum_base_url, auth_manager=auth_manager, diagnostic_fetcher=diagnostic_fetcher)
+        self.record_service = FhirRecordService(repository)
 
     def operation_outcome(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._operation_outcome(payload)
@@ -252,16 +269,13 @@ class FhirWorkflowService:
         return self.preview_service.resource_preview(reference, base_url)
 
     def create_record(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._repository.create_fhir_workflow_record(payload)
+        return self.record_service.create_record(payload)
 
     def _raw_record(self, record_id: int) -> dict[str, Any]:
         return self._repository.get_fhir_workflow_record(record_id)
 
     def get_record(self, record_id: int) -> dict[str, Any]:
-        item = self._raw_record(record_id)
-        if item["resourceType"] == "Task":
-            raise ValueError("FHIR Task workflow records are no longer supported.")
-        return item
+        return self.record_service.get_record(record_id)
 
     def record_preview(self, record_id: int) -> dict[str, Any]:
         return self.preview_service.record_preview(record_id)

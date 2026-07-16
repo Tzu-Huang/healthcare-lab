@@ -438,9 +438,7 @@ def create_app(database_path: str | None = None) -> Flask:
             )
         )
     )
-    app.register_blueprint(
-        create_fhir_blueprint(
-            FhirWorkflowService(
+    fhir_service = FhirWorkflowService(
                 fhir_ledger,
                 inventory_types=MEDPLUM_INVENTORY_RESOURCE_TYPES,
                 medplum_base_url=configured_medplum_base_url,
@@ -453,7 +451,15 @@ def create_app(database_path: str | None = None) -> Flask:
                 operation_outcome=operation_outcome_from_payload,
                 upstream_status=http_status_from_upstream_error,
                 record_sync=sync_fhir_workflow_record_to_medplum,
-            )
+    )
+    app.register_blueprint(
+        create_fhir_blueprint(
+            fhir_service.record_service,
+            fhir_service.inventory_service,
+            fhir_service.preview_service,
+            fhir_service.diagnostic_service,
+            fhir_service.sync_service,
+            fhir_service.operation_outcome,
         )
     )
     app.register_blueprint(
