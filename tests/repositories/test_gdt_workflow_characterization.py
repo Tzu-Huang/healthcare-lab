@@ -4,6 +4,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.lab_store import DemoStore, render_gdt_message
+from backend.repositories.gdt_workflow import GdtWorkflowRepository
+from backend.services.gdt_coordination import GdtWorkflowCoordinator
 
 
 class GdtWorkflowCharacterizationTests(unittest.TestCase):
@@ -48,6 +50,17 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
                 table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                 for table in tables
             }
+
+    def workflow(self, *, order_builder=render_gdt_message):
+        repository = GdtWorkflowRepository(
+            self.store.database.connect,
+            self.store.database.lock,
+            timestamp_factory=lambda: "2026-07-16T09:00:00+00:00",
+            patient_loader=self.store.patient_repository.get_patient_record,
+            patient_list_loader=self.store.patient_repository.list_patient_records,
+            order_builder=order_builder,
+        )
+        return GdtWorkflowCoordinator(repository), repository
 
     def test_conflicting_exact_identifiers_choose_newest_matching_order_id(self):
         patient = self.store.create_patient_record(self.patient("MRN-GDT-CONFLICT"))
@@ -151,14 +164,16 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
     def test_6302_builder_failure_rolls_back_all_gdt_workflow_rows(self):
         patient = self.store.create_patient_record(self.patient("MRN-GDT-ORDER-ROLLBACK"))
 
-        with patch("backend.lab_store.build_gdt_6302_request", side_effect=RuntimeError("6302 failed")):
-            with self.assertRaisesRegex(RuntimeError, "6302 failed"):
-                self.store.create_gdt_order_record(
-                    {
-                        "patientRecordId": patient["id"],
-                        "attachmentUrl": "https://example.test/order.pdf",
-                    }
-                )
+        workflow, _ = self.workflow(
+            order_builder=lambda _payload: (_ for _ in ()).throw(RuntimeError("6302 failed"))
+        )
+        with self.assertRaisesRegex(RuntimeError, "6302 failed"):
+            workflow.create_gdt_order_record(
+                {
+                    "patientRecordId": patient["id"],
+                    "attachmentUrl": "https://example.test/order.pdf",
+                }
+            )
 
         self.assertEqual(self.table_counts(), {table: 0 for table in self.table_counts()})
 
@@ -166,7 +181,8 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
         patient = self.store.create_patient_record(self.patient("MRN-GDT-RESULT-ROLLBACK"))
         order = self.store.create_gdt_order_record({"patientRecordId": patient["id"]})
         before = self.table_counts()
-        original_record_event = self.store._record_gdt_event
+        workflow, repository = self.workflow()
+        original_record_event = repository._event
         event_calls = 0
 
         def fail_after_first_event(*args, **kwargs):
@@ -184,9 +200,9 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
                 ("6220", "Rollback this result"),
             ]
         )
-        with patch.object(self.store, "_record_gdt_event", side_effect=fail_after_first_event):
+        with patch.object(repository, "_event", side_effect=fail_after_first_event):
             with self.assertRaisesRegex(RuntimeError, "result event failed"):
-                self.store.record_gdt_result(
+                workflow.record_gdt_result(
                     {
                         "rawGdtText": raw_result,
                         "attachments": [

@@ -9,6 +9,7 @@ from backend.services.fhir_coordination import (
     FhirOrderCoordinator, PatientFhirCoordinator,
     create_order_ledger_record, create_patient_ledger_record,
 )
+from backend.templates.fhir import build_service_request
 
 
 class FhirCoordinationTests(unittest.TestCase):
@@ -26,6 +27,7 @@ class FhirCoordinationTests(unittest.TestCase):
             self.store.patient_repository, self.store.order_repository, self.ledger,
             timestamp_factory=lambda: "2026-07-16T09:00:00+00:00",
             storage_timestamp_factory=lambda: "20260716090000",
+            resource_builder=build_service_request,
         )
 
     def tearDown(self):
@@ -69,6 +71,7 @@ class FhirCoordinationTests(unittest.TestCase):
             BadReferencePatients(), self.store.order_repository, self.ledger,
             timestamp_factory=lambda: "2026-07-16T09:00:00+00:00",
             storage_timestamp_factory=lambda: "20260716090000",
+            resource_builder=build_service_request,
         )
         with self.assertRaisesRegex(SimulatorValidationError, "Patient/<id>"):
             coordinator.create_fhir_order_record({"patientRecordId": patient["id"]})
@@ -105,6 +108,7 @@ class FhirCoordinationTests(unittest.TestCase):
             self.store.patient_repository, RecordingOrders(), FailingLedger(),
             timestamp_factory=lambda: "2026-07-16T09:00:00+00:00",
             storage_timestamp_factory=lambda: "20260716090000",
+            resource_builder=build_service_request,
         )
         with self.assertRaisesRegex(RuntimeError, "injected ledger failure"):
             coordinator.create_local_order_and_ledger({"patientRecordId": patient["id"]})

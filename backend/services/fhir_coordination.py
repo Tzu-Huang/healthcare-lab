@@ -9,7 +9,6 @@ from typing import Any, Protocol
 from backend.domain.errors import SimulatorValidationError
 from backend.domain.fhir_order import storage_priority, validate_payload
 from backend.domain.statuses import FHIR_SYNC_STATUS_SYNCED
-from backend.templates.fhir import build_service_request
 
 FHIR_PROTOCOL_VERSION = "FHIR R4"
 
@@ -89,8 +88,8 @@ class FhirOrderCoordinator:
         self, patient_repository: PatientLoader, order_repository: FhirOrderWriter,
         ledger: FhirLedgerWriter, *, timestamp_factory: Callable[[], str],
         storage_timestamp_factory: Callable[[], str],
+        resource_builder: Callable[..., dict[str, Any]],
         validator: Callable[..., dict[str, Any]] = validate_payload,
-        resource_builder: Callable[..., dict[str, Any]] = build_service_request,
         priority_projector: Callable[[Any], str] = storage_priority,
     ) -> None:
         self._patients = patient_repository

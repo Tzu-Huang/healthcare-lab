@@ -24,28 +24,3 @@ from backend.domain.gdt_protocol import (
     result_order_identifiers,
     validation_notice,
 )
-
-__all__ = [
-    "GDT_DEFAULT_CHARSET_MARKER",
-    "GDT_DEFAULT_ENCODING",
-    "GDT_ORDER_CORRELATION_FIELD",
-    "GDT_ORDER_MESSAGE_TYPE",
-    "GDT_ORDER_TEST_CODE",
-    "GDT_ORDER_TEST_CODE_FIELD",
-    "GDT_RESULT_MESSAGE_TYPE",
-    "GDT_VERSION",
-    "MEASUREMENT_ALIASES",
-    "GdtAdapterResult",
-    "GdtValidationError",
-    "attachment_payloads_from_result_fields",
-    "build_gdt_6302_request",
-    "first_gdt_field",
-    "parse_gdt_6310_result",
-    "parse_gdt_dataset",
-    "parse_gdt_message",
-    "persistence_order_identifiers",
-    "render_gdt_message",
-    "render_gdt_record",
-    "result_order_identifiers",
-    "validation_notice",
-]
