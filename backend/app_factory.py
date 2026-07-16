@@ -130,8 +130,12 @@ from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieR
 from backend.runtime.lazy_wsgi import LazyWsgiApplication
 from backend.services.oie_settings import OieSettingsService, create_oie_management_client
 from backend.services.lab_workflow import (
-    DashboardWorkflowService,
-    LabServerWorkflowService,
+    DashboardActionService,
+    DashboardSnapshotService,
+    LabHealthService,
+    LabOperationService,
+    LabRegistryService,
+    LabSmokeService,
     dashboard_all_group_items,
     dashboard_child_item,
     dashboard_events,
@@ -351,22 +355,32 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.register_blueprint(
         create_lab_servers_blueprint(
-            LabServerWorkflowService(
-                app,
-                store.lab_repository,
-                operation_repository=store,
+            LabRegistryService(
+                app, store.lab_repository,
+                availability_decorator=decorate_lab_operation_availability,
+            ),
+            LabHealthService(
+                app, store.lab_repository,
                 health_checker=lambda target_store, server_id: run_lab_server_health_check(
                     target_store, server_id
                 ),
                 availability_decorator=decorate_lab_operation_availability,
+            ),
+            LabOperationService(
+                app, store.lab_repository, store,
+                operation_runner=lambda **values: run_lab_operation(**values),
+            ),
+            LabSmokeService(
+                app, store.lab_repository, store,
                 operation_runner=lambda **values: run_lab_operation(**values),
                 operator_resolver=lambda: resolve_lab_operator(),
-            )
+            ),
         )
     )
     app.register_blueprint(
         create_dashboard_blueprint(
-            DashboardWorkflowService(
+            DashboardSnapshotService(app, store),
+            DashboardActionService(
                 app,
                 store,
                 health_check=lambda target_store, service_id: run_dashboard_group_health_check(
@@ -377,7 +391,7 @@ def create_app(database_path: str | None = None) -> Flask:
                     ),
                 ),
                 operation_runner=lambda **values: run_lab_operation(**values),
-            )
+            ),
         )
     )
     def get_auth_manager() -> MedplumAuthManager:

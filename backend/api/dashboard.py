@@ -10,12 +10,13 @@ from flask import Blueprint, jsonify, request
 from backend.domain.errors import LabOperationError, SimulatorValidationError
 
 
-class DashboardServicePort(Protocol):
+class DashboardSnapshotPort(Protocol):
     def snapshot(self) -> dict[str, Any]: ...
 
     def restart_preview(self, service_id: str) -> dict[str, Any]: ...
 
-    def check_all(self) -> dict[str, Any]: ...
+class DashboardActionPort(Protocol):
+    def check_all(self, snapshot: dict[str, Any]) -> dict[str, Any]: ...
 
     def run_action(
         self, service_id: str, action: str, *, lines: int = 200
@@ -32,7 +33,8 @@ class DashboardServicePort(Protocol):
 
 
 def create_dashboard_blueprint(
-    service: DashboardServicePort,
+    snapshots: DashboardSnapshotPort,
+    actions: DashboardActionPort,
 ) -> Blueprint:
     blueprint = Blueprint("dashboard", __name__)
 
@@ -41,25 +43,25 @@ def create_dashboard_blueprint(
 
     @blueprint.get("/api/dashboard/services")
     def dashboard_services():
-        return jsonify({"success": True, **service.snapshot()})
+        return jsonify({"success": True, **snapshots.snapshot()})
 
     @blueprint.get("/api/dashboard/services/<service_id>/restart-preview")
     def dashboard_restart_preview(service_id: str):
         try:
-            item = service.restart_preview(service_id)
+            item = snapshots.restart_preview(service_id)
         except KeyError:
             return error("Dashboard service id is not supported.", 404)
         return jsonify({"success": True, "item": item})
 
     @blueprint.post("/api/dashboard/services/check-all")
     def dashboard_check_all():
-        return jsonify({"success": True, **service.check_all()})
+        return jsonify({"success": True, **actions.check_all(snapshots.snapshot())})
 
     @blueprint.post("/api/dashboard/services/<service_id>/<action>")
     def dashboard_service_action(service_id: str, action: str):
         payload = request.get_json(silent=True) or {}
         try:
-            result = service.run_action(
+            result = actions.run_action(
                 service_id,
                 action,
                 lines=int(payload.get("lines", 200) or 200),
@@ -76,7 +78,7 @@ def create_dashboard_blueprint(
     def dashboard_child_service_action(service_id: str, child_id: str, action: str):
         payload = request.get_json(silent=True) or {}
         try:
-            result = service.run_child_action(
+            result = actions.run_child_action(
                 service_id,
                 child_id,
                 action,

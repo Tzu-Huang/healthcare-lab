@@ -355,6 +355,16 @@ class DashboardActionService:
             "output": result["output"],
         }
 
+    def run_child_action(self, service_id: str, child_id: str, action: str, *, lines: int = 200) -> dict[str, Any]:
+        group, servers = dashboard_servers_for_group(self.repository, service_id)
+        child = dashboard_child_for_group(group, child_id)
+        primary = next((server for server in servers if server["name"] == group["primary"]), servers[0])
+        if action.strip().lower() == "check":
+            return {"service": dashboard_group_item(self.app, self.repository, service_id), "child": dashboard_child_item(self.app, child)}
+        operation_action = dashboard_action_for_group(group, action)
+        result = self._operation_runner(app=self.app, store=self.repository, server_id=int(primary["id"]), action=operation_action, lines=lines, backing_services=[str(child["service"])], operation_service_name=str(child["displayName"]), refresh_health=False)
+        return {"service": dashboard_group_item(self.app, self.repository, service_id), "child": dashboard_child_item(self.app, child), "operation": result["operation"], "output": result["output"]}
+
 
 class DashboardWorkflowService:
     """Compatibility composition seam for focused dashboard use cases."""
@@ -370,44 +380,6 @@ class DashboardWorkflowService:
     def check_all(self) -> dict[str, Any]: return self.action_service.check_all(self.snapshot())
     def run_action(self, service_id: str, action: str, *, lines: int = 200) -> dict[str, Any]: return self.action_service.run_action(service_id, action, lines=lines)
     def run_child_action(self, service_id: str, child_id: str, action: str, *, lines: int = 200) -> dict[str, Any]: return self.action_service.run_child_action(service_id, child_id, action, lines=lines)
-
-    def run_child_action(
-        self,
-        service_id: str,
-        child_id: str,
-        action: str,
-        *,
-        lines: int = 200,
-    ) -> dict[str, Any]:
-        group, servers = dashboard_servers_for_group(self.repository, service_id)
-        child = dashboard_child_for_group(group, child_id)
-        primary = next(
-            (server for server in servers if server["name"] == group["primary"]),
-            servers[0],
-        )
-        if action.strip().lower() == "check":
-            return {
-                "service": dashboard_group_item(self.app, self.repository, service_id),
-                "child": dashboard_child_item(self.app, child),
-            }
-        operation_action = dashboard_action_for_group(group, action)
-        result = self._operation_runner(
-            app=self.app,
-            store=self.repository,
-            server_id=int(primary["id"]),
-            action=operation_action,
-            lines=lines,
-            backing_services=[str(child["service"])],
-            operation_service_name=str(child["displayName"]),
-            refresh_health=False,
-        )
-        return {
-            "service": dashboard_group_item(self.app, self.repository, service_id),
-            "child": dashboard_child_item(self.app, child),
-            "operation": result["operation"],
-            "output": result["output"],
-        }
-
 
 def run_lab_operation(
     *,
