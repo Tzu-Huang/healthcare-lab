@@ -98,6 +98,18 @@ API client while remaining isolated from the ZAC-61 settings ownership work.
 
 ## Review Fixes
 
+## Phase B Integration
+
+- Rebased ZAC-46 onto `main` at `c8cb1cf`, which contains the archived ZAC-61
+  change at `08013ed`.
+- Confirmed final OIE ownership before composition: settings validation remains
+  in `backend/domain/oie.py`, public secret-safe projection remains in
+  `backend/mappers/oie.py`, persistence remains in
+  `backend/repositories/oie_settings.py`, and application wiring remains in
+  `backend/app_factory.py`.
+- No ZAC-61 ownership or compatibility code required conflict resolution during
+  the rebase.
+
 ### Fix 1 (2026-07-16)
 
 - Fix committed: `b839ab1 fix(ZAC-46): address REV-001 through REV-004`
