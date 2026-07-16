@@ -50,8 +50,8 @@ class ProtocolRepositoryWiringTests(unittest.TestCase):
             patient_sender=lambda *_args, **_values: None,
         )
 
-        operations.sync_patient_fhir(7)
-        operations.sync_order_fhir(8)
+        operations.sync_patient_fhir(7, base_url="https://fhir.test", auth_manager=object())
+        operations.sync_order_fhir(8, base_url="https://fhir.test", auth_manager=object())
 
         self.assertEqual(calls, [(ledger, 7), (ledger, 8)])
         marker = {"protocolVersion": "FHIR R4"}
@@ -78,7 +78,11 @@ class ProtocolRepositoryWiringTests(unittest.TestCase):
     def test_composition_root_routes_protocols_to_named_owners(self):
         source = (ROOT / "backend" / "app_factory.py").read_text(encoding="utf-8")
         self.assertIn("FhirWorkflowService(\n                fhir_ledger,", source)
-        self.assertIn("GdtWorkflowService(\n                gdt_workflow,", source)
+        self.assertIn("GdtWorkflowService(\n        gdt_workflow, app.config,", source)
+        self.assertIn(
+            "gdt_service.order_service, gdt_service.bridge_service, gdt_service.result_service,",
+            source,
+        )
         self.assertIn("GdtBridgeInboundWatcher(\n        gdt_workflow,", source)
         self.assertLessEqual(len(source.splitlines()), 500)
 

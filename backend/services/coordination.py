@@ -88,35 +88,37 @@ class ConfiguredWorkflowOperations:
             order.get_patient_record,
         )
 
-    def sync_patient_fhir(self, record_id: int, **kwargs: Any) -> dict[str, Any]:
-        return self._fhir_sync(self._fhir_ledger, record_id, **kwargs)
+    def sync_patient_fhir(self, record_id: int, *, base_url: str, auth_manager: Any) -> dict[str, Any]:
+        return self._fhir_sync(self._fhir_ledger, record_id, base_url=base_url, auth_manager=auth_manager)
 
-    def sync_order_fhir(self, record_id: int, **kwargs: Any) -> dict[str, Any]:
-        return self._fhir_sync(self._fhir_ledger, record_id, **kwargs)
+    def sync_order_fhir(self, record_id: int, *, base_url: str, auth_manager: Any) -> dict[str, Any]:
+        return self._fhir_sync(self._fhir_ledger, record_id, base_url=base_url, auth_manager=auth_manager)
 
-    def sync_patient_dicom(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    def sync_patient_dicom(self, patient: dict[str, Any], profile: dict[str, Any], *, operation_type: str = "adt-create", timeout_seconds: float = 10) -> dict[str, Any]:
         return self._patient_sync(
-            self._patient, *args, sender=self._patient_sender, **kwargs
+            self._patient, patient, profile, operation_type=operation_type,
+            timeout_seconds=timeout_seconds, sender=self._patient_sender,
         )
 
-    def refresh_results(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        return self._result_refresh(self._patient, *args, **kwargs)
+    def refresh_results(self, patient_record_id: int, profile: dict[str, Any]) -> dict[str, Any]:
+        return self._result_refresh(self._patient, patient_record_id, profile)
 
-    def sync_order_dicom(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    def sync_order_dicom(self, order: dict[str, Any], profile: dict[str, Any], *, uid_root: str) -> dict[str, Any]:
         return self._order_sync(
-            self._order,
-            *args,
+            self._order, order, profile, uid_root=uid_root,
             patient_syncer=self.sync_order_patient,
-            **kwargs,
         )
 
     def sync_order_patient(
-        self, _order_coordination: Any, *args: Any, **kwargs: Any
+        self, _order_coordination: Any, patient: dict[str, Any], profile: dict[str, Any],
+        *, operation_type: str = "adt-create", timeout_seconds: float = 10,
     ) -> dict[str, Any]:
-        return self.sync_patient_dicom(*args, **kwargs)
+        return self.sync_patient_dicom(
+            patient, profile, operation_type=operation_type, timeout_seconds=timeout_seconds,
+        )
 
-    def verify_order_dicom(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        return self._order_verify(self._order, *args, **kwargs)
+    def verify_order_dicom(self, order: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+        return self._order_verify(self._order, order, profile)
 
 
 class PatientProtocolCoordinator:
