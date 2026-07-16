@@ -1,12 +1,12 @@
 ## 1. Safety Baseline and Placement Contract
 
-- [ ] 1.1 Record the ZAC-61 owner inventory for Patient, Order, FHIR, GDT, dcm4chee, Lab, OIE, and retained compatibility exports, including current callers and final module destinations.
+- [x] 1.1 Record the ZAC-61 owner inventory for Patient, Order, FHIR, GDT, dcm4chee, Lab, OIE, and retained compatibility exports, including current callers and final module destinations.
 - [ ] 1.2 Add focused characterization tests for existing validation errors, normalized values, deterministic payloads, row projections, and relevant rollback behavior before moving each implementation.
 - [ ] 1.3 Create the `backend/mappers/` package and mirrored `tests/mappers/` package with context-specific modules and persistence-neutral row protocols.
 - [ ] 1.4 Extend architecture dependency tests to recognize mappers, allow repositories to invoke them, and reject mapper dependencies on Flask, SQLite connection APIs, repositories, services, clients, runtime, or composition.
 - [ ] 1.5 Add architecture checks that reject new validation, protocol-builder, or reusable row-presentation implementations in repositories while permitting SQL, transactions, infrastructure validation, and injected pure collaborator calls.
-- [ ] 1.6 Update `docs/architecture.md` to match the modules created by ZAC-58 through ZAC-60 and document mapper ownership, retained compatibility callers, and the approved GDT bridge health exception.
-- [ ] 1.7 Document the bounded YOLO-mode rules: routine directly caused fixes may proceed, quality gates remain mandatory, and protected boundaries require an immediate stop without weakening tests, allowlists, fingerprints, or compatibility expectations.
+- [x] 1.6 Update `docs/architecture.md` to match the modules created by ZAC-58 through ZAC-60 and document mapper ownership, retained compatibility callers, and the approved GDT bridge health exception.
+- [x] 1.7 Document the bounded YOLO-mode rules: routine directly caused fixes may proceed, quality gates remain mandatory, and protected boundaries require an immediate stop without weakening tests, allowlists, fingerprints, or compatibility expectations.
 
 ## 2. Patient, Order, and FHIR Pure Boundaries
 
