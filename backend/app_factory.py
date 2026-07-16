@@ -405,22 +405,22 @@ def create_app(database_path: str | None = None) -> Flask:
             profile_validator=validate_dcm4chee_profile,
         )
     )
-    app.register_blueprint(
-        create_patients_blueprint(
-            PatientWorkflowService(
-                store.patient_repository,
-                app.config,
-                fhir_capability=workflow_operations.patient_fhir,
-                fixture_capability=workflow_operations.fixture,
-                medplum_base_url=configured_medplum_base_url,
-                auth_manager=get_auth_manager,
-                fhir_sync=workflow_operations.sync_patient_fhir,
-                dicom_patient_sync=workflow_operations.sync_patient_dicom,
-                dcm_result_refresh=workflow_operations.refresh_results,
-                dcm_profile=dcm4chee_profile_from_config,
-            )
-        )
+    patient_service = PatientWorkflowService(
+        store.patient_repository,
+        app.config,
+        fhir_capability=workflow_operations.patient_fhir,
+        fixture_capability=workflow_operations.fixture,
+        medplum_base_url=configured_medplum_base_url,
+        auth_manager=get_auth_manager,
+        fhir_sync=workflow_operations.sync_patient_fhir,
+        dicom_patient_sync=workflow_operations.sync_patient_dicom,
+        dcm_result_refresh=workflow_operations.refresh_results,
+        dcm_profile=dcm4chee_profile_from_config,
     )
+    app.register_blueprint(create_patients_blueprint(
+        patient_service.record_service, patient_service.fhir_sync_service,
+        patient_service.result_refresh_service, patient_service.fixture_service,
+    ))
     order_service = OrderWorkflowService(
                 store.order_repository,
                 app.config,
