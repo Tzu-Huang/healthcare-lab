@@ -6,15 +6,17 @@ from collections.abc import Callable
 from typing import Any
 
 from backend.domain.errors import SimulatorValidationError
+from backend.domain.dicom import (
+    DCM4CHEE_DEFAULT_UID_ROOT,
+    DCM4CHEE_ORDER_PROTOCOL_VERSION,
+    DCM4CHEE_RESULT_SOURCE_SIMULATED_AP,
+)
 from backend.domain.statuses import (
     DCM4CHEE_MWL_STATUS_PENDING,
     DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED,
     DCM4CHEE_RESULT_STATUS_NO_RESULT,
 )
 
-DCM4CHEE_DEFAULT_UID_ROOT = "1.2.826.0.1.3680043.10.543"
-DCM4CHEE_ORDER_PROTOCOL_VERSION = "DICOM"
-DCM4CHEE_RESULT_SOURCE_SIMULATED_AP = "simulated_ap_return"
 ORDER_DEFAULT_CODE = "ECG12"
 ORDER_DEFAULT_TEXT = "12 Lead ECG"
 ORDER_DEFAULT_PROVIDER = "1001^WANG^AMY"

@@ -3,6 +3,7 @@ import unittest
 
 from backend.templates.order import build_orm
 from backend.templates.patient import build_dicom, build_fhir, build_hl7
+from backend.templates.hl7 import escape, escape_composite
 
 
 VALUES = {
@@ -16,6 +17,10 @@ VALUES = {
 
 
 class PatientOrderTemplateTests(unittest.TestCase):
+    def test_shared_hl7_primitives_preserve_delimiters_and_line_breaks(self):
+        self.assertEqual(r"A\F\B\S\C\T\D\R\E\E\\.br\F", escape("A|B^C&D~E\\\nF"))
+        self.assertEqual(r"A\F\B^C\T\D", escape_composite("A|B^C&D"))
+
     def test_patient_templates_preserve_representative_payloads(self):
         hl7, visit = build_hl7(VALUES, record_id=1, timestamp="20260715103000")
         self.assertEqual(visit, "VISIT-000001")

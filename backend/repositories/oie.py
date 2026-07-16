@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from sqlite3 import Connection, Row
+from sqlite3 import Connection
 from threading import RLock
 from typing import Any
+
+from backend.mappers.oie import project_result
 
 ConnectionFactory = Callable[[], AbstractContextManager[Connection]]
 
@@ -25,21 +27,6 @@ class OieRepository:
     def lock(self) -> RLock:
         return self._lock
 
-    @staticmethod
-    def project_result(row: Row) -> dict[str, Any]:
-        return {
-            "id": row["id"], "messageControlId": row["message_control_id"],
-            "messageType": row["message_type"], "patientMrn": row["patient_mrn"],
-            "placerOrderNumber": row["placer_order_number"],
-            "fillerOrderNumber": row["filler_order_number"],
-            "matchedPatientRecordId": row["matched_patient_record_id"],
-            "matchedOrderRecordId": row["matched_order_record_id"],
-            "matchStatus": row["match_status"], "duplicateOfId": row["duplicate_of_id"],
-            "parseStatus": row["parse_status"], "error": row["error_text"],
-            "payload": row["payload_hl7"], "receivedAt": row["received_at"],
-            "createdAt": row["created_at"], "updatedAt": row["updated_at"],
-        }
-
     def record_oie_result(self, payload_hl7: str, parsed: dict[str, str]) -> dict[str, Any]:
         timestamp = self._timestamp()
         message_control_id = str(parsed.get("messageControlId") or "").strip()
@@ -54,7 +41,7 @@ class OieRepository:
                     (message_control_id,),
                 ).fetchone()
                 if duplicate:
-                    item = self.project_result(duplicate)
+                    item = project_result(duplicate)
                     item.update(duplicate=True, duplicateOfId=duplicate["id"])
                     return item
             patient = None
@@ -91,7 +78,7 @@ class OieRepository:
             row = connection.execute(
                 "SELECT * FROM oie_result_records WHERE id = ?", (int(cursor.lastrowid),)
             ).fetchone()
-        return self.project_result(row)
+        return project_result(row)
 
     def record_oie_result_error(self, payload_hl7: str, message_type: str,
                                 error_text: str) -> dict[str, Any]:
@@ -110,11 +97,11 @@ class OieRepository:
             row = connection.execute(
                 "SELECT * FROM oie_result_records WHERE id = ?", (int(cursor.lastrowid),)
             ).fetchone()
-        return self.project_result(row)
+        return project_result(row)
 
     def list_oie_results(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT * FROM oie_result_records ORDER BY received_at DESC, id DESC"
             ).fetchall()
-        return [self.project_result(row) for row in rows]
+        return [project_result(row) for row in rows]

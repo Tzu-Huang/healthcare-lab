@@ -51,8 +51,6 @@ catch-all|backend/lab_store.py|DemoStore.connect|db95eb9c330f888d
 catch-all|backend/lab_store.py|DemoStore.initialize|1ec55384df4f5277
 catch-all|backend/lab_store.py|DemoStore.list_oie_local_adt_inventory|a08d55ca7a0e3b85
 catch-all|backend/lab_store.py|DemoStore.list_oie_local_order_inventory|436e0fbb175ab391
-catch-all|backend/lab_store.py|_encode_gdt_text|bd82c8131324df70
-catch-all|backend/lab_store.py|_gdt_clean_value|fc82c0c110853cc0
 catch-all|backend/lab_store.py|_hl7_escape|b062236ad3ab289a
 catch-all|backend/lab_store.py|_hl7_escape_composite|98f1ff43d8ec015b
 catch-all|backend/lab_store.py|first_gdt_field|d8f033c133a3a034
@@ -67,8 +65,6 @@ payload|backend/dashboard_services.py|collect_dashboard_resource_snapshot_from_c
 payload|backend/dashboard_services.py|collect_dashboard_resource_snapshot_from_socket|50701cdf6e9c93b5
 payload|backend/dashboard_services.py|dashboard_resource_fallback|b10e912b7158a34f
 payload|backend/lab_store.py|DemoStore._result_record_dict|4ad87223c2d4f7cf
-payload|backend/lab_store.py|_encode_gdt_text|bd82c8131324df70
-payload|backend/lab_store.py|_gdt_clean_value|fc82c0c110853cc0
 payload|backend/lab_store.py|_hl7_escape|b062236ad3ab289a
 payload|backend/lab_store.py|_hl7_escape_composite|98f1ff43d8ec015b
 payload|backend/lab_store.py|first_gdt_field|d8f033c133a3a034
@@ -107,11 +103,6 @@ catch-all|backend/dashboard_services.py|<module>._RESOURCE_SNAPSHOT_CACHE_LOCK|c
 catch-all|backend/lab_operations.py|<module>.DOCKER_COMPOSE_PROJECT|8aae4c1613a1fbc1
 catch-all|backend/lab_operations.py|<module>.DOCKER_SOCKET_PATH|ff29a28315e0502b
 catch-all|backend/lab_operations.py|<module>.DOCKER_SOCKET_STOP_GRACE_SECONDS|2e843a750486e0e9
-catch-all|backend/lab_store.py|<module>.DCM4CHEE_DEFAULT_UID_ROOT|e651bd568aa0f7e7
-catch-all|backend/lab_store.py|<module>.DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES|5517bfa1d058d5b2
-catch-all|backend/lab_store.py|<module>.DCM4CHEE_ORDER_MESSAGE_TYPE|a8a33e1717dd6706
-catch-all|backend/lab_store.py|<module>.DCM4CHEE_ORDER_PROTOCOL_VERSION|956879bcc7755e0f
-catch-all|backend/lab_store.py|<module>.DCM4CHEE_RESULT_SOURCE_SIMULATED_AP|3baf207dea788bc2
 catch-all|backend/lab_store.py|<module>.DEFAULT_LAB_OPERATION_METADATA|800846a541107f50
 catch-all|backend/lab_store.py|<module>.DEFAULT_LAB_SERVERS|60052052e562f266
 catch-all|backend/lab_store.py|<module>.FHIR_ORDER_DEFAULT_CATEGORY|acb004473bb6dfad
@@ -154,7 +145,6 @@ catch-all|backend/lab_store.py|<module>.PATIENT_MODES|49210b84d1feae78
 catch-all|backend/lab_store.py|<module>.PATIENT_PROTOCOL_VERSION|ddf3ae35d7e181c4
 payload|backend/dashboard_services.py|<module>.LAB_DASHBOARD_SERVICE_GROUPS|5613527314933370
 payload|backend/dashboard_services.py|<module>._RESOURCE_SNAPSHOT_CACHE|8c4e05c60f5f19ed
-payload|backend/lab_store.py|<module>.DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES|5517bfa1d058d5b2
 payload|backend/lab_store.py|<module>.DEFAULT_LAB_OPERATION_METADATA|800846a541107f50
 payload|backend/lab_store.py|<module>.DEFAULT_LAB_SERVERS|60052052e562f266
 payload|backend/lab_store.py|<module>.GDT_PATIENT_SEX_CODES|7d77248b82f06158

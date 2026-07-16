@@ -16,9 +16,8 @@ from backend.domain.dicom import (
     identifiers_from_payload as project_identifiers_from_payload,
 )
 from backend.domain.errors import SimulatorValidationError
-from backend.templates.patient import hl7_escape, hl7_escape_composite
+from backend.templates.hl7 import HL7_V2_MSH_SUFFIX, escape as hl7_escape, escape_composite as hl7_escape_composite
 
-HL7_V2_MSH_SUFFIX = "2.5.1||||||UNICODE UTF-8"
 ORDER_DEFAULT_TEXT = "12 Lead ECG"
 
 

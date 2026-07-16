@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from backend.domain.gdt_protocol import build_gdt_6302_request
+from backend.templates.gdt import build_gdt_6302_request
 from backend.repositories.fhir_ledger import FhirLedgerRepository
 from backend.repositories.gdt_workflow import GdtWorkflowRepository
 from backend.services.fhir_coordination import FhirOrderCoordinator, PatientFhirCoordinator

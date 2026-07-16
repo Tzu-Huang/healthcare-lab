@@ -13,7 +13,6 @@ from backend.domain.gdt_protocol import (
     GdtAdapterResult,
     GdtValidationError,
     attachment_payloads_from_result_fields,
-    build_gdt_6302_request,
     first_gdt_field,
     parse_gdt_6310_result,
     parse_gdt_dataset,
@@ -24,3 +23,4 @@ from backend.domain.gdt_protocol import (
     result_order_identifiers,
     validation_notice,
 )
+from backend.templates.gdt import build_gdt_6302_request
