@@ -211,6 +211,31 @@ class DcmMwlVerificationService:
         return {"success": verification.get("status") == DCM4CHEE_MWL_VERIFICATION_VERIFIED, "item": item, "mwl": mwl, "verification": verification, "latestAttempt": result.get("attempt")}
 
 
+class DcmEvidenceService:
+    """Coordinate dcm4chee evidence and simulated AP-return use cases."""
+
+    def __init__(self, repository: OrderLedgerPort, capability: DcmEvidenceCapability, configuration: Mapping[str, Any], *, dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
+        self._repository = repository
+        self._capability = capability
+        self._configuration = configuration
+        self._dcm_profile = dcm_profile
+
+    def _order(self, order_id: int) -> dict[str, Any]:
+        item = self._repository.get_order_record(order_id)
+        if item["protocolVersion"] != "DICOM":
+            raise ValueError("Order record is not DICOM MWL mode.")
+        return item
+
+    def evidence(self, order_id: int) -> dict[str, Any]:
+        self._order(order_id)
+        return self._capability.dcm4chee_e2e_evidence_for_order(order_id, self._dcm_profile(self._configuration))
+
+    def simulated_return(self, order_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        item = self._order(order_id)
+        result = self._capability.create_simulated_dcm4chee_ap_return(order_id, self._dcm_profile(self._configuration), result_type=str(payload.get("type") or "both"), artifact_url=str(payload.get("artifactUrl") or ""), artifact_path=str(payload.get("artifactPath") or ""))
+        return {"patient": self._capability.get_patient_record(int(item["patientRecordId"])), **result}
+
+
 class OrderWorkflowService:
     def __init__(
         self,
@@ -243,6 +268,7 @@ class OrderWorkflowService:
         self._dcm_profile = dcm_profile
         self.mwl_sync_service = DcmMwlSyncService(repository, configuration, dcm_sync=dcm_sync, dcm_profile=dcm_profile)
         self.mwl_verification_service = DcmMwlVerificationService(repository, configuration, dcm_verify=dcm_verify, dcm_profile=dcm_profile)
+        self.evidence_service = DcmEvidenceService(repository, self._evidence, configuration, dcm_profile=dcm_profile)
 
 
     def list(self) -> list[dict[str, Any]]:
@@ -295,24 +321,12 @@ class OrderWorkflowService:
         return self.mwl_verification_service.verify(order_id)
 
     def dcm4chee_evidence(self, order_id: int) -> dict[str, Any]:
-        self.get_dicom(order_id)
-        return self._evidence.dcm4chee_e2e_evidence_for_order(
-            order_id, self._dcm_profile(self._configuration)
-        )
+        return self.evidence_service.evidence(order_id)
 
     def create_dcm4chee_simulated_return(
         self, order_id: int, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        item = self.get_dicom(order_id)
-        result = self._evidence.create_simulated_dcm4chee_ap_return(
-            order_id,
-            self._dcm_profile(self._configuration),
-            result_type=str(payload.get("type") or "both"),
-            artifact_url=str(payload.get("artifactUrl") or ""),
-            artifact_path=str(payload.get("artifactPath") or ""),
-        )
-        patient = self._evidence.get_patient_record(int(item["patientRecordId"]))
-        return {"patient": patient, **result}
+        return self.evidence_service.simulated_return(order_id, payload)
 
 
 def sync_order_to_dcm4chee_mwl(
