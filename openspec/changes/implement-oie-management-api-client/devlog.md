@@ -122,6 +122,17 @@ API client while remaining isolated from the ZAC-61 settings ownership work.
 - Follow-ups: none
 - Next action: `/dev-fix --review "openspec/changes/implement-oie-management-api-client/review/2026-07-16_feature-ZAC-46_implement-oie-management-api-client_codex-review-r3.md"`
 
+### Round 4 (2026-07-16 15:00:09 +08:00)
+
+- Source: `openspec/changes/implement-oie-management-api-client/review/2026-07-16_feature-ZAC-46_implement-oie-management-api-client_codex-review-r4.md`
+- Mode: `closure`
+- Verdict: `approved`
+- Reviewed head: `f5d878cb244f2c4717f46d8c6c03b5a72be5de37`
+- Transitions: `REV-005 resolved; REV-006 resolved`
+- Open blockers: none
+- Follow-ups: none
+- Next action: commit only review/devlog workflow records, then run `/dev-done`
+
 ## Phase B Integration
 
 - Rebased ZAC-46 onto `main` at `c8cb1cf`, which contains the archived ZAC-61
