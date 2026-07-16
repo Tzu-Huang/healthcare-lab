@@ -40,6 +40,22 @@ class OieSettingsRepository:
             ).fetchall()
         return self._serialize(profile, mappings)
 
+    def get_management_api_configuration(self) -> dict[str, Any]:
+        """Return the private persistence values needed only by composition."""
+        with self._connect() as connection:
+            profile = connection.execute(
+                "SELECT * FROM oie_settings_profiles WHERE profile_name = ?", (self._profile_name,)
+            ).fetchone()
+        if not profile:
+            raise KeyError(self._profile_name)
+        return {
+            "base_url": profile["management_api_base_url"],
+            "username": profile["management_api_username"],
+            "password": profile["management_api_password"],
+            "tls_verify": bool(profile["management_api_tls_verify"]),
+            "timeout_seconds": float(profile["management_api_timeout_seconds"]),
+        }
+
     def update(self, payload: dict[str, Any]) -> dict[str, Any]:
         values = self._validate(payload)
         timestamp = self._timestamp()
