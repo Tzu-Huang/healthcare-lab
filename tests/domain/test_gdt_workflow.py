@@ -1,6 +1,9 @@
 import unittest
+from dataclasses import FrozenInstanceError
 
 from backend.domain import gdt_workflow
+from backend.domain.gdt_protocol import GdtAdapterResult
+from backend.services import protocol_compatibility
 
 
 class GdtWorkflowDomainTests(unittest.TestCase):
@@ -17,3 +20,10 @@ class GdtWorkflowDomainTests(unittest.TestCase):
         self.assertEqual("12041985", prepared["birthDate"])
         self.assertEqual("2", prepared["sex"])
         self.assertEqual("GDT-ORD-000009", prepared["localGdtOrderNumber"])
+
+    def test_compatibility_helpers_are_aliases_and_result_boundary_is_frozen(self):
+        self.assertIs(gdt_workflow.order_number, protocol_compatibility.gdt_order_number)
+        self.assertIs(gdt_workflow.patient_number, protocol_compatibility.gdt_patient_number)
+        result = GdtAdapterResult("raw", {}, {}, {"errors": [], "warnings": []})
+        with self.assertRaises(FrozenInstanceError):
+            result.raw_gdt_text = "changed"
