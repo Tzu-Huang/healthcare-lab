@@ -88,4 +88,3 @@ Rollback removes the unused client/composition binding. No schema, stored data, 
 ## Open Questions
 
 - Which exact OIE 4.5.2 source or runtime API artifact will be recorded as evidence for each endpoint and response shape during implementation?
-
