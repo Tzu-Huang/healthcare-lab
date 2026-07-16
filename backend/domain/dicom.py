@@ -27,6 +27,8 @@ from backend.domain.statuses import (
 DCM4CHEE_AUTH_MODES = ("none", "basic", "bearer", "oauth2", "mtls")
 DCM4CHEE_DEFAULT_UID_ROOT = "1.2.826.0.1.3680043.10.543"
 DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES = {"patient_missing", "patient_sync_failed", "profile_invalid"}
+DCM4CHEE_ORDER_PROTOCOL_VERSION = "DICOM"
+DCM4CHEE_RESULT_SOURCE_SIMULATED_AP = "simulated_ap_return"
 
 
 def validate_dcm4chee_profile(profile: dict[str, Any]) -> dict[str, Any]:

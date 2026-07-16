@@ -31,6 +31,12 @@ from backend.domain.errors import SimulatorValidationError
 from backend.domain import patient as patient_domain
 from backend.domain import order as order_domain
 from backend.domain import dicom as dicom_domain
+from backend.domain.dicom import (
+    DCM4CHEE_DEFAULT_UID_ROOT,
+    DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES,
+    DCM4CHEE_ORDER_PROTOCOL_VERSION,
+    DCM4CHEE_RESULT_SOURCE_SIMULATED_AP,
+)
 from backend.domain.fhir_ledger import (
     FHIR_IDENTIFIER_SYSTEMS,
     FHIR_RESOURCE_DEPENDENCY_ORDER,
@@ -155,11 +161,7 @@ OIE_MANAGEMENT_API_PASSWORD = "Admin"
 OIE_MANAGEMENT_API_TIMEOUT_SECONDS = 10
 OIE_RESULT_LISTENER_HOST = "0.0.0.0"
 OIE_RESULT_LISTENER_PORT = 6665
-DCM4CHEE_ORDER_PROTOCOL_VERSION = "DICOM"
 DCM4CHEE_ORDER_MESSAGE_TYPE = "MWL"
-DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES = {"patient_missing", "patient_sync_failed", "profile_invalid"}
-DCM4CHEE_RESULT_SOURCE_SIMULATED_AP = "simulated_ap_return"
-DCM4CHEE_DEFAULT_UID_ROOT = "1.2.826.0.1.3680043.10.543"
 FHIR_ORDER_PROTOCOL_VERSION = "FHIR R4"
 FHIR_ORDER_MESSAGE_TYPE = "ServiceRequest"
 FHIR_ORDER_STATUS_CREATED = "Created"
