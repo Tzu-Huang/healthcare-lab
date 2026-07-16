@@ -72,6 +72,30 @@ class FhirRepositoryPort(Protocol):
     ) -> dict[str, Any]: ...
 
 
+class FhirSyncService:
+    """Coordinate FHIR sync/retry against the ledger and Medplum transport."""
+
+    def __init__(self, repository: FhirRepositoryPort, *, medplum_base_url: Callable[[], str], auth_manager: Callable[[], Any], record_sync: Callable[..., dict[str, Any]]) -> None:
+        self._repository = repository
+        self._medplum_base_url = medplum_base_url
+        self._auth_manager = auth_manager
+        self._record_sync = record_sync
+
+    def attempts(self, record_id: int) -> list[dict[str, Any]]:
+        self._repository.get_fhir_workflow_record(record_id)
+        return self._repository.list_fhir_sync_attempts(record_id)
+
+    def sync_record(self, record_id: int, base_url: str = "") -> tuple[bool, dict[str, Any]]:
+        resolved_base_url = str(base_url or self._medplum_base_url()).strip()
+        if not resolved_base_url:
+            raise ValueError("Medplum FHIR base URL is required.")
+        current = self._repository.get_fhir_workflow_record(record_id)
+        if current["resourceType"] == "Task":
+            raise ValueError("FHIR Task workflow records are no longer supported.")
+        item = self._record_sync(self._repository, record_id, base_url=resolved_base_url, auth_manager=self._auth_manager())
+        return item["sync"]["status"] == FHIR_SYNC_STATUS_SYNCED, item
+
+
 class FhirWorkflowService:
     def __init__(
         self,
@@ -101,6 +125,12 @@ class FhirWorkflowService:
         self._operation_outcome = operation_outcome
         self._upstream_status = upstream_status
         self._record_sync = record_sync
+        self.sync_service = FhirSyncService(
+            repository,
+            medplum_base_url=medplum_base_url,
+            auth_manager=auth_manager,
+            record_sync=record_sync,
+        )
 
     def operation_outcome(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._operation_outcome(payload)
@@ -245,25 +275,12 @@ class FhirWorkflowService:
         }
 
     def attempts(self, record_id: int) -> list[dict[str, Any]]:
-        self._raw_record(record_id)
-        return self._repository.list_fhir_sync_attempts(record_id)
+        return self.sync_service.attempts(record_id)
 
     def sync_record(
         self, record_id: int, base_url: str = ""
     ) -> tuple[bool, dict[str, Any]]:
-        resolved_base_url = str(base_url or self._medplum_base_url()).strip()
-        if not resolved_base_url:
-            raise ValueError("Medplum FHIR base URL is required.")
-        current = self._raw_record(record_id)
-        if current["resourceType"] == "Task":
-            raise ValueError("FHIR Task workflow records are no longer supported.")
-        item = self._record_sync(
-            self._repository,
-            record_id,
-            base_url=resolved_base_url,
-            auth_manager=self._auth_manager(),
-        )
-        return item["sync"]["status"] == FHIR_SYNC_STATUS_SYNCED, item
+        return self.sync_service.sync_record(record_id, base_url)
 
 
 def medplum_identifier_search_url(base_url: str, record: dict[str, Any]) -> str:

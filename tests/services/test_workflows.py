@@ -8,7 +8,7 @@ from backend.domain.statuses import (
     ORDER_STATUS_ACCEPTED,
     ORDER_STATUS_TRANSPORT_ERROR,
 )
-from backend.services.fhir_workflow import FhirWorkflowService
+from backend.services.fhir_workflow import FhirSyncService, FhirWorkflowService
 from backend.services.gdt_workflow import GdtConfigurationConflict, GdtWorkflowService
 from backend.services.lab_workflow import (
     DashboardActionService,
@@ -185,6 +185,7 @@ class WorkflowServiceTest(unittest.TestCase):
         success, item = service.sync_record(7)
 
         self.assertTrue(success)
+        self.assertIsInstance(service.sync_service, FhirSyncService)
         self.assertEqual(7, item["id"])
         self.assertEqual([(7, "http://medplum/fhir/R4")], calls)
 
