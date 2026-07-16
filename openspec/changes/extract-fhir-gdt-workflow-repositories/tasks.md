@@ -1,11 +1,11 @@
 ## 1. Safety Baseline and Characterization
 
 - [x] 1.1 Record the starting branch, clean/known worktree state, exact in-scope files, existing architecture-baseline entries, and disposable test-resource strategy before product-code edits.
-- [ ] 1.2 Add or strengthen focused FHIR characterization for ledger upsert/idempotency, changed-payload requeueing, dependency ordering, state transitions, sync attempts, OperationOutcome details, Medplum references, and projection ordering.
-- [ ] 1.3 Add or strengthen FHIR-mode order characterization for synced-Patient requirements, deterministic ServiceRequest content, local-order ownership, ledger creation sequence, and sync-failure preservation.
-- [ ] 1.4 Add or strengthen focused GDT characterization for patient-number snapshots, order/message/event creation, exact result matching precedence, unmatched results, attachments, event isolation, and workbench projections.
-- [ ] 1.5 Add rollback characterization proving injected FHIR/GDT collaborator failures and GDT multi-table result failures expose no partial ledger state.
-- [ ] 1.6 Verify all characterization uses temporary SQLite databases and external-service doubles, and add a failing guard where needed to prevent resolution to `instance/*.db`, Docker, or live healthcare endpoints.
+- [x] 1.2 Add or strengthen focused FHIR characterization for ledger upsert/idempotency, changed-payload requeueing, dependency ordering, state transitions, sync attempts, OperationOutcome details, Medplum references, and projection ordering.
+- [x] 1.3 Add or strengthen FHIR-mode order characterization for synced-Patient requirements, deterministic ServiceRequest content, local-order ownership, ledger creation sequence, and sync-failure preservation.
+- [x] 1.4 Add or strengthen focused GDT characterization for patient-number snapshots, order/message/event creation, exact result matching precedence, unmatched results, attachments, event isolation, and workbench projections.
+- [x] 1.5 Add rollback characterization proving injected FHIR/GDT collaborator failures and GDT multi-table result failures expose no partial ledger state.
+- [x] 1.6 Verify all characterization uses temporary SQLite databases and external-service doubles, and add a failing guard where needed to prevent resolution to `instance/*.db`, Docker, or live healthcare endpoints.
 
 ## 2. Pure FHIR and GDT Collaborators
 
