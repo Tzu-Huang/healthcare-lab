@@ -67,6 +67,14 @@ class OieSettingsRepositoryTest(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(password, "Admin")
 
+    def test_private_management_configuration_is_separate_from_public_projection(self):
+        public_profile = self.repository.get()
+        private_configuration = self.repository.get_management_api_configuration()
+
+        self.assertNotIn("password", public_profile["managementApi"])
+        self.assertEqual("Admin", private_configuration["password"])
+        self.assertEqual(10.0, private_configuration["timeout_seconds"])
+
     def test_update_persists_and_replaces_channel_mappings(self):
         payload = self.settings_payload(
             managementApi={
