@@ -168,6 +168,28 @@ class DcmEvidenceCapability(Protocol):
     def get_patient_record(self, record_id: int) -> dict[str, Any]: ...
 
 
+class DcmMwlSyncService:
+    """Coordinate DICOM Order eligibility, patient prerequisite, and MWL sync."""
+
+    def __init__(self, repository: OrderLedgerPort, configuration: Mapping[str, Any], *, dcm_sync: Callable[..., Any], dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
+        self._repository = repository
+        self._configuration = configuration
+        self._dcm_sync = dcm_sync
+        self._dcm_profile = dcm_profile
+
+    def get_order(self, order_id: int) -> dict[str, Any]:
+        item = self._repository.get_order_record(order_id)
+        if item["protocolVersion"] != "DICOM":
+            raise ValueError("Order record is not DICOM MWL mode.")
+        return item
+
+    def sync(self, order_id: int) -> dict[str, Any]:
+        self._dcm_sync(self.get_order(order_id), self._dcm_profile(self._configuration), uid_root=self._configuration["DCM4CHEE_UID_ROOT"])
+        item = self._repository.get_order_record(order_id)
+        mwl = (item.get("dcm4chee") or {}).get("mwl") or {}
+        return {"success": (mwl.get("mapping") or {}).get("status") == DCM4CHEE_MWL_STATUS_CREATED, "item": item, "mwl": mwl, "latestAttempt": mwl if mwl.get("id") else None}
+
+
 
 class OrderWorkflowService:
     def __init__(
@@ -199,6 +221,7 @@ class OrderWorkflowService:
         self._dcm_sync = dcm_sync
         self._dcm_verify = dcm_verify
         self._dcm_profile = dcm_profile
+        self.mwl_sync_service = DcmMwlSyncService(repository, configuration, dcm_sync=dcm_sync, dcm_profile=dcm_profile)
 
 
     def list(self) -> list[dict[str, Any]]:
@@ -245,20 +268,7 @@ class OrderWorkflowService:
         return self._dcm_order.list_dcm4chee_mwl_attempts(order_id)
 
     def sync_dcm4chee(self, order_id: int) -> dict[str, Any]:
-        item = self.get_dicom(order_id)
-        self._dcm_sync(
-            item,
-            self._dcm_profile(self._configuration),
-            uid_root=self._configuration["DCM4CHEE_UID_ROOT"],
-        )
-        item = self._repository.get_order_record(order_id)
-        mwl = (item.get("dcm4chee") or {}).get("mwl") or {}
-        return {
-            "success": (mwl.get("mapping") or {}).get("status") == DCM4CHEE_MWL_STATUS_CREATED,
-            "item": item,
-            "mwl": mwl,
-            "latestAttempt": mwl if mwl.get("id") else None,
-        }
+        return self.mwl_sync_service.sync(order_id)
 
     def verify_dcm4chee(self, order_id: int) -> dict[str, Any]:
         item = self.get_dicom(order_id)
