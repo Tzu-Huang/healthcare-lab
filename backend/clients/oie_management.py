@@ -256,8 +256,10 @@ class OieManagementClient:
     def deploy(self, channel_id: str) -> OieResult:
         return self._primitive("deploy", channel_id, "_deploy")
 
-    def redeploy(self, channel_id: str) -> OieResult:
-        return self._primitive("redeploy", channel_id, "_deploy")
+    def redeploy_all(self) -> OieResult:
+        self.require_supported_version()
+        self._send("POST", "/channels/_redeployAll")
+        return OieResult("redeploy-all")
 
     def undeploy(self, channel_id: str) -> OieResult:
         return self._primitive("undeploy", channel_id, "_undeploy")

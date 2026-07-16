@@ -5,7 +5,7 @@ Healthcare Lab has a persistent, secret-safe OIE settings profile but no server-
 ## What Changes
 
 - Add an OIE 4.5.2 Management API client that logs in, retains and reuses the server-side session cookie, adds the required `X-Requested-With` header, and logs out safely.
-- Add current-user, system-information, version-detection, Channel list/get/create/update/delete, deploy/redeploy/undeploy, Channel-status, and ports-in-use operations.
+- Add current-user, system-information, version-detection, Channel list/get/create/update/delete, deploy/redeploy-all/undeploy, Channel-status, and ports-in-use operations.
 - Support verified TLS and an explicitly configured local-lab self-signed mode with bounded connect and read timeouts.
 - Introduce one OIE client error model that distinguishes authentication, permission, TLS, connection, timeout, revision-conflict, validation, unsupported-version, server, and malformed-response failures.
 - Redact passwords, cookies, authorization material, and other session secrets from logs, exceptions, representations, and returned results.
