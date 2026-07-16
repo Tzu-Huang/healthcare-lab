@@ -13,7 +13,7 @@
 - [x] 2.1 Move Patient row presentation from the domain module to the Patient mapper, inject or import the single owner from the repository and enrichment paths, and preserve exact projections and protocol filtering.
 - [x] 2.2 Move Order row presentation from the domain module to the Order mapper, inject or import the single owner from the repository and enrichment paths, and preserve send-result and dcm4chee/FHIR enrichment shapes.
 - [x] 2.3 Move FHIR workflow-record and sync-attempt presentation from the domain module to the FHIR mapper and preserve ledger, enrichment, and compatibility-call projections.
-- [ ] 2.4 Consolidate shared Patient/Order HL7 template primitives and constants under a single template owner without changing generated ADT, ORM, or DICOM ADT text.
+- [x] 2.4 Consolidate shared Patient/Order HL7 template primitives and constants under a single template owner without changing generated ADT, ORM, or DICOM ADT text.
 - [x] 2.5 Add only targeted Patient, Order, and FHIR typed boundary models or protocols where reused collaborator shapes remain ambiguous, with tests proving runtime dictionaries and JSON contracts are unchanged.
 
 ## 3. GDT Domain, Template, Mapper, and Ledger Boundaries
