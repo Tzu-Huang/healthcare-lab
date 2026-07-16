@@ -20,13 +20,13 @@ from backend.domain.gdt_protocol import (
     GDT_VERSION,
     GdtValidationError,
     attachment_payloads_from_result_fields,
-    build_gdt_6302_request,
     first_gdt_field as adapter_first_gdt_field,
     parse_gdt_6310_result,
     parse_gdt_message as adapter_parse_gdt_message,
     render_gdt_message as adapter_render_gdt_message,
     render_gdt_record as adapter_render_gdt_record,
 )
+from backend.templates.gdt import build_gdt_6302_request
 from backend.domain.errors import SimulatorValidationError
 from backend.domain import patient as patient_domain
 from backend.domain import order as order_domain

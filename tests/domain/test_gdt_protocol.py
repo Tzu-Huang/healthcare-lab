@@ -4,6 +4,7 @@ from pathlib import Path
 
 from backend import gdt_adapter
 from backend.domain import gdt_protocol
+from backend.templates import gdt as gdt_template
 
 
 class GdtProtocolTest(unittest.TestCase):
@@ -16,8 +17,10 @@ class GdtProtocolTest(unittest.TestCase):
             "order": {"localGdtOrderNumber": "GDT-ORD-000001"},
         }
         expected = gdt_adapter.build_gdt_6302_request(order)
-        actual = gdt_protocol.build_gdt_6302_request(order)
+        actual = gdt_template.build_gdt_6302_request(order)
         self.assertEqual(actual.as_dict(), expected.as_dict())
+        self.assertEqual(actual.raw_gdt_text, expected.raw_gdt_text)
+        self.assertEqual({"errors": [], "warnings": []}, actual.validation)
 
         payload = gdt_protocol.render_gdt_message(
             [("3000", "GDT-PAT-000001"), ("8402", "EKG01"),

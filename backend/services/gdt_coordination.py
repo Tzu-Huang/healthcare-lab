@@ -15,10 +15,10 @@ from backend.domain.gdt_protocol import (
     GDT_ORDER_TEST_CODE_FIELD,
     GDT_RESULT_MESSAGE_TYPE,
     GdtValidationError,
-    build_gdt_6302_request,
     parse_gdt_6310_result,
     render_gdt_message,
 )
+from backend.templates.gdt import build_gdt_6302_request
 
 
 class GdtWorkflowRepositoryPort(Protocol):
