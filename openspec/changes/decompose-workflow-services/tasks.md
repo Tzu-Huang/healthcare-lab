@@ -12,7 +12,7 @@
 - [x] 2.2 Extract focused Lab dashboard and resource/status coordination with narrow repository, client, and callback ports.
 - [x] 2.3 Extract focused Lab health and smoke-check coordination while keeping filesystem/runtime readiness and external transports in their approved owners.
 - [x] 2.4 Extract focused Lab service-operation coordination and preserve operation targeting, bulk-failure behavior, history persistence, and returned projections.
-- [ ] 2.5 Rewire Lab APIs and application composition to the focused services, preserve compatibility callers, and add mirrored focused tests.
+- [x] 2.5 Rewire Lab APIs and application composition to the focused services, preserve compatibility callers, and add mirrored focused tests.
 
 ## 3. FHIR Use Cases
 
