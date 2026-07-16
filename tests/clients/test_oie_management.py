@@ -128,22 +128,50 @@ class OieManagementClientTests(unittest.TestCase):
             verified.assert_not_called()
             self.assertEqual("local", handler.call_args.kwargs["context"])
 
+        with self.assertRaises(OieManagementError) as raised:
+            UrllibOieTransport("verified")
+        self.assertEqual(OieErrorCategory.VALIDATION, raised.exception.category)
+
+    def test_login_status_controls_local_authentication(self):
+        for status, category in (
+            ("FAIL", OieErrorCategory.AUTHENTICATION),
+            ("FAIL_EXPIRED", OieErrorCategory.AUTHENTICATION),
+            ("FAIL_LOCKED_OUT", OieErrorCategory.AUTHENTICATION),
+            ("FAIL_VERSION_MISMATCH", OieErrorCategory.UNSUPPORTED_VERSION),
+            ("UNKNOWN", OieErrorCategory.UNEXPECTED_RESPONSE),
+        ):
+            with self.subTest(status=status):
+                client, transport = client_with(Step(body={"status": status, "message": "secret-body"}))
+                with self.assertRaises(OieManagementError) as raised:
+                    client.login()
+                self.assertEqual(category, raised.exception.category)
+                self.assertEqual(1, transport.clear_count)
+                with self.assertRaises(OieManagementError) as unauthenticated:
+                    client.current_user()
+                self.assertEqual(OieErrorCategory.UNAUTHENTICATED, unauthenticated.exception.category)
+
+        client, _ = client_with(Step(body={"status": "SUCCESS_GRACE_PERIOD"}))
+        client.login()
+        self.assertIn("authenticated=True", repr(client))
+
     def test_read_operations_use_verified_paths_and_normalized_results(self):
         client, transport = client_with(
             Step(body={"status": "SUCCESS"}), Step(body={"id": "u1", "username": "admin"}),
-            Step(body={"server": "OIE"}), Step(body="4.5.2"),
+            Step(body={"jvmVersion": "17", "osName": "Linux", "dbName": "PostgreSQL"}),
+            Step(body="4.5.2"),
             Step(body=[{"id": "c1", "revision": 3}]),
             Step(body={"id": "c/1", "revision": 3}),
-            Step(body={"status": "STARTED"}), Step(body=[{"port": 6661}]),
+            Step(body={"channelId": "c/1", "state": "STARTED"}),
+            Step(body=[{"id": "c1", "name": "Source", "port": "6661"}]),
         )
         client.login()
         self.assertEqual("u1", client.current_user().identifier)
-        self.assertEqual("OIE", client.system_info().values["server"])
+        self.assertEqual("17", client.system_info().values["jvmVersion"])
         self.assertTrue(client.require_supported_version().supported)
         self.assertEqual("c1", client.list_channels().values["items"][0]["id"])
         self.assertEqual(3, client.get_channel("c/1").revision)
         self.assertEqual("STARTED", client.channel_status("c/1").status)
-        self.assertEqual(6661, client.ports_in_use().values["items"][0]["port"])
+        self.assertEqual("6661", client.ports_in_use().values["items"][0]["port"])
         paths = [item["url"].removeprefix("https://oie.test/api") for item in transport.requests]
         self.assertEqual(
             ["/users/_login", "/users/current", "/system/info", "/server/version", "/channels",
@@ -152,7 +180,8 @@ class OieManagementClientTests(unittest.TestCase):
 
     def test_mutation_shapes_preserve_safe_update_default_and_exact_primitives(self):
         client, transport = client_with(
-            Step(body={"status": "SUCCESS"}), Step(body="true"), Step(body="true"), Step(body="true"),
+            Step(body={"status": "SUCCESS"}), Step(body="4.5.2"),
+            Step(body="true"), Step(body="true"), Step(body="true"),
             Step(), Step(), Step(), Step(),
         )
         client.login()
@@ -163,7 +192,8 @@ class OieManagementClientTests(unittest.TestCase):
         client.deploy("c1")
         client.redeploy("c1")
         client.undeploy("c1")
-        requests = transport.requests[1:]
+        self.assertTrue(transport.requests[1]["url"].endswith("/server/version"))
+        requests = transport.requests[2:]
         self.assertEqual(["POST", "PUT", "PUT", "DELETE", "POST", "POST", "POST"], [r["method"] for r in requests])
         self.assertTrue(requests[1]["url"].endswith("/channels/c1?override=false"))
         self.assertTrue(requests[2]["url"].endswith("/channels/c1?override=true"))
@@ -192,12 +222,15 @@ class OieManagementClientTests(unittest.TestCase):
                 self.assertNotIn("password-canary", repr(raised.exception))
 
     def test_revision_conflict_is_not_retried_or_overridden(self):
-        client, transport = client_with(Step(body={"status": "SUCCESS"}), Step(status=409, body="secret-body"))
+        client, transport = client_with(
+            Step(body={"status": "SUCCESS"}), Step(body="4.5.2"),
+            Step(status=409, body="secret-body"),
+        )
         client.login()
         with self.assertRaises(OieManagementError) as raised:
             client.update_channel("c1", {"id": "c1"})
         self.assertEqual(OieErrorCategory.REVISION_CONFLICT, raised.exception.category)
-        self.assertEqual(2, len(transport.requests))
+        self.assertEqual(3, len(transport.requests))
         self.assertIn("override=false", transport.requests[-1]["url"])
         self.assertNotIn("secret-body", str(raised.exception))
 
@@ -210,6 +243,12 @@ class OieManagementClientTests(unittest.TestCase):
         self.assertEqual(1, len(transport.requests))
 
     def test_malformed_and_unsupported_responses_are_explicit(self):
+        malformed_login, malformed_transport = client_with(Step(body=b"not-json"))
+        with self.assertRaises(OieManagementError) as raised:
+            malformed_login.login()
+        self.assertEqual(OieErrorCategory.UNEXPECTED_RESPONSE, raised.exception.category)
+        self.assertEqual(1, malformed_transport.clear_count)
+
         client, _ = client_with(Step(body={"status": "SUCCESS"}), Step(body=b"not-json"))
         client.login()
         with self.assertRaises(OieManagementError) as raised:
@@ -222,11 +261,39 @@ class OieManagementClientTests(unittest.TestCase):
             client.require_supported_version()
         self.assertEqual(OieErrorCategory.UNSUPPORTED_VERSION, raised.exception.category)
 
+    def test_unsupported_version_blocks_mutation_request(self):
+        client, transport = client_with(
+            Step(body={"status": "SUCCESS"}), Step(body="4.6.0"),
+        )
+        client.login()
+        with self.assertRaises(OieManagementError) as raised:
+            client.create_channel({"id": "c1", "revision": 1})
+        self.assertEqual(OieErrorCategory.UNSUPPORTED_VERSION, raised.exception.category)
+        self.assertEqual(2, len(transport.requests))
+
+    def test_semantically_incomplete_success_responses_are_rejected(self):
+        cases = (
+            (lambda client: client.current_user(), {}),
+            (lambda client: client.system_info(), {"jvmVersion": "17"}),
+            (lambda client: client.get_channel("c1"), {"id": "c1"}),
+            (lambda client: client.channel_status("c1"), {"channelId": "c1"}),
+            (lambda client: client.list_channels(), [{"id": "c1"}]),
+            (lambda client: client.ports_in_use(), [{"id": "c1", "port": "6661"}]),
+        )
+        for operation, body in cases:
+            with self.subTest(operation=operation):
+                client, _ = client_with(Step(body={"status": "SUCCESS"}), Step(body=body))
+                client.login()
+                with self.assertRaises(OieManagementError) as raised:
+                    operation(client)
+                self.assertEqual(OieErrorCategory.UNEXPECTED_RESPONSE, raised.exception.category)
+
     def test_public_results_recursively_redact_and_bound_unknown_payloads(self):
         client, _ = client_with(
-            Step(body={"sessionToken": "login-token-canary"}),
+            Step(body={"status": "SUCCESS", "sessionToken": "login-token-canary"}),
             Step(body={
                 "id": "u1",
+                "username": "admin",
                 "password": "password-canary",
                 "nested": {"authorizationValue": "authorization-canary"},
                 "description": "x" * 700,
@@ -241,8 +308,8 @@ class OieManagementClientTests(unittest.TestCase):
         self.assertIn("[TRUNCATED]", public)
 
     def test_clients_are_isolated_and_close_is_idempotent(self):
-        first, first_transport = client_with(Step(body={}), Step())
-        second, second_transport = client_with(Step(body={}), Step())
+        first, first_transport = client_with(Step(body={"status": "SUCCESS"}), Step())
+        second, second_transport = client_with(Step(body={"status": "SUCCESS"}), Step())
         first.login()
         second.login()
         first.close()

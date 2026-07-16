@@ -37,6 +37,13 @@ class OieManagementContractTests(unittest.TestCase):
             self.assertEqual(OieErrorCategory.VALIDATION, raised.exception.category)
             self.assertNotIn("secret", str(raised.exception))
 
+        for invalid_mode in ("verified", "local-self-signed", "unknown", None):
+            with self.subTest(tls_mode=invalid_mode), self.assertRaises(OieManagementError) as raised:
+                OieManagementConfig(
+                    "https://oie.test", "admin", "secret", tls_mode=invalid_mode
+                )
+            self.assertEqual(OieErrorCategory.VALIDATION, raised.exception.category)
+
     def test_version_support_is_exact(self):
         self.assertTrue(classify_oie_version(" 4.5.2\n").supported)
         self.assertFalse(classify_oie_version("4.5.3").supported)
