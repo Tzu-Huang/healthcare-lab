@@ -120,7 +120,74 @@ FRONTEND_FUNCTION_PATTERN = re.compile(
 CSS_RULE_PATTERN = re.compile(r"(?:^|[{}])\s*([^@{}][^{}]*)\{", re.MULTILINE)
 CSS_FAMILY_PATTERN = re.compile(r"[.#][A-Za-z_-][\w-]*")
 FRONTEND_MODULE_PREFIX_NAME = "<module-prefix>"
+PROTECTED_SQL_TABLE_OWNERS = {
+    "local_fhir_workflow_records": "backend/repositories/fhir_ledger.py",
+    "local_fhir_sync_attempts": "backend/repositories/fhir_ledger.py",
+    "local_gdt_order_records": "backend/repositories/gdt_workflow.py",
+    "local_gdt_patient_contexts": "backend/repositories/gdt_workflow.py",
+    "local_gdt_message_records": "backend/repositories/gdt_workflow.py",
+    "local_gdt_attachment_records": "backend/repositories/gdt_workflow.py",
+    "local_gdt_workflow_events": "backend/repositories/gdt_workflow.py",
+}
 DEMO_STORE_COMPATIBILITY_DELEGATES = {
+    "create_patient_fhir_workflow_record": "protocol_composition.create_patient_fhir_record",
+    "_fhir_order_values": "protocol_compat.fhir_order_values",
+    "_clean_fhir_order_text": "protocol_compat.fhir_order_clean_text",
+    "_fhir_order_list": "protocol_compat.fhir_order_list",
+    "_fhir_reference_item": "protocol_compat.fhir_reference_item",
+    "_fhir_reference_list": "protocol_compat.fhir_reference_list",
+    "_fhir_codeable_concept": "protocol_compat.fhir_codeable_concept",
+    "_fhir_order_datetime": "protocol_compat.fhir_order_datetime",
+    "_fhir_order_storage_timestamp": "protocol_compat.fhir_order_storage_timestamp",
+    "_fhir_order_storage_priority": "protocol_compat.fhir_order_storage_priority",
+    "_validate_fhir_order_payload": "protocol_compat.validate_fhir_order_payload",
+    "_build_service_request_resource": "protocol_composition.build_service_request_resource",
+    "_synced_patient_reference_for_fhir_order": "protocol_composition.synced_fhir_patient_reference",
+    "create_fhir_order_record": "protocol_composition.create_fhir_order",
+    "create_order_service_request_fhir_workflow_record": "protocol_composition.create_order_fhir_record",
+    "_gdt_order_record_number": "protocol_compat.gdt_order_number",
+    "_gdt_patient_context_number": "protocol_compat.gdt_patient_number",
+    "_validate_gdt_patient_number": "protocol_compat.validate_gdt_override",
+    "_gdt_attachment_filename": "protocol_compat.gdt_attachment_filename",
+    "_is_url_reference": "protocol_compat.is_url_reference",
+    "_gdt_artifact_status": "protocol_compat.gdt_artifact_status",
+    "_validate_gdt_8402_code": "protocol_compat.validate_gdt_code",
+    "_validate_gdt_order_payload": "protocol_compat.normalize_gdt_payload",
+    "_gdt_birth_date": "protocol_compat.gdt_birth_date",
+    "create_gdt_order_record": "protocol_composition.create_gdt_order",
+    "list_gdt_order_records": "protocol_composition.list_gdt_order_records",
+    "get_gdt_order_record": "protocol_composition.get_gdt_order",
+    "list_gdt_messages": "protocol_composition.list_gdt_messages",
+    "list_gdt_events": "protocol_composition.list_gdt_events",
+    "list_gdt_attachments": "protocol_composition.list_gdt_attachments",
+    "record_gdt_order_export": "protocol_composition.record_gdt_export",
+    "create_gdt_demo_result": "protocol_composition.create_gdt_demo",
+    "list_gdt_workbench": "protocol_composition.build_gdt_workbench",
+    "_attachment_payloads_from_result_fields": "protocol_compat.gdt_attachment_payloads",
+    "_gdt_result_measurements": "protocol_compat.gdt_result_measurements",
+    "record_gdt_result": "protocol_composition.persist_gdt_result",
+    "_json_value": "protocol_compat.json_value",
+    "_fhir_record_number": "protocol_compat.fhir_record_number",
+    "_fhir_clean_text": "protocol_compat.fhir_clean_text",
+    "_fhir_identifier_token": "protocol_compat.fhir_identifier_token",
+    "fhir_mapping_for_resource_type": "protocol_compat.fhir_mapping_for_resource_type",
+    "list_fhir_resource_mappings": "protocol_compat.list_fhir_resource_mappings",
+    "fhir_identifier_value": "protocol_compat.fhir_identifier_value",
+    "_fhir_resource_with_identifier": "protocol_compat.fhir_resource_with_identifier",
+    "_validate_fhir_record_payload": "protocol_compat.normalize_fhir_record_payload",
+    "create_fhir_workflow_record": "protocol_composition.create_fhir_record",
+    "list_fhir_workflow_records": "protocol_composition.list_fhir_records",
+    "get_fhir_workflow_record": "protocol_composition.get_fhir_record",
+    "get_fhir_workflow_record_by_identifier": "protocol_composition.get_fhir_record_by_identifier",
+    "mark_fhir_syncing": "protocol_composition.mark_fhir_record_syncing",
+    "mark_fhir_sync_success": "protocol_composition.mark_fhir_record_success",
+    "mark_fhir_sync_failure": "protocol_composition.mark_fhir_record_failure",
+    "record_fhir_sync_attempt": "protocol_composition.create_fhir_sync_attempt",
+    "list_fhir_sync_attempts": "protocol_composition.list_fhir_record_attempts",
+    "ordered_fhir_workflow_records": "protocol_composition.order_fhir_records",
+    "_fhir_workflow_record_dict": "protocol_compat.project_fhir_workflow_record",
+    "_fhir_sync_attempt_dict": "protocol_compat.project_fhir_sync_attempt",
+    "list_gdt_orders": "protocol_composition.list_gdt_inventory",
     "get_oie_settings_profile": "self.oie_settings_repository.get",
     "update_oie_settings_profile": "self.oie_settings_repository.update",
     "list_oie_workbench": "compose_oie_workbench",
@@ -735,6 +802,49 @@ def imported_modules_from_tree(tree: ast.AST) -> set[str]:
     return modules
 
 
+def hidden_backend_import_violations(
+    relative_path: str, tree: ast.AST,
+) -> list[PlacementViolation]:
+    aliases = import_aliases_from_tree(tree)
+    path = PurePosixPath(relative_path.replace("\\", "/"))
+    violations: list[PlacementViolation] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        loader = resolve_imported_name(node.func, aliases)
+        if loader not in {"importlib.import_module", "__import__"}:
+            continue
+        module = node.args[0].value if (
+            node.args and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ) else None
+        if module is not None and not module.startswith("backend"):
+            continue
+        detail = (
+            f"Dynamic loading hides backend dependency {module!r}."
+            if module is not None
+            else "Dynamic loading uses a non-literal module and can hide backend dependencies."
+        )
+        violations.append(PlacementViolation("dependency", path, node.lineno, detail))
+    return violations
+
+
+def operational_sql_table_references(source: str) -> set[str]:
+    tree = ast.parse(source)
+    references: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+            continue
+        for table in PROTECTED_SQL_TABLE_OWNERS:
+            if re.search(
+                rf"\b(?:DELETE\s+FROM|INSERT\s+INTO|UPDATE|FROM|JOIN)\s+{re.escape(table)}\b",
+                node.value,
+                re.IGNORECASE,
+            ):
+                references.add(table)
+    return references
+
+
 def imported_modules(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     return imported_modules_from_tree(tree) | resolved_backend_imports_from_tree(
@@ -1094,6 +1204,45 @@ class ArchitectureContractTest(unittest.TestCase):
             "Layer dependency violations:\n" + "\n".join(map(str, violations)),
         )
 
+    def test_responsibility_packages_cannot_hide_backend_dependencies(self):
+        violations: list[PlacementViolation] = []
+        for package in RESPONSIBILITY_PACKAGES:
+            for path in layer_python_paths(package):
+                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+                violations.extend(
+                    hidden_backend_import_violations(
+                        path.relative_to(ROOT).as_posix(), tree,
+                    )
+                )
+        self.assertEqual(
+            [],
+            violations,
+            "Hidden dependency violations:\n" + "\n".join(map(str, violations)),
+        )
+
+    def test_hidden_backend_dependency_detection_covers_dynamic_loaders(self):
+        fixtures = (
+            "from importlib import import_module\nimport_module('backend.repositories.lab')\n",
+            "from importlib import import_module as load\nload('backend.templates.fhir')\n",
+            "import importlib\nimportlib.import_module(module_name)\n",
+            "__import__('backend.services.lab_workflow')\n",
+        )
+        for source in fixtures:
+            with self.subTest(source=source):
+                violations = hidden_backend_import_violations(
+                    "backend/services/example.py", ast.parse(source),
+                )
+                self.assertEqual(1, len(violations))
+                self.assertEqual("dependency", violations[0].category)
+
+        self.assertEqual(
+            [],
+            hidden_backend_import_violations(
+                "backend/services/example.py",
+                ast.parse("from importlib import import_module\nimport_module('decimal')\n"),
+            ),
+        )
+
     def test_only_reviewed_modules_import_compatibility_facades(self):
         actual: set[tuple[str, str]] = set()
         violations: list[PlacementViolation] = []
@@ -1257,6 +1406,42 @@ class ArchitectureContractTest(unittest.TestCase):
             ):
                 owners.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(["backend/repositories/gdt_bridge_health.py"], owners)
+
+    def test_fhir_and_gdt_operational_sql_has_one_owner_per_table(self):
+        actual_owners = {table: set() for table in PROTECTED_SQL_TABLE_OWNERS}
+        for path in BACKEND.rglob("*.py"):
+            relative_path = path.relative_to(ROOT).as_posix()
+            if relative_path == "backend/repositories/schema.py":
+                continue
+            for table in operational_sql_table_references(
+                path.read_text(encoding="utf-8")
+            ):
+                actual_owners[table].add(relative_path)
+
+        self.assertEqual(
+            {
+                table: {owner}
+                for table, owner in PROTECTED_SQL_TABLE_OWNERS.items()
+            },
+            actual_owners,
+            "Protected FHIR/GDT tables must have exactly one operational SQL owner; "
+            "schema declarations are allowed in backend/repositories/schema.py.",
+        )
+
+    def test_protected_table_sql_detection_ignores_schema_declarations(self):
+        self.assertEqual(
+            {"local_fhir_workflow_records", "local_gdt_order_records"},
+            operational_sql_table_references(
+                "FIRST = 'SELECT * FROM local_fhir_workflow_records'\n"
+                "SECOND = 'UPDATE local_gdt_order_records SET status = ?'\n"
+            ),
+        )
+        self.assertEqual(
+            set(),
+            operational_sql_table_references(
+                "SCHEMA = 'CREATE TABLE local_fhir_workflow_records (id INTEGER)'\n"
+            ),
+        )
 
     def test_configuration_does_not_import_concrete_store(self):
         path = BACKEND / "config.py"

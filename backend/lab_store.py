@@ -10,7 +10,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from backend.gdt_adapter import (
+from backend.domain.gdt_protocol import (
     GDT_DEFAULT_CHARSET_MARKER,
     GDT_DEFAULT_ENCODING,
     GDT_ORDER_MESSAGE_TYPE,
@@ -31,6 +31,11 @@ from backend.domain.errors import SimulatorValidationError
 from backend.domain import patient as patient_domain
 from backend.domain import order as order_domain
 from backend.domain import dicom as dicom_domain
+from backend.domain.fhir_ledger import (
+    FHIR_IDENTIFIER_SYSTEMS,
+    FHIR_RESOURCE_DEPENDENCY_ORDER,
+    FHIR_RESOURCE_MAPPINGS,
+)
 from backend.domain.gdt import ensure_gdt_bridge_dirs
 from backend.domain.openemr import (
     OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES,
@@ -42,6 +47,8 @@ from backend.repositories.oie import OieRepository
 from backend.repositories.enrichment import PatientEnrichmentLoader, OrderEnrichmentLoader
 from backend.repositories.identifiers import PatientIdentifierRepository
 from backend.repositories.patients import PatientRepository
+from backend.services import protocol_compatibility as protocol_compat
+from backend import protocol_composition
 from backend.repositories.orders import OrderRepository
 from backend.repositories.dcm4chee_patient_sync import (
     Dcm4cheePatientSyncRepository,
@@ -182,61 +189,6 @@ FHIR_SUPPORTED_RESOURCE_TYPES = (
     "DiagnosticReport",
     "Provenance",
 )
-FHIR_RESOURCE_DEPENDENCY_ORDER = {
-    "Patient": 10,
-    "ServiceRequest": 20,
-    "Binary": 40,
-    "Observation": 50,
-    "DocumentReference": 60,
-    "DiagnosticReport": 70,
-    "Provenance": 80,
-}
-FHIR_IDENTIFIER_SYSTEMS = {
-    "Patient": "https://healthcare-lab.local/fhir/identifier/patient",
-    "ServiceRequest": "https://healthcare-lab.local/fhir/identifier/service-request",
-    "Binary": "https://healthcare-lab.local/fhir/identifier/binary",
-    "Observation": "https://healthcare-lab.local/fhir/identifier/observation",
-    "DocumentReference": "https://healthcare-lab.local/fhir/identifier/document-reference",
-    "DiagnosticReport": "https://healthcare-lab.local/fhir/identifier/diagnostic-report",
-    "Provenance": "https://healthcare-lab.local/fhir/identifier/provenance",
-}
-FHIR_RESOURCE_MAPPINGS = {
-    "Patient": {
-        "local_source_type": "local_patient_records",
-        "depends_on": (),
-    },
-    "ServiceRequest": {
-        "local_source_type": "local_order_records",
-        "depends_on": ("Patient",),
-    },
-    "Binary": {
-        "local_source_type": "local_fhir_artifacts",
-        "depends_on": (),
-    },
-    "Observation": {
-        "local_source_type": "local_fhir_results",
-        "depends_on": ("Patient", "ServiceRequest"),
-    },
-    "DocumentReference": {
-        "local_source_type": "local_fhir_artifacts",
-        "depends_on": ("Patient", "ServiceRequest", "Binary"),
-    },
-    "DiagnosticReport": {
-        "local_source_type": "local_fhir_results",
-        "depends_on": ("Patient", "ServiceRequest", "Observation", "DocumentReference"),
-    },
-    "Provenance": {
-        "local_source_type": "local_fhir_provenance",
-        "depends_on": (
-            "Patient",
-            "ServiceRequest",
-            "Binary",
-            "Observation",
-            "DocumentReference",
-            "DiagnosticReport",
-        ),
-    },
-}
 
 DEFAULT_LAB_SERVERS = (
     {
@@ -642,17 +594,7 @@ class DemoStore:
         return self.patient_repository.get_patient_record(record_id)
 
     def create_patient_fhir_workflow_record(self, patient_record: dict[str, Any]) -> dict[str, Any]:
-        if patient_record.get("protocolVersion") != "FHIR R4":
-            raise SimulatorValidationError("Patient record is not FHIR mode.")
-        resource = self._json_value(patient_record.get("payload"), {})
-        return self.create_fhir_workflow_record(
-            {
-                "localSourceType": "local_patient_records",
-                "localSourceId": str(patient_record["id"]),
-                "resourceType": "Patient",
-                "resource": resource,
-            }
-        )
+        return protocol_composition.create_patient_fhir_record(self.database, self.patient_repository, now_iso, patient_record)
 
     def list_oie_local_adt_inventory(self) -> list[dict[str, Any]]:
         return self.list_patient_records(PATIENT_MODES["hl7-v2"]["protocol"])
@@ -771,340 +713,48 @@ class DemoStore:
 
     @staticmethod
     def _fhir_order_values(payload: dict[str, Any]) -> dict[str, Any]:
-        fhir = payload.get("fhir") if isinstance(payload.get("fhir"), dict) else payload
-        return fhir if isinstance(fhir, dict) else {}
+        return protocol_compat.fhir_order_values(payload)
 
     @staticmethod
     def _clean_fhir_order_text(value: Any) -> str:
-        return str(value or "").strip()
+        return protocol_compat.fhir_order_clean_text(value)
 
     @staticmethod
     def _fhir_order_list(value: Any) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, list | tuple):
-            raw_items = value
-        else:
-            raw_items = str(value).replace(",", "\n").splitlines()
-        return [str(item or "").strip() for item in raw_items if str(item or "").strip()]
+        return protocol_compat.fhir_order_list(value)
 
     @staticmethod
     def _fhir_reference_item(value: str, field_name: str) -> dict[str, str]:
-        text = value.strip()
-        if not text:
-            return {}
-        if "/" not in text:
-            raise SimulatorValidationError(f"FHIR Order {field_name} must be a FHIR reference like Resource/id.")
-        return {"reference": text}
+        return protocol_compat.fhir_reference_item(value, field_name)
 
     @classmethod
     def _fhir_reference_list(cls, value: Any, field_name: str) -> list[dict[str, str]]:
-        return [
-            reference
-            for reference in (
-                cls._fhir_reference_item(item, field_name)
-                for item in cls._fhir_order_list(value)
-            )
-            if reference
-        ]
+        return protocol_compat.fhir_reference_list(value, field_name)
 
     @classmethod
-    def _fhir_codeable_concept(
-        cls,
-        *,
-        text: Any = "",
-        code: Any = "",
-        system: Any = "",
-        display: Any = "",
-    ) -> dict[str, Any]:
-        concept: dict[str, Any] = {}
-        text_value = cls._clean_fhir_order_text(text)
-        code_value = cls._clean_fhir_order_text(code)
-        system_value = cls._clean_fhir_order_text(system)
-        display_value = cls._clean_fhir_order_text(display)
-        if text_value:
-            concept["text"] = text_value
-        if code_value or system_value or display_value:
-            coding: dict[str, str] = {}
-            if system_value:
-                coding["system"] = system_value
-            if code_value:
-                coding["code"] = code_value
-            if display_value:
-                coding["display"] = display_value
-            concept["coding"] = [coding]
-            if not concept.get("text"):
-                concept["text"] = display_value or code_value
-        return concept
+    def _fhir_codeable_concept(cls, *, text: Any = "", code: Any = "", system: Any = "", display: Any = "") -> dict[str, Any]:
+        return protocol_compat.fhir_codeable_concept(text=text, code=code, system=system, display=display)
 
     @staticmethod
     def _fhir_order_datetime(value: Any, fallback: str = "") -> str:
-        text = str(value or "").strip()
-        if not text:
-            return fallback
-        if "T" in text:
-            match = re.match(
-                r"^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$",
-                text,
-            )
-            if not match:
-                return text
-            date_part, hour, minute, second, fraction, offset = match.groups()
-            normalized = f"{date_part}T{hour}:{minute}:{second or '00'}{fraction or ''}"
-            if offset:
-                if offset != "Z" and ":" not in offset:
-                    offset = f"{offset[:3]}:{offset[3:]}"
-                return f"{normalized}{offset}"
-            local_offset = datetime.now().astimezone().strftime("%z")
-            return f"{normalized}{local_offset[:3]}:{local_offset[3:]}"
-        digits = "".join(character for character in text if character.isdigit())
-        if len(digits) == 8:
-            return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
-        if len(digits) >= 12:
-            base = f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}T{digits[8:10]}:{digits[10:12]}"
-            if len(digits) >= 14:
-                base = f"{base}:{digits[12:14]}"
-            else:
-                base = f"{base}:00"
-            local_offset = datetime.now().astimezone().strftime("%z")
-            return f"{base}{local_offset[:3]}:{local_offset[3:]}"
-        return text
+        return protocol_compat.fhir_order_datetime(value, fallback)
 
     @staticmethod
     def _fhir_order_storage_timestamp(value: Any) -> str:
-        text = str(value or "").strip()
-        digits = "".join(character for character in text if character.isdigit())
-        if len(digits) >= 14:
-            return digits[:14]
-        if len(digits) >= 12:
-            return digits[:12]
-        if len(digits) >= 8:
-            return digits[:8]
-        return hl7_timestamp()
+        return protocol_compat.fhir_order_storage_timestamp(value, hl7_timestamp)
 
     @staticmethod
     def _fhir_order_storage_priority(value: Any) -> str:
-        normalized = str(value or FHIR_ORDER_DEFAULT_PRIORITY).strip().lower()
-        return {
-            "routine": "R",
-            "stat": "S",
-            "asap": "A",
-            "urgent": "A",
-        }.get(normalized, "R")
+        return protocol_compat.fhir_order_storage_priority(value)
 
     @classmethod
     def _validate_fhir_order_payload(cls, payload: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(payload, dict):
-            raise SimulatorValidationError("FHIR Order payload must be a JSON object.")
-        try:
-            patient_record_id = int(payload.get("patientRecordId"))
-        except (TypeError, ValueError) as exc:
-            raise SimulatorValidationError("FHIR Order patientRecordId is required.") from exc
-        fhir = cls._fhir_order_values(payload)
-        status = cls._clean_fhir_order_text(fhir.get("status") or FHIR_ORDER_DEFAULT_STATUS)
-        intent = cls._clean_fhir_order_text(fhir.get("intent") or FHIR_ORDER_DEFAULT_INTENT)
-        if not status:
-            raise SimulatorValidationError("FHIR Order status is required.")
-        if not intent:
-            raise SimulatorValidationError("FHIR Order intent is required.")
-        priority = cls._clean_fhir_order_text(fhir.get("priority") or FHIR_ORDER_DEFAULT_PRIORITY)
-        occurrence = cls._fhir_order_datetime(fhir.get("occurrenceDateTime") or payload.get("requestedAt"))
-        authored_on = cls._fhir_order_datetime(fhir.get("authoredOn"), fallback=now_iso())
-        requested_at = cls._fhir_order_storage_timestamp(occurrence or authored_on)
-        order_code = cls._clean_fhir_order_text(
-            fhir.get("codeCode") or fhir.get("code") or payload.get("orderCode") or ORDER_DEFAULT_CODE
-        )
-        order_text = cls._clean_fhir_order_text(
-            fhir.get("codeDisplay") or payload.get("orderCodeText") or ORDER_DEFAULT_TEXT
-        )
-        return {
-            "patient_record_id": patient_record_id,
-            "status": status,
-            "intent": intent,
-            "priority": priority,
-            "requested_at": requested_at,
-            "ordering_provider": cls._clean_fhir_order_text(
-                fhir.get("requester") or payload.get("orderingProvider") or ORDER_DEFAULT_PROVIDER
-            ),
-            "clinical_indication": cls._clean_fhir_order_text(
-                fhir.get("reasonCodeText") or payload.get("clinicalIndication")
-            ),
-            "order_code": order_code or ORDER_DEFAULT_CODE,
-            "order_code_text": order_text or ORDER_DEFAULT_TEXT,
-            "alternate_code": cls._clean_fhir_order_text(
-                fhir.get("alternateCode") or payload.get("alternateCode") or ORDER_DEFAULT_ALT_CODE
-            ),
-            "alternate_code_text": cls._clean_fhir_order_text(
-                fhir.get("alternateCodeText") or payload.get("alternateCodeText") or ORDER_DEFAULT_ALT_TEXT
-            ),
-            "alternate_code_system": cls._clean_fhir_order_text(
-                fhir.get("alternateCodeSystem") or payload.get("alternateCodeSystem") or ORDER_DEFAULT_ALT_SYSTEM
-            ),
-            "fhir": dict(fhir),
-            "occurrence": occurrence,
-            "authored_on": authored_on,
-        }
+        return protocol_compat.validate_fhir_order_payload(payload, timestamp_factory=now_iso, storage_timestamp_factory=hl7_timestamp)
 
 
     @classmethod
-    def _build_service_request_resource(
-        cls,
-        values: dict[str, Any],
-        *,
-        record_id: int,
-        local_order_number: str,
-        patient_reference: str,
-    ) -> dict[str, Any]:
-        fhir = values.get("fhir") or {}
-        resource: dict[str, Any] = {
-            "resourceType": "ServiceRequest",
-            "status": values["status"],
-            "intent": values["intent"],
-            "subject": {"reference": patient_reference},
-        }
-        explicit_id = cls._clean_fhir_order_text(fhir.get("id") or fhir.get("serviceRequestId"))
-        if explicit_id:
-            resource["id"] = explicit_id
-
-        identifier_system = cls._clean_fhir_order_text(
-            fhir.get("identifierSystem") or FHIR_IDENTIFIER_SYSTEMS["ServiceRequest"]
-        )
-        identifier_value = cls._clean_fhir_order_text(
-            fhir.get("identifierValue") or cls.fhir_identifier_value(
-                "ServiceRequest",
-                "local_order_records",
-                record_id,
-            )
-        )
-        resource["identifier"] = [{"system": identifier_system, "value": identifier_value}]
-        for item in cls._fhir_order_list(fhir.get("identifier")):
-            if "|" in item:
-                system, value = item.split("|", 1)
-                resource["identifier"].append({"system": system.strip(), "value": value.strip()})
-            else:
-                resource["identifier"].append({"value": item})
-
-        instantiates_canonical = cls._fhir_order_list(fhir.get("instantiatesCanonical"))
-        if instantiates_canonical:
-            resource["instantiatesCanonical"] = instantiates_canonical
-        instantiates_uri = cls._fhir_order_list(fhir.get("instantiatesUri"))
-        if instantiates_uri:
-            resource["instantiatesUri"] = instantiates_uri
-        for key, field_name in (
-            ("basedOn", "basedOn"),
-            ("replaces", "replaces"),
-            ("reasonReference", "reasonReference"),
-            ("insurance", "insurance"),
-            ("supportingInfo", "supportingInfo"),
-            ("specimen", "specimen"),
-            ("relevantHistory", "relevantHistory"),
-        ):
-            references = cls._fhir_reference_list(fhir.get(key), field_name)
-            if references:
-                resource[key] = references
-
-        requisition_system = cls._clean_fhir_order_text(fhir.get("requisitionSystem"))
-        requisition_value = cls._clean_fhir_order_text(fhir.get("requisitionValue"))
-        if requisition_system or requisition_value:
-            resource["requisition"] = {
-                key: value
-                for key, value in {
-                    "system": requisition_system,
-                    "value": requisition_value or local_order_number,
-                }.items()
-                if value
-            }
-
-        category = cls._fhir_codeable_concept(text=fhir.get("category") or FHIR_ORDER_DEFAULT_CATEGORY)
-        if category:
-            resource["category"] = [category]
-        if values["priority"]:
-            resource["priority"] = values["priority"]
-        if "doNotPerform" in fhir:
-            resource["doNotPerform"] = bool(fhir.get("doNotPerform"))
-
-        code = cls._fhir_codeable_concept(
-            text=fhir.get("codeText") or values["order_code_text"],
-            code=fhir.get("codeCode") or values["order_code"],
-            system=fhir.get("codeSystem") or "urn:healthcare-lab:service-code",
-            display=fhir.get("codeDisplay") or values["order_code_text"],
-        )
-        if values.get("alternate_code"):
-            coding = code.setdefault("coding", [])
-            coding.append(
-                {
-                    key: value
-                    for key, value in {
-                        "system": values.get("alternate_code_system"),
-                        "code": values.get("alternate_code"),
-                        "display": values.get("alternate_code_text"),
-                    }.items()
-                    if value
-                }
-            )
-        resource["code"] = code
-
-        order_detail = cls._fhir_codeable_concept(text=fhir.get("orderDetail"))
-        if order_detail:
-            resource["orderDetail"] = [order_detail]
-        quantity_value = cls._clean_fhir_order_text(fhir.get("quantityValue"))
-        quantity_unit = cls._clean_fhir_order_text(fhir.get("quantityUnit"))
-        if quantity_value or quantity_unit:
-            quantity: dict[str, Any] = {}
-            if quantity_value:
-                try:
-                    quantity["value"] = float(quantity_value)
-                except ValueError:
-                    raise SimulatorValidationError("FHIR Order quantity value must be numeric.")
-            if quantity_unit:
-                quantity["unit"] = quantity_unit
-            resource["quantityQuantity"] = quantity
-
-        encounter = cls._clean_fhir_order_text(fhir.get("encounter"))
-        if encounter:
-            resource["encounter"] = cls._fhir_reference_item(encounter, "encounter")
-        if values.get("occurrence"):
-            resource["occurrenceDateTime"] = values["occurrence"]
-        if "asNeededBoolean" in fhir:
-            resource["asNeededBoolean"] = bool(fhir.get("asNeededBoolean"))
-        as_needed = cls._fhir_codeable_concept(text=fhir.get("asNeededCodeText"))
-        if as_needed:
-            resource["asNeededCodeableConcept"] = as_needed
-        if values.get("authored_on"):
-            resource["authoredOn"] = values["authored_on"]
-
-        requester = cls._clean_fhir_order_text(fhir.get("requester") or values["ordering_provider"])
-        if requester:
-            resource["requester"] = (
-                cls._fhir_reference_item(requester, "requester")
-                if "/" in requester
-                else {"display": requester}
-            )
-        performer_type = cls._fhir_codeable_concept(text=fhir.get("performerType"))
-        if performer_type:
-            resource["performerType"] = performer_type
-        performer = cls._fhir_reference_list(fhir.get("performer"), "performer")
-        if performer:
-            resource["performer"] = performer
-        location_code = cls._fhir_codeable_concept(text=fhir.get("locationCode"))
-        if location_code:
-            resource["locationCode"] = [location_code]
-        location_reference = cls._fhir_reference_list(fhir.get("locationReference"), "locationReference")
-        if location_reference:
-            resource["locationReference"] = location_reference
-        reason_code = cls._fhir_codeable_concept(text=fhir.get("reasonCodeText") or values["clinical_indication"])
-        if reason_code:
-            resource["reasonCode"] = [reason_code]
-        body_site = cls._fhir_codeable_concept(text=fhir.get("bodySite"))
-        if body_site:
-            resource["bodySite"] = [body_site]
-        note = cls._clean_fhir_order_text(fhir.get("note"))
-        if note:
-            resource["note"] = [{"text": note}]
-        patient_instruction = cls._clean_fhir_order_text(fhir.get("patientInstruction"))
-        if patient_instruction:
-            resource["patientInstruction"] = patient_instruction
-        return resource
+    def _build_service_request_resource(cls, values: dict[str, Any], *, record_id: int, local_order_number: str, patient_reference: str) -> dict[str, Any]:
+        return protocol_composition.build_service_request_resource(values, record_id=record_id, local_order_number=local_order_number, patient_reference=patient_reference)
 
     def create_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.order_repository.create_order_record(payload)
@@ -1263,120 +913,13 @@ class DemoStore:
         return self.dcm4chee_mwl_repository.update_dcm4chee_mwl_verification_result(*args, **kwargs)
 
     def _synced_patient_reference_for_fhir_order(self, patient_record_id: int) -> str:
-        patient = self.get_patient_record(patient_record_id)
-        fhir = patient.get("fhir") or {}
-        sync_status = (fhir.get("sync") or {}).get("status")
-        reference = str((fhir.get("medplum") or {}).get("reference") or "").strip()
-        if (
-            patient.get("protocolVersion") != "FHIR R4"
-            or sync_status != FHIR_SYNC_STATUS_SYNCED
-            or not reference.startswith("Patient/")
-        ):
-            raise SimulatorValidationError(
-                "FHIR Order requires a selected Patient with synced Medplum Patient/<id> reference."
-            )
-        return reference
+        return protocol_composition.synced_fhir_patient_reference(self.database, self.patient_repository, self.order_repository, now_iso, hl7_timestamp, patient_record_id)
 
     def create_fhir_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
-        values = self._validate_fhir_order_payload(payload)
-        patient_reference = self._synced_patient_reference_for_fhir_order(values["patient_record_id"])
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            patient_row = connection.execute(
-                "SELECT * FROM local_patient_records WHERE id = ?",
-                (values["patient_record_id"],),
-            ).fetchone()
-            if not patient_row:
-                raise KeyError(values["patient_record_id"])
-            cursor = connection.execute(
-                """
-                INSERT INTO local_order_records (
-                    local_order_number, patient_record_id, protocol_version, message_type,
-                    order_status, mrn, first_name, last_name, middle_name, dob, sex,
-                    visit_id, patient_class, assigned_location, account_number,
-                    placer_order_number, filler_order_number, priority, requested_at,
-                    ordering_provider, clinical_indication, order_code, order_code_text,
-                    alternate_code, alternate_code_text, alternate_code_system,
-                    validation_status, validation_messages_json, payload_hl7,
-                    created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    "",
-                    values["patient_record_id"],
-                    FHIR_ORDER_PROTOCOL_VERSION,
-                    FHIR_ORDER_MESSAGE_TYPE,
-                    FHIR_ORDER_STATUS_CREATED,
-                    patient_row["mrn"],
-                    patient_row["first_name"],
-                    patient_row["last_name"],
-                    patient_row["middle_name"],
-                    patient_row["dob"],
-                    patient_row["sex"],
-                    patient_row["visit_number"],
-                    patient_row["patient_class"],
-                    patient_row["assigned_location"],
-                    patient_row["account_number"],
-                    "",
-                    "",
-                    self._fhir_order_storage_priority(values["priority"]),
-                    values["requested_at"],
-                    values["ordering_provider"],
-                    values["clinical_indication"],
-                    values["order_code"],
-                    values["order_code_text"],
-                    values["alternate_code"],
-                    values["alternate_code_text"],
-                    values["alternate_code_system"],
-                    "valid",
-                    "[]",
-                    "",
-                    timestamp,
-                    timestamp,
-                ),
-            )
-            record_id = int(cursor.lastrowid)
-            local_order_number = self._order_record_number(record_id)
-            visit_id = patient_row["visit_number"] or self._order_visit_id(record_id)
-            account_number = patient_row["account_number"] or self._order_account_number(record_id)
-            resource = self._build_service_request_resource(
-                values,
-                record_id=record_id,
-                local_order_number=local_order_number,
-                patient_reference=patient_reference,
-            )
-            connection.execute(
-                """
-                UPDATE local_order_records
-                SET local_order_number = ?, placer_order_number = ?, visit_id = ?,
-                    account_number = ?, payload_hl7 = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    local_order_number,
-                    local_order_number,
-                    visit_id,
-                    account_number,
-                    json.dumps(resource, indent=2, sort_keys=True),
-                    timestamp,
-                    record_id,
-                ),
-            )
-        return self.get_order_record(record_id)
+        return protocol_composition.create_fhir_order(self.database, self.patient_repository, self.order_repository, now_iso, hl7_timestamp, payload)
 
     def create_order_service_request_fhir_workflow_record(self, order: dict[str, Any]) -> dict[str, Any]:
-        if order.get("protocolVersion") != FHIR_ORDER_PROTOCOL_VERSION:
-            raise SimulatorValidationError("Order record is not FHIR mode.")
-        resource = self._json_value(order.get("payload"), {})
-        return self.create_fhir_workflow_record(
-            {
-                "localSourceType": "local_order_records",
-                "localSourceId": str(order["id"]),
-                "resourceType": "ServiceRequest",
-                "resource": resource,
-            }
-        )
+        return protocol_composition.create_order_fhir_record(self.database, self.patient_repository, self.order_repository, now_iso, hl7_timestamp, order)
 
     def list_order_records(self, protocol_version: str = "") -> list[dict[str, Any]]:
         return self.order_repository.list_order_records(protocol_version)
@@ -1410,932 +953,82 @@ class DemoStore:
 
     @staticmethod
     def _gdt_order_record_number(record_id: int) -> str:
-        return f"GDT-ORD-{record_id:06d}"
+        return protocol_compat.gdt_order_number(record_id)
 
     @staticmethod
     def _gdt_patient_context_number(patient_record_id: int) -> str:
-        return f"GDT-PAT-{patient_record_id:06d}"
+        return protocol_compat.gdt_patient_number(patient_record_id)
 
     @staticmethod
     def _validate_gdt_patient_number(value: Any, field_name: str = "gdtPatientNumber") -> str:
-        text = str(value or "").strip()
-        if not text:
-            return ""
-        if len(text) > 64:
-            raise SimulatorValidationError(f"{field_name} must be 64 characters or fewer.")
-        if any(character in text for character in "\r\n"):
-            raise SimulatorValidationError(f"{field_name} cannot contain line breaks.")
-        _encode_gdt_text(text)
-        return text
+        return protocol_compat.validate_gdt_override(value, field_name)
 
-    @staticmethod
-    def _gdt_patient_snapshot(patient_row: sqlite3.Row, gdt_patient_number: str) -> dict[str, Any]:
-        return {
-            "patientRecordId": patient_row["id"],
-            "mrn": patient_row["mrn"],
-            "gdtPatientNumber": gdt_patient_number,
-            "firstName": patient_row["first_name"],
-            "middleName": patient_row["middle_name"],
-            "lastName": patient_row["last_name"],
-            "dob": patient_row["dob"],
-            "sex": patient_row["sex"],
-            "visitNumber": patient_row["visit_number"],
-        }
 
     @staticmethod
     def _gdt_attachment_filename(url: str, path: str = "") -> str:
-        source = path or url
-        return source.rstrip("/").replace("\\", "/").split("/")[-1] if source else ""
+        return protocol_compat.gdt_attachment_filename(url, path)
 
     @staticmethod
     def _is_url_reference(value: str) -> bool:
-        return value.lower().startswith(("http://", "https://"))
+        return protocol_compat.is_url_reference(value)
 
     @staticmethod
     def _gdt_artifact_status(reference: str, bridge_root: str = "") -> tuple[str, dict[str, Any]]:
-        normalized = str(reference or "").strip()
-        if not normalized:
-            return "missing-reference", {"warning": "Artifact reference is empty."}
-        if DemoStore._is_url_reference(normalized):
-            return "reference-only", {"kind": "url"}
-        reference_path = Path(normalized)
-        candidates = [reference_path]
-        if bridge_root and not reference_path.is_absolute():
-            root = Path(bridge_root)
-            candidates.extend([root / normalized, root / "reports" / normalized])
-        if any(candidate.exists() for candidate in candidates):
-            return "available", {"kind": "path"}
-        return "warning", {"warning": "Referenced artifact target was not found.", "reference": normalized}
+        return protocol_compat.gdt_artifact_status(reference, bridge_root)
 
-    def _record_gdt_event(
-        self,
-        connection: sqlite3.Connection,
-        *,
-        event_type: str,
-        timestamp: str,
-        order_record_id: int | None = None,
-        patient_context_id: int | None = None,
-        message_record_id: int | None = None,
-        attachment_record_id: int | None = None,
-        actor: str = "",
-        details: dict[str, Any] | None = None,
-    ) -> int:
-        cursor = connection.execute(
-            """
-            INSERT INTO local_gdt_workflow_events (
-                order_record_id, patient_context_id, message_record_id,
-                attachment_record_id, event_type, actor, details_json, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                order_record_id,
-                patient_context_id,
-                message_record_id,
-                attachment_record_id,
-                event_type,
-                actor,
-                json.dumps(details or {}, sort_keys=True),
-                timestamp,
-            ),
-        )
-        return int(cursor.lastrowid)
 
-    def _ensure_gdt_patient_context(
-        self,
-        connection: sqlite3.Connection,
-        patient_row: sqlite3.Row,
-        *,
-        override: str = "",
-        timestamp: str,
-    ) -> sqlite3.Row:
-        context = connection.execute(
-            """
-            SELECT * FROM local_gdt_patient_contexts
-            WHERE patient_record_id = ?
-            """,
-            (patient_row["id"],),
-        ).fetchone()
-        generated = self._gdt_patient_context_number(int(patient_row["id"]))
-        override = self._validate_gdt_patient_number(override, "gdtPatientNumberOverride")
-        effective = override or generated
-        patient_snapshot_json = json.dumps(
-            self._gdt_patient_snapshot(patient_row, effective),
-            sort_keys=True,
-        )
-        if not context:
-            try:
-                cursor = connection.execute(
-                    """
-                    INSERT INTO local_gdt_patient_contexts (
-                        patient_record_id, generated_gdt_patient_number,
-                        gdt_patient_number_override, effective_gdt_patient_number,
-                        patient_snapshot_json, created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        patient_row["id"],
-                        generated,
-                        override,
-                        effective,
-                        patient_snapshot_json,
-                        timestamp,
-                        timestamp,
-                    ),
-                )
-            except sqlite3.IntegrityError as exc:
-                raise SimulatorValidationError("GDT patient number must be unique.") from exc
-            context_id = int(cursor.lastrowid)
-            self._record_gdt_event(
-                connection,
-                event_type="patient-number-generated",
-                patient_context_id=context_id,
-                timestamp=timestamp,
-                details={"generatedGdtPatientNumber": generated},
-            )
-            if override:
-                self._record_gdt_event(
-                    connection,
-                    event_type="patient-number-overridden",
-                    patient_context_id=context_id,
-                    timestamp=timestamp,
-                    details={
-                        "generatedGdtPatientNumber": generated,
-                        "effectiveGdtPatientNumber": effective,
-                    },
-                )
-        elif override and override != context["gdt_patient_number_override"]:
-            try:
-                connection.execute(
-                    """
-                    UPDATE local_gdt_patient_contexts
-                    SET gdt_patient_number_override = ?,
-                        effective_gdt_patient_number = ?,
-                        patient_snapshot_json = ?,
-                        updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (override, effective, patient_snapshot_json, timestamp, context["id"]),
-                )
-            except sqlite3.IntegrityError as exc:
-                raise SimulatorValidationError("GDT patient number must be unique.") from exc
-            self._record_gdt_event(
-                connection,
-                event_type="patient-number-overridden",
-                patient_context_id=context["id"],
-                timestamp=timestamp,
-                details={
-                    "previousGdtPatientNumber": context["effective_gdt_patient_number"],
-                    "effectiveGdtPatientNumber": effective,
-                },
-            )
-        else:
-            effective = context["effective_gdt_patient_number"]
-            patient_snapshot_json = json.dumps(
-                self._gdt_patient_snapshot(patient_row, effective),
-                sort_keys=True,
-            )
-            connection.execute(
-                """
-                UPDATE local_gdt_patient_contexts
-                SET patient_snapshot_json = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (patient_snapshot_json, timestamp, context["id"]),
-            )
-        return connection.execute(
-            """
-            SELECT * FROM local_gdt_patient_contexts
-            WHERE patient_record_id = ?
-            """,
-            (patient_row["id"],),
-        ).fetchone()
 
-    def _create_gdt_message_record(
-        self,
-        connection: sqlite3.Connection,
-        *,
-        order_record_id: int | None,
-        patient_context_id: int | None,
-        direction: str,
-        raw_gdt_text: str,
-        canonical: dict[str, Any],
-        timestamp: str,
-        match_status: str = "",
-        error_text: str = "",
-    ) -> int:
-        parsed_fields = parse_gdt_message(raw_gdt_text)
-        message_type = first_gdt_field(parsed_fields, "8000")
-        cursor = connection.execute(
-            """
-            INSERT INTO local_gdt_message_records (
-                order_record_id, patient_context_id, direction, message_type,
-                raw_gdt_text, parsed_fields_json, canonical_json, parse_status,
-                match_status, error_text, generated_at, received_at,
-                created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'accepted', ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                order_record_id,
-                patient_context_id,
-                direction,
-                message_type,
-                raw_gdt_text,
-                json.dumps(parsed_fields, sort_keys=True),
-                json.dumps(canonical, sort_keys=True),
-                match_status,
-                error_text,
-                timestamp if direction == "outbound" else "",
-                timestamp if direction == "inbound" else "",
-                timestamp,
-                timestamp,
-            ),
-        )
-        return int(cursor.lastrowid)
 
-    def _create_gdt_attachment_record(
-        self,
-        connection: sqlite3.Connection,
-        *,
-        order_record_id: int | None,
-        message_record_id: int | None,
-        role: str,
-        timestamp: str,
-        url: str = "",
-        path: str = "",
-        reference: str = "",
-        content_type: str = "",
-        description: str = "",
-        source_file: str = "",
-        status: str = "",
-        details: dict[str, Any] | None = None,
-        filename: str = "",
-        checksum: str = "",
-    ) -> int:
-        normalized_role = self._clean_order_text(role, "attachment role") or "other"
-        normalized_url = self._clean_order_text(url, "attachment url")
-        normalized_path = self._clean_order_text(path, "attachment path")
-        normalized_reference = self._clean_order_text(reference, "attachment reference") or normalized_url or normalized_path
-        normalized_filename = self._clean_order_text(filename, "attachment filename") or self._gdt_attachment_filename(
-            normalized_url,
-            normalized_path or normalized_reference,
-        )
-        cursor = connection.execute(
-            """
-            INSERT INTO local_gdt_attachment_records (
-                order_record_id, message_record_id, role, url, path, reference,
-                content_type, description, source_file, status, details_json,
-                filename, checksum, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                order_record_id,
-                message_record_id,
-                normalized_role,
-                normalized_url,
-                normalized_path,
-                normalized_reference,
-                self._clean_order_text(content_type, "attachment contentType"),
-                self._clean_order_text(description, "attachment description"),
-                self._clean_order_text(source_file, "attachment sourceFile"),
-                self._clean_order_text(status, "attachment status"),
-                json.dumps(details or {}, sort_keys=True),
-                normalized_filename,
-                self._clean_order_text(checksum, "attachment checksum"),
-                timestamp,
-                timestamp,
-            ),
-        )
-        attachment_id = int(cursor.lastrowid)
-        self._record_gdt_event(
-            connection,
-            event_type="attachment-registered",
-            order_record_id=order_record_id,
-            message_record_id=message_record_id,
-            attachment_record_id=attachment_id,
-            timestamp=timestamp,
-            details={
-                "role": normalized_role,
-                "filename": normalized_filename,
-                "status": self._clean_order_text(status, "attachment status"),
-            },
-        )
-        return attachment_id
 
     @staticmethod
     def _validate_gdt_8402_code(value: Any) -> str:
-        normalized = str(value or GDT_ORDER_TEST_CODE).strip().upper()
-        if normalized != GDT_ORDER_TEST_CODE:
-            raise SimulatorValidationError(
-                f"GDT ECG order MVP only supports {GDT_ORDER_TEST_CODE_FIELD}={GDT_ORDER_TEST_CODE}."
-            )
-        prefix = normalized[:-2]
-        suffix = normalized[-2:]
-        if (
-            not 1 <= len(normalized) <= 6
-            or not prefix.isalpha()
-            or not prefix.isupper()
-            or len(prefix) > 4
-            or not suffix.isdigit()
-        ):
-            raise SimulatorValidationError(
-                "GDT 8402 test code must use up to four uppercase letters followed by two digits."
-            )
-        return normalized
+        return protocol_compat.validate_gdt_code(value)
 
     def _validate_gdt_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(payload, dict):
-            raise SimulatorValidationError("GDT order payload must be a JSON object.")
-        try:
-            patient_record_id = int(payload.get("patientRecordId"))
-        except (TypeError, ValueError) as exc:
-            raise SimulatorValidationError("GDT order patientRecordId is required.") from exc
-        return {
-            "patient_record_id": patient_record_id,
-            "requested_at": self._normalize_requested_at(payload.get("requestedAt")),
-            "ordering_provider": self._clean_order_text(payload.get("orderingProvider"), "orderingProvider"),
-            "clinical_indication": self._clean_order_text(payload.get("clinicalIndication"), "clinicalIndication"),
-            "attachment_url": self._clean_order_text(payload.get("attachmentUrl"), "attachmentUrl"),
-            "gdt_patient_number_override": self._validate_gdt_patient_number(
-                payload.get(
-                    "gdtPatientNumberOverride",
-                    payload.get("gdtPatientNumber", payload.get("patientNumberOverride", "")),
-                ),
-                "gdtPatientNumberOverride",
-            ),
-            "gdt_test_code": self._validate_gdt_8402_code(
-                payload.get("gdtTestCode", payload.get("testCode", payload.get("examCode", GDT_ORDER_TEST_CODE)))
-            ),
-        }
+        return protocol_compat.normalize_gdt_payload(payload, requested_at_factory=hl7_timestamp)
 
     @staticmethod
     def _gdt_birth_date(dob: str) -> str:
-        return f"{dob[6:]}{dob[4:6]}{dob[:4]}"
+        return protocol_compat.gdt_birth_date(dob)
 
-    @staticmethod
-    def _build_gdt_order_payload(
-        values: dict[str, Any],
-        patient_row: sqlite3.Row,
-        *,
-        record_id: int,
-    ) -> str:
-        order_number = values.get("local_gdt_order_number") or DemoStore._gdt_order_record_number(record_id)
-        try:
-            return build_gdt_6302_request(
-                {
-                    "gdtPatientNumber": values["gdt_patient_number"],
-                    "lastName": patient_row["last_name"],
-                    "firstName": patient_row["first_name"],
-                    "birthDate": DemoStore._gdt_birth_date(patient_row["dob"]),
-                    "localGdtOrderNumber": order_number,
-                    "sex": GDT_PATIENT_SEX_CODES.get(patient_row["sex"], ""),
-                    "requestedAt": values.get("requested_at", ""),
-                    "orderingProvider": values.get("ordering_provider", ""),
-                    "clinicalIndication": values.get("clinical_indication", ""),
-                    "patient": DemoStore._gdt_patient_snapshot(patient_row, values["gdt_patient_number"]),
-                    "order": {"localGdtOrderNumber": order_number},
-                    "testLabel": GDT_ORDER_TEST_LABEL,
-                }
-            ).raw_gdt_text
-        except GdtValidationError as exc:
-            raise SimulatorValidationError(str(exc)) from exc
 
     def create_gdt_order_record(self, payload: dict[str, Any]) -> dict[str, Any]:
-        values = self._validate_gdt_order_payload(payload)
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            patient_row = connection.execute(
-                "SELECT * FROM local_patient_records WHERE id = ?",
-                (values["patient_record_id"],),
-            ).fetchone()
-            if not patient_row:
-                raise KeyError(values["patient_record_id"])
-            patient_context = self._ensure_gdt_patient_context(
-                connection,
-                patient_row,
-                override=values["gdt_patient_number_override"],
-                timestamp=timestamp,
-            )
-            gdt_patient_number = patient_context["effective_gdt_patient_number"]
-            patient_snapshot = self._gdt_patient_snapshot(patient_row, gdt_patient_number)
-            order_snapshot = {
-                "requestedAt": values["requested_at"],
-                "orderingProvider": values["ordering_provider"],
-                "clinicalIndication": values["clinical_indication"],
-                "gdtTestField": GDT_ORDER_TEST_CODE_FIELD,
-                "gdtTestCode": values["gdt_test_code"],
-                "gdtTestLabel": GDT_ORDER_TEST_LABEL,
-            }
-            cursor = connection.execute(
-                """
-                INSERT INTO local_gdt_order_records (
-                    local_gdt_order_number, patient_record_id, gdt_patient_context_id,
-                    protocol_version, message_type, order_status, mrn,
-                    gdt_patient_number, first_name, last_name, middle_name, dob,
-                    sex, visit_number, gdt_test_code,
-                    gdt_test_label, requested_at, ordering_provider,
-                    clinical_indication, attachment_url, payload_gdt,
-                    patient_snapshot_json, order_snapshot_json,
-                    created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    "",
-                    values["patient_record_id"],
-                    patient_context["id"],
-                    GDT_ORDER_PROTOCOL_VERSION,
-                    GDT_ORDER_MESSAGE_TYPE,
-                    GDT_ORDER_STATUS_CREATED,
-                    patient_row["mrn"],
-                    gdt_patient_number,
-                    patient_row["first_name"],
-                    patient_row["last_name"],
-                    patient_row["middle_name"],
-                    patient_row["dob"],
-                    patient_row["sex"],
-                    patient_row["visit_number"],
-                    values["gdt_test_code"],
-                    GDT_ORDER_TEST_LABEL,
-                    values["requested_at"],
-                    values["ordering_provider"],
-                    values["clinical_indication"],
-                    values["attachment_url"],
-                    "",
-                    json.dumps(patient_snapshot, sort_keys=True),
-                    json.dumps(order_snapshot, sort_keys=True),
-                    timestamp,
-                    timestamp,
-                ),
-            )
-            record_id = int(cursor.lastrowid)
-            local_gdt_order_number = self._gdt_order_record_number(record_id)
-            order_snapshot = {**order_snapshot, "localGdtOrderNumber": local_gdt_order_number}
-            try:
-                adapter_result = build_gdt_6302_request(
-                    {
-                        "gdtPatientNumber": gdt_patient_number,
-                        "lastName": patient_row["last_name"],
-                        "firstName": patient_row["first_name"],
-                        "birthDate": self._gdt_birth_date(patient_row["dob"]),
-                        "localGdtOrderNumber": local_gdt_order_number,
-                        "sex": GDT_PATIENT_SEX_CODES.get(patient_row["sex"], ""),
-                        "requestedAt": values["requested_at"],
-                        "orderingProvider": values["ordering_provider"],
-                        "clinicalIndication": values["clinical_indication"],
-                        "patient": patient_snapshot,
-                        "order": order_snapshot,
-                        "testLabel": GDT_ORDER_TEST_LABEL,
-                    }
-                )
-            except GdtValidationError as exc:
-                raise SimulatorValidationError(str(exc)) from exc
-            payload_gdt = adapter_result.raw_gdt_text
-            canonical = adapter_result.canonical
-            message_record_id = self._create_gdt_message_record(
-                connection,
-                order_record_id=record_id,
-                patient_context_id=patient_context["id"],
-                direction="outbound",
-                raw_gdt_text=payload_gdt,
-                canonical=canonical,
-                timestamp=timestamp,
-            )
-            connection.execute(
-                """
-                UPDATE local_gdt_order_records
-                SET local_gdt_order_number = ?, payload_gdt = ?,
-                    order_snapshot_json = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    local_gdt_order_number,
-                    payload_gdt,
-                    json.dumps(order_snapshot, sort_keys=True),
-                    timestamp,
-                    record_id,
-                ),
-            )
-            self._record_gdt_event(
-                connection,
-                event_type="order-created",
-                order_record_id=record_id,
-                patient_context_id=patient_context["id"],
-                timestamp=timestamp,
-                details={"localGdtOrderNumber": local_gdt_order_number},
-            )
-            self._record_gdt_event(
-                connection,
-                event_type="message-generated",
-                order_record_id=record_id,
-                patient_context_id=patient_context["id"],
-                message_record_id=message_record_id,
-                timestamp=timestamp,
-                details={"messageType": GDT_ORDER_MESSAGE_TYPE},
-            )
-            if values["attachment_url"]:
-                self._create_gdt_attachment_record(
-                    connection,
-                    order_record_id=record_id,
-                    message_record_id=message_record_id,
-                    role="order-attachment",
-                    url=values["attachment_url"],
-                    timestamp=timestamp,
-                )
-        return self.get_gdt_order_record(record_id)
+        return protocol_composition.create_gdt_order(self.database, self.patient_repository, now_iso, hl7_timestamp, payload)
 
     def list_gdt_order_records(self) -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT * FROM local_gdt_order_records
-                ORDER BY created_at DESC, id DESC
-                """
-            ).fetchall()
-        return [self._gdt_order_record_dict(row) for row in rows]
+        return protocol_composition.list_gdt_order_records(self.database, self.patient_repository, now_iso, hl7_timestamp)
 
     def get_gdt_order_record(self, record_id: int) -> dict[str, Any]:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM local_gdt_order_records WHERE id = ?",
-                (record_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(record_id)
-        return self._gdt_order_record_dict(row)
+        return protocol_composition.get_gdt_order(self.database, self.patient_repository, now_iso, hl7_timestamp, record_id)
 
     def list_gdt_messages(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            if order_record_id is None:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_gdt_message_records
-                    ORDER BY created_at DESC, id DESC
-                    """
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_gdt_message_records
-                    WHERE order_record_id = ?
-                    ORDER BY created_at DESC, id DESC
-                    """,
-                    (order_record_id,),
-                ).fetchall()
-        return [self._gdt_message_record_dict(row) for row in rows]
+        return protocol_composition.list_gdt_messages(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id)
 
     def list_gdt_events(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            if order_record_id is None:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_gdt_workflow_events
-                    ORDER BY created_at DESC, id DESC
-                    """
-                ).fetchall()
-            else:
-                order_row = connection.execute(
-                    "SELECT gdt_patient_context_id FROM local_gdt_order_records WHERE id = ?",
-                    (order_record_id,),
-                ).fetchone()
-                patient_context_id = order_row["gdt_patient_context_id"] if order_row else None
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_gdt_workflow_events
-                    WHERE order_record_id = ?
-                       OR (
-                         ? IS NOT NULL
-                         AND patient_context_id = ?
-                         AND order_record_id IS NULL
-                       )
-                    ORDER BY created_at ASC, id ASC
-                    """,
-                    (order_record_id, patient_context_id, patient_context_id),
-                ).fetchall()
-        return [self._gdt_event_record_dict(row) for row in rows]
+        return protocol_composition.list_gdt_events(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id)
 
     def list_gdt_attachments(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            if order_record_id is None:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_gdt_attachment_records
-                    ORDER BY created_at DESC, id DESC
-                    """
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_gdt_attachment_records
-                    WHERE order_record_id = ?
-                    ORDER BY created_at ASC, id ASC
-                    """,
-                    (order_record_id,),
-                ).fetchall()
-        return [self._gdt_attachment_record_dict(row) for row in rows]
+        return protocol_composition.list_gdt_attachments(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id)
 
-    def record_gdt_order_export(
-        self,
-        order_record_id: int,
-        *,
-        export_path: str,
-        status: str,
-        error_text: str = "",
-    ) -> dict[str, Any]:
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM local_gdt_order_records WHERE id = ?",
-                (order_record_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(order_record_id)
-            connection.execute(
-                """
-                UPDATE local_gdt_order_records
-                SET export_path = ?, error_text = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (export_path, error_text, timestamp, order_record_id),
-            )
-            self._record_gdt_event(
-                connection,
-                event_type="order-exported" if status == "exported" else "order-export-failed",
-                order_record_id=order_record_id,
-                patient_context_id=row["gdt_patient_context_id"],
-                timestamp=timestamp,
-                details={"status": status, "path": export_path, "error": error_text},
-            )
-        return self.get_gdt_order_record(order_record_id)
+    def record_gdt_order_export(self, order_record_id: int, *, export_path: str, status: str, error_text: str = "") -> dict[str, Any]:
+        return protocol_composition.record_gdt_export(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id, export_path=export_path, status=status, error_text=error_text)
 
     def create_gdt_demo_result(self, order_record_id: int) -> dict[str, Any]:
-        order = self.get_gdt_order_record(order_record_id)
-        order_number = order["localGdtOrderNumber"]
-        artifact_prefix = order_number.lower()
-        raw_gdt_text = render_gdt_message(
-            [
-                ("8315", "HCLAB"),
-                ("8316", "DEMOECG"),
-                ("3000", order["gdtPatientNumber"]),
-                ("3101", order["patientSnapshot"].get("lastName", "")),
-                ("3102", order["patientSnapshot"].get("firstName", "")),
-                ("6200", order_number),
-                ("8402", GDT_ORDER_TEST_CODE),
-                ("8410", "HR"),
-                ("8420", "72"),
-                ("8421", "bpm"),
-                ("8410", "PR"),
-                ("8420", "160"),
-                ("8421", "ms"),
-                ("8410", "QRS"),
-                ("8420", "92"),
-                ("8421", "ms"),
-                ("8410", "QT"),
-                ("8420", "390"),
-                ("8421", "ms"),
-                ("8410", "QTC"),
-                ("8420", "427"),
-                ("8421", "ms"),
-                ("8418", "final"),
-                ("6220", "Normal sinus rhythm. No acute ST-T changes."),
-                ("6227", "Demo ECG generated by Healthcare Lab."),
-                ("6228", "Measurements are deterministic for bridge validation."),
-                ("6302", "report"),
-                ("6303", "PDF"),
-                ("6304", "ECG PDF report"),
-                ("6305", f"reports/{artifact_prefix}-report.pdf"),
-                ("6302", "dicom"),
-                ("6303", "DICOM"),
-                ("6304", "DICOM ECG object reference"),
-                ("6305", f"reports/{artifact_prefix}.dcm"),
-            ],
-            set_type=GDT_RESULT_MESSAGE_TYPE,
-        )
-        return self.record_gdt_result({"rawGdtText": raw_gdt_text, "sourceFile": "demo-result"})
+        return protocol_composition.create_gdt_demo(self.database, self.patient_repository, now_iso, hl7_timestamp, order_record_id)
 
     def list_gdt_workbench(self, *, bridge_inbox: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        patients = self.list_patient_records()
-        orders = self.list_gdt_order_records()
-        messages = self.list_gdt_messages()
-        inbound_results = [
-            item for item in messages
-            if item.get("direction") == "inbound" and item.get("messageType") == GDT_RESULT_MESSAGE_TYPE
-        ]
-        attachments = self.list_gdt_attachments()
-        orders_by_patient: dict[int, list[dict[str, Any]]] = {}
-        results_by_order: dict[int, list[dict[str, Any]]] = {}
-        results_by_patient_context: dict[int, list[dict[str, Any]]] = {}
-        attachments_by_message: dict[int, list[dict[str, Any]]] = {}
-        for order in orders:
-            orders_by_patient.setdefault(int(order["patientRecordId"]), []).append(order)
-        for result in inbound_results:
-            if result.get("orderRecordId"):
-                results_by_order.setdefault(int(result["orderRecordId"]), []).append(result)
-            if result.get("patientContextId"):
-                results_by_patient_context.setdefault(int(result["patientContextId"]), []).append(result)
-        for attachment in attachments:
-            if attachment.get("messageRecordId"):
-                attachments_by_message.setdefault(int(attachment["messageRecordId"]), []).append(attachment)
-        for result in inbound_results:
-            result["attachments"] = attachments_by_message.get(int(result["id"]), [])
-        workbench_patients = []
-        for patient in patients:
-            patient_id = int(patient["id"])
-            patient_orders = orders_by_patient.get(patient_id, [])
-            if not patient_orders and patient.get("protocolVersion") != GDT_ORDER_PROTOCOL_VERSION:
-                continue
-            patient_context_ids = {
-                int(order["gdtPatientContextId"])
-                for order in patient_orders
-                if order.get("gdtPatientContextId")
-            }
-            patient_results = [
-                result
-                for context_id in patient_context_ids
-                for result in results_by_patient_context.get(context_id, [])
-            ]
-            item = {
-                **patient,
-                "orders": patient_orders,
-                "results": patient_results,
-                "orderCount": len(patient_orders),
-                "resultCount": len(patient_results),
-            }
-            item["summary"] = {
-                **item["summary"],
-                "orderCount": len(patient_orders),
-                "resultCount": len(patient_results),
-            }
-            workbench_patients.append(item)
-        unmatched_results = [
-            result for result in inbound_results
-            if not result.get("orderRecordId") and not result.get("patientContextId")
-        ]
-        return {
-            "patients": workbench_patients,
-            "orders": orders,
-            "results": inbound_results,
-            "unmatchedResults": unmatched_results,
-            "attachments": attachments,
-            "bridgeInbox": bridge_inbox or [],
-            "resultsByOrder": results_by_order,
-        }
+        return protocol_composition.build_gdt_workbench(self.database, self.patient_repository, now_iso, hl7_timestamp, bridge_inbox)
 
     @staticmethod
     def _attachment_payloads_from_result_fields(fields: dict[str, list[str]]) -> list[dict[str, str]]:
-        return attachment_payloads_from_result_fields(fields)
+        return protocol_compat.gdt_attachment_payloads(fields)
 
     @staticmethod
     def _gdt_result_measurements(fields: dict[str, list[str]]) -> dict[str, str]:
-        return {
-            label: first_gdt_field(fields, code)
-            for label, code in (
-                ("HR", "8401"),
-                ("PR", "8402"),
-                ("QRS", "8403"),
-                ("QT", "8404"),
-                ("QTC", "8405"),
-            )
-            if first_gdt_field(fields, code)
-        }
+        return protocol_compat.gdt_result_measurements(fields)
 
     def record_gdt_result(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(payload, dict):
-            raise SimulatorValidationError("GDT result payload must be a JSON object.")
-        raw_gdt_text = str(
-            payload.get("rawGdtText", payload.get("payload", payload.get("raw", ""))) or ""
-        )
-        source_file = str(payload.get("sourceFile") or payload.get("source_file") or "").strip()
-        try:
-            adapter_result = parse_gdt_6310_result(raw_gdt_text)
-        except GdtValidationError as exc:
-            raise SimulatorValidationError(str(exc)) from exc
-        fields = adapter_result.parsed_fields
-        timestamp = now_iso()
-        order_identifiers = [
-            value
-            for code in ("6330", "6200", "8410")
-            for value in fields.get(code, [])
-            if value
-        ]
-        gdt_patient_number = first_gdt_field(fields, "3000")
-        with self.lock, self.connect() as connection:
-            order_row = None
-            if order_identifiers:
-                placeholders = ", ".join("?" for _ in order_identifiers)
-                order_row = connection.execute(
-                    f"""
-                    SELECT * FROM local_gdt_order_records
-                    WHERE local_gdt_order_number IN ({placeholders})
-                    ORDER BY id DESC
-                    LIMIT 1
-                    """,
-                    order_identifiers,
-                ).fetchone()
-            patient_context_id = order_row["gdt_patient_context_id"] if order_row else None
-            if not patient_context_id and gdt_patient_number:
-                context_row = connection.execute(
-                    """
-                    SELECT * FROM local_gdt_patient_contexts
-                    WHERE effective_gdt_patient_number = ?
-                    ORDER BY id DESC
-                    LIMIT 1
-                    """,
-                    (gdt_patient_number,),
-                ).fetchone()
-                patient_context_id = context_row["id"] if context_row else None
-            match_status = "order-matched" if order_row else "unmatched"
-            canonical = adapter_result.canonical
-            canonical["order"] = {
-                **canonical.get("order", {}),
-                "localGdtOrderNumber": order_row["local_gdt_order_number"] if order_row else "",
-                "identifiers": order_identifiers,
-            }
-            canonical["correlation"] = {
-                **canonical.get("correlation", {}),
-                "matchStatus": match_status,
-                "identifiers": order_identifiers,
-            }
-            message_record_id = self._create_gdt_message_record(
-                connection,
-                order_record_id=order_row["id"] if order_row else None,
-                patient_context_id=patient_context_id,
-                direction="inbound",
-                raw_gdt_text=raw_gdt_text,
-                canonical=canonical,
-                timestamp=timestamp,
-                match_status=match_status,
-            )
-            attachment_payloads = canonical["attachments"] + list(payload.get("attachments") or [])
-            for attachment in attachment_payloads:
-                if not isinstance(attachment, dict):
-                    continue
-                reference = str(attachment.get("reference") or "")
-                path = str(attachment.get("path") or "")
-                url = str(attachment.get("url") or "")
-                artifact_status, artifact_details = self._gdt_artifact_status(
-                    reference or path or url,
-                    str(payload.get("bridgeRoot") or payload.get("bridge_root") or ""),
-                )
-                explicit_status = str(attachment.get("status") or "")
-                details = attachment.get("details") if isinstance(attachment.get("details"), dict) else {}
-                self._create_gdt_attachment_record(
-                    connection,
-                    order_record_id=order_row["id"] if order_row else None,
-                    message_record_id=message_record_id,
-                    role=str(attachment.get("role") or "result-artifact"),
-                    url=url,
-                    path=path,
-                    reference=reference,
-                    content_type=str(attachment.get("contentType") or attachment.get("content_type") or ""),
-                    description=str(attachment.get("description") or ""),
-                    source_file=str(attachment.get("sourceFile") or attachment.get("source_file") or source_file),
-                    status=explicit_status or artifact_status,
-                    details={**artifact_details, **details},
-                    filename=str(attachment.get("filename") or ""),
-                    checksum=str(attachment.get("checksum") or ""),
-                    timestamp=timestamp,
-                )
-            self._record_gdt_event(
-                connection,
-                event_type="result-imported",
-                order_record_id=order_row["id"] if order_row else None,
-                patient_context_id=patient_context_id,
-                message_record_id=message_record_id,
-                timestamp=timestamp,
-                details={"messageType": GDT_RESULT_MESSAGE_TYPE, "matchStatus": match_status},
-            )
-            self._record_gdt_event(
-                connection,
-                event_type="result-matched" if order_row else "result-unmatched",
-                order_record_id=order_row["id"] if order_row else None,
-                patient_context_id=patient_context_id,
-                message_record_id=message_record_id,
-                timestamp=timestamp,
-                details={"identifiers": order_identifiers},
-            )
-            if order_row:
-                connection.execute(
-                    """
-                    UPDATE local_gdt_order_records
-                    SET order_status = ?, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (GDT_ORDER_STATUS_RESULT_RECEIVED, timestamp, order_row["id"]),
-                )
-                self._record_gdt_event(
-                    connection,
-                    event_type="status-changed",
-                    order_record_id=order_row["id"],
-                    patient_context_id=patient_context_id,
-                    message_record_id=message_record_id,
-                    timestamp=timestamp,
-                    details={"status": GDT_ORDER_STATUS_RESULT_RECEIVED},
-                )
-        return self._gdt_message_record_dict_by_id(message_record_id)
+        return protocol_composition.persist_gdt_result(self.database, self.patient_repository, now_iso, hl7_timestamp, payload)
 
     # Compatibility-only OIE result seams.
     def list_oie_workbench(self) -> dict[str, Any]:
@@ -2384,612 +1077,79 @@ class DemoStore:
 
     @staticmethod
     def _json_value(value: str, fallback: Any) -> Any:
-        try:
-            return json.loads(value or "")
-        except (TypeError, ValueError):
-            return fallback
+        return protocol_compat.json_value(value, fallback)
 
     @staticmethod
     def _fhir_record_number(record_id: int) -> str:
-        return f"FHIR-{record_id:06d}"
+        return protocol_compat.fhir_record_number(record_id)
 
     @staticmethod
     def _fhir_clean_text(value: Any, field_name: str, required: bool = False) -> str:
-        text = str(value or "").strip()
-        if required and not text:
-            raise SimulatorValidationError(f"FHIR {field_name} is required.")
-        return text
+        return protocol_compat.fhir_clean_text(value, field_name, required)
 
     @staticmethod
     def _fhir_identifier_token(value: Any) -> str:
-        text = str(value if value is not None else "").strip().lower()
-        cleaned = []
-        previous_dash = False
-        for character in text:
-            if character.isalnum():
-                cleaned.append(character)
-                previous_dash = False
-            elif not previous_dash:
-                cleaned.append("-")
-                previous_dash = True
-        return "".join(cleaned).strip("-") or "record"
+        return protocol_compat.fhir_identifier_token(value)
 
     @classmethod
     def fhir_mapping_for_resource_type(cls, resource_type: str) -> dict[str, Any]:
-        normalized = cls._fhir_clean_text(resource_type, "resourceType", required=True)
-        if normalized not in FHIR_SUPPORTED_RESOURCE_TYPES:
-            raise SimulatorValidationError(
-                f"FHIR resourceType must be one of: {', '.join(FHIR_SUPPORTED_RESOURCE_TYPES)}."
-            )
-        mapping = FHIR_RESOURCE_MAPPINGS[normalized]
-        return {
-            "resourceType": normalized,
-            "localSourceType": mapping["local_source_type"],
-            "identifierSystem": FHIR_IDENTIFIER_SYSTEMS[normalized],
-            "identifierPath": "identifier",
-            "dependsOn": list(mapping["depends_on"]),
-            "dependencyOrder": FHIR_RESOURCE_DEPENDENCY_ORDER[normalized],
-        }
+        return protocol_compat.fhir_mapping_for_resource_type(resource_type)
 
     @classmethod
     def list_fhir_resource_mappings(cls) -> list[dict[str, Any]]:
-        return [
-            cls.fhir_mapping_for_resource_type(resource_type)
-            for resource_type in FHIR_SUPPORTED_RESOURCE_TYPES
-        ]
+        return protocol_compat.list_fhir_resource_mappings()
 
     @classmethod
-    def fhir_identifier_value(
-        cls,
-        resource_type: str,
-        local_source_type: str,
-        local_source_id: Any,
-    ) -> str:
-        mapping = cls.fhir_mapping_for_resource_type(resource_type)
-        source_type = cls._fhir_identifier_token(local_source_type or mapping["localSourceType"])
-        source_id = cls._fhir_identifier_token(local_source_id)
-        return f"{source_type}-{source_id}"
+    def fhir_identifier_value(cls, resource_type: str, local_source_type: str, local_source_id: Any) -> str:
+        return protocol_compat.fhir_identifier_value(resource_type, local_source_type, local_source_id)
 
     @classmethod
-    def _fhir_resource_with_identifier(
-        cls,
-        resource: dict[str, Any],
-        *,
-        resource_type: str,
-        identifier_system: str,
-        identifier_value: str,
-    ) -> dict[str, Any]:
-        if not isinstance(resource, dict):
-            raise SimulatorValidationError("FHIR resource must be a JSON object.")
-        normalized = dict(resource)
-        normalized["resourceType"] = resource_type
-        identifiers = normalized.get("identifier")
-        if not isinstance(identifiers, list):
-            identifiers = []
-        else:
-            identifiers = [item for item in identifiers if isinstance(item, dict)]
-        if not any(
-            item.get("system") == identifier_system and item.get("value") == identifier_value
-            for item in identifiers
-        ):
-            identifiers.insert(0, {"system": identifier_system, "value": identifier_value})
-        normalized["identifier"] = identifiers
-        return normalized
+    def _fhir_resource_with_identifier(cls, resource: dict[str, Any], *, resource_type: str, identifier_system: str, identifier_value: str) -> dict[str, Any]:
+        return protocol_compat.fhir_resource_with_identifier(resource, resource_type=resource_type, identifier_system=identifier_system, identifier_value=identifier_value)
 
     def _validate_fhir_record_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(payload, dict):
-            raise SimulatorValidationError("FHIR workflow payload must be a JSON object.")
-        raw_resource = payload.get("resource") or payload.get("resourceJson") or {}
-        if isinstance(raw_resource, str):
-            try:
-                raw_resource = json.loads(raw_resource)
-            except json.JSONDecodeError as exc:
-                raise SimulatorValidationError("FHIR resource JSON is invalid.") from exc
-        if not isinstance(raw_resource, dict):
-            raise SimulatorValidationError("FHIR resource must be a JSON object.")
-        resource_type = self._fhir_clean_text(
-            payload.get("resourceType") or raw_resource.get("resourceType"),
-            "resourceType",
-            required=True,
-        )
-        mapping = self.fhir_mapping_for_resource_type(resource_type)
-        local_source_type = self._fhir_clean_text(
-            payload.get("localSourceType") or mapping["localSourceType"],
-            "localSourceType",
-            required=True,
-        )
-        local_source_id = self._fhir_clean_text(
-            payload.get("localSourceId"),
-            "localSourceId",
-            required=True,
-        )
-        identifier_system = self._fhir_clean_text(
-            payload.get("identifierSystem") or mapping["identifierSystem"],
-            "identifierSystem",
-            required=True,
-        )
-        identifier_value = self._fhir_clean_text(
-            payload.get("identifierValue")
-            or self.fhir_identifier_value(resource_type, local_source_type, local_source_id),
-            "identifierValue",
-            required=True,
-        )
-        dependencies = payload.get("dependencies", payload.get("dependsOn", mapping["dependsOn"]))
-        if not isinstance(dependencies, list | tuple):
-            raise SimulatorValidationError("FHIR dependencies must be a list.")
-        resource = self._fhir_resource_with_identifier(
-            raw_resource,
-            resource_type=resource_type,
-            identifier_system=identifier_system,
-            identifier_value=identifier_value,
-        )
-        return {
-            "local_source_type": local_source_type,
-            "local_source_id": local_source_id,
-            "resource_type": resource_type,
-            "identifier_system": identifier_system,
-            "identifier_value": identifier_value,
-            "resource_json": json.dumps(resource, sort_keys=True),
-            "dependency_json": json.dumps(list(dependencies)),
-        }
+        return protocol_compat.normalize_fhir_record_payload(payload)
 
     def create_fhir_workflow_record(self, payload: dict[str, Any]) -> dict[str, Any]:
-        values = self._validate_fhir_record_payload(payload)
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            existing = connection.execute(
-                """
-                SELECT * FROM local_fhir_workflow_records
-                WHERE resource_type = ? AND identifier_system = ? AND identifier_value = ?
-                """,
-                (
-                    values["resource_type"],
-                    values["identifier_system"],
-                    values["identifier_value"],
-                ),
-            ).fetchone()
-            if existing:
-                payload_changed = (
-                    existing["resource_json"] != values["resource_json"]
-                    or existing["dependency_json"] != values["dependency_json"]
-                )
-                next_status = (
-                    FHIR_SYNC_STATUS_PENDING
-                    if payload_changed
-                    else existing["sync_status"]
-                )
-                connection.execute(
-                    """
-                    UPDATE local_fhir_workflow_records
-                    SET local_source_type = ?, local_source_id = ?, resource_json = ?,
-                        dependency_json = ?, sync_status = ?, updated_at = ?,
-                        sync_error = CASE WHEN ? THEN '' ELSE sync_error END,
-                        operation_outcome_json = CASE WHEN ? THEN '{}' ELSE operation_outcome_json END,
-                        sync_started_at = CASE WHEN ? THEN '' ELSE sync_started_at END
-                    WHERE id = ?
-                    """,
-                    (
-                        values["local_source_type"],
-                        values["local_source_id"],
-                        values["resource_json"],
-                        values["dependency_json"],
-                        next_status,
-                        timestamp,
-                        int(payload_changed),
-                        int(payload_changed),
-                        int(payload_changed),
-                        existing["id"],
-                    ),
-                )
-                record_id = int(existing["id"])
-            else:
-                cursor = connection.execute(
-                    """
-                    INSERT INTO local_fhir_workflow_records (
-                        local_fhir_record_number, local_source_type, local_source_id,
-                        resource_type, identifier_system, identifier_value, resource_json,
-                        dependency_json, sync_status, created_at, updated_at
-                    )
-                    VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        values["local_source_type"],
-                        values["local_source_id"],
-                        values["resource_type"],
-                        values["identifier_system"],
-                        values["identifier_value"],
-                        values["resource_json"],
-                        values["dependency_json"],
-                        FHIR_SYNC_STATUS_PENDING,
-                        timestamp,
-                        timestamp,
-                    ),
-                )
-                record_id = int(cursor.lastrowid)
-                connection.execute(
-                    """
-                    UPDATE local_fhir_workflow_records
-                    SET local_fhir_record_number = ?
-                    WHERE id = ?
-                    """,
-                    (self._fhir_record_number(record_id), record_id),
-                )
-        return self.get_fhir_workflow_record(record_id)
+        return protocol_composition.create_fhir_record(self.database, now_iso, payload)
 
     def list_fhir_workflow_records(self, sync_status: str = "") -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            if sync_status:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_fhir_workflow_records
-                    WHERE sync_status = ?
-                    ORDER BY id DESC
-                    """,
-                    (sync_status,),
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM local_fhir_workflow_records
-                    ORDER BY id DESC
-                    """
-                ).fetchall()
-        return [self._fhir_workflow_record_dict(row) for row in rows]
+        return protocol_composition.list_fhir_records(self.database, now_iso, sync_status)
 
     def get_fhir_workflow_record(self, record_id: int) -> dict[str, Any]:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM local_fhir_workflow_records WHERE id = ?",
-                (record_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(record_id)
-        return self._fhir_workflow_record_dict(row)
+        return protocol_composition.get_fhir_record(self.database, now_iso, record_id)
 
-    def get_fhir_workflow_record_by_identifier(
-        self,
-        *,
-        resource_type: str,
-        identifier_system: str,
-        identifier_value: str,
-    ) -> dict[str, Any]:
-        with self.connect() as connection:
-            row = connection.execute(
-                """
-                SELECT * FROM local_fhir_workflow_records
-                WHERE resource_type = ? AND identifier_system = ? AND identifier_value = ?
-                """,
-                (resource_type, identifier_system, identifier_value),
-            ).fetchone()
-            if not row:
-                raise KeyError(identifier_value)
-        return self._fhir_workflow_record_dict(row)
+    def get_fhir_workflow_record_by_identifier(self, *, resource_type: str, identifier_system: str, identifier_value: str) -> dict[str, Any]:
+        return protocol_composition.get_fhir_record_by_identifier(self.database, now_iso, resource_type=resource_type, identifier_system=identifier_system, identifier_value=identifier_value)
 
     def mark_fhir_syncing(self, record_id: int) -> dict[str, Any]:
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            row = connection.execute(
-                "SELECT id FROM local_fhir_workflow_records WHERE id = ?",
-                (record_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(record_id)
-            connection.execute(
-                """
-                UPDATE local_fhir_workflow_records
-                SET sync_status = ?, sync_started_at = ?, sync_error = '',
-                    operation_outcome_json = '{}', updated_at = ?
-                WHERE id = ?
-                """,
-                (FHIR_SYNC_STATUS_SYNCING, timestamp, timestamp, record_id),
-            )
-        return self.get_fhir_workflow_record(record_id)
+        return protocol_composition.mark_fhir_record_syncing(self.database, now_iso, record_id)
 
-    def mark_fhir_sync_success(
-        self,
-        record_id: int,
-        *,
-        medplum_resource_id: str,
-        medplum_resource_reference: str = "",
-    ) -> dict[str, Any]:
-        timestamp = now_iso()
-        resource_id = self._fhir_clean_text(medplum_resource_id, "medplumResourceId", required=True)
-        with self.lock, self.connect() as connection:
-            row = connection.execute(
-                "SELECT resource_type FROM local_fhir_workflow_records WHERE id = ?",
-                (record_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(record_id)
-            reference = (
-                medplum_resource_reference.strip()
-                if medplum_resource_reference
-                else f"{row['resource_type']}/{resource_id}"
-            )
-            connection.execute(
-                """
-                UPDATE local_fhir_workflow_records
-                SET medplum_resource_id = ?, medplum_resource_reference = ?,
-                    sync_status = ?, sync_error = '', operation_outcome_json = '{}',
-                    last_sync_at = ?, sync_started_at = '', updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    resource_id,
-                    reference,
-                    FHIR_SYNC_STATUS_SYNCED,
-                    timestamp,
-                    timestamp,
-                    record_id,
-                ),
-            )
-        return self.get_fhir_workflow_record(record_id)
+    def mark_fhir_sync_success(self, record_id: int, *, medplum_resource_id: str, medplum_resource_reference: str = "") -> dict[str, Any]:
+        return protocol_composition.mark_fhir_record_success(self.database, now_iso, record_id, medplum_resource_id=medplum_resource_id, medplum_resource_reference=medplum_resource_reference)
 
-    def mark_fhir_sync_failure(
-        self,
-        record_id: int,
-        *,
-        error_text: str,
-        operation_outcome: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            row = connection.execute(
-                "SELECT id FROM local_fhir_workflow_records WHERE id = ?",
-                (record_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(record_id)
-            connection.execute(
-                """
-                UPDATE local_fhir_workflow_records
-                SET sync_status = ?, sync_error = ?, operation_outcome_json = ?,
-                    sync_started_at = '', updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    FHIR_SYNC_STATUS_FAILED,
-                    str(error_text or "").strip(),
-                    json.dumps(operation_outcome or {}, sort_keys=True),
-                    timestamp,
-                    record_id,
-                ),
-            )
-        return self.get_fhir_workflow_record(record_id)
+    def mark_fhir_sync_failure(self, record_id: int, *, error_text: str, operation_outcome: dict[str, Any] | None = None) -> dict[str, Any]:
+        return protocol_composition.mark_fhir_record_failure(self.database, now_iso, record_id, error_text=error_text, operation_outcome=operation_outcome)
 
-    def record_fhir_sync_attempt(
-        self,
-        record_id: int,
-        *,
-        method: str,
-        request_url: str,
-        request_payload: dict[str, Any] | None = None,
-        http_status: int | None = None,
-        response_payload: dict[str, Any] | None = None,
-        operation_outcome: dict[str, Any] | None = None,
-        error_text: str = "",
-    ) -> dict[str, Any]:
-        timestamp = now_iso()
-        with self.lock, self.connect() as connection:
-            row = connection.execute(
-                "SELECT id FROM local_fhir_workflow_records WHERE id = ?",
-                (record_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(record_id)
-            cursor = connection.execute(
-                """
-                INSERT INTO local_fhir_sync_attempts (
-                    fhir_record_id, method, request_url, request_payload_json,
-                    http_status, response_payload_json, operation_outcome_json,
-                    error_text, attempted_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    record_id,
-                    method.strip().upper(),
-                    request_url.strip(),
-                    json.dumps(request_payload or {}, sort_keys=True),
-                    http_status,
-                    json.dumps(response_payload or {}, sort_keys=True),
-                    json.dumps(operation_outcome or {}, sort_keys=True),
-                    str(error_text or "").strip(),
-                    timestamp,
-                ),
-            )
-            attempt_id = int(cursor.lastrowid)
-            attempt_row = connection.execute(
-                "SELECT * FROM local_fhir_sync_attempts WHERE id = ?",
-                (attempt_id,),
-            ).fetchone()
-        return self._fhir_sync_attempt_dict(attempt_row)
+    def record_fhir_sync_attempt(self, record_id: int, *, method: str, request_url: str, request_payload: dict[str, Any] | None = None, http_status: int | None = None, response_payload: dict[str, Any] | None = None, operation_outcome: dict[str, Any] | None = None, error_text: str = "") -> dict[str, Any]:
+        return protocol_composition.create_fhir_sync_attempt(self.database, now_iso, record_id, method=method, request_url=request_url, request_payload=request_payload, http_status=http_status, response_payload=response_payload, operation_outcome=operation_outcome, error_text=error_text)
 
     def list_fhir_sync_attempts(self, record_id: int) -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT * FROM local_fhir_sync_attempts
-                WHERE fhir_record_id = ?
-                ORDER BY id DESC
-                """,
-                (record_id,),
-            ).fetchall()
-        return [self._fhir_sync_attempt_dict(row) for row in rows]
+        return protocol_composition.list_fhir_record_attempts(self.database, now_iso, record_id)
 
     def ordered_fhir_workflow_records(self, record_ids: list[int]) -> list[dict[str, Any]]:
-        records = [self.get_fhir_workflow_record(record_id) for record_id in record_ids]
-        return sorted(
-            records,
-            key=lambda item: (
-                FHIR_RESOURCE_DEPENDENCY_ORDER.get(item["resourceType"], 999),
-                int(item["id"]),
-            ),
-        )
+        return protocol_composition.order_fhir_records(self.database, now_iso, record_ids)
 
     def _fhir_workflow_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
-        resource = self._json_value(row["resource_json"], {})
-        operation_outcome = self._json_value(row["operation_outcome_json"], {})
-        mapping = (
-            self.fhir_mapping_for_resource_type(row["resource_type"])
-            if row["resource_type"] in FHIR_SUPPORTED_RESOURCE_TYPES
-            else None
-        )
-        return {
-            "id": row["id"],
-            "localFhirRecordNumber": row["local_fhir_record_number"],
-            "localSourceType": row["local_source_type"],
-            "localSourceId": row["local_source_id"],
-            "resourceType": row["resource_type"],
-            "identifier": {
-                "system": row["identifier_system"],
-                "value": row["identifier_value"],
-            },
-            "resource": resource,
-            "dependencies": self._json_value(row["dependency_json"], []),
-            "mapping": mapping,
-            "medplum": {
-                "id": row["medplum_resource_id"],
-                "reference": row["medplum_resource_reference"],
-            },
-            "sync": {
-                "status": row["sync_status"],
-                "error": row["sync_error"],
-                "operationOutcome": operation_outcome,
-                "lastSyncAt": row["last_sync_at"],
-                "syncStartedAt": row["sync_started_at"],
-            },
-            "createdAt": row["created_at"],
-            "updatedAt": row["updated_at"],
-            "localOnly": row["sync_status"] != FHIR_SYNC_STATUS_SYNCED,
-        }
+        return protocol_compat.project_fhir_workflow_record(row)
 
     def _fhir_sync_attempt_dict(self, row: sqlite3.Row) -> dict[str, Any]:
-        return {
-            "id": row["id"],
-            "fhirRecordId": row["fhir_record_id"],
-            "method": row["method"],
-            "requestUrl": row["request_url"],
-            "requestPayload": self._json_value(row["request_payload_json"], {}),
-            "httpStatus": row["http_status"],
-            "responsePayload": self._json_value(row["response_payload_json"], {}),
-            "operationOutcome": self._json_value(row["operation_outcome_json"], {}),
-            "error": row["error_text"],
-            "attemptedAt": row["attempted_at"],
-        }
+        return protocol_compat.project_fhir_sync_attempt(row)
 
-    def _gdt_order_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
-        summary_name = " ".join(
-            part for part in (row["first_name"], row["middle_name"], row["last_name"]) if part
-        )
-        attachments = self.list_gdt_attachments(row["id"])
-        messages = self.list_gdt_messages(row["id"])
-        events = self.list_gdt_events(row["id"])
-        primary_attachment_url = row["attachment_url"] or next(
-            (item["url"] for item in attachments if item["url"]),
-            "",
-        )
-        return {
-            "id": row["id"],
-            "localGdtOrderNumber": row["local_gdt_order_number"],
-            "patientRecordId": row["patient_record_id"],
-            "gdtPatientContextId": row["gdt_patient_context_id"],
-            "protocolVersion": row["protocol_version"],
-            "messageType": row["message_type"],
-            "status": row["order_status"],
-            "gdtTestField": GDT_ORDER_TEST_CODE_FIELD,
-            "gdtTestCode": row["gdt_test_code"],
-            "gdtTestLabel": row["gdt_test_label"],
-            "gdtPatientNumber": row["gdt_patient_number"],
-            "requestedAt": row["requested_at"],
-            "orderingProvider": row["ordering_provider"],
-            "clinicalIndication": row["clinical_indication"],
-            "attachmentUrl": primary_attachment_url,
-            "attachments": attachments,
-            "payload": row["payload_gdt"],
-            "rawGdtText": row["payload_gdt"],
-            "patientSnapshot": self._json_value(row["patient_snapshot_json"], {}),
-            "orderSnapshot": self._json_value(row["order_snapshot_json"], {}),
-            "messages": messages,
-            "events": events,
-            "exportPath": row["export_path"],
-            "error": row["error_text"],
-            "summary": {
-                "mrn": row["mrn"],
-                "gdtPatientNumber": row["gdt_patient_number"],
-                "name": summary_name,
-                "dob": row["dob"],
-                "sex": row["sex"],
-                "visitNumber": row["visit_number"],
-                "testCode": row["gdt_test_code"],
-                "testLabel": row["gdt_test_label"],
-            },
-            "createdAt": row["created_at"],
-            "updatedAt": row["updated_at"],
-            "localOnly": True,
-        }
 
-    def _gdt_message_record_dict_by_id(self, record_id: int) -> dict[str, Any]:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM local_gdt_message_records WHERE id = ?",
-                (record_id,),
-            ).fetchone()
-            if not row:
-                raise KeyError(record_id)
-        return self._gdt_message_record_dict(row)
 
-    def _gdt_message_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
-        return {
-            "id": row["id"],
-            "orderRecordId": row["order_record_id"],
-            "patientContextId": row["patient_context_id"],
-            "direction": row["direction"],
-            "messageType": row["message_type"],
-            "rawGdtText": row["raw_gdt_text"],
-            "parsedFields": self._json_value(row["parsed_fields_json"], {}),
-            "canonical": self._json_value(row["canonical_json"], {}),
-            "parseStatus": row["parse_status"],
-            "matchStatus": row["match_status"],
-            "error": row["error_text"],
-            "generatedAt": row["generated_at"],
-            "receivedAt": row["received_at"],
-            "createdAt": row["created_at"],
-            "updatedAt": row["updated_at"],
-        }
 
-    def _gdt_attachment_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
-        return {
-            "id": row["id"],
-            "orderRecordId": row["order_record_id"],
-            "messageRecordId": row["message_record_id"],
-            "role": row["role"],
-            "url": row["url"],
-            "path": row["path"],
-            "reference": row["reference"],
-            "contentType": row["content_type"],
-            "description": row["description"],
-            "sourceFile": row["source_file"],
-            "status": row["status"],
-            "details": self._json_value(row["details_json"], {}),
-            "filename": row["filename"],
-            "checksum": row["checksum"],
-            "createdAt": row["created_at"],
-            "updatedAt": row["updated_at"],
-        }
 
-    def _gdt_event_record_dict(self, row: sqlite3.Row) -> dict[str, Any]:
-        return {
-            "id": row["id"],
-            "orderRecordId": row["order_record_id"],
-            "patientContextId": row["patient_context_id"],
-            "messageRecordId": row["message_record_id"],
-            "attachmentRecordId": row["attachment_record_id"],
-            "eventType": row["event_type"],
-            "actor": row["actor"],
-            "details": self._json_value(row["details_json"], {}),
-            "createdAt": row["created_at"],
-        }
 
     @staticmethod
     def _result_record_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -3051,12 +1211,4 @@ class DemoStore:
         return self.lab_repository.list_operations(server_id, limit=limit)
 
     def list_gdt_orders(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "id": item["id"],
-                "orderNumber": item["localGdtOrderNumber"],
-                "status": item["status"],
-                "updatedAt": item["updatedAt"],
-            }
-            for item in self.list_gdt_order_records()
-        ]
+        return protocol_composition.list_gdt_inventory(self.database, self.patient_repository, now_iso, hl7_timestamp)

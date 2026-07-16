@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from sqlite3 import Connection, Row
@@ -79,6 +80,69 @@ class OrderRepository:
                 (timestamp, int(item["id"])),
             )
         return self.get_order_record(int(item["id"]))
+
+    def create_fhir_order_record(
+        self,
+        values: dict[str, Any],
+        *,
+        patient_reference: str,
+        resource_builder: Callable[..., dict[str, Any]],
+        priority_projector: Callable[[Any], str],
+    ) -> dict[str, Any]:
+        """Persist the generic order anchor and deterministic FHIR payload atomically."""
+        timestamp = self._timestamp()
+        with self._lock, self._connect() as connection:
+            patient = connection.execute(
+                "SELECT * FROM local_patient_records WHERE id = ?",
+                (values["patient_record_id"],),
+            ).fetchone()
+            if not patient:
+                raise KeyError(values["patient_record_id"])
+            cursor = connection.execute(
+                """INSERT INTO local_order_records (
+                    local_order_number, patient_record_id, protocol_version, message_type,
+                    order_status, mrn, first_name, last_name, middle_name, dob, sex,
+                    visit_id, patient_class, assigned_location, account_number,
+                    placer_order_number, filler_order_number, priority, requested_at,
+                    ordering_provider, clinical_indication, order_code, order_code_text,
+                    alternate_code, alternate_code_text, alternate_code_system,
+                    validation_status, validation_messages_json, payload_hl7,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    "", values["patient_record_id"], "FHIR R4", "ServiceRequest",
+                    "Created", patient["mrn"], patient["first_name"], patient["last_name"],
+                    patient["middle_name"], patient["dob"], patient["sex"],
+                    patient["visit_number"], patient["patient_class"],
+                    patient["assigned_location"], patient["account_number"], "", "",
+                    priority_projector(values["priority"]), values["requested_at"],
+                    values["ordering_provider"], values["clinical_indication"],
+                    values["order_code"], values["order_code_text"], values["alternate_code"],
+                    values["alternate_code_text"], values["alternate_code_system"],
+                    "valid", "[]", "", timestamp, timestamp,
+                ),
+            )
+            record_id = int(cursor.lastrowid)
+            local_order_number = order_domain.record_number(record_id)
+            visit_id = patient["visit_number"] or order_domain.visit_id(record_id)
+            account_number = patient["account_number"] or order_domain.account_number(record_id)
+            resource = resource_builder(
+                values,
+                record_id=record_id,
+                local_order_number=local_order_number,
+                patient_reference=patient_reference,
+            )
+            connection.execute(
+                """UPDATE local_order_records
+                   SET local_order_number = ?, placer_order_number = ?, visit_id = ?,
+                       account_number = ?, payload_hl7 = ?, updated_at = ?
+                   WHERE id = ?""",
+                (
+                    local_order_number, local_order_number, visit_id, account_number,
+                    json.dumps(resource, indent=2, sort_keys=True), timestamp, record_id,
+                ),
+            )
+        return self.get_order_record(record_id)
 
     def _project(self, rows: list[Row]) -> list[dict[str, Any]]:
         enrichments = self._enrichment.load(rows) if self._enrichment else {}
