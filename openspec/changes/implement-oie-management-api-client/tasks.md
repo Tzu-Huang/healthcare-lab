@@ -1,6 +1,6 @@
 ## 1. Evidence and Client Contracts
 
-- [ ] 1.1 Record authoritative OIE 4.5.2 evidence for login/logout, current-user, system-info, Channel CRUD, deploy/redeploy/undeploy, status, ports-in-use, request headers, encodings, and response shapes before implementing endpoints.
+- [x] 1.1 Record authoritative OIE 4.5.2 evidence for login/logout, current-user, system-info, Channel CRUD, deploy/redeploy/undeploy, status, ports-in-use, request headers, encodings, and response shapes before implementing endpoints.
 - [ ] 1.2 Add focused characterization tests for the persistence-neutral client configuration, authenticated lifecycle, normalized results, error categories, and secret-safe representations without opening network sockets.
 - [ ] 1.3 Define inward OIE Management configuration, normalized result, version-support, and stable error contracts without Flask, SQLite, repository, mapper, or public Settings JSON dependencies.
 
