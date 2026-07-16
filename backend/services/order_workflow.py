@@ -191,6 +191,26 @@ class DcmMwlSyncService:
 
 
 
+class DcmMwlVerificationService:
+    """Coordinate MWL verification and expose its persisted view."""
+
+    def __init__(self, repository: OrderLedgerPort, configuration: Mapping[str, Any], *, dcm_verify: Callable[..., dict[str, Any]], dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
+        self._repository = repository
+        self._configuration = configuration
+        self._dcm_verify = dcm_verify
+        self._dcm_profile = dcm_profile
+
+    def verify(self, order_id: int) -> dict[str, Any]:
+        item = self._repository.get_order_record(order_id)
+        if item["protocolVersion"] != "DICOM":
+            raise ValueError("Order record is not DICOM MWL mode.")
+        result = self._dcm_verify(item, self._dcm_profile(self._configuration))
+        item = self._repository.get_order_record(order_id)
+        mwl = (item.get("dcm4chee") or {}).get("mwl") or {}
+        verification = (mwl.get("mapping") or {}).get("verification") or mwl.get("verification") or {}
+        return {"success": verification.get("status") == DCM4CHEE_MWL_VERIFICATION_VERIFIED, "item": item, "mwl": mwl, "verification": verification, "latestAttempt": result.get("attempt")}
+
+
 class OrderWorkflowService:
     def __init__(
         self,
@@ -222,6 +242,7 @@ class OrderWorkflowService:
         self._dcm_verify = dcm_verify
         self._dcm_profile = dcm_profile
         self.mwl_sync_service = DcmMwlSyncService(repository, configuration, dcm_sync=dcm_sync, dcm_profile=dcm_profile)
+        self.mwl_verification_service = DcmMwlVerificationService(repository, configuration, dcm_verify=dcm_verify, dcm_profile=dcm_profile)
 
 
     def list(self) -> list[dict[str, Any]]:
@@ -271,20 +292,7 @@ class OrderWorkflowService:
         return self.mwl_sync_service.sync(order_id)
 
     def verify_dcm4chee(self, order_id: int) -> dict[str, Any]:
-        item = self.get_dicom(order_id)
-        result = self._dcm_verify(
-            item, self._dcm_profile(self._configuration)
-        )
-        item = self._repository.get_order_record(order_id)
-        mwl = (item.get("dcm4chee") or {}).get("mwl") or {}
-        verification = (mwl.get("mapping") or {}).get("verification") or mwl.get("verification") or {}
-        return {
-            "success": verification.get("status") == DCM4CHEE_MWL_VERIFICATION_VERIFIED,
-            "item": item,
-            "mwl": mwl,
-            "verification": verification,
-            "latestAttempt": result.get("attempt"),
-        }
+        return self.mwl_verification_service.verify(order_id)
 
     def dcm4chee_evidence(self, order_id: int) -> dict[str, Any]:
         self.get_dicom(order_id)

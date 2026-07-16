@@ -90,6 +90,18 @@ class PatientCoordinationPort(Protocol):
 
 
 
+class DcmResultRefreshService:
+    """Coordinate patient result refresh through an explicit DICOM capability."""
+
+    def __init__(self, configuration: Mapping[str, Any], *, result_refresh: Callable[..., dict[str, Any]], dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
+        self._configuration = configuration
+        self._result_refresh = result_refresh
+        self._dcm_profile = dcm_profile
+
+    def refresh(self, record_id: int) -> dict[str, Any]:
+        return self._result_refresh(record_id, self._dcm_profile(self._configuration))
+
+
 class PatientWorkflowService:
     def __init__(
         self,
@@ -118,6 +130,7 @@ class PatientWorkflowService:
         self._dicom_patient_sync = dicom_patient_sync
         self._dcm_result_refresh = dcm_result_refresh
         self._dcm_profile = dcm_profile
+        self.result_refresh_service = DcmResultRefreshService(configuration, result_refresh=dcm_result_refresh, dcm_profile=dcm_profile)
 
     def list(self, protocol_version: str = "") -> list[dict[str, Any]]:
         return self._repository.list_patient_records(protocol_version)
@@ -161,7 +174,7 @@ class PatientWorkflowService:
         return status == FHIR_SYNC_STATUS_SYNCED, item
 
     def refresh_dcm4chee_results(self, record_id: int) -> dict[str, Any]:
-        return self._dcm_result_refresh(record_id, self._dcm_profile(self._configuration))
+        return self.result_refresh_service.refresh(record_id)
 
     def create_dcm4chee_fixture(self) -> dict[str, Any]:
         return self._fixture.create_dcm4chee_e2e_demo_fixture(
