@@ -32,4 +32,3 @@ callers and must delegate or re-export the final owner.
 presentation or domain-validation candidate. It remains the single approved
 filesystem-readiness owner, called by the GDT watcher and Lab workflow through
 their existing compatibility/port paths.
-
