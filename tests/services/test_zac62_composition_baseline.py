@@ -21,7 +21,7 @@ class Zac62CompositionBaselineTests(unittest.TestCase):
         )
         self.assertIn("store.oie_settings_repository", source)
 
-    def test_workflow_extensions_are_registered_before_runtime_startup(self):
+    def test_workflow_extensions_are_registered_before_blueprint_composition(self):
         source = APP_FACTORY.read_text(encoding="utf-8")
         tree = ast.parse(source)
         create_app = next(
@@ -40,9 +40,10 @@ class Zac62CompositionBaselineTests(unittest.TestCase):
         )
         positions = [function_source.index(seam) for seam in required_seams]
         self.assertEqual(sorted(positions), positions)
+        self.assertLess(positions[-1], function_source.index("create_oie_blueprint("))
         self.assertLess(
-            positions[-1],
-            function_source.index("start_background_runtime(app)"),
+            function_source.index('app.extensions["gdt_bridge_watcher"]'),
+            function_source.index("create_gdt_blueprint("),
         )
 
 
