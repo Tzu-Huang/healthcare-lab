@@ -20,14 +20,14 @@
 - [x] 3.1 Introduce `FhirLedgerRepository` using the shared connection factory and application write lock, with no `DemoStore` dependency.
 - [ ] 3.2 Move workflow-record create/update/read/list, identifier lookup, dependency ordering, sync state transitions, and row projection into the FHIR ledger owner.
 - [ ] 3.3 Move sync-attempt create/list/projection and request/response/OperationOutcome audit persistence into the FHIR ledger owner.
-- [ ] 3.4 Move patient/order FHIR batch enrichment reads behind narrow FHIR ledger loaders and remove independent FHIR-table SQL from generic enrichment modules.
+- [x] 3.4 Move patient/order FHIR batch enrichment reads behind narrow FHIR ledger loaders and remove independent FHIR-table SQL from generic enrichment modules.
 - [x] 3.5 Add direct repository tests for FHIR transactions, state transitions, attempts, enrichment batching, ordering, missing records, and compatibility projections.
 - [x] 3.6 Run focused FHIR repository and characterization tests, inspect the diff for schema or behavior drift, and commit only the explicit FHIR repository/test paths after they pass.
 
 ## 4. FHIR Order Coordination and Service Ports
 
-- [ ] 4.1 Keep `local_order_records` SQL in `OrderRepository` while adding the narrow atomic primitive needed for compatible FHIR-mode order creation.
-- [ ] 4.2 Introduce a named FHIR order coordinator that combines synced-Patient lookup, order creation, pure ServiceRequest construction, and FHIR ledger creation without importing concrete unrelated repositories.
+- [x] 4.1 Keep `local_order_records` SQL in `OrderRepository` while adding the narrow atomic primitive needed for compatible FHIR-mode order creation.
+- [x] 4.2 Introduce a named FHIR order coordinator that combines synced-Patient lookup, order creation, pure ServiceRequest construction, and FHIR ledger creation without importing concrete unrelated repositories.
 - [ ] 4.3 Route Patient and Order workflow FHIR capabilities through explicit ports while preserving validation errors, local-first persistence, and failed-sync behavior.
 - [ ] 4.4 Compose `FhirWorkflowService` from `FhirLedgerRepository` and existing Medplum-facing collaborators instead of `DemoStore`.
 - [ ] 4.5 Add service/port/composition tests proving Medplum transport remains outside persistence and FHIR/order services cannot reach unrelated store capabilities.

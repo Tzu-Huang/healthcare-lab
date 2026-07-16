@@ -21,6 +21,28 @@ from backend.domain.statuses import (
 ConnectionFactory = Callable[[], AbstractContextManager[Connection]]
 
 
+def load_fhir_sources(
+    connection_factory: ConnectionFactory,
+    record_ids: list[int],
+    *,
+    source_type: str,
+    resource_type: str,
+    projector: Callable[[Any], dict[str, Any]] = project_workflow_record,
+) -> dict[int, dict[str, Any]]:
+    """Batch-load FHIR projections for compatibility enrichment consumers."""
+    if not record_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in record_ids)
+    with connection_factory() as connection:
+        rows = connection.execute(
+            f"""SELECT * FROM local_fhir_workflow_records
+                WHERE local_source_type = ? AND local_source_id IN ({placeholders})
+                AND resource_type = ?""",
+            [source_type, *[str(item) for item in record_ids], resource_type],
+        ).fetchall()
+    return {int(row["local_source_id"]): projector(row) for row in rows}
+
+
 class FhirLedgerRepository:
     def __init__(
         self, connection_factory: ConnectionFactory, lock: RLock, *,
