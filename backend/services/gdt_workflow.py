@@ -37,6 +37,25 @@ class GdtWorkflowPort(GdtResultImportPort, Protocol):
     def list_gdt_events(self, order_id: int) -> list[dict[str, Any]]: ...
 
 
+class GdtOrderPort(Protocol):
+    def list_gdt_order_records(self) -> list[dict[str, Any]]: ...
+    def get_gdt_order_record(self, order_id: int) -> dict[str, Any]: ...
+    def create_gdt_order_record(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class GdtBridgePort(GdtResultImportPort, Protocol):
+    def get_gdt_order_record(self, order_id: int) -> dict[str, Any]: ...
+    def record_gdt_order_export(self, order_id: int, **values: Any) -> dict[str, Any]: ...
+
+
+class GdtResultPort(GdtResultImportPort, Protocol):
+    def get_gdt_order_record(self, order_id: int) -> dict[str, Any]: ...
+    def list_gdt_workbench(self, *, bridge_inbox: list[dict[str, Any]]) -> dict[str, Any]: ...
+    def create_gdt_demo_result(self, order_id: int) -> dict[str, Any]: ...
+    def list_gdt_messages(self) -> list[dict[str, Any]]: ...
+    def list_gdt_events(self, order_id: int) -> list[dict[str, Any]]: ...
+
+
 class GdtWatcherPort(Protocol):
     def status(self) -> dict[str, Any]: ...
 
@@ -57,10 +76,24 @@ class GdtExportError(Exception):
         self.item = item
 
 
-class GdtWorkflowService:
+class GdtOrderService:
+    def __init__(self, repository: GdtOrderPort) -> None:
+        self._repository = repository
+
+    def list(self) -> list[dict[str, Any]]:
+        return self._repository.list_gdt_order_records()
+
+    def get(self, order_id: int) -> dict[str, Any]:
+        return self._repository.get_gdt_order_record(order_id)
+
+    def create(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._repository.create_gdt_order_record(payload)
+
+
+class GdtBridgeService:
     def __init__(
         self,
-        repository: GdtWorkflowPort,
+        repository: GdtBridgePort,
         configuration: MutableMapping[str, Any],
         watcher: GdtWatcherPort,
         *,
@@ -76,15 +109,6 @@ class GdtWorkflowService:
         self._has_supported_extension = has_supported_extension
         self._filename_binding_matches = filename_binding_matches
         self._bridge_importer = bridge_importer
-
-    def list_orders(self) -> list[dict[str, Any]]:
-        return self._repository.list_gdt_order_records()
-
-    def get_order(self, order_id: int) -> dict[str, Any]:
-        return self._repository.get_gdt_order_record(order_id)
-
-    def create_order(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._repository.create_gdt_order_record(payload)
 
     @staticmethod
     def _file_item(path: Path, status: str = "pending") -> dict[str, Any]:
@@ -166,11 +190,8 @@ class GdtWorkflowService:
         self._watcher.configure(bridge_root=bridge_path)
         return self.bridge_config()
 
-    def workbench(self) -> dict[str, Any]:
-        return self._repository.list_gdt_workbench(bridge_inbox=self.inbox_items())
-
     def write_6302(self, order_id: int) -> tuple[dict[str, Any], str]:
-        item = self.get_order(order_id)
+        item = self._repository.get_gdt_order_record(order_id)
         directories = ensure_gdt_bridge_dirs(self._configuration["GDT_BRIDGE_PATH"])
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
         target = directories["inbox"] / f"gdtin_{item['localGdtOrderNumber']}_{timestamp}.gdt"
@@ -212,6 +233,15 @@ class GdtWorkflowService:
     def stop_watcher(self) -> dict[str, Any]:
         return self._watcher.stop()
 
+
+class GdtResultService:
+    def __init__(self, repository: GdtResultPort, *, inbox_items: Callable[[], list[dict[str, Any]]]) -> None:
+        self._repository = repository
+        self._inbox_items = inbox_items
+
+    def workbench(self) -> dict[str, Any]:
+        return self._repository.list_gdt_workbench(bridge_inbox=self._inbox_items())
+
     def create_demo_result(self, order_id: int) -> dict[str, Any]:
         return self._repository.create_gdt_demo_result(order_id)
 
@@ -219,11 +249,84 @@ class GdtWorkflowService:
         return self._repository.list_gdt_messages()
 
     def events(self, order_id: int) -> list[dict[str, Any]]:
-        self.get_order(order_id)
+        self._repository.get_gdt_order_record(order_id)
         return self._repository.list_gdt_events(order_id)
 
     def import_result(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._repository.record_gdt_result(payload)
+
+
+class GdtWorkflowService:
+    """Compatibility façade while callers migrate to focused GDT services."""
+
+    def __init__(
+        self,
+        repository: GdtWorkflowPort,
+        configuration: MutableMapping[str, Any],
+        watcher: GdtWatcherPort,
+        *,
+        is_internal_file: Callable[[Path], bool],
+        has_supported_extension: Callable[..., bool],
+        filename_binding_matches: Callable[..., bool],
+        bridge_importer: Callable[..., dict[str, Any]],
+    ) -> None:
+        self.order_service = GdtOrderService(repository)
+        self.bridge_service = GdtBridgeService(
+            repository, configuration, watcher,
+            is_internal_file=is_internal_file,
+            has_supported_extension=has_supported_extension,
+            filename_binding_matches=filename_binding_matches,
+            bridge_importer=bridge_importer,
+        )
+        self.result_service = GdtResultService(repository, inbox_items=self.bridge_service.inbox_items)
+
+    def list_orders(self) -> list[dict[str, Any]]:
+        return self.order_service.list()
+
+    def get_order(self, order_id: int) -> dict[str, Any]:
+        return self.order_service.get(order_id)
+
+    def create_order(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.order_service.create(payload)
+
+    def inbox_items(self) -> list[dict[str, Any]]:
+        return self.bridge_service.inbox_items()
+
+    def bridge_config(self) -> dict[str, Any]:
+        return self.bridge_service.bridge_config()
+
+    def update_bridge_config(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.bridge_service.update_bridge_config(payload)
+
+    def workbench(self) -> dict[str, Any]:
+        return self.result_service.workbench()
+
+    def write_6302(self, order_id: int) -> tuple[dict[str, Any], str]:
+        return self.bridge_service.write_6302(order_id)
+
+    def import_bridge_file(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.bridge_service.import_bridge_file(payload)
+
+    def watcher_status(self) -> dict[str, Any]:
+        return self.bridge_service.watcher_status()
+
+    def start_watcher(self) -> dict[str, Any]:
+        return self.bridge_service.start_watcher()
+
+    def stop_watcher(self) -> dict[str, Any]:
+        return self.bridge_service.stop_watcher()
+
+    def create_demo_result(self, order_id: int) -> dict[str, Any]:
+        return self.result_service.create_demo_result(order_id)
+
+    def messages(self) -> list[dict[str, Any]]:
+        return self.result_service.messages()
+
+    def events(self, order_id: int) -> list[dict[str, Any]]:
+        return self.result_service.events(order_id)
+
+    def import_result(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.result_service.import_result(payload)
 
 
 def gdt_path_status(path: Path, status: str, reason: str = "") -> dict[str, Any]:
