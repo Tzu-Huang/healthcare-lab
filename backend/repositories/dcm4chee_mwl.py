@@ -16,12 +16,10 @@ from backend.domain.statuses import (
     DCM4CHEE_MWL_STATUS_FAILED,
     DCM4CHEE_MWL_STATUS_PENDING,
 )
+from backend.domain.dicom import DCM4CHEE_DEFAULT_UID_ROOT
 from backend.mappers.dicom import project_mwl_attempt, project_mwl_mapping
 
 ConnectionFactory = Callable[[], AbstractContextManager[Connection]]
-DCM4CHEE_DEFAULT_UID_ROOT = "1.2.826.0.1.3680043.10.543"
-
-
 def _json_value(value: str, fallback: Any) -> Any:
     try:
         return json.loads(value or "")
