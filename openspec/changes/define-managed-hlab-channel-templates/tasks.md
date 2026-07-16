@@ -6,10 +6,10 @@
 
 ## 2. Managed Channel Domain Contract
 
-- [ ] 2.1 Add persistence-neutral typed contracts for the two logical identities, template version, endpoints, timeouts, queue policy, enabled state, and initial state.
-- [ ] 2.2 Implement actionable validation for private IPv4/internal DNS hosts, ports, timeouts, booleans, and supported states while rejecting schemes, paths, credentials, embedded ports, and unsupported inputs.
-- [ ] 2.3 Implement managed route-set validation that rejects duplicate listener ports and proves validation has no client, repository, Flask, SQLite, or runtime dependency.
-- [ ] 2.4 Define and test the machine-readable `Managed by Healthcare Lab` marker independently of Channel display name, OIE ID, and revision.
+- [x] 2.1 Add persistence-neutral typed contracts for the two logical identities, template version, endpoints, timeouts, queue policy, enabled state, and initial state.
+- [x] 2.2 Implement actionable validation for private IPv4/internal DNS hosts, ports, timeouts, booleans, and supported states while rejecting schemes, paths, credentials, embedded ports, and unsupported inputs.
+- [x] 2.3 Implement managed route-set validation that rejects duplicate listener ports and proves validation has no client, repository, Flask, SQLite, or runtime dependency.
+- [x] 2.4 Define and test the machine-readable `Managed by Healthcare Lab` marker independently of Channel display name, OIE ID, and revision.
 
 ## 3. Complete OIE Templates
 
