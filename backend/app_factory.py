@@ -466,19 +466,16 @@ def create_app(database_path: str | None = None) -> Flask:
             fhir_service.operation_outcome,
         )
     )
-    app.register_blueprint(
-        create_gdt_blueprint(
-            GdtWorkflowService(
-                gdt_workflow,
-                app.config,
-                app.extensions["gdt_bridge_watcher"],
-                is_internal_file=gdt_is_internal_or_temp_file,
-                has_supported_extension=gdt_has_supported_exchange_extension,
-                filename_binding_matches=gdt_filename_binding_matches,
-                bridge_importer=import_gdt_bridge_files,
-            )
-        )
+    gdt_service = GdtWorkflowService(
+        gdt_workflow, app.config, app.extensions["gdt_bridge_watcher"],
+        is_internal_file=gdt_is_internal_or_temp_file,
+        has_supported_extension=gdt_has_supported_exchange_extension,
+        filename_binding_matches=gdt_filename_binding_matches,
+        bridge_importer=import_gdt_bridge_files,
     )
+    app.register_blueprint(create_gdt_blueprint(
+        gdt_service.order_service, gdt_service.bridge_service, gdt_service.result_service,
+    ))
     app.register_blueprint(create_home_blueprint(app.config))
 
     return app

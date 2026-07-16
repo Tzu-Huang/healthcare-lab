@@ -36,7 +36,7 @@
 - [x] 5.2 Rewire Patient APIs and composition to any focused Patient services with narrow ports, or record test-backed evidence for responsibilities retained as one cohesive service.
 - [x] 5.3 Characterize GDT outbound export, inbox import, demo result, workbench, bridge callback, file-disposition, ordering, and error behavior.
 - [x] 5.4 Extract only independently meaningful GDT application use cases while keeping bridge filesystem/watcher lifecycle in runtime and atomic GDT-table work in the repository.
-- [ ] 5.5 Rewire GDT APIs/runtime callbacks and composition to any focused GDT services, or record test-backed evidence for responsibilities retained as cohesive.
+- [x] 5.5 Rewire GDT APIs/runtime callbacks and composition to any focused GDT services, or record test-backed evidence for responsibilities retained as cohesive.
 
 ## 6. Composition, Compatibility, and Architecture Closure
 
