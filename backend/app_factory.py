@@ -129,24 +129,15 @@ from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as Runtim
 from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
 from backend.runtime.lazy_wsgi import LazyWsgiApplication
 from backend.services.oie_settings import OieSettingsService, create_oie_management_client
+from backend.lab_composition import dashboard_services, lab_server_services
 from backend.services.lab_workflow import (
-    DashboardActionService,
-    DashboardSnapshotService,
-    LabHealthService,
-    LabOperationService,
-    LabRegistryService,
-    LabSmokeService,
     dashboard_all_group_items,
     dashboard_child_item,
     dashboard_events,
     dashboard_group_item,
-    decorate_lab_operation_availability,
     derive_lab_overall_status,
-    resolve_lab_operator,
-    run_dashboard_group_health_check,
-    run_lab_operation,
-    run_lab_server_health_check,
     run_lab_smoke_check,
+    run_lab_operation,
 )
 from backend.lab_store import (
     DCM4CHEE_MWL_OPERATION_CREATE,
@@ -355,43 +346,16 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.register_blueprint(
         create_lab_servers_blueprint(
-            LabRegistryService(
-                app, store.lab_repository,
-                availability_decorator=decorate_lab_operation_availability,
-            ),
-            LabHealthService(
-                app, store.lab_repository,
-                health_checker=lambda target_store, server_id: run_lab_server_health_check(
-                    target_store, server_id
-                ),
-                availability_decorator=decorate_lab_operation_availability,
-            ),
-            LabOperationService(
-                app, store.lab_repository, store,
-                operation_runner=lambda **values: run_lab_operation(**values),
-            ),
-            LabSmokeService(
-                app, store.lab_repository, store,
-                operation_runner=lambda **values: run_lab_operation(**values),
-                operator_resolver=lambda: resolve_lab_operator(),
-            ),
+            *lab_server_services(
+                app, store, operation_runner=lambda **values: run_lab_operation(**values)
+            )
         )
     )
     app.register_blueprint(
         create_dashboard_blueprint(
-            DashboardSnapshotService(app, store),
-            DashboardActionService(
-                app,
-                store,
-                health_check=lambda target_store, service_id: run_dashboard_group_health_check(
-                    target_store,
-                    service_id,
-                    health_checker=lambda health_store, server_id: run_lab_server_health_check(
-                        health_store, server_id
-                    ),
-                ),
-                operation_runner=lambda **values: run_lab_operation(**values),
-            ),
+            *dashboard_services(
+                app, store, operation_runner=lambda **values: run_lab_operation(**values)
+            )
         )
     )
     def get_auth_manager() -> MedplumAuthManager:
