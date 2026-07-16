@@ -9,20 +9,20 @@
 
 ## 2. Pure FHIR and GDT Collaborators
 
-- [ ] 2.1 Move or reuse FHIR validation, identifier/resource mapping, JSON normalization, and row-independent projection rules in framework-independent domain modules with representative tests.
-- [ ] 2.2 Move deterministic FHIR Patient/ServiceRequest ledger payload construction to template collaborators without changing serialized resource content or identifiers.
+- [x] 2.1 Move or reuse FHIR validation, identifier/resource mapping, JSON normalization, and row-independent projection rules in framework-independent domain modules with representative tests.
+- [x] 2.2 Move deterministic FHIR Patient/ServiceRequest ledger payload construction to template collaborators without changing serialized resource content or identifiers.
 - [ ] 2.3 Consolidate GDT validation, 6302 construction, 6310 parsing, attachment interpretation, rendering, and encoding behavior in adapters/templates with deterministic regression tests.
 - [ ] 2.4 Confirm pure FHIR/GDT collaborators import neither Flask nor SQLite and perform no Medplum transport, bridge filesystem mutation, or repository access.
 - [ ] 2.5 Run the nearest domain, template, and adapter tests and commit only the explicit collaborator/test paths after they pass.
 
 ## 3. FHIR Ledger Repository
 
-- [ ] 3.1 Introduce `FhirLedgerRepository` using the shared connection factory and application write lock, with no `DemoStore` dependency.
-- [ ] 3.2 Move workflow-record create/update/read/list, identifier lookup, dependency ordering, sync state transitions, and row projection into the FHIR ledger owner.
-- [ ] 3.3 Move sync-attempt create/list/projection and request/response/OperationOutcome audit persistence into the FHIR ledger owner.
+- [x] 3.1 Introduce `FhirLedgerRepository` using the shared connection factory and application write lock, with no `DemoStore` dependency.
+- [x] 3.2 Move workflow-record create/update/read/list, identifier lookup, dependency ordering, sync state transitions, and row projection into the FHIR ledger owner.
+- [x] 3.3 Move sync-attempt create/list/projection and request/response/OperationOutcome audit persistence into the FHIR ledger owner.
 - [ ] 3.4 Move patient/order FHIR batch enrichment reads behind narrow FHIR ledger loaders and remove independent FHIR-table SQL from generic enrichment modules.
-- [ ] 3.5 Add direct repository tests for FHIR transactions, state transitions, attempts, enrichment batching, ordering, missing records, and compatibility projections.
-- [ ] 3.6 Run focused FHIR repository and characterization tests, inspect the diff for schema or behavior drift, and commit only the explicit FHIR repository/test paths after they pass.
+- [x] 3.5 Add direct repository tests for FHIR transactions, state transitions, attempts, enrichment batching, ordering, missing records, and compatibility projections.
+- [x] 3.6 Run focused FHIR repository and characterization tests, inspect the diff for schema or behavior drift, and commit only the explicit FHIR repository/test paths after they pass.
 
 ## 4. FHIR Order Coordination and Service Ports
 
