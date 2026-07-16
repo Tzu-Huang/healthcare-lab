@@ -53,9 +53,9 @@
 
 ## 7. YOLO Hard Stops and Closure Verification
 
-- [ ] 7.1 Before each remaining fix, classify it as an in-scope routine repair or a hard stop; stop and report evidence if it requires schema/data mutation, real DB/live service access, public behavior change, baseline expansion, a new dependency, unrelated extraction, or unsafe dirty-worktree overlap.
-- [ ] 7.2 Run focused FHIR/GDT repository, domain/template/adapter, service, runtime, API/integration, database characterization, architecture, and compilation verification using disposable resources only.
-- [ ] 7.3 Run the full automated regression suite without skips or weakened assertions and record command, result, duration, and any directly caused remediation in the devlog.
-- [ ] 7.4 Run strict OpenSpec validation and verify every requirement scenario is covered by implementation or automated evidence.
-- [ ] 7.5 Audit the final diff and commit history for explicit-path staging, reviewable increments, preserved unrelated changes, and absence of schema/migration/index, dependency, secret, real-database, live-service, deployment, or unrelated-scope changes.
-- [ ] 7.6 Confirm FHIR state/order semantics, GDT matching/events/attachments, public APIs, deterministic payloads, stored rows, transaction/lock behavior, and runtime configuration remain compatible before routing to `/dev-test`.
+- [x] 7.1 Before each remaining fix, classify it as an in-scope routine repair or a hard stop; stop and report evidence if it requires schema/data mutation, real DB/live service access, public behavior change, baseline expansion, a new dependency, unrelated extraction, or unsafe dirty-worktree overlap.
+- [x] 7.2 Run focused FHIR/GDT repository, domain/template/adapter, service, runtime, API/integration, database characterization, architecture, and compilation verification using disposable resources only.
+- [x] 7.3 Run the full automated regression suite without skips or weakened assertions and record command, result, duration, and any directly caused remediation in the devlog.
+- [x] 7.4 Run strict OpenSpec validation and verify every requirement scenario is covered by implementation or automated evidence.
+- [x] 7.5 Audit the final diff and commit history for explicit-path staging, reviewable increments, preserved unrelated changes, and absence of schema/migration/index, dependency, secret, real-database, live-service, deployment, or unrelated-scope changes.
+- [x] 7.6 Confirm FHIR state/order semantics, GDT matching/events/attachments, public APIs, deterministic payloads, stored rows, transaction/lock behavior, and runtime configuration remain compatible before routing to `/dev-test`.
