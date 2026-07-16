@@ -149,3 +149,21 @@ API client while remaining isolated from the ZAC-61 settings ownership work.
 - Focused evidence: 19 OIE Management tests passed; 45 architecture and disposable-resource tests passed; compilation, diff check, and strict OpenSpec validation passed.
 - Finding state: pending verification and closure review; not marked resolved by the fix stage.
 - Next action: `/dev-test`
+
+### Fix 2 (2026-07-16)
+
+- Fix committed: `40d5d03b659f7e3c578b20204f63936af7436b53 fix(ZAC-46): address REV-005 redeploy contract`
+- Source review: `openspec/changes/implement-oie-management-api-client/review/2026-07-16_feature-ZAC-46_implement-oie-management-api-client_codex-review-r3.md`
+- Finding IDs: `REV-005`
+- Focused evidence: 19 OIE Management client/domain tests passed; the mutation regression now requires `POST /channels/_redeployAll`; compilation and strict OpenSpec validation passed.
+- Finding state: pending verification and closure review; not marked resolved by the fix stage.
+- Next action: `/dev-test`
+
+### Fix 3 (2026-07-16)
+
+- Fix committed: `c3beaf7b5d0670a52ae8dbf0577c864810a47d43 fix(ZAC-46): address REV-006 diff hygiene`
+- Source review: `openspec/changes/implement-oie-management-api-client/review/2026-07-16_feature-ZAC-46_implement-oie-management-api-client_codex-review-r3.md`
+- Finding IDs: `REV-006`
+- Focused evidence: `git diff --check main...HEAD` passed against the committed fix state. This branch-range check supersedes the earlier worktree-only `git diff --check` evidence for diff hygiene.
+- Finding state: pending verification and closure review; not marked resolved by the fix stage.
+- Next action: `/dev-test`
