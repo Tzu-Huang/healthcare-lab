@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from backend.domain.order import account_number, record_number, visit_id
-from backend.templates.patient import hl7_escape, hl7_escape_composite
+from backend.templates.hl7 import HL7_V2_MSH_SUFFIX, escape as hl7_escape, escape_composite as hl7_escape_composite
 
-HL7_MSH_SUFFIX = "2.5.1||||||UNICODE UTF-8"
+HL7_MSH_SUFFIX = HL7_V2_MSH_SUFFIX
 
 
 def build_orm(values: dict[str, Any], *, record_id: int, timestamp: str) -> str:

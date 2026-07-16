@@ -11,8 +11,9 @@ from typing import Any
 
 from backend.domain.fhir_ledger import (
     FHIR_RESOURCE_DEPENDENCY_ORDER, clean_text, list_resource_mappings,
-    normalize_record_payload, project_sync_attempt, project_workflow_record, record_number,
+    normalize_record_payload, record_number,
 )
+from backend.mappers.fhir import project_sync_attempt, project_workflow_record
 from backend.domain.statuses import (
     FHIR_SYNC_STATUS_FAILED, FHIR_SYNC_STATUS_PENDING,
     FHIR_SYNC_STATUS_SYNCED, FHIR_SYNC_STATUS_SYNCING,

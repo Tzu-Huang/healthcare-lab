@@ -18,6 +18,8 @@ from backend.domain.gdt_protocol import (
     persistence_order_identifiers,
 )
 from backend.domain.errors import SimulatorValidationError
+from backend.domain import gdt_workflow as gdt_domain
+from backend.mappers import gdt as gdt_mapper
 
 ConnectionFactory = Callable[[], AbstractContextManager[Connection]]
 
@@ -25,7 +27,6 @@ GDT_ORDER_PROTOCOL_VERSION = "GDT 2.1"
 GDT_ORDER_STATUS_CREATED = "Created"
 GDT_ORDER_STATUS_RESULT_RECEIVED = "Result received"
 GDT_ORDER_TEST_LABEL = "12-lead resting ECG"
-GDT_PATIENT_SEX_CODES = {"M": "1", "F": "2"}
 
 
 class GdtWorkflowRepository:
@@ -49,39 +50,11 @@ class GdtWorkflowRepository:
         self._build_order = order_builder
 
     @staticmethod
-    def _order_number(record_id: int) -> str:
-        return f"GDT-ORD-{record_id:06d}"
-
-    @staticmethod
-    def _patient_number(patient_record_id: int) -> str:
-        return f"GDT-PAT-{patient_record_id:06d}"
-
-    @staticmethod
-    def _birth_date(dob: str) -> str:
-        return f"{dob[6:]}{dob[4:6]}{dob[:4]}"
-
-    @staticmethod
     def _json(value: str, fallback: Any) -> Any:
         try:
             return json.loads(value or "")
         except (TypeError, ValueError):
             return fallback
-
-    @staticmethod
-    def _snapshot(patient: dict[str, Any], gdt_patient_number: str) -> dict[str, Any]:
-        demographics = patient.get("patient") if isinstance(patient.get("patient"), dict) else patient
-        summary = patient.get("summary") if isinstance(patient.get("summary"), dict) else {}
-        return {
-            "patientRecordId": patient["id"],
-            "mrn": demographics.get("mrn", summary.get("mrn", "")),
-            "gdtPatientNumber": gdt_patient_number,
-            "firstName": demographics.get("firstName", ""),
-            "middleName": demographics.get("middleName", ""),
-            "lastName": demographics.get("lastName", ""),
-            "dob": demographics.get("dob", summary.get("dob", "")),
-            "sex": demographics.get("sex", summary.get("sex", "")),
-            "visitNumber": patient.get("visitNumber", summary.get("visitNumber", "")),
-        }
 
     def _event(self, connection: Connection, *, event_type: str, timestamp: str,
                order_record_id: int | None = None, patient_context_id: int | None = None,
@@ -103,9 +76,9 @@ class GdtWorkflowRepository:
         context = connection.execute(
             "SELECT * FROM local_gdt_patient_contexts WHERE patient_record_id = ?", (patient_id,)
         ).fetchone()
-        generated = self._patient_number(patient_id)
+        generated = gdt_domain.patient_number(patient_id)
         effective = override or generated
-        snapshot_json = json.dumps(self._snapshot(patient, effective), sort_keys=True)
+        snapshot_json = json.dumps(gdt_mapper.patient_snapshot(patient, effective), sort_keys=True)
         if not context:
             try:
                 cursor = connection.execute(
@@ -144,7 +117,7 @@ class GdtWorkflowRepository:
             )
         else:
             effective = context["effective_gdt_patient_number"]
-            snapshot_json = json.dumps(self._snapshot(patient, effective), sort_keys=True)
+            snapshot_json = json.dumps(gdt_mapper.patient_snapshot(patient, effective), sort_keys=True)
             connection.execute(
                 "UPDATE local_gdt_patient_contexts SET patient_snapshot_json = ?, updated_at = ? WHERE id = ?",
                 (snapshot_json, timestamp, context["id"]),
@@ -152,18 +125,6 @@ class GdtWorkflowRepository:
         return connection.execute(
             "SELECT * FROM local_gdt_patient_contexts WHERE patient_record_id = ?", (patient_id,)
         ).fetchone()
-
-    @staticmethod
-    def _adapter_values(result: GdtAdapterResult | dict[str, Any]) -> tuple[str, dict[str, list[str]], dict[str, Any]]:
-        if isinstance(result, GdtAdapterResult) or all(
-            hasattr(result, name) for name in ("raw_gdt_text", "parsed_fields", "canonical")
-        ):
-            return result.raw_gdt_text, result.parsed_fields, result.canonical
-        return (
-            str(result.get("rawGdtText", "")),
-            dict(result.get("parsedFields") or {}),
-            dict(result.get("canonical") or {}),
-        )
 
     def _message(self, connection: Connection, *, order_record_id: int | None,
                  patient_context_id: int | None, direction: str, raw_gdt_text: str,
@@ -183,16 +144,11 @@ class GdtWorkflowRepository:
         )
         return int(cursor.lastrowid)
 
-    @staticmethod
-    def _attachment_filename(url: str, path: str = "") -> str:
-        source = path or url
-        return source.rstrip("/").replace("\\", "/").split("/")[-1] if source else ""
-
     def _attachment(self, connection: Connection, *, order_record_id: int | None,
                     message_record_id: int | None, role: str, timestamp: str, **values: Any) -> int:
         url, path = str(values.get("url") or "").strip(), str(values.get("path") or "").strip()
         reference = str(values.get("reference") or "").strip() or url or path
-        filename = str(values.get("filename") or "").strip() or self._attachment_filename(url, path or reference)
+        filename = str(values.get("filename") or "").strip() or gdt_mapper.attachment_filename(url, path or reference)
         status = str(values.get("status") or "").strip()
         cursor = connection.execute(
             """INSERT INTO local_gdt_attachment_records (
@@ -229,7 +185,7 @@ class GdtWorkflowRepository:
         with self._lock, self._connect() as connection:
             context = self._ensure_context(connection, patient, override=override, timestamp=timestamp)
             gdt_patient_number = context["effective_gdt_patient_number"]
-            patient_snapshot = self._snapshot(patient, gdt_patient_number)
+            patient_snapshot = gdt_mapper.patient_snapshot(patient, gdt_patient_number)
             order_snapshot = {
                 "requestedAt": requested_at, "orderingProvider": provider,
                 "clinicalIndication": indication, "gdtTestField": GDT_ORDER_TEST_CODE_FIELD,
@@ -254,18 +210,16 @@ class GdtWorkflowRepository:
                  timestamp, timestamp),
             )
             record_id = int(cursor.lastrowid)
-            order_number = self._order_number(record_id)
+            order_number = gdt_domain.order_number(record_id)
             order_snapshot["localGdtOrderNumber"] = order_number
-            adapter_result = self._build_order({
-                "gdtPatientNumber": gdt_patient_number, "lastName": demographics.get("lastName", ""),
-                "firstName": demographics.get("firstName", ""),
-                "birthDate": self._birth_date(demographics.get("dob", summary.get("dob", ""))),
-                "localGdtOrderNumber": order_number,
-                "sex": GDT_PATIENT_SEX_CODES.get(demographics.get("sex", summary.get("sex", "")), ""),
-                "requestedAt": requested_at, "orderingProvider": provider, "clinicalIndication": indication,
-                "patient": patient_snapshot, "order": order_snapshot, "testLabel": GDT_ORDER_TEST_LABEL,
-            })
-            raw, parsed, canonical = self._adapter_values(adapter_result)
+            adapter_result = self._build_order(gdt_domain.prepare_order_payload(
+                demographics=demographics, summary=summary, gdt_patient_number=gdt_patient_number,
+                local_order_number=order_number, requested_at=requested_at,
+                ordering_provider=provider, clinical_indication=indication,
+                patient_snapshot=patient_snapshot, order_snapshot=order_snapshot,
+                test_label=GDT_ORDER_TEST_LABEL,
+            ))
+            raw, parsed, canonical = gdt_domain.adapter_values(adapter_result)
             message_id = self._message(
                 connection, order_record_id=record_id, patient_context_id=context["id"], direction="outbound",
                 raw_gdt_text=raw, parsed_fields=parsed, canonical=canonical, timestamp=timestamp,
@@ -288,10 +242,10 @@ class GdtWorkflowRepository:
 
     def record_gdt_result(self, values: GdtAdapterResult | dict[str, Any]) -> dict[str, Any]:
         if not isinstance(values, dict):
-            raw, fields, canonical = self._adapter_values(values)
+            raw, fields, canonical = gdt_domain.adapter_values(values)
             extras: dict[str, Any] = {}
         else:
-            raw, fields, canonical = self._adapter_values(values)
+            raw, fields, canonical = gdt_domain.adapter_values(values)
             extras = values
         canonical = json.loads(json.dumps(canonical))
         identifiers = list(extras.get("orderIdentifiers") or persistence_order_identifiers(fields))
@@ -399,7 +353,7 @@ class GdtWorkflowRepository:
                     """SELECT * FROM local_gdt_message_records WHERE order_record_id = ?
                        ORDER BY created_at DESC, id DESC""", (order_record_id,),
                 ).fetchall()
-        return [self._project_message(row) for row in rows]
+        return [gdt_mapper.project_message(row) for row in rows]
 
     def list_gdt_attachments(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
         with self._connect() as connection:
@@ -412,7 +366,7 @@ class GdtWorkflowRepository:
                     """SELECT * FROM local_gdt_attachment_records WHERE order_record_id = ?
                        ORDER BY created_at ASC, id ASC""", (order_record_id,),
                 ).fetchall()
-        return [self._project_attachment(row) for row in rows]
+        return [gdt_mapper.project_attachment(row) for row in rows]
 
     def list_gdt_events(self, order_record_id: int | None = None) -> list[dict[str, Any]]:
         with self._connect() as connection:
@@ -432,45 +386,14 @@ class GdtWorkflowRepository:
                        ) ORDER BY created_at ASC, id ASC""",
                     (order_record_id, context_id, context_id),
                 ).fetchall()
-        return [self._project_event(row) for row in rows]
+        return [gdt_mapper.project_event(row) for row in rows]
 
     def list_gdt_workbench(self, *, bridge_inbox: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        patients = self._patient_list_loader()
         orders, messages, attachments = self.list_gdt_order_records(), self.list_gdt_messages(), self.list_gdt_attachments()
-        results = [item for item in messages if item.get("direction") == "inbound" and item.get("messageType") == GDT_RESULT_MESSAGE_TYPE]
-        orders_by_patient: dict[int, list[dict[str, Any]]] = {}
-        results_by_order: dict[int, list[dict[str, Any]]] = {}
-        results_by_context: dict[int, list[dict[str, Any]]] = {}
-        attachments_by_message: dict[int, list[dict[str, Any]]] = {}
-        for order in orders:
-            orders_by_patient.setdefault(int(order["patientRecordId"]), []).append(order)
-        for result in results:
-            if result.get("orderRecordId"):
-                results_by_order.setdefault(int(result["orderRecordId"]), []).append(result)
-            if result.get("patientContextId"):
-                results_by_context.setdefault(int(result["patientContextId"]), []).append(result)
-        for attachment in attachments:
-            if attachment.get("messageRecordId"):
-                attachments_by_message.setdefault(int(attachment["messageRecordId"]), []).append(attachment)
-        for result in results:
-            result["attachments"] = attachments_by_message.get(int(result["id"]), [])
-        workbench_patients = []
-        for patient in patients:
-            patient_orders = orders_by_patient.get(int(patient["id"]), [])
-            if not patient_orders and patient.get("protocolVersion") != GDT_ORDER_PROTOCOL_VERSION:
-                continue
-            context_ids = {int(order["gdtPatientContextId"]) for order in patient_orders if order.get("gdtPatientContextId")}
-            patient_results = [result for context_id in context_ids for result in results_by_context.get(context_id, [])]
-            item = {**patient, "orders": patient_orders, "results": patient_results,
-                    "orderCount": len(patient_orders), "resultCount": len(patient_results)}
-            item["summary"] = {**item.get("summary", {}), "orderCount": len(patient_orders),
-                               "resultCount": len(patient_results)}
-            workbench_patients.append(item)
-        return {
-            "patients": workbench_patients, "orders": orders, "results": results,
-            "unmatchedResults": [result for result in results if not result.get("orderRecordId") and not result.get("patientContextId")],
-            "attachments": attachments, "bridgeInbox": bridge_inbox or [], "resultsByOrder": results_by_order,
-        }
+        return gdt_mapper.project_workbench(
+            patients=self._patient_list_loader(), orders=orders, messages=messages,
+            attachments=attachments, bridge_inbox=bridge_inbox,
+        )
 
     def list_gdt_orders(self) -> list[dict[str, Any]]:
         return [{"id": item["id"], "orderNumber": item["localGdtOrderNumber"],
@@ -482,51 +405,10 @@ class GdtWorkflowRepository:
             row = connection.execute("SELECT * FROM local_gdt_message_records WHERE id = ?", (record_id,)).fetchone()
         if not row:
             raise KeyError(record_id)
-        return self._project_message(row)
+        return gdt_mapper.project_message(row)
 
     def _project_order(self, row: Row) -> dict[str, Any]:
         attachments, messages, events = self.list_gdt_attachments(row["id"]), self.list_gdt_messages(row["id"]), self.list_gdt_events(row["id"])
-        name = " ".join(part for part in (row["first_name"], row["middle_name"], row["last_name"]) if part)
-        attachment_url = row["attachment_url"] or next((item["url"] for item in attachments if item["url"]), "")
-        return {
-            "id": row["id"], "localGdtOrderNumber": row["local_gdt_order_number"],
-            "patientRecordId": row["patient_record_id"], "gdtPatientContextId": row["gdt_patient_context_id"],
-            "protocolVersion": row["protocol_version"], "messageType": row["message_type"],
-            "status": row["order_status"], "gdtTestField": GDT_ORDER_TEST_CODE_FIELD,
-            "gdtTestCode": row["gdt_test_code"], "gdtTestLabel": row["gdt_test_label"],
-            "gdtPatientNumber": row["gdt_patient_number"], "requestedAt": row["requested_at"],
-            "orderingProvider": row["ordering_provider"], "clinicalIndication": row["clinical_indication"],
-            "attachmentUrl": attachment_url, "attachments": attachments, "payload": row["payload_gdt"],
-            "rawGdtText": row["payload_gdt"], "patientSnapshot": self._json(row["patient_snapshot_json"], {}),
-            "orderSnapshot": self._json(row["order_snapshot_json"], {}), "messages": messages, "events": events,
-            "exportPath": row["export_path"], "error": row["error_text"],
-            "summary": {"mrn": row["mrn"], "gdtPatientNumber": row["gdt_patient_number"], "name": name,
-                        "dob": row["dob"], "sex": row["sex"], "visitNumber": row["visit_number"],
-                        "testCode": row["gdt_test_code"], "testLabel": row["gdt_test_label"]},
-            "createdAt": row["created_at"], "updatedAt": row["updated_at"], "localOnly": True,
-        }
-
-    def _project_message(self, row: Row) -> dict[str, Any]:
-        return {"id": row["id"], "orderRecordId": row["order_record_id"],
-                "patientContextId": row["patient_context_id"], "direction": row["direction"],
-                "messageType": row["message_type"], "rawGdtText": row["raw_gdt_text"],
-                "parsedFields": self._json(row["parsed_fields_json"], {}),
-                "canonical": self._json(row["canonical_json"], {}), "parseStatus": row["parse_status"],
-                "matchStatus": row["match_status"], "error": row["error_text"],
-                "generatedAt": row["generated_at"], "receivedAt": row["received_at"],
-                "createdAt": row["created_at"], "updatedAt": row["updated_at"]}
-
-    def _project_attachment(self, row: Row) -> dict[str, Any]:
-        return {"id": row["id"], "orderRecordId": row["order_record_id"],
-                "messageRecordId": row["message_record_id"], "role": row["role"], "url": row["url"],
-                "path": row["path"], "reference": row["reference"], "contentType": row["content_type"],
-                "description": row["description"], "sourceFile": row["source_file"], "status": row["status"],
-                "details": self._json(row["details_json"], {}), "filename": row["filename"],
-                "checksum": row["checksum"], "createdAt": row["created_at"], "updatedAt": row["updated_at"]}
-
-    def _project_event(self, row: Row) -> dict[str, Any]:
-        return {"id": row["id"], "orderRecordId": row["order_record_id"],
-                "patientContextId": row["patient_context_id"], "messageRecordId": row["message_record_id"],
-                "attachmentRecordId": row["attachment_record_id"], "eventType": row["event_type"],
-                "actor": row["actor"], "details": self._json(row["details_json"], {}),
-                "createdAt": row["created_at"]}
+        return gdt_mapper.project_order(
+            row, attachments=attachments, messages=messages, events=events,
+        )

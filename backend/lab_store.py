@@ -20,17 +20,23 @@ from backend.domain.gdt_protocol import (
     GDT_VERSION,
     GdtValidationError,
     attachment_payloads_from_result_fields,
-    build_gdt_6302_request,
     first_gdt_field as adapter_first_gdt_field,
     parse_gdt_6310_result,
     parse_gdt_message as adapter_parse_gdt_message,
     render_gdt_message as adapter_render_gdt_message,
     render_gdt_record as adapter_render_gdt_record,
 )
+from backend.templates.gdt import build_gdt_6302_request
 from backend.domain.errors import SimulatorValidationError
 from backend.domain import patient as patient_domain
 from backend.domain import order as order_domain
 from backend.domain import dicom as dicom_domain
+from backend.domain.dicom import (
+    DCM4CHEE_DEFAULT_UID_ROOT,
+    DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES,
+    DCM4CHEE_ORDER_PROTOCOL_VERSION,
+    DCM4CHEE_RESULT_SOURCE_SIMULATED_AP,
+)
 from backend.domain.fhir_ledger import (
     FHIR_IDENTIFIER_SYSTEMS,
     FHIR_RESOURCE_DEPENDENCY_ORDER,
@@ -50,21 +56,19 @@ from backend.repositories.patients import PatientRepository
 from backend.services import protocol_compatibility as protocol_compat
 from backend import protocol_composition
 from backend.repositories.orders import OrderRepository
-from backend.repositories.dcm4chee_patient_sync import (
-    Dcm4cheePatientSyncRepository,
-    project_patient_sync_attempt_dict,
-    project_patient_sync_dict,
+from backend.repositories.dcm4chee_patient_sync import Dcm4cheePatientSyncRepository
+from backend.mappers.dicom import (
+    project_mwl_attempt,
+    project_mwl_mapping,
+    project_patient_sync,
+    project_patient_sync_attempt,
+    project_result_record,
 )
 from backend.repositories.dcm4chee_mwl import (
     Dcm4cheeMwlRepository,
     backfill_dcm4chee_mwl_mappings,
-    project_mwl_attempt,
-    project_mwl_mapping,
 )
-from backend.repositories.dcm4chee_results import (
-    Dcm4cheeResultRepository,
-    project_result_record,
-)
+from backend.repositories.dcm4chee_results import Dcm4cheeResultRepository
 from backend.templates import patient as patient_templates
 from backend.templates import order as order_templates
 from backend.templates import dicom as dicom_templates
@@ -157,11 +161,6 @@ OIE_MANAGEMENT_API_PASSWORD = "Admin"
 OIE_MANAGEMENT_API_TIMEOUT_SECONDS = 10
 OIE_RESULT_LISTENER_HOST = "0.0.0.0"
 OIE_RESULT_LISTENER_PORT = 6665
-DCM4CHEE_ORDER_PROTOCOL_VERSION = "DICOM"
-DCM4CHEE_ORDER_MESSAGE_TYPE = "MWL"
-DCM4CHEE_MWL_NON_RETRYABLE_ERROR_TYPES = {"patient_missing", "patient_sync_failed", "profile_invalid"}
-DCM4CHEE_RESULT_SOURCE_SIMULATED_AP = "simulated_ap_return"
-DCM4CHEE_DEFAULT_UID_ROOT = "1.2.826.0.1.3680043.10.543"
 FHIR_ORDER_PROTOCOL_VERSION = "FHIR R4"
 FHIR_ORDER_MESSAGE_TYPE = "ServiceRequest"
 FHIR_ORDER_STATUS_CREATED = "Created"
@@ -341,19 +340,6 @@ def _hl7_escape_composite(value: Any) -> str:
         _hl7_escape(component)
         for component in str(value if value is not None else "").split("^")
     )
-
-
-def _gdt_clean_value(value: Any) -> str:
-    return str(value if value is not None else "").strip().replace("\r", " ").replace("\n", " ")
-
-
-def _encode_gdt_text(value: str) -> bytes:
-    try:
-        return value.encode(GDT_DEFAULT_ENCODING)
-    except UnicodeEncodeError as exc:
-        raise SimulatorValidationError(
-            "GDT 2.1 patient fields must use ANSI/ISO-8859-1 compatible characters."
-        ) from exc
 
 
 def render_gdt_record(code: str, value: Any) -> bytes:
@@ -1176,11 +1162,11 @@ class DemoStore:
 
     @staticmethod
     def _dcm4chee_patient_sync_dict(row: sqlite3.Row) -> dict[str, Any]:
-        return project_patient_sync_dict(row)
+        return project_patient_sync(row)
 
     @staticmethod
     def _dcm4chee_patient_sync_attempt_dict(row: sqlite3.Row) -> dict[str, Any]:
-        return project_patient_sync_attempt_dict(row)
+        return project_patient_sync_attempt(row)
 
 
     # Compatibility-only lab seams. New composition uses ``lab_repository`` directly.

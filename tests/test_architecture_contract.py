@@ -26,15 +26,17 @@ RESPONSIBILITY_PACKAGES = (
     "repositories",
     "domain",
     "templates",
+    "mappers",
 )
 ALLOWED_LAYER_DEPENDENCIES: dict[str, frozenset[str]] = {
     "api": frozenset({"api", "services", "domain", "config"}),
-    "services": frozenset({"services", "clients", "domain", "config"}),
+    "services": frozenset({"services", "clients", "domain", "templates", "mappers", "config"}),
     "clients": frozenset({"clients", "domain", "config"}),
     "runtime": frozenset({"runtime", "services", "domain", "config"}),
-    "repositories": frozenset({"repositories", "domain", "config"}),
+    "repositories": frozenset({"repositories", "domain", "templates", "mappers", "config"}),
     "domain": frozenset({"domain"}),
     "templates": frozenset({"templates", "domain", "config"}),
+    "mappers": frozenset({"mappers", "domain"}),
 }
 HTTP_DECORATORS = {"delete", "get", "patch", "post", "put", "route"}
 SQL_PATTERN = re.compile(
@@ -269,8 +271,8 @@ DEMO_STORE_COMPATIBILITY_DELEGATES = {
     "_dcm4chee_mwl_status_view": "dicom_domain.mwl_status_view",
     "_dcm4chee_mwl_retryable": "dicom_domain.mwl_retryable",
     "_dcm4chee_mwl_display_status": "dicom_domain.mwl_display_status",
-    "_dcm4chee_patient_sync_dict": "project_patient_sync_dict",
-    "_dcm4chee_patient_sync_attempt_dict": "project_patient_sync_attempt_dict",
+    "_dcm4chee_patient_sync_dict": "project_patient_sync",
+    "_dcm4chee_patient_sync_attempt_dict": "project_patient_sync_attempt",
     "_normalize_requested_at": "order_domain.normalize_requested_at",
     "_clean_order_text": "order_domain.clean_text",
     "list_lab_servers": "self.lab_repository.list_servers",
@@ -860,6 +862,8 @@ def layer_python_paths(package: str, backend_root: Path = BACKEND) -> list[Path]
 def backend_dependency_layer(module: str) -> str | None:
     if module == "backend.config" or module.startswith("backend.config."):
         return "config"
+    if module == "backend.app_factory" or module.startswith("backend.app_factory."):
+        return "composition"
     if not module.startswith("backend."):
         return None
     candidate = module.split(".", 2)[1]
@@ -1089,11 +1093,121 @@ def placement_violations(relative_path: str, source: str) -> list[PlacementViola
     return violations
 
 
+def repository_pure_responsibility_violations(relative: str, source: str) -> list[str]:
+    tree = ast.parse(source, filename=relative)
+    aliases = import_aliases_from_tree(tree)
+    infrastructure_validators = {
+        ("backend/repositories/database.py", "_validate_migrations"),
+        ("backend/repositories/gdt_bridge_health.py", "validate_gdt_bridge_dirs"),
+    }
+    violations = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if (relative, node.name) in infrastructure_validators:
+            continue
+        if definition_has_sql_execution(node):
+            continue
+        calls = [
+            resolve_imported_name(child.func, aliases)
+            for child in ast.walk(node)
+            if isinstance(child, ast.Call)
+        ]
+        delegates_to_pure_owner = any(
+            call.startswith(("backend.domain.", "backend.templates.", "backend.mappers."))
+            for call in calls
+        )
+        returns = [child.value for child in ast.walk(node) if isinstance(child, ast.Return)]
+        thin_delegate = delegates_to_pure_owner and all(
+            value is None or isinstance(value, (ast.Call, ast.ListComp))
+            for value in returns
+        )
+        if thin_delegate:
+            continue
+        raises_validation = any(
+            isinstance(child, ast.Raise)
+            and isinstance(child.exc, ast.Call)
+            and resolve_imported_name(child.exc.func, aliases).endswith("SimulatorValidationError")
+            for child in ast.walk(node)
+        )
+        return_literals = {
+            child.value
+            for value in returns if value is not None
+            for child in ast.walk(value)
+            if isinstance(child, ast.Constant) and isinstance(child.value, str)
+        }
+        protocol_shape = any(
+            value.startswith(("MSH|", "PID|", "OBR|", "ORC|"))
+            or value in {"resourceType", "identifier", "00400100", "00080050"}
+            or re.fullmatch(r"[0-9A-Fa-f]{8}", value)
+            for value in return_literals
+        )
+        returns_public_dict = any(isinstance(value, ast.Dict) for value in returns)
+        if raises_validation:
+            violations.append(f"{relative}:{node.lineno} repository validation {node.name}")
+        elif protocol_shape:
+            violations.append(f"{relative}:{node.lineno} repository pure responsibility {node.name}")
+        elif returns_public_dict:
+            violations.append(f"{relative}:{node.lineno} repository presentation {node.name}")
+    return violations
+
+
 class ArchitectureContractTest(unittest.TestCase):
     def test_responsibility_packages_exist(self):
         for package in RESPONSIBILITY_PACKAGES:
             with self.subTest(package=package):
                 self.assertTrue((BACKEND / package / "__init__.py").is_file())
+
+    def test_repositories_do_not_implement_pure_validation_builders_or_presentation(self):
+        violations = []
+        for path in layer_python_paths("repositories"):
+            relative = path.relative_to(ROOT).as_posix()
+            violations.extend(repository_pure_responsibility_violations(
+                relative, path.read_text(encoding="utf-8")
+            ))
+        self.assertEqual([], violations)
+
+    def test_repository_responsibility_rule_rejects_renamed_implementations(self):
+        fixtures = {
+            "validation": """\
+from backend.domain.errors import SimulatorValidationError
+def check_input(value):
+    if not value:
+        raise SimulatorValidationError('required')
+    return value
+""",
+            "protocol-builder": """\
+def make_message(patient):
+    return 'MSH|^~\\\\&|LAB|' + patient['mrn']
+""",
+            "presentation": """\
+def row_to_public_json(row):
+    return {'patientId': row['patient_id']}
+""",
+        }
+        for label, source in fixtures.items():
+            with self.subTest(label=label):
+                self.assertTrue(repository_pure_responsibility_violations(
+                    f"backend/repositories/{label}.py", source
+                ))
+
+    def test_repository_responsibility_rule_permits_sql_and_mapper_delegates(self):
+        sql = """\
+def load(connection):
+    row = connection.execute('SELECT * FROM records').fetchone()
+    return {'id': row['id']}
+"""
+        delegate = """\
+from backend.mappers.patient import project
+def row_to_public_json(row):
+    return project(row)
+"""
+        self.assertEqual([], repository_pure_responsibility_violations(
+            "backend/repositories/sql.py", sql
+        ))
+        self.assertEqual([], repository_pure_responsibility_violations(
+            "backend/repositories/delegate.py", delegate
+        ))
 
     def test_process_entrypoint_contains_no_application_implementation(self):
         path = ROOT / "app.py"
@@ -1116,7 +1230,7 @@ class ArchitectureContractTest(unittest.TestCase):
                 self.assertNotIn(forbidden, source)
 
     def test_lower_layers_do_not_import_flask_or_api_modules(self):
-        for package in ("clients", "repositories", "domain", "templates"):
+        for package in ("clients", "repositories", "domain", "templates", "mappers"):
             for path in layer_python_paths(package):
                 modules = imported_modules(path)
                 with self.subTest(path=path.relative_to(ROOT)):
@@ -1131,7 +1245,7 @@ class ArchitectureContractTest(unittest.TestCase):
                         ),
                         f"{path.relative_to(ROOT)} lower layer must not import backend.api.",
                     )
-                    if package == "domain":
+                    if package in {"domain", "mappers"}:
                         self.assertFalse(
                             any(
                                 name == "backend.config" or name.startswith("backend.config.")
@@ -1176,6 +1290,7 @@ class ArchitectureContractTest(unittest.TestCase):
             "backend/clients/example.py": "backend.services.fhir_workflow",
             "backend/repositories/example.py": "backend.clients.dcm4chee",
             "backend/domain/example.py": "backend.services.patient_workflow",
+            "backend/mappers/example.py": "backend.repositories.patients",
         }
         for relative_path, module in fixtures.items():
             with self.subTest(path=relative_path, module=module):
@@ -1186,6 +1301,29 @@ class ArchitectureContractTest(unittest.TestCase):
                 )
                 self.assertEqual(1, len(violations))
                 self.assertEqual("dependency", violations[0].category)
+
+    def test_mapper_dependency_matrix_accepts_only_mapper_and_domain_modules(self):
+        self.assertEqual(
+            [],
+            layer_dependency_violations(
+                "backend/mappers/patient.py",
+                {"backend.mappers.types", "backend.domain.records"},
+                frozenset(),
+            ),
+        )
+        forbidden = (
+            "backend.repositories.patients",
+            "backend.services.patient_workflow",
+            "backend.clients.medplum",
+            "backend.runtime.gdt_bridge_watcher",
+            "backend.app_factory",
+        )
+        for module in forbidden:
+            with self.subTest(module=module):
+                violations = layer_dependency_violations(
+                    "backend/mappers/patient.py", {module}, frozenset()
+                )
+                self.assertEqual(1, len(violations))
 
     def test_layer_dependencies_follow_allowed_matrix(self):
         violations: list[PlacementViolation] = []
