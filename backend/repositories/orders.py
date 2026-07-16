@@ -10,6 +10,7 @@ from threading import RLock
 from typing import Any
 
 from backend.domain import order as order_domain
+from backend.mappers.order import project as project_order
 
 ConnectionFactory = Callable[[], AbstractContextManager[Connection]]
 
@@ -146,7 +147,7 @@ class OrderRepository:
 
     def _project(self, rows: list[Row]) -> list[dict[str, Any]]:
         enrichments = self._enrichment.load(rows) if self._enrichment else {}
-        return [order_domain.project(row,
+        return [project_order(row,
             fhir_records=enrichments.get(int(row["id"]), {}).get("fhir", {}),
             dcm4chee_attempt=enrichments.get(int(row["id"]), {}).get("attempt"),
             dcm4chee_mapping=enrichments.get(int(row["id"]), {}).get("mapping"),
