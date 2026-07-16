@@ -1099,6 +1099,40 @@ class ArchitectureContractTest(unittest.TestCase):
             with self.subTest(package=package):
                 self.assertTrue((BACKEND / package / "__init__.py").is_file())
 
+    def test_repositories_do_not_implement_pure_validation_builders_or_presentation(self):
+        infrastructure_validators = {
+            ("backend/repositories/database.py", "_validate_migrations"),
+            ("backend/repositories/gdt_bridge_health.py", "validate_gdt_bridge_dirs"),
+        }
+        violations = []
+        for path in layer_python_paths("repositories"):
+            relative = path.relative_to(ROOT).as_posix()
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                name = node.name.lower()
+                if "validate" in name and (relative, node.name) not in infrastructure_validators:
+                    violations.append(f"{relative}:{node.lineno} repository validation {node.name}")
+                if name.startswith(("build_", "serialize_")):
+                    violations.append(f"{relative}:{node.lineno} repository builder {node.name}")
+                if "project" in name:
+                    returns_dict = any(
+                        isinstance(child, ast.Return) and isinstance(child.value, ast.Dict)
+                        for child in ast.walk(node)
+                    )
+                    delegates_to_mapper = any(
+                        isinstance(child, ast.Call)
+                        and (
+                            dotted_name(child.func).startswith("project_")
+                            or ".project_" in dotted_name(child.func)
+                        )
+                        for child in ast.walk(node)
+                    )
+                    if returns_dict or not delegates_to_mapper:
+                        violations.append(f"{relative}:{node.lineno} repository presentation {node.name}")
+        self.assertEqual([], violations)
+
     def test_process_entrypoint_contains_no_application_implementation(self):
         path = ROOT / "app.py"
         source = path.read_text(encoding="utf-8")
