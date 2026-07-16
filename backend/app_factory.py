@@ -128,7 +128,7 @@ from backend.domain import fhir as fhir_domain
 from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as RuntimeGdtBridgeInboundWatcher
 from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
 from backend.runtime.lazy_wsgi import LazyWsgiApplication
-from backend.services.oie_settings import OieSettingsService
+from backend.services.oie_settings import OieSettingsService, create_oie_management_client
 from backend.services.lab_workflow import (
     DashboardWorkflowService,
     LabServerWorkflowService,
@@ -201,7 +201,6 @@ from backend.dashboard_services import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
 load_dotenv(PROJECT_ROOT / ".env")
 
 # Compatibility exports for existing integrations and test patch seams.
@@ -334,6 +333,7 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
     app.extensions["oie_settings_service"] = OieSettingsService(store.oie_settings_repository)
+    app.extensions["oie_management_client"] = create_oie_management_client(store.oie_settings_repository)
     app.extensions["oie_workflow_service"] = OieWorkflowService(
         store.oie_repository,
         store,
