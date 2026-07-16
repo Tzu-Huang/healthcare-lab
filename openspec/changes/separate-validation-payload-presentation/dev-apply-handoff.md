@@ -12,11 +12,11 @@ updated_at: 2026-07-16
 
 ## Latest Continuation Checkpoint
 
-This file was refreshed in commit `28e9702`. Product implementation is in
+This file was refreshed after product commit `716ba98`. Product implementation is in
 progress; do not restart from the proposal baseline or repeat completed tasks.
 
 - Branch: `feature/ZAC-61_separate-validation-payload-presentation`
-- Current HEAD: `28e9702` (`docs(ZAC-61): refresh dev apply handoff`)
+- Product checkpoint: `716ba98` (`refactor(ZAC-61): extract dcm4chee patient sync mappers`); handoff-only documentation commits follow it
 - Worktree: clean at handoff
 - Linear issue: `ZAC-61`; every implementation commit through `716ba98` has a
   `[progress]` comment (recent comments use `comment-commit`)
@@ -80,8 +80,8 @@ consistent with the protected-boundary rules.
 /dev-apply ZAC-61
 
 Continue the approved OpenSpec change `separate-validation-payload-presentation`
-on branch `feature/ZAC-61_separate-validation-payload-presentation` from clean
-commit `28e9702`.
+on branch `feature/ZAC-61_separate-validation-payload-presentation` after product
+checkpoint `716ba98` and its handoff-only documentation commits.
 
 Read completely before editing:
 - `openspec/changes/separate-validation-payload-presentation/dev-apply-handoff.md`
