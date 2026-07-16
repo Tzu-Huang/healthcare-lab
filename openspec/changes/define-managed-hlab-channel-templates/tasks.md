@@ -26,5 +26,5 @@
 
 ## 5. Verification and Handoff
 
-- [ ] 5.1 Run focused domain/template tests, architecture contracts, the complete unittest suite, Python compilation, `git diff --check`, and strict OpenSpec validation without calling a live OIE instance.
+- [x] 5.1 Run focused domain/template tests, architecture contracts, the complete unittest suite, Python compilation, `git diff --check`, and strict OpenSpec validation without calling a live OIE instance.
 - [x] 5.2 Document that AP host persistence remains an explicit prerequisite for ZAC-48 integration and confirm ZAC-46 client, ZAC-49 runtime, ZAC-50 UI, Docker, database, and live Channels remain unchanged.
