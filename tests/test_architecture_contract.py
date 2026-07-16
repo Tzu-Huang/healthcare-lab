@@ -26,15 +26,17 @@ RESPONSIBILITY_PACKAGES = (
     "repositories",
     "domain",
     "templates",
+    "mappers",
 )
 ALLOWED_LAYER_DEPENDENCIES: dict[str, frozenset[str]] = {
     "api": frozenset({"api", "services", "domain", "config"}),
     "services": frozenset({"services", "clients", "domain", "config"}),
     "clients": frozenset({"clients", "domain", "config"}),
     "runtime": frozenset({"runtime", "services", "domain", "config"}),
-    "repositories": frozenset({"repositories", "domain", "config"}),
+    "repositories": frozenset({"repositories", "domain", "templates", "mappers", "config"}),
     "domain": frozenset({"domain"}),
     "templates": frozenset({"templates", "domain", "config"}),
+    "mappers": frozenset({"mappers", "domain"}),
 }
 HTTP_DECORATORS = {"delete", "get", "patch", "post", "put", "route"}
 SQL_PATTERN = re.compile(
@@ -860,6 +862,8 @@ def layer_python_paths(package: str, backend_root: Path = BACKEND) -> list[Path]
 def backend_dependency_layer(module: str) -> str | None:
     if module == "backend.config" or module.startswith("backend.config."):
         return "config"
+    if module == "backend.app_factory" or module.startswith("backend.app_factory."):
+        return "composition"
     if not module.startswith("backend."):
         return None
     candidate = module.split(".", 2)[1]
@@ -1116,7 +1120,7 @@ class ArchitectureContractTest(unittest.TestCase):
                 self.assertNotIn(forbidden, source)
 
     def test_lower_layers_do_not_import_flask_or_api_modules(self):
-        for package in ("clients", "repositories", "domain", "templates"):
+        for package in ("clients", "repositories", "domain", "templates", "mappers"):
             for path in layer_python_paths(package):
                 modules = imported_modules(path)
                 with self.subTest(path=path.relative_to(ROOT)):
@@ -1131,7 +1135,7 @@ class ArchitectureContractTest(unittest.TestCase):
                         ),
                         f"{path.relative_to(ROOT)} lower layer must not import backend.api.",
                     )
-                    if package == "domain":
+                    if package in {"domain", "mappers"}:
                         self.assertFalse(
                             any(
                                 name == "backend.config" or name.startswith("backend.config.")
@@ -1176,6 +1180,7 @@ class ArchitectureContractTest(unittest.TestCase):
             "backend/clients/example.py": "backend.services.fhir_workflow",
             "backend/repositories/example.py": "backend.clients.dcm4chee",
             "backend/domain/example.py": "backend.services.patient_workflow",
+            "backend/mappers/example.py": "backend.repositories.patients",
         }
         for relative_path, module in fixtures.items():
             with self.subTest(path=relative_path, module=module):
@@ -1186,6 +1191,29 @@ class ArchitectureContractTest(unittest.TestCase):
                 )
                 self.assertEqual(1, len(violations))
                 self.assertEqual("dependency", violations[0].category)
+
+    def test_mapper_dependency_matrix_accepts_only_mapper_and_domain_modules(self):
+        self.assertEqual(
+            [],
+            layer_dependency_violations(
+                "backend/mappers/patient.py",
+                {"backend.mappers.types", "backend.domain.records"},
+                frozenset(),
+            ),
+        )
+        forbidden = (
+            "backend.repositories.patients",
+            "backend.services.patient_workflow",
+            "backend.clients.medplum",
+            "backend.runtime.gdt_bridge_watcher",
+            "backend.app_factory",
+        )
+        for module in forbidden:
+            with self.subTest(module=module):
+                violations = layer_dependency_violations(
+                    "backend/mappers/patient.py", {module}, frozenset()
+                )
+                self.assertEqual(1, len(violations))
 
     def test_layer_dependencies_follow_allowed_matrix(self):
         violations: list[PlacementViolation] = []
