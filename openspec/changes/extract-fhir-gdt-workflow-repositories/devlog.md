@@ -42,6 +42,56 @@ Extract the FHIR ledger and GDT workflow persistence from `DemoStore` without ch
 - Unresolved failures: none.
 - Next action: `/dev-test ZAC-60`.
 
+### Round 2 (2026-07-16 10:48:07 +08:00)
+
+- Tested head: `20406dca8f10181d0a3502f974b9dd68ea90ee57` with a clean pre-check worktree.
+- PASS — focused protocol verification: `python -m unittest tests.test_gdt_adapter tests.domain.test_gdt_protocol tests.domain.test_fhir tests.domain.test_fhir_ledger tests.domain.test_fhir_order tests.templates.test_fhir tests.repositories.test_fhir_ledger tests.repositories.test_fhir_workflow_characterization tests.repositories.test_gdt_workflow tests.repositories.test_gdt_workflow_characterization tests.repositories.test_lab_store tests.services.test_fhir_coordination tests.services.test_gdt_coordination tests.services.test_protocol_repository_wiring tests.runtime.test_gdt_bridge_watcher -q`; 82 tests passed in 10.391 seconds.
+- PASS — architecture verification: `python -m unittest discover -s tests -p "test_architecture_contract.py" -q`; 38 tests passed in 1.957 seconds.
+- PASS — compilation: `python -m compileall -q backend tests`; no errors.
+- PASS — complete regression: `python -m unittest discover -s tests -q`; 337 tests passed in 56.130 seconds (56.639 seconds wall time).
+- PASS — OpenSpec: `openspec validate extract-fhir-gdt-workflow-repositories --strict`; change is valid.
+- Skips: none; no manual or environment-specific acceptance check was required.
+- Post-check state: product code, tests, requirements/specs, generated product artifacts, and runtime configuration remained identical to the tested head; only this verification record is dirty.
+- Unresolved failures: none.
+- Next action: `/dev-review`.
+
+### Round 3 (2026-07-16 11:08:33 +08:00)
+
+- Tested head: `c2ae603ab5e297d0921f956e46d4fd8bdc81d1a6`; the pre-check worktree contained only the existing dirty devlog and review workflow records.
+- PASS — focused protocol verification: `python -m unittest tests.test_gdt_adapter tests.domain.test_gdt_protocol tests.domain.test_fhir tests.domain.test_fhir_ledger tests.domain.test_fhir_order tests.templates.test_fhir tests.repositories.test_fhir_ledger tests.repositories.test_fhir_workflow_characterization tests.repositories.test_gdt_workflow tests.repositories.test_gdt_workflow_characterization tests.repositories.test_lab_store tests.services.test_fhir_coordination tests.services.test_gdt_coordination tests.services.test_protocol_repository_wiring tests.runtime.test_gdt_bridge_watcher -q`; 82 tests passed in 9.992 seconds.
+- PASS — architecture verification: `python -m unittest discover -s tests -p "test_architecture_contract.py" -q`; 42 tests passed in 3.282 seconds.
+- PASS — compilation: `python -m compileall -q backend tests`; no errors.
+- PASS — complete regression: `python -m unittest discover -s tests -q`; 341 tests passed in 55.318 seconds.
+- PASS — OpenSpec: `openspec validate extract-fhir-gdt-workflow-repositories --strict`; change is valid.
+- Skips: none; no manual or environment-specific acceptance check was required.
+- Post-check state: product code, tests, requirements/specs, generated product artifacts, and runtime configuration remained identical to the tested head; only the pre-existing devlog and review workflow records are dirty.
+- Unresolved failures: none.
+- Next action: `/dev-review` for closure review.
+
 ## Follow-ups
 
 - Run `/dev-test ZAC-60` against committed product state.
+
+## Code Review
+
+### Round 1 (2026-07-16 10:52:36 +08:00)
+
+- Source: `openspec/changes/extract-fhir-gdt-workflow-repositories/review/2026-07-16_feature-ZAC-60_extract-fhir-gdt-workflow-repositories_codex-review-r1.md`
+- Mode: `initial`
+- Verdict: `changes-requested`
+- Reviewed head: `20406dca8f10181d0a3502f974b9dd68ea90ee57`
+- Transitions: none
+- Open blockers: `REV-001`, `REV-002`
+- Follow-ups: none
+- Next action: `/dev-fix --review "openspec/changes/extract-fhir-gdt-workflow-repositories/review/2026-07-16_feature-ZAC-60_extract-fhir-gdt-workflow-repositories_codex-review-r1.md"`
+
+### Round 2 (2026-07-16 11:12:43 +08:00)
+
+- Source: `openspec/changes/extract-fhir-gdt-workflow-repositories/review/2026-07-16_feature-ZAC-60_extract-fhir-gdt-workflow-repositories_codex-review-r2.md`
+- Mode: `closure`
+- Verdict: `approved`
+- Reviewed head: `c2ae603ab5e297d0921f956e46d4fd8bdc81d1a6`
+- Transitions: `REV-001 resolved; REV-002 resolved`
+- Open blockers: `none`
+- Follow-ups: `none`
+- Next action: commit only the review and devlog workflow records, then run `/dev-done`.
