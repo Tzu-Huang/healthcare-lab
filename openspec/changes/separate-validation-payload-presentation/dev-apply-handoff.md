@@ -5,9 +5,107 @@ branch: feature/ZAC-61_separate-validation-payload-presentation
 proposal_commit: 6768d8955422522955bff143f2ad0001a972327b
 next_command: /dev-apply ZAC-61
 created_at: 2026-07-16
+updated_at: 2026-07-16
 ---
 
 # ZAC-61 Dev Apply Handoff
+
+## Latest Continuation Checkpoint
+
+This file was refreshed after commit `716ba98`. Product implementation is in
+progress; do not restart from the proposal baseline or repeat completed tasks.
+
+- Branch: `feature/ZAC-61_separate-validation-payload-presentation`
+- Current HEAD: `716ba98` (`refactor(ZAC-61): extract dcm4chee patient sync mappers`)
+- Worktree: clean at handoff
+- Linear issue: `ZAC-61`; every implementation commit through `716ba98` has a
+  `[progress]` comment (recent comments use `comment-commit`)
+- Latest focused verification: 77 tests passed for dcm4chee Patient-sync,
+  repository compatibility, mapper behavior, and architecture contracts
+- `git diff --check` and strict OpenSpec validation passed at the checkpoint
+- No schema/data mutation, real `instance/*.db` access, live service,
+  deployment, dependency installation, or destructive operation occurred
+
+### Completed Work
+
+- Safety/placement: tasks 1.1, 1.3, 1.4, 1.6, and 1.7.
+- Patient/Order/FHIR: all tasks 2.1 through 2.5.
+- GDT: all tasks 3.1 through 3.7. Outbound `6302` is owned by
+  `backend/templates/gdt.py`; parsing/inbound interpretation remains in
+  `backend/domain/gdt_protocol.py`; numbering/preparation lives in
+  `backend/domain/gdt_workflow.py`; presentation lives in
+  `backend/mappers/gdt.py`; the repository retains the five-table transaction.
+- dcm4chee: task 4.1. Patient-sync and attempt presentation now lives in
+  `backend/mappers/dicom.py`.
+
+Implementation commits after the original handoff:
+
+```text
+3c8976c docs(ZAC-61): record responsibility baseline
+696e332 docs(ZAC-61): fix inventory whitespace
+04fbc2b arch(ZAC-61): establish mapper layer
+e740063 refactor(ZAC-61): extract patient order fhir mappers
+1c2abea chore(ZAC-61): declare domain exports
+d89058a refactor(ZAC-61): consolidate HL7 template primitives
+db3b4c8 refactor(ZAC-61): extract GDT outbound template
+272a220 refactor(ZAC-61): extract GDT workflow preparation
+6257cbd refactor(ZAC-61): extract GDT row mappers
+8839e3e refactor(ZAC-61): complete GDT presentation boundary
+5c0bd38 refactor(ZAC-61): finalize GDT compatibility boundary
+716ba98 refactor(ZAC-61): extract dcm4chee patient sync mappers
+```
+
+### Remaining Apply Work
+
+Continue in this order:
+
+1. Task 4.2: move dcm4chee MWL mapping and attempt projectors to the DICOM
+   mapper, preserving retry, verification, and enrichment output.
+2. Task 4.3: move result and refresh-snapshot projectors.
+3. Tasks 4.4-4.5: consolidate DICOM constants/wrappers and convert retained
+   `DemoStore` helpers to delegates while shrinking, never expanding, baselines.
+4. Tasks 5.1-5.4: Lab/OIE validation and presentation cleanup; keep
+   `validate_gdt_bridge_dirs` in `gdt_bridge_health.py`.
+5. Finish tasks 1.2 and 1.5 once every context has characterization and the
+   repository-responsibility rule can be enforced without adding exceptions.
+6. Complete the 6.x verification/safety audit and route to `/dev-test`.
+
+Do not check tasks 1.2 or 1.5 early. Do not access real `instance/*.db` data;
+task 6.3 must prove non-access/mutation through safe metadata or Git evidence
+consistent with the protected-boundary rules.
+
+### Codex Opener Prompt (Current)
+
+```text
+/dev-apply ZAC-61
+
+Continue the approved OpenSpec change `separate-validation-payload-presentation`
+on branch `feature/ZAC-61_separate-validation-payload-presentation` from clean
+commit `716ba98`.
+
+Read completely before editing:
+- `openspec/changes/separate-validation-payload-presentation/dev-apply-handoff.md`
+- `openspec/changes/separate-validation-payload-presentation/tasks.md`
+- `openspec/changes/separate-validation-payload-presentation/design.md`
+- `openspec/changes/separate-validation-payload-presentation/owner-inventory.md`
+- `openspec/changes/separate-validation-payload-presentation/linear.yml`
+- Linear issue ZAC-61
+
+Confirm branch, unique active change, clean worktree, mapping, and HEAD. Do not
+repeat completed Patient/Order/FHIR or GDT work. Start with task 4.2: move the
+dcm4chee MWL mapping and attempt projectors from
+`backend/repositories/dcm4chee_mwl.py` to `backend/mappers/dicom.py`, preserving
+exact retry, verification, enrichment, JSON, ordering, and transaction behavior.
+
+Proceed through remaining tasks in dependency order with focused tests and
+commits. Tick only fully completed tasks, stage only related files, and after
+each commit run the dev-apply `comment-commit` Linear update. Baselines and
+compatibility inventories may only shrink. Stop before schema/data mutation,
+real instance DB or live-service access, public contract changes, baseline or
+allowlist expansion, dependencies, destructive operations, unsafe overlap, or
+unrelated ZAC-62 through ZAC-65 work. When apply and focused verification are
+complete, route to `/dev-test`.
+```
 
 ## Objective
 
