@@ -1,8 +1,8 @@
 ## 1. Integration Gate and Responsibility Baseline
 
-- [ ] 1.1 Before product implementation, confirm ZAC-46 is merged, update this branch from `main`, and record the merged commit plus retained OIE management client/settings composition keys and callers.
-- [ ] 1.2 Inventory Lab, FHIR, Order/dcm4chee, Patient, and GDT service responsibilities, callers, collaborators, runtime callbacks, compatibility seams, and current focused-test coverage.
-- [ ] 1.3 Define the final focused service and coordinator ownership map, including concrete narrow port signatures and explicit reasons for any Patient or GDT responsibility that remains cohesive.
+- [x] 1.1 Before product implementation, confirm ZAC-46 is merged, update this branch from `main`, and record the merged commit plus retained OIE management client/settings composition keys and callers.
+- [x] 1.2 Inventory Lab, FHIR, Order/dcm4chee, Patient, and GDT service responsibilities, callers, collaborators, runtime callbacks, compatibility seams, and current focused-test coverage.
+- [x] 1.3 Define the final focused service and coordinator ownership map, including concrete narrow port signatures and explicit reasons for any Patient or GDT responsibility that remains cohesive.
 - [ ] 1.4 Add characterization for application extension keys, Blueprint inputs, runtime startup order, callbacks, and ZAC-46 OIE wiring before changing composition.
 - [ ] 1.5 Add architecture checks rejecting broad service ports, generic variadic or dynamic delegation, Flask/SQL/runtime implementation in services, and behavior-free forwarding wrappers without expanding baselines or allowlists.
 
