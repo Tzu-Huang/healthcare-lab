@@ -103,7 +103,6 @@ catch-all|backend/dashboard_services.py|<module>._RESOURCE_SNAPSHOT_CACHE_LOCK|c
 catch-all|backend/lab_operations.py|<module>.DOCKER_COMPOSE_PROJECT|8aae4c1613a1fbc1
 catch-all|backend/lab_operations.py|<module>.DOCKER_SOCKET_PATH|ff29a28315e0502b
 catch-all|backend/lab_operations.py|<module>.DOCKER_SOCKET_STOP_GRACE_SECONDS|2e843a750486e0e9
-catch-all|backend/lab_store.py|<module>.DCM4CHEE_ORDER_MESSAGE_TYPE|a8a33e1717dd6706
 catch-all|backend/lab_store.py|<module>.DEFAULT_LAB_OPERATION_METADATA|800846a541107f50
 catch-all|backend/lab_store.py|<module>.DEFAULT_LAB_SERVERS|60052052e562f266
 catch-all|backend/lab_store.py|<module>.FHIR_ORDER_DEFAULT_CATEGORY|acb004473bb6dfad

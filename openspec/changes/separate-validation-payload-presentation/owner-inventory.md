@@ -32,3 +32,9 @@ callers and must delegate or re-export the final owner.
 presentation or domain-validation candidate. It remains the single approved
 filesystem-readiness owner, called by the GDT watcher and Lab workflow through
 their existing compatibility/port paths.
+
+The retained dcm4chee helpers on `DemoStore` are compatibility-only mechanical
+delegates to `backend/domain/dicom.py`, `backend/templates/dicom.py`,
+`backend/mappers/dicom.py`, the dedicated dcm4chee repositories, or the
+dcm4chee workflow coordinators. They contain no projector, identifier-mapping,
+payload-builder, retry/display, or response-interpretation implementation.
