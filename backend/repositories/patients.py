@@ -10,6 +10,7 @@ from typing import Any
 
 from backend.domain import patient as patient_domain
 from backend.domain.errors import SimulatorValidationError
+from backend.mappers.patient import project as project_patient
 from backend.repositories.identifiers import PatientIdentifierRepository
 
 ConnectionFactory = Callable[[], AbstractContextManager[Connection]]
@@ -66,7 +67,7 @@ class PatientRepository:
 
     def _project(self, rows: list[Row]) -> list[dict[str, Any]]:
         enrichments = self._enrichment.load(rows) if self._enrichment else {}
-        return [patient_domain.project(
+        return [project_patient(
             row, fhir_record=enrichments.get(int(row["id"]), {}).get("fhir"),
             dcm4chee_patient_sync=enrichments.get(int(row["id"]), {}).get("sync"),
             dcm4chee_results=enrichments.get(int(row["id"]), {}).get("results", []),

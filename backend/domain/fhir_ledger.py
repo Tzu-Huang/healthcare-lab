@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from typing import Any
 
 from backend.domain.errors import SimulatorValidationError
-from backend.domain.statuses import FHIR_SYNC_STATUS_SYNCED
 
 FHIR_SUPPORTED_RESOURCE_TYPES = (
     "Patient", "ServiceRequest", "Binary", "Observation",
@@ -172,37 +170,3 @@ def normalize_record_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def record_number(record_id: int) -> str:
     return f"FHIR-{record_id:06d}"
 
-
-def project_workflow_record(row: Mapping[str, Any]) -> dict[str, Any]:
-    resource_type = row["resource_type"]
-    return {
-        "id": row["id"],
-        "localFhirRecordNumber": row["local_fhir_record_number"],
-        "localSourceType": row["local_source_type"],
-        "localSourceId": row["local_source_id"],
-        "resourceType": resource_type,
-        "identifier": {"system": row["identifier_system"], "value": row["identifier_value"]},
-        "resource": json_value(row["resource_json"], {}),
-        "dependencies": json_value(row["dependency_json"], []),
-        "mapping": mapping_for_resource_type(resource_type) if resource_type in FHIR_SUPPORTED_RESOURCE_TYPES else None,
-        "medplum": {"id": row["medplum_resource_id"], "reference": row["medplum_resource_reference"]},
-        "sync": {
-            "status": row["sync_status"], "error": row["sync_error"],
-            "operationOutcome": json_value(row["operation_outcome_json"], {}),
-            "lastSyncAt": row["last_sync_at"], "syncStartedAt": row["sync_started_at"],
-        },
-        "createdAt": row["created_at"], "updatedAt": row["updated_at"],
-        "localOnly": row["sync_status"] != FHIR_SYNC_STATUS_SYNCED,
-    }
-
-
-def project_sync_attempt(row: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        "id": row["id"], "fhirRecordId": row["fhir_record_id"], "method": row["method"],
-        "requestUrl": row["request_url"],
-        "requestPayload": json_value(row["request_payload_json"], {}),
-        "httpStatus": row["http_status"],
-        "responsePayload": json_value(row["response_payload_json"], {}),
-        "operationOutcome": json_value(row["operation_outcome_json"], {}),
-        "error": row["error_text"], "attemptedAt": row["attempted_at"],
-    }
