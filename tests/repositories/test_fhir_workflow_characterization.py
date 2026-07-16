@@ -204,8 +204,9 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
         )
 
     def test_fhir_ledger_numbering_failure_rolls_back_new_record(self):
-        with patch.object(
-            self.store, "_fhir_record_number", side_effect=RuntimeError("numbering failed")
+        with patch(
+            "backend.repositories.fhir_ledger.record_number",
+            side_effect=RuntimeError("numbering failed"),
         ):
             with self.assertRaisesRegex(RuntimeError, "numbering failed"):
                 self.store.create_fhir_workflow_record(
@@ -220,9 +221,8 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
 
     def test_service_request_builder_failure_rolls_back_local_order(self):
         patient, _ = self.create_synced_patient()
-        with patch.object(
-            self.store,
-            "_build_service_request_resource",
+        with patch(
+            "backend.services.protocol_compatibility.build_service_request_resource",
             side_effect=RuntimeError("service request build failed"),
         ):
             with self.assertRaisesRegex(RuntimeError, "service request build failed"):

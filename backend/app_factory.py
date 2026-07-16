@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import json
 import os
 import re
@@ -14,7 +13,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
 from flask import Flask, jsonify, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 try:
@@ -83,6 +81,11 @@ from backend.services.coordination import (
     OrderProtocolCoordinator,
     PatientProtocolCoordinator,
 )
+from backend.services.fhir_coordination import FhirOrderCoordinator, PatientFhirCoordinator
+from backend.services.gdt_coordination import GdtWorkflowCoordinator, build_gdt_order_request
+from backend.templates.fhir import build_service_request
+from backend.repositories.fhir_ledger import FhirLedgerRepository
+from backend.repositories.gdt_workflow import GdtWorkflowRepository
 from backend.services.oie_workflow import (
     OieWorkflowService,
     accept_oie_result_payload,
@@ -174,6 +177,8 @@ from backend.lab_store import (
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_TRANSPORT_ERROR,
     SimulatorValidationError,
+    hl7_timestamp,
+    now_iso,
     ensure_gdt_bridge_dirs,
     parse_openemr_allowed_procedure_codes,
     validate_gdt_bridge_dirs,
@@ -224,10 +229,6 @@ request_dcm4chee_patient_create = dcm4chee_client.request_dcm4chee_patient_creat
 request_dcm4chee_mwl_readback = dcm4chee_client.request_dcm4chee_mwl_readback
 request_dcm4chee_mwl_verification = dcm4chee_client.request_dcm4chee_mwl_verification
 request_dcm4chee_qido = dcm4chee_client.request_dcm4chee_qido
-
-
-
-
 def create_app(database_path: str | None = None) -> Flask:
     app = Flask(
         __name__,
@@ -238,6 +239,22 @@ def create_app(database_path: str | None = None) -> Flask:
     app.config.update(load_application_config(app.instance_path, database_path))
     Path(app.config["DATABASE_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     store = DemoStore(app.config["DATABASE_PATH"])
+    fhir_ledger = FhirLedgerRepository(
+        store.database.connect, store.database.lock, timestamp_factory=now_iso,
+    )
+    patient_fhir = PatientFhirCoordinator(store.patient_repository, fhir_ledger)
+    order_fhir = FhirOrderCoordinator(
+        store.patient_repository, store.order_repository, fhir_ledger,
+        timestamp_factory=now_iso, storage_timestamp_factory=hl7_timestamp,
+        resource_builder=build_service_request,
+    )
+    gdt_repository = GdtWorkflowRepository(
+        store.database.connect, store.database.lock, timestamp_factory=now_iso,
+        patient_loader=store.patient_repository.get_patient_record,
+        patient_list_loader=store.patient_repository.list_patient_records,
+        order_builder=build_gdt_order_request,
+    )
+    gdt_workflow = GdtWorkflowCoordinator(gdt_repository)
     patient_coordination = PatientProtocolCoordinator(
         begin_dcm4chee_result_refresh=store.dcm4chee_result_repository.begin_dcm4chee_result_refresh,
         build_dcm4chee_patient_adt_payload=store.build_dcm4chee_patient_adt_payload,
@@ -292,7 +309,7 @@ def create_app(database_path: str | None = None) -> Flask:
         upsert_dcm4chee_mwl_mapping=store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping,
     )
     gdt_bridge_watcher = GdtBridgeInboundWatcher(
-        store,
+        gdt_workflow,
         app.config["GDT_BRIDGE_PATH"],
         import_gdt_bridge_files,
         poll_seconds=app.config["GDT_BRIDGE_WATCH_POLL_SECONDS"],
@@ -385,6 +402,9 @@ def create_app(database_path: str | None = None) -> Flask:
     workflow_operations = ConfiguredWorkflowOperations(
         patient=patient_coordination,
         order=order_coordination,
+        patient_fhir=patient_fhir,
+        order_fhir=order_fhir,
+        fhir_ledger=fhir_ledger,
         fhir_sync=sync_fhir_workflow_record_to_medplum,
         patient_sync=sync_patient_to_dcm4chee,
         result_refresh=refresh_patient_dcm4chee_results,
@@ -436,7 +456,7 @@ def create_app(database_path: str | None = None) -> Flask:
     app.register_blueprint(
         create_fhir_blueprint(
             FhirWorkflowService(
-                store,
+                fhir_ledger,
                 inventory_types=MEDPLUM_INVENTORY_RESOURCE_TYPES,
                 medplum_base_url=configured_medplum_base_url,
                 auth_manager=get_auth_manager,
@@ -454,7 +474,7 @@ def create_app(database_path: str | None = None) -> Flask:
     app.register_blueprint(
         create_gdt_blueprint(
             GdtWorkflowService(
-                store,
+                gdt_workflow,
                 app.config,
                 app.extensions["gdt_bridge_watcher"],
                 is_internal_file=gdt_is_internal_or_temp_file,
