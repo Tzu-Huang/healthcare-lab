@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from ipaddress import IPv4Address
+from ipaddress import IPv4Address, IPv4Network
 import re
 from typing import Any
 
@@ -88,6 +88,11 @@ class ManagedChannelConfig:
 
 _DNS_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$", re.IGNORECASE)
 _INTERNAL_SUFFIXES = (".internal", ".local", ".lan", ".home.arpa")
+_PRIVATE_IPV4_NETWORKS = (
+    IPv4Network("10.0.0.0/8"),
+    IPv4Network("172.16.0.0/12"),
+    IPv4Network("192.168.0.0/16"),
+)
 
 
 def validate_host(value: Any, field: str, *, allow_wildcard: bool = False) -> str:
@@ -109,7 +114,7 @@ def validate_host(value: Any, field: str, *, allow_wildcard: bool = False) -> st
         if len(labels) > 1 and not lowered.endswith(_INTERNAL_SUFFIXES):
             raise ValidationError(f"{field} must be an internal DNS host, not a public name.")
     else:
-        if not address.is_private:
+        if not any(address in network for network in _PRIVATE_IPV4_NETWORKS):
             raise ValidationError(f"{field} must be a private IPv4 address.")
     return value
 
