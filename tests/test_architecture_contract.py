@@ -120,6 +120,15 @@ FRONTEND_FUNCTION_PATTERN = re.compile(
 CSS_RULE_PATTERN = re.compile(r"(?:^|[{}])\s*([^@{}][^{}]*)\{", re.MULTILINE)
 CSS_FAMILY_PATTERN = re.compile(r"[.#][A-Za-z_-][\w-]*")
 FRONTEND_MODULE_PREFIX_NAME = "<module-prefix>"
+PROTECTED_SQL_TABLE_OWNERS = {
+    "local_fhir_workflow_records": "backend/repositories/fhir_ledger.py",
+    "local_fhir_sync_attempts": "backend/repositories/fhir_ledger.py",
+    "local_gdt_order_records": "backend/repositories/gdt_workflow.py",
+    "local_gdt_patient_contexts": "backend/repositories/gdt_workflow.py",
+    "local_gdt_message_records": "backend/repositories/gdt_workflow.py",
+    "local_gdt_attachment_records": "backend/repositories/gdt_workflow.py",
+    "local_gdt_workflow_events": "backend/repositories/gdt_workflow.py",
+}
 DEMO_STORE_COMPATIBILITY_DELEGATES = {
     "create_patient_fhir_workflow_record": "protocol_composition.create_patient_fhir_record",
     "_fhir_order_values": "protocol_compat.fhir_order_values",
@@ -820,6 +829,22 @@ def hidden_backend_import_violations(
     return violations
 
 
+def operational_sql_table_references(source: str) -> set[str]:
+    tree = ast.parse(source)
+    references: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+            continue
+        for table in PROTECTED_SQL_TABLE_OWNERS:
+            if re.search(
+                rf"\b(?:DELETE\s+FROM|INSERT\s+INTO|UPDATE|FROM|JOIN)\s+{re.escape(table)}\b",
+                node.value,
+                re.IGNORECASE,
+            ):
+                references.add(table)
+    return references
+
+
 def imported_modules(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     return imported_modules_from_tree(tree) | resolved_backend_imports_from_tree(
@@ -1381,6 +1406,42 @@ class ArchitectureContractTest(unittest.TestCase):
             ):
                 owners.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(["backend/repositories/gdt_bridge_health.py"], owners)
+
+    def test_fhir_and_gdt_operational_sql_has_one_owner_per_table(self):
+        actual_owners = {table: set() for table in PROTECTED_SQL_TABLE_OWNERS}
+        for path in BACKEND.rglob("*.py"):
+            relative_path = path.relative_to(ROOT).as_posix()
+            if relative_path == "backend/repositories/schema.py":
+                continue
+            for table in operational_sql_table_references(
+                path.read_text(encoding="utf-8")
+            ):
+                actual_owners[table].add(relative_path)
+
+        self.assertEqual(
+            {
+                table: {owner}
+                for table, owner in PROTECTED_SQL_TABLE_OWNERS.items()
+            },
+            actual_owners,
+            "Protected FHIR/GDT tables must have exactly one operational SQL owner; "
+            "schema declarations are allowed in backend/repositories/schema.py.",
+        )
+
+    def test_protected_table_sql_detection_ignores_schema_declarations(self):
+        self.assertEqual(
+            {"local_fhir_workflow_records", "local_gdt_order_records"},
+            operational_sql_table_references(
+                "FIRST = 'SELECT * FROM local_fhir_workflow_records'\n"
+                "SECOND = 'UPDATE local_gdt_order_records SET status = ?'\n"
+            ),
+        )
+        self.assertEqual(
+            set(),
+            operational_sql_table_references(
+                "SCHEMA = 'CREATE TABLE local_fhir_workflow_records (id INTEGER)'\n"
+            ),
+        )
 
     def test_configuration_does_not_import_concrete_store(self):
         path = BACKEND / "config.py"
