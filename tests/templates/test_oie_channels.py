@@ -130,6 +130,33 @@ class ManagedOieChannelTemplateTests(unittest.TestCase):
                     {key for key in baseline if baseline[key] != changed[key]},
                 )
 
+    def test_payload_normalization_exposes_identity_charset_and_protocol_drift(self):
+        payload = compile_oru_to_hlab()
+        baseline = normalized_state_from_payload(payload)
+        mutations = {
+            "template_version": ("description", "Managed by Healthcare Lab; logical_type=hlab-oru-to-hlab; template_version=2"),
+            "charset": ("sourceConnector/properties/charsetEncoding", "ISO-8859-1"),
+            "source_mode": ("sourceConnector/properties/transmissionModeProperties/pluginPointName", "BASIC_TCP"),
+            "source_type": ("sourceConnector/transformer/inboundDataType", "XML"),
+        }
+        for label, (path, value) in mutations.items():
+            with self.subTest(field=label):
+                root = ET.fromstring(payload)
+                root.find(path).text = value
+                changed = normalized_state_from_payload(ET.tostring(root, encoding="unicode"))
+                self.assertNotEqual(baseline, changed)
+
+    def test_payload_normalization_preserves_nonmanaged_marker_as_drift(self):
+        payload = compile_oru_to_hlab()
+        baseline = normalized_state_from_payload(payload)
+        root = ET.fromstring(payload)
+        root.find("description").text = (
+            "Not managed; logical_type=hlab-oru-to-hlab; template_version=1"
+        )
+        changed = normalized_state_from_payload(ET.tostring(root, encoding="unicode"))
+        self.assertNotEqual(baseline, changed)
+        self.assertEqual("Not managed; logical_type=hlab-oru-to-hlab; template_version=1", changed["marker"])
+
     def test_payload_and_normalized_state_are_secret_free_and_deterministic(self):
         payload = compile_orm_to_ap("ap.internal")
         normalized = normalized_state_from_payload(payload)

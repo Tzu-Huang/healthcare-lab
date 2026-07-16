@@ -176,8 +176,18 @@ def normalized_state(config: ManagedChannelConfig) -> dict[str, Any]:
         "display_name": config.display_name,
         "listener": {"host": config.listener.host, "port": config.listener.port},
         "destination": {"host": config.destination.host, "port": config.destination.port},
-        "protocol": "MLLP/HL7v2",
-        "charset": UTF8_WIRE_VALUE,
+        "protocol": {
+            "source_mode": "MLLP",
+            "destination_mode": "MLLP",
+            "source_inbound_type": "HL7V2",
+            "source_outbound_type": "HL7V2",
+            "destination_inbound_type": "HL7V2",
+            "destination_outbound_type": "HL7V2",
+        },
+        "charset": {
+            "source": UTF8_WIRE_VALUE,
+            "destination": UTF8_WIRE_VALUE,
+        },
         "timeouts_ms": {
             "send": config.send_timeout_ms,
             "response": config.response_timeout_ms,
@@ -199,6 +209,7 @@ def normalized_state_from_payload(payload: str) -> dict[str, Any]:
     description = _text(root, "description")
     logical_value = _marker_value(description, "logical_type")
     logical_type = ManagedChannelType(logical_value)
+    template_version = int(_marker_value(description, "template_version"))
     destination = root.find("destinationConnectors/connector")
     if destination is None:
         raise ValueError("payload destination connector is required.")
@@ -219,16 +230,55 @@ def normalized_state_from_payload(payload: str) -> dict[str, Any]:
         send_timeout_ms=int(_text(destination, "properties/sendTimeout")),
         response_timeout_ms=int(_text(destination, "properties/responseTimeout")),
         queue=QueuePolicy(
-            enabled=_text(queue, "queueEnabled") == "true",
+            enabled=_parse_xml_bool(_text(queue, "queueEnabled"), "queueEnabled"),
             retry_interval_ms=int(_text(queue, "retryIntervalMillis")),
             retry_count=int(_text(queue, "retryCount")),
             buffer_size=int(_text(queue, "queueBufferSize")),
-            queue_on_response_timeout=_text(destination, "properties/queueOnResponseTimeout") == "true",
+            queue_on_response_timeout=_parse_xml_bool(
+                _text(destination, "properties/queueOnResponseTimeout"),
+                "queueOnResponseTimeout",
+            ),
         ),
-        enabled=_text(root, "exportData/metadata/enabled") == "true",
+        enabled=_parse_xml_bool(
+            _text(root, "exportData/metadata/enabled"),
+            "enabled",
+        ),
         initial_state=InitialState(_text(root, "properties/initialState")),
     )
-    return normalized_state(config)
+    state = normalized_state(config)
+    state["template_version"] = template_version
+    state["marker"] = description
+    state["protocol"] = {
+        "source_mode": _text(
+            root,
+            "sourceConnector/properties/transmissionModeProperties/pluginPointName",
+        ),
+        "destination_mode": _text(
+            destination,
+            "properties/transmissionModeProperties/pluginPointName",
+        ),
+        "source_inbound_type": _text(
+            root,
+            "sourceConnector/transformer/inboundDataType",
+        ),
+        "source_outbound_type": _text(
+            root,
+            "sourceConnector/transformer/outboundDataType",
+        ),
+        "destination_inbound_type": _text(
+            destination,
+            "transformer/inboundDataType",
+        ),
+        "destination_outbound_type": _text(
+            destination,
+            "transformer/outboundDataType",
+        ),
+    }
+    state["charset"] = {
+        "source": _text(root, "sourceConnector/properties/charsetEncoding"),
+        "destination": _text(destination, "properties/charsetEncoding"),
+    }
+    return state
 
 
 def sanitized_canonical(logical_type: ManagedChannelType) -> str:
@@ -268,3 +318,9 @@ def _marker_value(description: str, key: str) -> str:
 
 def _xml_bool(value: bool) -> str:
     return "true" if value else "false"
+
+
+def _parse_xml_bool(value: str, field: str) -> bool:
+    if value not in {"true", "false"}:
+        raise ValueError(f"payload field {field} must be true or false.")
+    return value == "true"
