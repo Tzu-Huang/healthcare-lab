@@ -686,13 +686,21 @@ def frontend_top_level_definitions(source: str) -> dict[str, FrontendDefinition]
     }
 
 
-def frontend_definition_inventory(source: str) -> frozenset[tuple[str, str]]:
+def frontend_module_prefix_source(source: str) -> str:
     first_definition = FRONTEND_FUNCTION_PATTERN.search(source)
     prefix_end = first_definition.start() if first_definition else len(source)
+    return "\n".join(
+        line
+        for line in source[:prefix_end].splitlines()
+        if not line.strip().startswith("import ")
+    ).strip()
+
+
+def frontend_definition_inventory(source: str) -> frozenset[tuple[str, str]]:
     inventory = {
         (
             FRONTEND_MODULE_PREFIX_NAME,
-            stable_source_fingerprint(source[:prefix_end]),
+            stable_source_fingerprint(frontend_module_prefix_source(source)),
         )
     }
     inventory.update(
@@ -737,11 +745,9 @@ def frontend_function_violations(
                 )
             )
         seen_names.add(definition.name)
-    first_definition = FRONTEND_FUNCTION_PATTERN.search(source)
-    prefix_end = first_definition.start() if first_definition else len(source)
     prefix_key = (
         FRONTEND_MODULE_PREFIX_NAME,
-        stable_source_fingerprint(source[:prefix_end]),
+        stable_source_fingerprint(frontend_module_prefix_source(source)),
     )
     if prefix_key not in baseline:
         violations.insert(
