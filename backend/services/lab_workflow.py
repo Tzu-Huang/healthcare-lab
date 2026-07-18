@@ -311,7 +311,9 @@ class DashboardActionService:
         self._health_check = health_check
         self._operation_runner = operation_runner
 
-    def check_all(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+    def check_all(
+        self, snapshot: Callable[[], dict[str, Any]]
+    ) -> dict[str, Any]:
         results = []
         for service_id in LAB_DASHBOARD_SERVICE_GROUPS:
             try:
@@ -323,7 +325,7 @@ class DashboardActionService:
                 )
             except (KeyError, SimulatorValidationError, LabOperationError) as exc:
                 results.append({"serviceId": service_id, "error": str(exc)})
-        return {"results": results, **snapshot}
+        return {"results": results, **snapshot()}
 
     def run_action(
         self, service_id: str, action: str, *, lines: int = 200
@@ -377,7 +379,7 @@ class DashboardWorkflowService:
 
     def snapshot(self) -> dict[str, Any]: return self.snapshot_service.snapshot()
     def restart_preview(self, service_id: str) -> dict[str, Any]: return self.snapshot_service.restart_preview(service_id)
-    def check_all(self) -> dict[str, Any]: return self.action_service.check_all(self.snapshot())
+    def check_all(self) -> dict[str, Any]: return self.action_service.check_all(self.snapshot)
     def run_action(self, service_id: str, action: str, *, lines: int = 200) -> dict[str, Any]: return self.action_service.run_action(service_id, action, lines=lines)
     def run_child_action(self, service_id: str, child_id: str, action: str, *, lines: int = 200) -> dict[str, Any]: return self.action_service.run_child_action(service_id, child_id, action, lines=lines)
 

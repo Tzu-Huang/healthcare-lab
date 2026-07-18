@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from flask import Blueprint, jsonify, request
@@ -16,7 +17,9 @@ class DashboardSnapshotPort(Protocol):
     def restart_preview(self, service_id: str) -> dict[str, Any]: ...
 
 class DashboardActionPort(Protocol):
-    def check_all(self, snapshot: dict[str, Any]) -> dict[str, Any]: ...
+    def check_all(
+        self, snapshot: Callable[[], dict[str, Any]]
+    ) -> dict[str, Any]: ...
 
     def run_action(
         self, service_id: str, action: str, *, lines: int = 200
@@ -55,7 +58,7 @@ def create_dashboard_blueprint(
 
     @blueprint.post("/api/dashboard/services/check-all")
     def dashboard_check_all():
-        return jsonify({"success": True, **actions.check_all(snapshots.snapshot())})
+        return jsonify({"success": True, **actions.check_all(snapshots.snapshot)})
 
     @blueprint.post("/api/dashboard/services/<service_id>/<action>")
     def dashboard_service_action(service_id: str, action: str):
