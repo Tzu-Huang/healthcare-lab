@@ -246,6 +246,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         app_js = Path(__file__).resolve().parents[2] / "frontend" / "static" / "app.js"
         script = app_js.read_text(encoding="utf-8")
         oie_script = (app_js.parent / "js" / "views" / "oie.js").read_text(encoding="utf-8")
+        dashboard_script = (app_js.parent / "js" / "views" / "dashboard.js").read_text(encoding="utf-8")
 
         self.assertIn('const GENERATED_PATIENT_MRN_LABEL = "Generated on create";', script)
         self.assertIn('mrn: "",', script)
@@ -287,9 +288,9 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn('return status === "Created" ? "Accepted" : "Error";', script)
         self.assertIn('["error", "rejected", "transport error"].includes(status) ? "Error" : "Accepted"', script)
         self.assertNotIn('service.id === "openemr-gdt"', script)
-        self.assertIn("function dashboardServiceToggle(service)", script)
-        self.assertIn("function renderDashboardChild(service, child, body)", script)
-        self.assertIn("function runChildServiceAction(serviceId, childId, action)", script)
+        self.assertIn("function dashboardServiceToggle(service)", dashboard_script)
+        self.assertIn("function renderDashboardChild(service, child, body)", dashboard_script)
+        self.assertIn("function runChildServiceAction(serviceId, childId, action)", dashboard_script)
         self.assertIn('byId("create-gdt-ecg-order").addEventListener', script)
         self.assertIn('"/api/gdt/orders"', script)
         self.assertIn('"/api/gdt/workbench"', script)
