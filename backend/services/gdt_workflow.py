@@ -28,7 +28,9 @@ class GdtWorkflowPort(GdtResultImportPort, Protocol):
 
     def list_gdt_workbench(self, *, bridge_inbox: list[dict[str, Any]]) -> dict[str, Any]: ...
 
-    def record_gdt_order_export(self, order_id: int, **values: Any) -> dict[str, Any]: ...
+    def record_gdt_order_export(
+        self, order_id: int, *, export_path: str, status: str, error_text: str = "",
+    ) -> dict[str, Any]: ...
 
     def create_gdt_demo_result(self, order_id: int) -> dict[str, Any]: ...
 
@@ -45,7 +47,9 @@ class GdtOrderPort(Protocol):
 
 class GdtBridgePort(GdtResultImportPort, Protocol):
     def get_gdt_order_record(self, order_id: int) -> dict[str, Any]: ...
-    def record_gdt_order_export(self, order_id: int, **values: Any) -> dict[str, Any]: ...
+    def record_gdt_order_export(
+        self, order_id: int, *, export_path: str, status: str, error_text: str = "",
+    ) -> dict[str, Any]: ...
 
 
 class GdtResultPort(GdtResultImportPort, Protocol):
@@ -59,7 +63,15 @@ class GdtResultPort(GdtResultImportPort, Protocol):
 class GdtWatcherPort(Protocol):
     def status(self) -> dict[str, Any]: ...
 
-    def configure(self, *, bridge_root: str | Path | None = None, **values: Any) -> dict[str, Any]: ...
+    def configure(
+        self,
+        *,
+        bridge_root: str | Path | None = None,
+        success_mode: str | None = None,
+        filename_profile: str | None = None,
+        receiver_id: str | None = None,
+        sender_id: str | None = None,
+    ) -> dict[str, Any]: ...
 
     def start(self) -> dict[str, Any]: ...
 
