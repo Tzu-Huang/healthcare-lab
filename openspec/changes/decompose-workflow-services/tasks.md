@@ -47,7 +47,7 @@
 
 ## 7. Verification and Safety Audit
 
-- [ ] 7.1 Run focused service, API, runtime, composition, repository-wiring, mapper/template boundary, and architecture tests after each context migration using disposable databases and external-service doubles only.
-- [ ] 7.2 Audit routes, HTTP methods, request/response shapes, errors, persistence ordering and transactions, callbacks, extension keys, runtime startup/shutdown, and external-integration behavior for compatibility.
-- [ ] 7.3 Run the complete unittest suite, Python compilation, frontend syntax checks if touched, `git diff --check`, and strict OpenSpec validation.
-- [ ] 7.4 Confirm ZAC-46 client/settings and ZAC-47 channel domain/template ownership were not changed, and no frontend modularization, broad test-file cleanup, `DemoStore` removal, schema/data mutation, live-service operation, dependency installation, destructive action, baseline expansion, or test weakening occurred.
+- [x] 7.1 Run focused service, API, runtime, composition, repository-wiring, mapper/template boundary, and architecture tests after each context migration using disposable databases and external-service doubles only.
+- [x] 7.2 Audit routes, HTTP methods, request/response shapes, errors, persistence ordering and transactions, callbacks, extension keys, runtime startup/shutdown, and external-integration behavior for compatibility.
+- [x] 7.3 Run the complete unittest suite, Python compilation, frontend syntax checks if touched, `git diff --check`, and strict OpenSpec validation.
+- [x] 7.4 Confirm ZAC-46 client/settings and ZAC-47 channel domain/template ownership were not changed, and no frontend modularization, broad test-file cleanup, `DemoStore` removal, schema/data mutation, live-service operation, dependency installation, destructive action, baseline expansion, or test weakening occurred.
