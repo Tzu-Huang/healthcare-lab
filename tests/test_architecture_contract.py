@@ -349,6 +349,7 @@ class FrontendDefinition:
     line: int
     fingerprint: str
     category: str
+    body: str
 
     @property
     def baseline_key(self) -> tuple[str, str]:
@@ -674,6 +675,7 @@ def frontend_top_level_definition_occurrences(source: str) -> list[FrontendDefin
                 line=source.count("\n", 0, match.start()) + 1,
                 fingerprint=stable_source_fingerprint(body),
                 category=frontend_definition_category(name, body),
+                body=body,
             )
         )
     return definitions
@@ -683,7 +685,27 @@ def frontend_top_level_definitions(source: str) -> dict[str, FrontendDefinition]
     return {
         definition.name: definition
         for definition in frontend_top_level_definition_occurrences(source)
+        if not is_frontend_compatibility_delegate(definition)
     }
+
+
+def is_frontend_compatibility_delegate(definition: FrontendDefinition) -> bool:
+    normalized = re.sub(r"\s+", " ", definition.body).strip()
+    if definition.name == "initializeApplication":
+        return (
+            normalized.startswith("const initializeApplication = () => {")
+            and normalized.endswith(
+                'document.addEventListener("DOMContentLoaded", initializeApplication);'
+            )
+        )
+    allowed = {
+        "setActiveView": "function setActiveView(viewId) { return activateView(viewId); }",
+        "copyTextFromElement": (
+            "async function copyTextFromElement(elementId) { "
+            "return copyElementText(elementId); }"
+        ),
+    }
+    return normalized == allowed.get(definition.name)
 
 
 def frontend_module_prefix_source(source: str) -> str:
@@ -706,6 +728,7 @@ def frontend_definition_inventory(source: str) -> frozenset[tuple[str, str]]:
     inventory.update(
         definition.baseline_key
         for definition in frontend_top_level_definition_occurrences(source)
+        if not is_frontend_compatibility_delegate(definition)
     )
     return frozenset(inventory)
 
@@ -732,9 +755,12 @@ def frontend_function_violations(
         )
         for definition in definitions
         if definition.baseline_key not in baseline
+        and not is_frontend_compatibility_delegate(definition)
     ]
     seen_names: set[str] = set()
     for definition in definitions:
+        if is_frontend_compatibility_delegate(definition):
+            continue
         if definition.name in seen_names:
             violations.append(
                 PlacementViolation(

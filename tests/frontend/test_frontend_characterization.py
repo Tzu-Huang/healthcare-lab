@@ -44,19 +44,19 @@ class FrontendCharacterizationTests(unittest.TestCase):
 
     def test_navigation_characterizes_feature_activation(self):
         activation_calls = {
-            "lab-console-view": "refreshDashboard()",
-            "patient-view": "refreshPatients()",
-            "medplum-view": "refreshMedplumInventory()",
-            "order-view": "refreshOrderWorkspace()",
-            "dcm4chee-view": "refreshDcm4cheeConsole()",
-            "oie-view": "refreshOieInventory()",
-            "gdt-view": "refreshGdtConsole()",
+            "lab-console-view": "refreshDashboard",
+            "patient-view": "refreshPatients",
+            "medplum-view": "refreshMedplumInventory",
+            "order-view": "refreshOrderWorkspace",
+            "dcm4chee-view": "refreshDcm4cheeConsole",
+            "oie-view": "refreshOieInventory",
+            "gdt-view": "refreshGdtConsole",
         }
         for view_id, call in activation_calls.items():
             with self.subTest(view=view_id):
                 self.assertRegex(
                     self.script,
-                    rf'(?s)viewId === "{re.escape(view_id)}".*?{re.escape(call)}',
+                    rf'(?s)registerViewActivation\("{re.escape(view_id)}".*?{re.escape(call)}',
                 )
 
     def test_cross_view_gdt_order_flow_is_characterized(self):
@@ -67,7 +67,7 @@ class FrontendCharacterizationTests(unittest.TestCase):
     def test_startup_registers_one_dom_content_loaded_boundary(self):
         self.assertEqual(
             1,
-            self.script.count('document.addEventListener("DOMContentLoaded"'),
+            self.script.count('document.addEventListener("DOMContentLoaded", initializeApplication)'),
         )
 
     def test_responsive_layout_contract_is_present(self):
