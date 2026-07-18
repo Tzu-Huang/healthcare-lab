@@ -2,7 +2,12 @@ import unittest
 from pathlib import Path
 
 from backend.services.coordination import ConfiguredWorkflowOperations
-from backend.services.fhir_workflow import FhirRepositoryPort
+from backend.services.fhir_workflow import (
+    FhirInventoryRepositoryPort,
+    FhirPreviewRepositoryPort,
+    FhirRecordRepositoryPort,
+    FhirSyncRepositoryPort,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -50,8 +55,8 @@ class ProtocolRepositoryWiringTests(unittest.TestCase):
             patient_sender=lambda *_args, **_values: None,
         )
 
-        operations.sync_patient_fhir(7)
-        operations.sync_order_fhir(8)
+        operations.sync_patient_fhir(7, base_url="https://fhir.test", auth_manager=object())
+        operations.sync_order_fhir(8, base_url="https://fhir.test", auth_manager=object())
 
         self.assertEqual(calls, [(ledger, 7), (ledger, 8)])
         marker = {"protocolVersion": "FHIR R4"}
@@ -59,17 +64,28 @@ class ProtocolRepositoryWiringTests(unittest.TestCase):
             operations.patient_fhir.create_patient_fhir_workflow_record(marker), marker
         )
 
-    def test_fhir_port_declares_the_complete_sync_surface(self):
-        declared = {
-            name for name, value in FhirRepositoryPort.__dict__.items()
-            if not name.startswith("_") and callable(value)
-        }
+    def test_fhir_services_receive_consumer_owned_repository_ports(self):
+        def declared(port):
+            return {
+                name for name, value in port.__dict__.items()
+                if not name.startswith("_") and callable(value)
+            }
         self.assertEqual(
-            declared,
+            declared(FhirInventoryRepositoryPort),
+            {"list_fhir_resource_mappings", "list_fhir_workflow_records"},
+        )
+        self.assertEqual(
+            declared(FhirRecordRepositoryPort),
+            {"create_fhir_workflow_record", "get_fhir_workflow_record"},
+        )
+        self.assertEqual(
+            declared(FhirPreviewRepositoryPort),
+            {"get_fhir_workflow_record"},
+        )
+        self.assertEqual(
+            declared(FhirSyncRepositoryPort),
             {
-                "list_fhir_resource_mappings", "list_fhir_workflow_records",
-                "create_fhir_workflow_record", "get_fhir_workflow_record",
-                "list_fhir_sync_attempts", "ordered_fhir_workflow_records",
+                "get_fhir_workflow_record", "list_fhir_sync_attempts",
                 "mark_fhir_syncing", "mark_fhir_sync_success",
                 "mark_fhir_sync_failure", "record_fhir_sync_attempt",
             },
@@ -78,7 +94,11 @@ class ProtocolRepositoryWiringTests(unittest.TestCase):
     def test_composition_root_routes_protocols_to_named_owners(self):
         source = (ROOT / "backend" / "app_factory.py").read_text(encoding="utf-8")
         self.assertIn("FhirWorkflowService(\n                fhir_ledger,", source)
-        self.assertIn("GdtWorkflowService(\n                gdt_workflow,", source)
+        self.assertIn("GdtWorkflowService(\n        gdt_workflow, app.config,", source)
+        self.assertIn(
+            "gdt_workflow, gdt_service.bridge_service, gdt_service.result_service,",
+            source,
+        )
         self.assertIn("GdtBridgeInboundWatcher(\n        gdt_workflow,", source)
         self.assertLessEqual(len(source.splitlines()), 500)
 

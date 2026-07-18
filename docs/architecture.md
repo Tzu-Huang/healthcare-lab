@@ -108,6 +108,34 @@ implementation begins.
 | Frontend | Base, component, and workspace rules in `frontend/static/styles.css` | presentation | `frontend/static/css/base/`, `components/`, `views/` | browser/E2E tests | retained selectors form a frozen baseline |
 | Tests | Mixed API, workflow, repository, runtime, and transport assertions in `tests/integration/test_app.py` | test | matching responsibility package under `tests/`; retain only cross-boundary cases in `integration/` | n/a | assertions move before legacy cases are removed |
 
+## ZAC-62 workflow service ownership
+
+ZAC-62 decomposes the workflow layer into consumer-sized application services.
+The compatibility workflow classes remain composition conveniences only; APIs
+and runtime callbacks receive the focused ports listed below.
+
+| Context | Focused application owners | Composition destination |
+|---|---|---|
+| Lab control-plane | `LabRegistryService`, `LabHealthService`, `LabOperationService`, `LabSmokeService`, `DashboardSnapshotService`, `DashboardActionService` | `backend/lab_composition.py`, then Lab and dashboard Blueprints |
+| FHIR | `FhirSyncService`, `FhirInventoryService`, `FhirPreviewService`, `FhirDiagnosticReportService`, `FhirRecordService` | `backend/app_factory.py`, then the FHIR Blueprint and Patient/Order coordinators |
+| Order / dcm4chee | `DcmMwlSyncService`, `DcmMwlVerificationService`, `DcmEvidenceService`, `Dcm4cheeMwlAttemptCoordinator`, `Dcm4cheeWorkflowCoordinator` | `backend/app_factory.py`, then Order/dcm4chee APIs and cross-context callbacks |
+| Patient | `PatientRecordService`, `PatientFhirSyncService`, `DcmResultRefreshService`, `DcmFixtureService` | `backend/app_factory.py`, then the Patient Blueprint |
+| GDT | `GdtOrderService`, `GdtBridgeService`, `GdtResultService` | `backend/app_factory.py`, then the GDT Blueprint and watcher callback |
+
+The composition root retains the ZAC-46 OIE management client, settings
+service, workflow service, result-listener extension keys, Blueprint inputs,
+and startup order. ZAC-47 continues to own OIE channel domain/template modules.
+ZAC-63 owns frontend modularization, ZAC-64 broad test-file decomposition, and
+ZAC-65 removal of `DemoStore`, compatibility exports, and workflow facades.
+
+The workflow baseline audit found no ZAC-62-owned entries in
+`tests/architecture_legacy_baseline.py` to remove: affected API callers already
+import their service ports directly. Retained compatibility callers are
+`backend/app_factory.py`, `DemoStore` protocol composition, runtime callbacks,
+and tests that patch the published `backend.app_factory` seams. These callers
+remain frozen under the existing architecture contract; no replacement
+baseline or allowlist entry was added.
+
 ## Placement decision process
 
 Use this sequence for every new or moved symbol:
