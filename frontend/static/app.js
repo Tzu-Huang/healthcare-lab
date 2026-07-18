@@ -2,6 +2,7 @@ import { requestJson, requestJsonAllowBusinessFailure } from "./js/api/client.js
 import { setStatus } from "./js/components/status.js";
 import { copyTextFromElement as copyElementText } from "./js/core/clipboard.js";
 import { createElement, rowCell } from "./js/core/dom.js";
+import { fhirBirthDate as formatFhirBirthDate, fhirGender as formatFhirGender, gdtTaipeiTimestamp as formatGdtTaipeiTimestamp, hl7Escape as formatHl7Escape, hl7EscapeComposite as formatHl7EscapeComposite, hl7Timestamp as formatHl7Timestamp, localDatetimeValue as formatLocalDatetimeValue, pad as formatPad, taipeiTimestamp as formatTaipeiTimestamp } from "./js/core/formatting.js";
 import { activateView, initializeNavigation, registerViewActivation } from "./js/core/navigation.js";
 
 const byId = (id) => document.getElementById(id);
@@ -656,73 +657,31 @@ function patientPreviewMrn(payload) {
 }
 
 function hl7Escape(value) {
-  return String(value ?? "")
-    .replaceAll("\\", "\\E\\")
-    .replaceAll("|", "\\F\\")
-    .replaceAll("&", "\\T\\")
-    .replaceAll("~", "\\R\\")
-    .replaceAll("\r\n", "\n")
-    .replaceAll("\r", "\n")
-    .replaceAll("\n", "\\.br\\");
+  return formatHl7Escape(value);
 }
 
 function hl7EscapeComposite(value) {
-  return String(value ?? "").split("^").map(hl7Escape).join("^");
+  return formatHl7EscapeComposite(value);
 }
 
 function pad(value) {
-  return String(value).padStart(2, "0");
+  return formatPad(value);
 }
 
 function hl7Timestamp(date = new Date()) {
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-    pad(date.getSeconds()),
-  ].join("");
+  return formatHl7Timestamp(date);
 }
 
 function localDatetimeValue(date = new Date()) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return formatLocalDatetimeValue(date);
 }
 
 function taipeiTimestamp(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Taipei",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(date).replace(",", " TPE");
+  return formatTaipeiTimestamp(value);
 }
 
 function gdtTaipeiTimestamp(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Taipei",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(date).reduce((acc, part) => {
-    acc[part.type] = part.value;
-    return acc;
-  }, {});
-  return `${parts.year}-${parts.month}-${parts.day} TPE ${parts.hour}:${parts.minute}:${parts.second}`;
+  return formatGdtTaipeiTimestamp(value);
 }
 
 function buildPatientPreviewPayload(payload) {
@@ -744,11 +703,11 @@ function buildPatientPreviewPayload(payload) {
 }
 
 function fhirBirthDate(dob) {
-  return `${dob.slice(0, 4)}-${dob.slice(4, 6)}-${dob.slice(6)}`;
+  return formatFhirBirthDate(dob);
 }
 
 function fhirGender(sex) {
-  return { M: "male", F: "female", O: "other", U: "unknown" }[sex] || "unknown";
+  return formatFhirGender(sex);
 }
 
 function buildPatientFhirPreviewPayload(payload) {

@@ -716,6 +716,15 @@ def is_frontend_compatibility_delegate(definition: FrontendDefinition) -> bool:
             "async function copyTextFromElement(elementId) { "
             "return copyElementText(elementId); }"
         ),
+        "hl7Escape": "function hl7Escape(value) { return formatHl7Escape(value); }",
+        "hl7EscapeComposite": "function hl7EscapeComposite(value) { return formatHl7EscapeComposite(value); }",
+        "pad": "function pad(value) { return formatPad(value); }",
+        "hl7Timestamp": "function hl7Timestamp(date = new Date()) { return formatHl7Timestamp(date); }",
+        "localDatetimeValue": "function localDatetimeValue(date = new Date()) { return formatLocalDatetimeValue(date); }",
+        "taipeiTimestamp": "function taipeiTimestamp(value) { return formatTaipeiTimestamp(value); }",
+        "gdtTaipeiTimestamp": "function gdtTaipeiTimestamp(value) { return formatGdtTaipeiTimestamp(value); }",
+        "fhirBirthDate": "function fhirBirthDate(dob) { return formatFhirBirthDate(dob); }",
+        "fhirGender": "function fhirGender(sex) { return formatFhirGender(sex); }",
     }
     return normalized == allowed.get(definition.name)
 
