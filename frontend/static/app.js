@@ -1,6 +1,8 @@
 import { requestJson, requestJsonAllowBusinessFailure } from "./js/api/client.js";
 import { setStatus } from "./js/components/status.js";
+import { copyTextFromElement as copyElementText } from "./js/core/clipboard.js";
 import { createElement, rowCell } from "./js/core/dom.js";
+import { activateView, initializeNavigation, registerViewActivation } from "./js/core/navigation.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -139,24 +141,7 @@ const ORDER_PATIENT_LABEL_BY_MODE = {
 };
 
 function setActiveView(viewId) {
-  document.querySelectorAll(".app-view").forEach((view) => {
-    view.hidden = view.id !== viewId;
-  });
-  document.querySelectorAll(".sidebar-link").forEach((button) => {
-    button.classList.toggle("active", button.dataset.navTarget === viewId);
-  });
-  const title = byId("view-title");
-  if (title) title.textContent = VIEW_TITLES[viewId] || "Healthcare Lab";
-  if (viewId === "lab-console-view") refreshDashboard();
-  if (viewId === "patient-view") {
-    refreshPatientPreview();
-    refreshPatients();
-  }
-  if (viewId === "medplum-view") refreshMedplumInventory();
-  if (viewId === "order-view") refreshOrderWorkspace();
-  if (viewId === "dcm4chee-view") refreshDcm4cheeConsole();
-  if (viewId === "oie-view") refreshOieInventory();
-  if (viewId === "gdt-view") refreshGdtConsole();
+  return activateView(viewId);
 }
 
 function currentOrderMode() {
@@ -4699,15 +4684,21 @@ async function importGdtInboxFile(filename) {
 }
 
 async function copyTextFromElement(elementId) {
-  const text = byId(elementId).textContent || "";
-  if (!text.trim()) return;
-  await navigator.clipboard.writeText(text);
+  return copyElementText(elementId);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll("[data-nav-target]").forEach((button) => {
-    button.addEventListener("click", () => setActiveView(button.dataset.navTarget));
+const initializeApplication = () => {
+  registerViewActivation("lab-console-view", "Service Health", refreshDashboard);
+  registerViewActivation("patient-view", "Patient", () => {
+    refreshPatientPreview();
+    return refreshPatients();
   });
+  registerViewActivation("medplum-view", "Medplum", refreshMedplumInventory);
+  registerViewActivation("order-view", "Order", refreshOrderWorkspace);
+  registerViewActivation("dcm4chee-view", "dcm4chee", refreshDcm4cheeConsole);
+  registerViewActivation("oie-view", "OIE", refreshOieInventory);
+  registerViewActivation("gdt-view", "GDT", refreshGdtConsole);
+  initializeNavigation();
   byId("refresh-dashboard").addEventListener("click", refreshDashboard);
   byId("run-all-lab-checks").addEventListener("click", runAllChecks);
   byId("dashboard-filter").addEventListener("input", renderServices);
@@ -4781,4 +4772,6 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("stop-gdt-watcher").addEventListener("click", stopGdtWatcher);
   byId("copy-gdt-payload").addEventListener("click", () => copyTextFromElement("gdt-payload-preview"));
   setActiveView("lab-console-view");
-});
+};
+
+document.addEventListener("DOMContentLoaded", initializeApplication);
