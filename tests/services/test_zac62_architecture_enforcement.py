@@ -106,6 +106,32 @@ def broad_protocol_methods(source: str) -> list[str]:
     return violations
 
 
+def generic_focused_collaborators(source: str) -> list[str]:
+    tree = ast.parse(source)
+    violations = []
+    forbidden_aggregates = {"FhirRepositoryPort", "LabRepositoryPort"}
+    for owner in (node for node in tree.body if isinstance(node, ast.ClassDef)):
+        if not owner.name.endswith("Service") or owner.name.endswith("WorkflowService"):
+            continue
+        constructor = next(
+            (node for node in owner.body if isinstance(node, ast.FunctionDef) and node.name == "__init__"),
+            None,
+        )
+        if constructor is None:
+            continue
+        arguments = [*constructor.args.args, *constructor.args.kwonlyargs]
+        for argument in arguments:
+            annotation = argument.annotation
+            if annotation is None:
+                continue
+            rendered = ast.unparse(annotation)
+            generic_callable = rendered.startswith("Callable[") and "..." in rendered
+            bare_any_return = rendered.startswith("Callable[") and rendered.endswith(", Any]")
+            if generic_callable or bare_any_return or rendered in forbidden_aggregates:
+                violations.append(f"{owner.name}.{argument.arg}:{rendered}")
+    return violations
+
+
 class Zac62ArchitectureEnforcementTest(unittest.TestCase):
     def test_focused_blueprints_use_explicit_bounded_ports(self):
         for filename in TARGET_APIS:
@@ -154,6 +180,7 @@ class Zac62ArchitectureEnforcementTest(unittest.TestCase):
     def test_services_reject_broad_protocols_and_behavior_free_wrappers(self):
         protocol_violations = []
         wrapper_violations = []
+        collaborator_violations = []
         for filename in TARGET_SERVICES:
             path = ROOT / "backend" / "services" / filename
             source = path.read_text(encoding="utf-8")
@@ -166,8 +193,12 @@ class Zac62ArchitectureEnforcementTest(unittest.TestCase):
             wrapper_violations.extend(
                 f"{path.name}:{name}" for name in behavior_free_services(source)
             )
+            collaborator_violations.extend(
+                f"{path.name}:{name}" for name in generic_focused_collaborators(source)
+            )
         self.assertEqual([], protocol_violations)
         self.assertEqual([], wrapper_violations)
+        self.assertEqual([], collaborator_violations)
 
     def test_detectors_reject_regression_shapes(self):
         self.assertEqual(
@@ -201,6 +232,15 @@ class Zac62ArchitectureEnforcementTest(unittest.TestCase):
                 "class ForwardingService:\n"
                 " def list(self): return self.owner.list()\n"
                 " def get(self, item_id): return self.owner.get(item_id)\n"
+            ),
+        )
+        self.assertEqual(
+            ["FocusedService.repository:LabRepositoryPort", "FocusedService.run:Callable[..., Any]"],
+            generic_focused_collaborators(
+                "from collections.abc import Callable\n"
+                "from typing import Any\n"
+                "class FocusedService:\n"
+                " def __init__(self, repository: LabRepositoryPort, run: Callable[..., Any]): pass\n"
             ),
         )
 

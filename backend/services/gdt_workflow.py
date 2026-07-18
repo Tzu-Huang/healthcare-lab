@@ -78,6 +78,18 @@ class GdtWatcherPort(Protocol):
     def stop(self) -> dict[str, Any]: ...
 
 
+class GdtExtensionMatcher(Protocol):
+    def __call__(self, path: Path, *, profile: str) -> bool: ...
+
+
+class GdtFilenameMatcher(Protocol):
+    def __call__(self, path: Path, *, profile: str, receiver_id: str, sender_id: str) -> bool: ...
+
+
+class GdtBridgeImporter(Protocol):
+    def __call__(self, repository: GdtResultImportPort, bridge_root: str | Path, *, filename: str, success_mode: str, filename_profile: str, receiver_id: str, sender_id: str) -> dict[str, Any]: ...
+
+
 class GdtConfigurationConflict(Exception):
     pass
 
@@ -96,9 +108,9 @@ class GdtBridgeService:
         watcher: GdtWatcherPort,
         *,
         is_internal_file: Callable[[Path], bool],
-        has_supported_extension: Callable[..., bool],
-        filename_binding_matches: Callable[..., bool],
-        bridge_importer: Callable[..., dict[str, Any]],
+        has_supported_extension: GdtExtensionMatcher,
+        filename_binding_matches: GdtFilenameMatcher,
+        bridge_importer: GdtBridgeImporter,
     ) -> None:
         self._repository = repository
         self._configuration = configuration
@@ -264,9 +276,9 @@ class GdtWorkflowService:
         watcher: GdtWatcherPort,
         *,
         is_internal_file: Callable[[Path], bool],
-        has_supported_extension: Callable[..., bool],
-        filename_binding_matches: Callable[..., bool],
-        bridge_importer: Callable[..., dict[str, Any]],
+        has_supported_extension: GdtExtensionMatcher,
+        filename_binding_matches: GdtFilenameMatcher,
+        bridge_importer: GdtBridgeImporter,
     ) -> None:
         self._repository = repository
         self.bridge_service = GdtBridgeService(

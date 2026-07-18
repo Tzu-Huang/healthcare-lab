@@ -111,6 +111,43 @@ class LabOperationStorePort(LabRepositoryPort, Protocol):
 
     def list_gdt_orders(self) -> list[dict[str, Any]]: ...
 
+
+class LabRegistryRepositoryPort(Protocol):
+    def get_lab_server(self, server_id: int) -> dict[str, Any]: ...
+    def list_lab_servers(self) -> list[dict[str, Any]]: ...
+    def create_lab_server(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def update_lab_server(self, server_id: int, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class LabHealthRepositoryPort(Protocol):
+    def get_lab_server(self, server_id: int) -> dict[str, Any]: ...
+    def list_lab_servers(self) -> list[dict[str, Any]]: ...
+    def update_lab_server_health(self, server_id: int, *, overall_status: str, process_status: str, application_status: str, protocol_status: str, recent_error: str = "", version: str = "") -> dict[str, Any]: ...
+
+
+class LabOperationRepositoryPort(Protocol):
+    def get_lab_server(self, server_id: int) -> dict[str, Any]: ...
+    def list_lab_operations(self, server_id: int | None = None, *, limit: int = 20) -> list[dict[str, Any]]: ...
+
+
+class LabSmokeRepositoryPort(Protocol):
+    def list_lab_servers(self) -> list[dict[str, Any]]: ...
+    def record_lab_operation(self, server_id: int | None, *, service_name: str, action: str, operator: str, result: str, duration_ms: int = 0, progress: list[dict[str, Any]] | None = None, error_text: str = "", started_at: str = "", completed_at: str = "") -> dict[str, Any]: ...
+
+
+class DashboardSnapshotRepositoryPort(Protocol):
+    def list_lab_servers(self) -> list[dict[str, Any]]: ...
+    def list_lab_operations(self, server_id: int | None = None, *, limit: int = 20) -> list[dict[str, Any]]: ...
+
+
+class LabOperationRunner(Protocol):
+    def __call__(
+        self, *, app: ApplicationPort, store: LabOperationStorePort,
+        server_id: int, action: str, lines: int = 200,
+        backing_services: list[str] | None = None,
+        operation_service_name: str = "", refresh_health: bool = True,
+    ) -> dict[str, Any]: ...
+
 def current_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
@@ -123,7 +160,7 @@ class LabRegistryService:
     def __init__(
         self,
         app: ApplicationPort,
-        repository: LabRepositoryPort,
+        repository: LabRegistryRepositoryPort,
         *,
         availability_decorator: Callable[[ApplicationPort, dict[str, Any]], dict[str, Any]],
     ) -> None:
@@ -157,7 +194,7 @@ class LabRegistryService:
 class LabHealthService:
     """Own single-server and bulk Lab health use cases."""
 
-    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort, *, health_checker: Callable[[LabRepositoryPort, int], dict[str, Any]], availability_decorator: Callable[[ApplicationPort, dict[str, Any]], dict[str, Any]]) -> None:
+    def __init__(self, app: ApplicationPort, repository: LabHealthRepositoryPort, *, health_checker: Callable[[LabHealthRepositoryPort, int], dict[str, Any]], availability_decorator: Callable[[ApplicationPort, dict[str, Any]], dict[str, Any]]) -> None:
         self.app = app
         self.repository = repository
         self._health_checker = health_checker
@@ -184,7 +221,7 @@ class LabHealthService:
 class LabOperationService:
     """Own Lab operation history and execution use cases."""
 
-    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort, operation_repository: LabOperationStorePort, *, operation_runner: Callable[..., dict[str, Any]]) -> None:
+    def __init__(self, app: ApplicationPort, repository: LabOperationRepositoryPort, operation_repository: LabOperationStorePort, *, operation_runner: LabOperationRunner) -> None:
         self.app = app
         self.repository = repository
         self.operation_repository = operation_repository
@@ -209,7 +246,7 @@ class LabOperationService:
 class LabSmokeService:
     """Own bulk Lab smoke coordination and partial-failure collection."""
 
-    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort, operation_repository: LabOperationStorePort, *, operation_runner: Callable[..., dict[str, Any]], operator_resolver: Callable[[], str]) -> None:
+    def __init__(self, app: ApplicationPort, repository: LabSmokeRepositoryPort, operation_repository: LabOperationStorePort, *, operation_runner: LabOperationRunner, operator_resolver: Callable[[], str]) -> None:
         self.app = app
         self.repository = repository
         self.operation_repository = operation_repository
@@ -282,7 +319,7 @@ class LabServerWorkflowService:
 class DashboardSnapshotService:
     """Own dashboard resource, summary, event, and restart-preview assembly."""
 
-    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort) -> None:
+    def __init__(self, app: ApplicationPort, repository: DashboardSnapshotRepositoryPort) -> None:
         self.app = app
         self.repository = repository
 
@@ -301,10 +338,10 @@ class DashboardActionService:
     def __init__(
         self,
         app: ApplicationPort,
-        repository: LabRepositoryPort,
+        repository: LabOperationStorePort,
         *,
         health_check: Callable[[LabRepositoryPort, str], list[dict[str, Any]]],
-        operation_runner: Callable[..., dict[str, Any]],
+        operation_runner: LabOperationRunner,
     ) -> None:
         self.app = app
         self.repository = repository
@@ -371,7 +408,7 @@ class DashboardActionService:
 class DashboardWorkflowService:
     """Compatibility composition seam for focused dashboard use cases."""
 
-    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort, *, health_check: Callable[[LabRepositoryPort, str], list[dict[str, Any]]], operation_runner: Callable[..., dict[str, Any]]) -> None:
+    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort, *, health_check: Callable[[LabRepositoryPort, str], list[dict[str, Any]]], operation_runner: LabOperationRunner) -> None:
         self.snapshot_service = DashboardSnapshotService(app, repository)
         self.action_service = DashboardActionService(app, repository, health_check=health_check, operation_runner=operation_runner)
         self.app = app

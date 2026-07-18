@@ -168,10 +168,18 @@ class DcmEvidenceCapability(Protocol):
     def get_patient_record(self, record_id: int) -> dict[str, Any]: ...
 
 
+class DcmOrderSync(Protocol):
+    def __call__(self, order: dict[str, Any], profile: dict[str, Any], *, uid_root: str) -> dict[str, Any]: ...
+
+
+class DcmOrderVerification(Protocol):
+    def __call__(self, order: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]: ...
+
+
 class DcmMwlSyncService:
     """Coordinate DICOM Order eligibility, patient prerequisite, and MWL sync."""
 
-    def __init__(self, repository: OrderLedgerPort, configuration: Mapping[str, Any], *, dcm_sync: Callable[..., Any], dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
+    def __init__(self, repository: OrderLedgerPort, configuration: Mapping[str, Any], *, dcm_sync: DcmOrderSync, dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
         self._repository = repository
         self._configuration = configuration
         self._dcm_sync = dcm_sync
@@ -194,7 +202,7 @@ class DcmMwlSyncService:
 class DcmMwlVerificationService:
     """Coordinate MWL verification and expose its persisted view."""
 
-    def __init__(self, repository: OrderLedgerPort, configuration: Mapping[str, Any], *, dcm_verify: Callable[..., dict[str, Any]], dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
+    def __init__(self, repository: OrderLedgerPort, configuration: Mapping[str, Any], *, dcm_verify: DcmOrderVerification, dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
         self._repository = repository
         self._configuration = configuration
         self._dcm_verify = dcm_verify
