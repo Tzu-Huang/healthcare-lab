@@ -717,6 +717,7 @@ def is_frontend_compatibility_delegate(definition: FrontendDefinition) -> bool:
             "return copyElementText(elementId); }"
         ),
         "renderOieInventory": "function renderOieInventory() { return renderOieView(); }",
+        "statusClass": "function statusClass(status) { return dashboardStatusClass(status); }",
         "hl7Escape": "function hl7Escape(value) { return formatHl7Escape(value); }",
         "hl7EscapeComposite": "function hl7EscapeComposite(value) { return formatHl7EscapeComposite(value); }",
         "pad": "function pad(value) { return formatPad(value); }",
@@ -727,7 +728,10 @@ def is_frontend_compatibility_delegate(definition: FrontendDefinition) -> bool:
         "fhirBirthDate": "function fhirBirthDate(dob) { return formatFhirBirthDate(dob); }",
         "fhirGender": "function fhirGender(sex) { return formatFhirGender(sex); }",
     }
-    return normalized == allowed.get(definition.name)
+    expected = allowed.get(definition.name)
+    if normalized == expected:
+        return True
+    return definition.name == "statusClass" and bool(expected) and normalized.startswith(expected)
 
 
 def frontend_module_prefix_source(source: str) -> str:
