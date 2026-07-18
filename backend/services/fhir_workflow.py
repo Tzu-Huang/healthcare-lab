@@ -37,45 +37,49 @@ MEDPLUM_READ_RESOURCE_TYPES = MEDPLUM_INVENTORY_RESOURCE_TYPES + ("Binary",)
 MEDPLUM_PATIENT_REFERENCE_FIELDS = ("subject", "patient")
 
 
-class FhirRepositoryPort(Protocol):
+class FhirInventoryRepositoryPort(Protocol):
     def list_fhir_resource_mappings(self) -> list[dict[str, Any]]: ...
-
     def list_fhir_workflow_records(self, sync_status: str = "") -> list[dict[str, Any]]: ...
 
-    def create_fhir_workflow_record(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
+class FhirRecordRepositoryPort(Protocol):
+    def create_fhir_workflow_record(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def get_fhir_workflow_record(self, record_id: int) -> dict[str, Any]: ...
 
+
+class FhirPreviewRepositoryPort(Protocol):
+    def get_fhir_workflow_record(self, record_id: int) -> dict[str, Any]: ...
+
+
+class FhirSyncRepositoryPort(Protocol):
+    def get_fhir_workflow_record(self, record_id: int) -> dict[str, Any]: ...
     def list_fhir_sync_attempts(self, record_id: int) -> list[dict[str, Any]]: ...
-
-    def ordered_fhir_workflow_records(self, record_ids: list[int]) -> list[dict[str, Any]]: ...
-
     def mark_fhir_syncing(self, record_id: int) -> dict[str, Any]: ...
+    def mark_fhir_sync_success(self, record_id: int, *, medplum_resource_id: str, medplum_resource_reference: str = "") -> dict[str, Any]: ...
+    def mark_fhir_sync_failure(self, record_id: int, *, error_text: str, operation_outcome: dict[str, Any] | None = None) -> dict[str, Any]: ...
+    def record_fhir_sync_attempt(self, record_id: int, *, method: str, request_url: str, request_payload: dict[str, Any] | None = None, http_status: int | None = None, response_payload: dict[str, Any] | None = None, operation_outcome: dict[str, Any] | None = None, error_text: str = "") -> dict[str, Any]: ...
 
-    def mark_fhir_sync_success(
-        self, record_id: int, *, medplum_resource_id: str,
-        medplum_resource_reference: str = "",
-    ) -> dict[str, Any]: ...
 
-    def mark_fhir_sync_failure(
-        self, record_id: int, *, error_text: str,
-        operation_outcome: dict[str, Any] | None = None,
-    ) -> dict[str, Any]: ...
+class FhirRepositoryPort(FhirInventoryRepositoryPort, FhirRecordRepositoryPort, FhirSyncRepositoryPort, Protocol):
+    """Compatibility aggregate for the retained workflow facade."""
 
-    def record_fhir_sync_attempt(
-        self, record_id: int, *, method: str, request_url: str,
-        request_payload: dict[str, Any] | None = None,
-        http_status: int | None = None,
-        response_payload: dict[str, Any] | None = None,
-        operation_outcome: dict[str, Any] | None = None,
-        error_text: str = "",
-    ) -> dict[str, Any]: ...
+
+class FhirRecordSync(Protocol):
+    def __call__(self, repository: FhirSyncRepositoryPort, record_id: int, *, base_url: str, auth_manager: MedplumAuthManager) -> dict[str, Any]: ...
+
+
+class FhirJsonRequest(Protocol):
+    def __call__(self, url: str, token: str, *, auth_manager: MedplumAuthManager, base_url: str) -> tuple[int, dict[str, Any]]: ...
+
+
+class FhirDiagnosticFetcher(Protocol):
+    def __call__(self, base_url: str, token: str, *, patient_reference: str, service_request_reference: str, auth_manager: MedplumAuthManager) -> dict[str, Any]: ...
 
 
 class FhirSyncService:
     """Coordinate FHIR sync/retry against the ledger and Medplum transport."""
 
-    def __init__(self, repository: FhirRepositoryPort, *, medplum_base_url: Callable[[], str], auth_manager: Callable[[], Any], record_sync: Callable[..., dict[str, Any]]) -> None:
+    def __init__(self, repository: FhirSyncRepositoryPort, *, medplum_base_url: Callable[[], str], auth_manager: Callable[[], MedplumAuthManager], record_sync: FhirRecordSync) -> None:
         self._repository = repository
         self._medplum_base_url = medplum_base_url
         self._auth_manager = auth_manager
@@ -99,7 +103,7 @@ class FhirSyncService:
 class FhirInventoryService:
     """Own FHIR mapping, record-query, and inventory projection use cases."""
 
-    def __init__(self, repository: FhirRepositoryPort, *, inventory_types: tuple[str, ...], inventory_mapper: Callable[[dict[str, Any]], dict[str, Any]]) -> None:
+    def __init__(self, repository: FhirInventoryRepositoryPort, *, inventory_types: tuple[str, ...], inventory_mapper: Callable[[dict[str, Any]], dict[str, Any]]) -> None:
         self._repository = repository
         self._inventory_types = inventory_types
         self._inventory_mapper = inventory_mapper
@@ -122,7 +126,7 @@ class FhirInventoryService:
 class FhirPreviewService:
     """Own live resource preview and local submitted-resource fallback."""
 
-    def __init__(self, repository: FhirRepositoryPort, *, inventory_types: tuple[str, ...], medplum_base_url: Callable[[], str], auth_manager: Callable[[], Any], base_url_normalizer: Callable[[str], str], reference_url_builder: Callable[[str, str], str], json_request: Callable[..., tuple[int, dict[str, Any]]], upstream_status: Callable[[str], int | None]) -> None:
+    def __init__(self, repository: FhirPreviewRepositoryPort, *, inventory_types: tuple[str, ...], medplum_base_url: Callable[[], str], auth_manager: Callable[[], MedplumAuthManager], base_url_normalizer: Callable[[str], str], reference_url_builder: Callable[[str, str], str], json_request: FhirJsonRequest, upstream_status: Callable[[str], int | None]) -> None:
         self._repository = repository
         self._inventory_types = inventory_types
         self._medplum_base_url = medplum_base_url
@@ -161,7 +165,7 @@ class FhirPreviewService:
 class FhirDiagnosticReportService:
     """Coordinate DiagnosticReport retrieval through an injected FHIR client."""
 
-    def __init__(self, *, medplum_base_url: Callable[[], str], auth_manager: Callable[[], Any], diagnostic_fetcher: Callable[..., dict[str, Any]]) -> None:
+    def __init__(self, *, medplum_base_url: Callable[[], str], auth_manager: Callable[[], MedplumAuthManager], diagnostic_fetcher: FhirDiagnosticFetcher) -> None:
         self._medplum_base_url = medplum_base_url
         self._auth_manager = auth_manager
         self._diagnostic_fetcher = diagnostic_fetcher
@@ -176,7 +180,7 @@ class FhirDiagnosticReportService:
 class FhirRecordService:
     """Own creation and retrieval of local FHIR workflow records."""
 
-    def __init__(self, repository: FhirRepositoryPort) -> None:
+    def __init__(self, repository: FhirRecordRepositoryPort) -> None:
         self._repository = repository
 
     def create_record(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -196,15 +200,15 @@ class FhirWorkflowService:
         *,
         inventory_types: tuple[str, ...],
         medplum_base_url: Callable[[], str],
-        auth_manager: Callable[[], Any],
+        auth_manager: Callable[[], MedplumAuthManager],
         inventory_mapper: Callable[[dict[str, Any]], dict[str, Any]],
-        diagnostic_fetcher: Callable[..., dict[str, Any]],
+        diagnostic_fetcher: FhirDiagnosticFetcher,
         base_url_normalizer: Callable[[str], str],
         reference_url_builder: Callable[[str, str], str],
-        json_request: Callable[..., tuple[int, dict[str, Any]]],
+        json_request: FhirJsonRequest,
         operation_outcome: Callable[[dict[str, Any]], dict[str, Any]],
         upstream_status: Callable[[str], int | None],
-        record_sync: Callable[..., dict[str, Any]],
+        record_sync: FhirRecordSync,
     ) -> None:
         self._repository = repository
         self._inventory_types = inventory_types

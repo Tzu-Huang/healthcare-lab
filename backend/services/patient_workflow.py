@@ -43,6 +43,18 @@ class DcmFixtureCapability(Protocol):
     def create_dcm4chee_e2e_demo_fixture(self, profile: dict[str, Any], *, uid_root: str = "1.2.826.0.1.3680043.10.543") -> dict[str, Any]: ...
 
 
+class PatientFhirSync(Protocol):
+    def __call__(self, record_id: int, *, base_url: str, auth_manager: object) -> dict[str, Any]: ...
+
+
+class PatientDicomSync(Protocol):
+    def __call__(self, patient: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class PatientResultRefresh(Protocol):
+    def __call__(self, record_id: int, profile: dict[str, Any]) -> dict[str, Any]: ...
+
+
 
 @runtime_checkable
 class PatientCoordinationPort(Protocol):
@@ -93,7 +105,7 @@ class PatientCoordinationPort(Protocol):
 class DcmResultRefreshService:
     """Coordinate patient result refresh through an explicit DICOM capability."""
 
-    def __init__(self, configuration: Mapping[str, Any], *, result_refresh: Callable[..., dict[str, Any]], dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
+    def __init__(self, configuration: Mapping[str, Any], *, result_refresh: PatientResultRefresh, dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
         self._configuration = configuration
         self._result_refresh = result_refresh
         self._dcm_profile = dcm_profile
@@ -105,7 +117,7 @@ class DcmResultRefreshService:
 class PatientRecordService:
     """Own Patient registry and protocol-specific post-create coordination."""
 
-    def __init__(self, repository: PatientLedgerPort, fhir: PatientFhirCapability, configuration: Mapping[str, Any], *, medplum_base_url: Callable[[], str], auth_manager: Callable[[], Any], fhir_sync: Callable[..., Any], dicom_patient_sync: Callable[..., Any], dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
+    def __init__(self, repository: PatientLedgerPort, fhir: PatientFhirCapability, configuration: Mapping[str, Any], *, medplum_base_url: Callable[[], str], auth_manager: Callable[[], object], fhir_sync: PatientFhirSync, dicom_patient_sync: PatientDicomSync, dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
         self._repository = repository
         self._fhir = fhir
         self._configuration = configuration
@@ -137,7 +149,7 @@ class PatientRecordService:
 class PatientFhirSyncService:
     """Own explicit Patient FHIR retry coordination."""
 
-    def __init__(self, repository: PatientLedgerPort, fhir: PatientFhirCapability, *, medplum_base_url: Callable[[], str], auth_manager: Callable[[], Any], fhir_sync: Callable[..., Any]) -> None:
+    def __init__(self, repository: PatientLedgerPort, fhir: PatientFhirCapability, *, medplum_base_url: Callable[[], str], auth_manager: Callable[[], object], fhir_sync: PatientFhirSync) -> None:
         self._repository = repository
         self._fhir = fhir
         self._medplum_base_url = medplum_base_url
