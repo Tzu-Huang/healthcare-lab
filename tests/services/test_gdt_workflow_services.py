@@ -4,7 +4,6 @@ from pathlib import Path
 
 from backend.services.gdt_workflow import (
     GdtBridgeService,
-    GdtOrderService,
     GdtResultService,
     GdtWorkflowService,
 )
@@ -57,7 +56,6 @@ class GdtFocusedWorkflowServicesTest(unittest.TestCase):
         self.directory.cleanup()
 
     def test_facade_composes_independently_meaningful_services(self):
-        self.assertIsInstance(self.service.order_service, GdtOrderService)
         self.assertIsInstance(self.service.bridge_service, GdtBridgeService)
         self.assertIsInstance(self.service.result_service, GdtResultService)
         self.assertEqual(self.service.list_orders(), [self.repository.order])
@@ -69,7 +67,6 @@ class GdtFocusedWorkflowServicesTest(unittest.TestCase):
             name for name, value in owner.__class__.__dict__.items()
             if not name.startswith("_") and callable(value)
         }
-        self.assertEqual(public(self.service.order_service), {"list", "get", "create"})
         self.assertEqual(public(self.service.bridge_service), {
             "inbox_items", "bridge_config", "update_bridge_config", "write_6302",
             "import_bridge_file", "watcher_status", "start_watcher", "stop_watcher",
@@ -77,7 +74,6 @@ class GdtFocusedWorkflowServicesTest(unittest.TestCase):
         self.assertEqual(public(self.service.result_service), {
             "workbench", "create_demo_result", "messages", "events", "import_result",
         })
-        self.assertFalse(hasattr(self.service.order_service, "start_watcher"))
         self.assertFalse(hasattr(self.service.result_service, "write_6302"))
 
 
