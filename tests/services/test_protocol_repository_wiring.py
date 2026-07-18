@@ -80,7 +80,7 @@ class ProtocolRepositoryWiringTests(unittest.TestCase):
         self.assertIn("FhirWorkflowService(\n                fhir_ledger,", source)
         self.assertIn("GdtWorkflowService(\n        gdt_workflow, app.config,", source)
         self.assertIn(
-            "gdt_service.order_service, gdt_service.bridge_service, gdt_service.result_service,",
+            "gdt_workflow, gdt_service.bridge_service, gdt_service.result_service,",
             source,
         )
         self.assertIn("GdtBridgeInboundWatcher(\n        gdt_workflow,", source)

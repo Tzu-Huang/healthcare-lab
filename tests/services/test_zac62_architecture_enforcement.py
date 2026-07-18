@@ -57,6 +57,38 @@ def behavior_free_facades(source: str) -> list[str]:
     return violations
 
 
+def behavior_free_services(source: str) -> list[str]:
+    tree = ast.parse(source)
+    violations = []
+    for owner in (node for node in tree.body if isinstance(node, ast.ClassDef)):
+        if not owner.name.endswith("Service") or owner.name.endswith("WorkflowService"):
+            continue
+        public = [
+            node for node in owner.body
+            if isinstance(node, ast.FunctionDef) and not node.name.startswith("_")
+        ]
+        unchanged = []
+        for method in public:
+            if not (
+                len(method.body) == 1
+                and isinstance(method.body[0], ast.Return)
+                and isinstance(method.body[0].value, ast.Call)
+            ):
+                unchanged.append(False)
+                continue
+            call = method.body[0].value
+            parameters = [arg.arg for arg in method.args.args if arg.arg != "self"]
+            forwarded = [arg.id for arg in call.args if isinstance(arg, ast.Name)]
+            unchanged.append(
+                len(call.args) == len(forwarded)
+                and not call.keywords
+                and forwarded == parameters
+            )
+        if public and all(unchanged):
+            violations.append(owner.name)
+    return violations
+
+
 def broad_protocol_methods(source: str) -> list[str]:
     tree = ast.parse(source)
     violations = []
@@ -131,6 +163,9 @@ class Zac62ArchitectureEnforcementTest(unittest.TestCase):
             wrapper_violations.extend(
                 f"{path.name}:{name}" for name in behavior_free_facades(source)
             )
+            wrapper_violations.extend(
+                f"{path.name}:{name}" for name in behavior_free_services(source)
+            )
         self.assertEqual([], protocol_violations)
         self.assertEqual([], wrapper_violations)
 
@@ -158,6 +193,14 @@ class Zac62ArchitectureEnforcementTest(unittest.TestCase):
                 "class BroadPort(Protocol):\n"
                 " def forward(self, *args): ...\n"
                 " def load(self) -> Any: ...\n"
+            ),
+        )
+        self.assertEqual(
+            ["ForwardingService"],
+            behavior_free_services(
+                "class ForwardingService:\n"
+                " def list(self): return self.owner.list()\n"
+                " def get(self, item_id): return self.owner.get(item_id)\n"
             ),
         )
 

@@ -88,20 +88,6 @@ class GdtExportError(Exception):
         self.item = item
 
 
-class GdtOrderService:
-    def __init__(self, repository: GdtOrderPort) -> None:
-        self._repository = repository
-
-    def list(self) -> list[dict[str, Any]]:
-        return self._repository.list_gdt_order_records()
-
-    def get(self, order_id: int) -> dict[str, Any]:
-        return self._repository.get_gdt_order_record(order_id)
-
-    def create(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._repository.create_gdt_order_record(payload)
-
-
 class GdtBridgeService:
     def __init__(
         self,
@@ -282,7 +268,7 @@ class GdtWorkflowService:
         filename_binding_matches: Callable[..., bool],
         bridge_importer: Callable[..., dict[str, Any]],
     ) -> None:
-        self.order_service = GdtOrderService(repository)
+        self._repository = repository
         self.bridge_service = GdtBridgeService(
             repository, configuration, watcher,
             is_internal_file=is_internal_file,
@@ -293,13 +279,13 @@ class GdtWorkflowService:
         self.result_service = GdtResultService(repository, inbox_items=self.bridge_service.inbox_items)
 
     def list_orders(self) -> list[dict[str, Any]]:
-        return self.order_service.list()
+        return self._repository.list_gdt_order_records()
 
     def get_order(self, order_id: int) -> dict[str, Any]:
-        return self.order_service.get(order_id)
+        return self._repository.get_gdt_order_record(order_id)
 
     def create_order(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.order_service.create(payload)
+        return self._repository.create_gdt_order_record(payload)
 
     def inbox_items(self) -> list[dict[str, Any]]:
         return self.bridge_service.inbox_items()

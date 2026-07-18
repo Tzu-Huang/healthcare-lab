@@ -479,7 +479,7 @@ def create_app(database_path: str | None = None) -> Flask:
         bridge_importer=import_gdt_bridge_files,
     )
     app.register_blueprint(create_gdt_blueprint(
-        gdt_service.order_service, gdt_service.bridge_service, gdt_service.result_service,
+        gdt_workflow, gdt_service.bridge_service, gdt_service.result_service,
     ))
     app.register_blueprint(create_home_blueprint(app.config))
 

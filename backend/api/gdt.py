@@ -14,9 +14,9 @@ from backend.services.gdt_workflow import (
 
 
 class GdtOrderPort(Protocol):
-    def list(self) -> list[dict[str, Any]]: ...
-    def get(self, order_id: int) -> dict[str, Any]: ...
-    def create(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def list_gdt_order_records(self) -> list[dict[str, Any]]: ...
+    def get_gdt_order_record(self, order_id: int) -> dict[str, Any]: ...
+    def create_gdt_order_record(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
 class GdtBridgePort(Protocol):
@@ -46,12 +46,12 @@ def create_gdt_blueprint(orders: GdtOrderPort, bridge: GdtBridgePort, results: G
 
     @blueprint.get("/api/gdt/orders")
     def list_orders():
-        return jsonify({"success": True, "items": orders.list()})
+        return jsonify({"success": True, "items": orders.list_gdt_order_records()})
 
     @blueprint.get("/api/gdt/orders/<int:order_id>")
     def get_order(order_id: int):
         try:
-            item = orders.get(order_id)
+            item = orders.get_gdt_order_record(order_id)
         except KeyError:
             return error("GDT order was not found.", 404)
         return jsonify({"success": True, "item": item})
@@ -59,7 +59,7 @@ def create_gdt_blueprint(orders: GdtOrderPort, bridge: GdtBridgePort, results: G
     @blueprint.post("/api/gdt/orders")
     def create_order():
         try:
-            item = orders.create(request.get_json(silent=True) or {})
+            item = orders.create_gdt_order_record(request.get_json(silent=True) or {})
         except KeyError:
             return error("Patient record was not found.", 404)
         except SimulatorValidationError as exc:
