@@ -8,11 +8,17 @@ from backend.domain.statuses import (
     ORDER_STATUS_ACCEPTED,
     ORDER_STATUS_TRANSPORT_ERROR,
 )
-from backend.services.fhir_workflow import FhirWorkflowService
+from backend.services.fhir_workflow import FhirSyncService, FhirWorkflowService
 from backend.services.gdt_workflow import GdtConfigurationConflict, GdtWorkflowService
 from backend.services.lab_workflow import (
+    DashboardActionService,
+    DashboardSnapshotService,
     DashboardWorkflowService,
+    LabHealthService,
+    LabOperationService,
+    LabRegistryService,
     LabServerWorkflowService,
+    LabSmokeService,
 )
 from backend.services.oie_workflow import OieTransportError, OieWorkflowService
 from backend.services.order_workflow import OrderWorkflowService
@@ -105,6 +111,22 @@ class LabWorkflowRepository:
 
 
 class WorkflowServiceTest(unittest.TestCase):
+    def test_lab_compatibility_service_composes_focused_use_case_owners(self):
+        service = self._lab_service(LabWorkflowRepository([]))
+
+        self.assertIsInstance(service.registry, LabRegistryService)
+        self.assertIsInstance(service.health, LabHealthService)
+        self.assertIsInstance(service.operations, LabOperationService)
+        self.assertIsInstance(service.smoke, LabSmokeService)
+
+    def test_dashboard_compatibility_service_composes_focused_use_case_owners(self):
+        service = DashboardWorkflowService(
+            object(), LabWorkflowRepository([]), health_check=Mock(), operation_runner=Mock()
+        )
+
+        self.assertIsInstance(service.snapshot_service, DashboardSnapshotService)
+        self.assertIsInstance(service.action_service, DashboardActionService)
+
     def test_patient_missing_medplum_records_sync_failure(self):
         repository = PatientRepository()
         service = PatientWorkflowService(
@@ -163,6 +185,7 @@ class WorkflowServiceTest(unittest.TestCase):
         success, item = service.sync_record(7)
 
         self.assertTrue(success)
+        self.assertIsInstance(service.sync_service, FhirSyncService)
         self.assertEqual(7, item["id"])
         self.assertEqual([(7, "http://medplum/fhir/R4")], calls)
 
@@ -282,6 +305,59 @@ class WorkflowServiceTest(unittest.TestCase):
             lines=75,
         )
 
+    def test_lab_operation_history_validates_server_and_preserves_repository_order(self):
+        repository = LabWorkflowRepository([{"id": 9, "name": "target", "enabled": True}])
+        repository.operations = [
+            {"id": 1, "result": "failed"},
+            {"id": 2, "result": "success"},
+        ]
+        service = self._lab_service(repository)
+
+        self.assertEqual(
+            [{"id": 2, "result": "success"}],
+            service.operation_history(9, limit=1),
+        )
+
+        with self.assertRaises(StopIteration):
+            service.operation_history(404)
+
+    def test_dashboard_snapshot_preserves_resource_summary_and_event_assembly(self):
+        repository = LabWorkflowRepository([])
+        service = DashboardWorkflowService(
+            object(), repository, health_check=Mock(), operation_runner=Mock()
+        )
+        items = [{"id": "fhir", "status": "healthy"}]
+        resources = {"cpu": {"percent": 12}}
+        summary = {"healthy": 1, "total": 1}
+        events = [{"type": "status", "serviceId": "fhir"}]
+
+        with (
+            patch(
+                "backend.services.lab_workflow.collect_dashboard_resource_snapshot",
+                return_value=resources,
+            ),
+            patch(
+                "backend.services.lab_workflow.dashboard_all_group_items",
+                return_value=items,
+            ),
+            patch(
+                "backend.services.lab_workflow.dashboard_summary",
+                return_value=summary,
+            ) as summarize,
+            patch(
+                "backend.services.lab_workflow.dashboard_events",
+                return_value=events,
+            ) as assemble_events,
+        ):
+            payload = service.snapshot()
+
+        self.assertEqual(
+            {"items": items, "summary": summary, "resources": resources, "events": events},
+            payload,
+        )
+        summarize.assert_called_once_with(items, resources)
+        assemble_events.assert_called_once_with(repository, items, resources)
+
     def test_dashboard_check_all_keeps_results_when_one_service_fails(self):
         repository = LabWorkflowRepository([])
 
@@ -313,6 +389,31 @@ class WorkflowServiceTest(unittest.TestCase):
             payload["results"],
         )
         self.assertEqual([], payload["items"])
+
+    def test_dashboard_check_all_captures_snapshot_after_health_checks(self):
+        repository = LabWorkflowRepository([])
+        calls = []
+
+        def check(_repository, service_id):
+            calls.append(f"check:{service_id}")
+            return []
+
+        def snapshot():
+            calls.append("snapshot")
+            return {"items": ["post-check"], "summary": {}, "resources": {}, "events": []}
+
+        service = DashboardActionService(
+            object(), repository, health_check=check, operation_runner=Mock()
+        )
+        with patch.dict(
+            "backend.services.lab_workflow.LAB_DASHBOARD_SERVICE_GROUPS",
+            {"first": {}, "second": {}},
+            clear=True,
+        ):
+            payload = service.check_all(snapshot)
+
+        self.assertEqual(["check:first", "check:second", "snapshot"], calls)
+        self.assertEqual(["post-check"], payload["items"])
 
     def test_dashboard_action_targets_primary_and_ordered_backing_services(self):
         repository = LabWorkflowRepository([])

@@ -43,6 +43,18 @@ class DcmFixtureCapability(Protocol):
     def create_dcm4chee_e2e_demo_fixture(self, profile: dict[str, Any], *, uid_root: str = "1.2.826.0.1.3680043.10.543") -> dict[str, Any]: ...
 
 
+class PatientFhirSync(Protocol):
+    def __call__(self, record_id: int, *, base_url: str, auth_manager: object) -> dict[str, Any]: ...
+
+
+class PatientDicomSync(Protocol):
+    def __call__(self, patient: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class PatientResultRefresh(Protocol):
+    def __call__(self, record_id: int, profile: dict[str, Any]) -> dict[str, Any]: ...
+
+
 
 @runtime_checkable
 class PatientCoordinationPort(Protocol):
@@ -90,6 +102,85 @@ class PatientCoordinationPort(Protocol):
 
 
 
+class DcmResultRefreshService:
+    """Coordinate patient result refresh through an explicit DICOM capability."""
+
+    def __init__(self, configuration: Mapping[str, Any], *, result_refresh: PatientResultRefresh, dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
+        self._configuration = configuration
+        self._result_refresh = result_refresh
+        self._dcm_profile = dcm_profile
+
+    def refresh(self, record_id: int) -> dict[str, Any]:
+        return self._result_refresh(record_id, self._dcm_profile(self._configuration))
+
+
+class PatientRecordService:
+    """Own Patient registry and protocol-specific post-create coordination."""
+
+    def __init__(self, repository: PatientLedgerPort, fhir: PatientFhirCapability, configuration: Mapping[str, Any], *, medplum_base_url: Callable[[], str], auth_manager: Callable[[], object], fhir_sync: PatientFhirSync, dicom_patient_sync: PatientDicomSync, dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
+        self._repository = repository
+        self._fhir = fhir
+        self._configuration = configuration
+        self._medplum_base_url = medplum_base_url
+        self._auth_manager = auth_manager
+        self._fhir_sync = fhir_sync
+        self._dicom_patient_sync = dicom_patient_sync
+        self._dcm_profile = dcm_profile
+
+    def list(self, protocol_version: str = "") -> list[dict[str, Any]]:
+        return self._repository.list_patient_records(protocol_version)
+
+    def create(self, payload: dict[str, Any]) -> dict[str, Any]:
+        item = self._repository.create_patient_record(payload)
+        if item["protocolVersion"] == "FHIR R4":
+            record = self._fhir.create_patient_fhir_workflow_record(item)
+            base_url = self._medplum_base_url()
+            if base_url:
+                self._fhir_sync(int(record["id"]), base_url=base_url, auth_manager=self._auth_manager())
+            else:
+                self._fhir.mark_fhir_sync_failure(int(record["id"]), error_text="Medplum FHIR base URL is required.")
+            return self._repository.get_patient_record(int(item["id"]))
+        if item["protocolVersion"] == "DICOM":
+            self._dicom_patient_sync(item, self._dcm_profile(self._configuration))
+            return self._repository.get_patient_record(int(item["id"]))
+        return item
+
+
+class PatientFhirSyncService:
+    """Own explicit Patient FHIR retry coordination."""
+
+    def __init__(self, repository: PatientLedgerPort, fhir: PatientFhirCapability, *, medplum_base_url: Callable[[], str], auth_manager: Callable[[], object], fhir_sync: PatientFhirSync) -> None:
+        self._repository = repository
+        self._fhir = fhir
+        self._medplum_base_url = medplum_base_url
+        self._auth_manager = auth_manager
+        self._fhir_sync = fhir_sync
+
+    def sync(self, record_id: int) -> tuple[bool, dict[str, Any]]:
+        item = self._repository.get_patient_record(record_id)
+        if item["protocolVersion"] != "FHIR R4":
+            raise ValueError("Patient record is not FHIR mode.")
+        record = item.get("fhir") or self._fhir.create_patient_fhir_workflow_record(item)
+        base_url = self._medplum_base_url()
+        if not base_url:
+            raise ValueError("Medplum FHIR base URL is required.")
+        self._fhir_sync(int(record.get("recordId") or record["id"]), base_url=base_url, auth_manager=self._auth_manager())
+        item = self._repository.get_patient_record(record_id)
+        return ((item.get("fhir") or {}).get("sync") or {}).get("status") == FHIR_SYNC_STATUS_SYNCED, item
+
+
+class DcmFixtureService:
+    """Own configured dcm4chee E2E fixture creation."""
+
+    def __init__(self, capability: DcmFixtureCapability, configuration: Mapping[str, Any], *, dcm_profile: Callable[[Mapping[str, Any]], dict[str, Any]]) -> None:
+        self._capability = capability
+        self._configuration = configuration
+        self._dcm_profile = dcm_profile
+
+    def create(self) -> dict[str, Any]:
+        return self._capability.create_dcm4chee_e2e_demo_fixture(self._dcm_profile(self._configuration), uid_root=str(self._configuration["DCM4CHEE_UID_ROOT"]))
+
+
 class PatientWorkflowService:
     def __init__(
         self,
@@ -118,56 +209,25 @@ class PatientWorkflowService:
         self._dicom_patient_sync = dicom_patient_sync
         self._dcm_result_refresh = dcm_result_refresh
         self._dcm_profile = dcm_profile
+        self.result_refresh_service = DcmResultRefreshService(configuration, result_refresh=dcm_result_refresh, dcm_profile=dcm_profile)
+        self.record_service = PatientRecordService(repository, self._fhir, configuration, medplum_base_url=medplum_base_url, auth_manager=auth_manager, fhir_sync=fhir_sync, dicom_patient_sync=dicom_patient_sync, dcm_profile=dcm_profile)
+        self.fhir_sync_service = PatientFhirSyncService(repository, self._fhir, medplum_base_url=medplum_base_url, auth_manager=auth_manager, fhir_sync=fhir_sync)
+        self.fixture_service = DcmFixtureService(self._fixture, configuration, dcm_profile=dcm_profile)
 
     def list(self, protocol_version: str = "") -> list[dict[str, Any]]:
-        return self._repository.list_patient_records(protocol_version)
+        return self.record_service.list(protocol_version)
 
     def create(self, payload: dict[str, Any]) -> dict[str, Any]:
-        item = self._repository.create_patient_record(payload)
-        if item["protocolVersion"] == "FHIR R4":
-            record = self._fhir.create_patient_fhir_workflow_record(item)
-            base_url = self._medplum_base_url()
-            if base_url:
-                self._fhir_sync(
-                    int(record["id"]),
-                    base_url=base_url,
-                    auth_manager=self._auth_manager(),
-                )
-            else:
-                self._fhir.mark_fhir_sync_failure(
-                    int(record["id"]), error_text="Medplum FHIR base URL is required."
-                )
-            return self._repository.get_patient_record(int(item["id"]))
-        if item["protocolVersion"] == "DICOM":
-            self._dicom_patient_sync(item, self._dcm_profile(self._configuration))
-            return self._repository.get_patient_record(int(item["id"]))
-        return item
+        return self.record_service.create(payload)
 
     def sync_fhir(self, record_id: int) -> tuple[bool, dict[str, Any]]:
-        item = self._repository.get_patient_record(record_id)
-        if item["protocolVersion"] != "FHIR R4":
-            raise ValueError("Patient record is not FHIR mode.")
-        record = item.get("fhir") or self._fhir.create_patient_fhir_workflow_record(item)
-        base_url = self._medplum_base_url()
-        if not base_url:
-            raise ValueError("Medplum FHIR base URL is required.")
-        self._fhir_sync(
-            int(record.get("recordId") or record["id"]),
-            base_url=base_url,
-            auth_manager=self._auth_manager(),
-        )
-        item = self._repository.get_patient_record(record_id)
-        status = ((item.get("fhir") or {}).get("sync") or {}).get("status")
-        return status == FHIR_SYNC_STATUS_SYNCED, item
+        return self.fhir_sync_service.sync(record_id)
 
     def refresh_dcm4chee_results(self, record_id: int) -> dict[str, Any]:
-        return self._dcm_result_refresh(record_id, self._dcm_profile(self._configuration))
+        return self.result_refresh_service.refresh(record_id)
 
     def create_dcm4chee_fixture(self) -> dict[str, Any]:
-        return self._fixture.create_dcm4chee_e2e_demo_fixture(
-            self._dcm_profile(self._configuration),
-            uid_root=str(self._configuration["DCM4CHEE_UID_ROOT"]),
-        )
+        return self.fixture_service.create()
 
 
 def sync_patient_to_dcm4chee(

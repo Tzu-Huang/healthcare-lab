@@ -129,20 +129,16 @@ from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as Runtim
 from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
 from backend.runtime.lazy_wsgi import LazyWsgiApplication
 from backend.services.oie_settings import OieSettingsService, create_oie_management_client
+from backend.lab_composition import dashboard_services, lab_server_services
 from backend.services.lab_workflow import (
-    DashboardWorkflowService,
-    LabServerWorkflowService,
     dashboard_all_group_items,
     dashboard_child_item,
     dashboard_events,
     dashboard_group_item,
-    decorate_lab_operation_availability,
     derive_lab_overall_status,
-    resolve_lab_operator,
-    run_dashboard_group_health_check,
+    run_lab_smoke_check,
     run_lab_operation,
     run_lab_server_health_check,
-    run_lab_smoke_check,
 )
 from backend.lab_store import (
     DCM4CHEE_MWL_OPERATION_CREATE,
@@ -351,32 +347,21 @@ def create_app(database_path: str | None = None) -> Flask:
     )
     app.register_blueprint(
         create_lab_servers_blueprint(
-            LabServerWorkflowService(
+            *lab_server_services(
                 app,
-                store.lab_repository,
-                operation_repository=store,
-                health_checker=lambda target_store, server_id: run_lab_server_health_check(
-                    target_store, server_id
-                ),
-                availability_decorator=decorate_lab_operation_availability,
+                store,
                 operation_runner=lambda **values: run_lab_operation(**values),
-                operator_resolver=lambda: resolve_lab_operator(),
+                health_checker=lambda repository, server_id: run_lab_server_health_check(repository, server_id),
             )
         )
     )
     app.register_blueprint(
         create_dashboard_blueprint(
-            DashboardWorkflowService(
+            *dashboard_services(
                 app,
                 store,
-                health_check=lambda target_store, service_id: run_dashboard_group_health_check(
-                    target_store,
-                    service_id,
-                    health_checker=lambda health_store, server_id: run_lab_server_health_check(
-                        health_store, server_id
-                    ),
-                ),
                 operation_runner=lambda **values: run_lab_operation(**values),
+                health_checker=lambda repository, server_id: run_lab_server_health_check(repository, server_id),
             )
         )
     )
@@ -410,7 +395,12 @@ def create_app(database_path: str | None = None) -> Flask:
         result_refresh=refresh_patient_dcm4chee_results,
         order_sync=sync_order_to_dcm4chee_mwl,
         order_verify=verify_order_dcm4chee_mwl,
-        patient_sender=lambda *args, **kwargs: send_hl7_mllp_message(*args, **kwargs),
+        patient_sender=lambda message, *, host, port, timeout_seconds, framing=True: (
+            send_hl7_mllp_message(
+                message, host=host, port=port,
+                timeout_seconds=timeout_seconds, framing=framing,
+            )
+        ),
     )
 
     app.register_blueprint(
@@ -420,25 +410,23 @@ def create_app(database_path: str | None = None) -> Flask:
             profile_validator=validate_dcm4chee_profile,
         )
     )
-    app.register_blueprint(
-        create_patients_blueprint(
-            PatientWorkflowService(
-                store.patient_repository,
-                app.config,
-                fhir_capability=workflow_operations.patient_fhir,
-                fixture_capability=workflow_operations.fixture,
-                medplum_base_url=configured_medplum_base_url,
-                auth_manager=get_auth_manager,
-                fhir_sync=workflow_operations.sync_patient_fhir,
-                dicom_patient_sync=workflow_operations.sync_patient_dicom,
-                dcm_result_refresh=workflow_operations.refresh_results,
-                dcm_profile=dcm4chee_profile_from_config,
-            )
-        )
+    patient_service = PatientWorkflowService(
+        store.patient_repository,
+        app.config,
+        fhir_capability=workflow_operations.patient_fhir,
+        fixture_capability=workflow_operations.fixture,
+        medplum_base_url=configured_medplum_base_url,
+        auth_manager=get_auth_manager,
+        fhir_sync=workflow_operations.sync_patient_fhir,
+        dicom_patient_sync=workflow_operations.sync_patient_dicom,
+        dcm_result_refresh=workflow_operations.refresh_results,
+        dcm_profile=dcm4chee_profile_from_config,
     )
-    app.register_blueprint(
-        create_orders_blueprint(
-            OrderWorkflowService(
+    app.register_blueprint(create_patients_blueprint(
+        patient_service.record_service, patient_service.fhir_sync_service,
+        patient_service.result_refresh_service, patient_service.fixture_service,
+    ))
+    order_service = OrderWorkflowService(
                 store.order_repository,
                 app.config,
                 fhir_capability=workflow_operations.order_fhir,
@@ -450,12 +438,16 @@ def create_app(database_path: str | None = None) -> Flask:
                 dcm_sync=workflow_operations.sync_order_dicom,
                 dcm_verify=workflow_operations.verify_order_dicom,
                 dcm_profile=dcm4chee_profile_from_config,
-            )
-        )
     )
     app.register_blueprint(
-        create_fhir_blueprint(
-            FhirWorkflowService(
+        create_orders_blueprint(
+            order_service,
+            order_service.mwl_sync_service,
+            order_service.mwl_verification_service,
+            order_service.evidence_service,
+        )
+    )
+    fhir_service = FhirWorkflowService(
                 fhir_ledger,
                 inventory_types=MEDPLUM_INVENTORY_RESOURCE_TYPES,
                 medplum_base_url=configured_medplum_base_url,
@@ -468,22 +460,27 @@ def create_app(database_path: str | None = None) -> Flask:
                 operation_outcome=operation_outcome_from_payload,
                 upstream_status=http_status_from_upstream_error,
                 record_sync=sync_fhir_workflow_record_to_medplum,
-            )
-        )
     )
     app.register_blueprint(
-        create_gdt_blueprint(
-            GdtWorkflowService(
-                gdt_workflow,
-                app.config,
-                app.extensions["gdt_bridge_watcher"],
-                is_internal_file=gdt_is_internal_or_temp_file,
-                has_supported_extension=gdt_has_supported_exchange_extension,
-                filename_binding_matches=gdt_filename_binding_matches,
-                bridge_importer=import_gdt_bridge_files,
-            )
+        create_fhir_blueprint(
+            fhir_service.record_service,
+            fhir_service.inventory_service,
+            fhir_service.preview_service,
+            fhir_service.diagnostic_service,
+            fhir_service.sync_service,
+            fhir_service.operation_outcome,
         )
     )
+    gdt_service = GdtWorkflowService(
+        gdt_workflow, app.config, app.extensions["gdt_bridge_watcher"],
+        is_internal_file=gdt_is_internal_or_temp_file,
+        has_supported_extension=gdt_has_supported_exchange_extension,
+        filename_binding_matches=gdt_filename_binding_matches,
+        bridge_importer=import_gdt_bridge_files,
+    )
+    app.register_blueprint(create_gdt_blueprint(
+        gdt_workflow, gdt_service.bridge_service, gdt_service.result_service,
+    ))
     app.register_blueprint(create_home_blueprint(app.config))
 
     return app

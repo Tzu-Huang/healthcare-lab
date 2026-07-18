@@ -111,33 +111,62 @@ class LabOperationStorePort(LabRepositoryPort, Protocol):
 
     def list_gdt_orders(self) -> list[dict[str, Any]]: ...
 
+
+class LabRegistryRepositoryPort(Protocol):
+    def get_lab_server(self, server_id: int) -> dict[str, Any]: ...
+    def list_lab_servers(self) -> list[dict[str, Any]]: ...
+    def create_lab_server(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def update_lab_server(self, server_id: int, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class LabHealthRepositoryPort(Protocol):
+    def get_lab_server(self, server_id: int) -> dict[str, Any]: ...
+    def list_lab_servers(self) -> list[dict[str, Any]]: ...
+    def update_lab_server_health(self, server_id: int, *, overall_status: str, process_status: str, application_status: str, protocol_status: str, recent_error: str = "", version: str = "") -> dict[str, Any]: ...
+
+
+class LabOperationRepositoryPort(Protocol):
+    def get_lab_server(self, server_id: int) -> dict[str, Any]: ...
+    def list_lab_operations(self, server_id: int | None = None, *, limit: int = 20) -> list[dict[str, Any]]: ...
+
+
+class LabSmokeRepositoryPort(Protocol):
+    def list_lab_servers(self) -> list[dict[str, Any]]: ...
+    def record_lab_operation(self, server_id: int | None, *, service_name: str, action: str, operator: str, result: str, duration_ms: int = 0, progress: list[dict[str, Any]] | None = None, error_text: str = "", started_at: str = "", completed_at: str = "") -> dict[str, Any]: ...
+
+
+class DashboardSnapshotRepositoryPort(Protocol):
+    def list_lab_servers(self) -> list[dict[str, Any]]: ...
+    def list_lab_operations(self, server_id: int | None = None, *, limit: int = 20) -> list[dict[str, Any]]: ...
+
+
+class LabOperationRunner(Protocol):
+    def __call__(
+        self, *, app: ApplicationPort, store: LabOperationStorePort,
+        server_id: int, action: str, lines: int = 200,
+        backing_services: list[str] | None = None,
+        operation_service_name: str = "", refresh_health: bool = True,
+    ) -> dict[str, Any]: ...
+
 def current_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
     )
 
 
-class LabServerWorkflowService:
-    """Coordinate Lab Server registry, health, and operation use cases."""
+class LabRegistryService:
+    """Own Lab Server metadata and registry use cases."""
 
     def __init__(
         self,
         app: ApplicationPort,
-        repository: LabRepositoryPort,
+        repository: LabRegistryRepositoryPort,
         *,
-        operation_repository: LabOperationStorePort | None = None,
-        health_checker: Callable[[LabRepositoryPort, int], dict[str, Any]],
         availability_decorator: Callable[[ApplicationPort, dict[str, Any]], dict[str, Any]],
-        operation_runner: Callable[..., dict[str, Any]],
-        operator_resolver: Callable[[], str],
     ) -> None:
         self.app = app
         self.repository = repository
-        self.operation_repository = operation_repository or repository
-        self._health_checker = health_checker
         self._availability_decorator = availability_decorator
-        self._operation_runner = operation_runner
-        self._operator_resolver = operator_resolver
 
     def metadata(self) -> dict[str, list[str]]:
         return {
@@ -161,6 +190,19 @@ class LabServerWorkflowService:
     def update_server(self, server_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         return self._decorate(self.repository.update_lab_server(server_id, payload))
 
+
+class LabHealthService:
+    """Own single-server and bulk Lab health use cases."""
+
+    def __init__(self, app: ApplicationPort, repository: LabHealthRepositoryPort, *, health_checker: Callable[[LabHealthRepositoryPort, int], dict[str, Any]], availability_decorator: Callable[[ApplicationPort, dict[str, Any]], dict[str, Any]]) -> None:
+        self.app = app
+        self.repository = repository
+        self._health_checker = health_checker
+        self._availability_decorator = availability_decorator
+
+    def _decorate(self, item: dict[str, Any]) -> dict[str, Any]:
+        return self._availability_decorator(self.app, item)
+
     def check_server(self, server_id: int) -> dict[str, Any]:
         return self._decorate(self._health_checker(self.repository, server_id))
 
@@ -174,6 +216,16 @@ class LabServerWorkflowService:
             )
             items.append(self._decorate(checked))
         return items
+
+
+class LabOperationService:
+    """Own Lab operation history and execution use cases."""
+
+    def __init__(self, app: ApplicationPort, repository: LabOperationRepositoryPort, operation_repository: LabOperationStorePort, *, operation_runner: LabOperationRunner) -> None:
+        self.app = app
+        self.repository = repository
+        self.operation_repository = operation_repository
+        self._operation_runner = operation_runner
 
     def operation_history(self, server_id: int, *, limit: int = 20) -> list[dict[str, Any]]:
         self.repository.get_lab_server(server_id)
@@ -189,6 +241,17 @@ class LabServerWorkflowService:
             action=action,
             lines=lines,
         )
+
+
+class LabSmokeService:
+    """Own bulk Lab smoke coordination and partial-failure collection."""
+
+    def __init__(self, app: ApplicationPort, repository: LabSmokeRepositoryPort, operation_repository: LabOperationStorePort, *, operation_runner: LabOperationRunner, operator_resolver: Callable[[], str]) -> None:
+        self.app = app
+        self.repository = repository
+        self.operation_repository = operation_repository
+        self._operation_runner = operation_runner
+        self._operator_resolver = operator_resolver
 
     def smoke_all_servers(self) -> list[dict[str, Any]]:
         results = []
@@ -230,41 +293,64 @@ class LabServerWorkflowService:
         return results
 
 
-class DashboardWorkflowService:
-    """Coordinate dashboard snapshots, health checks, and grouped operations."""
+class LabServerWorkflowService:
+    """Compatibility composition seam for the focused Lab use-case services."""
+
+    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort, *, operation_repository: LabOperationStorePort | None = None, health_checker: Callable[[LabRepositoryPort, int], dict[str, Any]], availability_decorator: Callable[[ApplicationPort, dict[str, Any]], dict[str, Any]], operation_runner: Callable[..., dict[str, Any]], operator_resolver: Callable[[], str]) -> None:
+        operation_store = operation_repository or repository
+        self.registry = LabRegistryService(app, repository, availability_decorator=availability_decorator)
+        self.health = LabHealthService(app, repository, health_checker=health_checker, availability_decorator=availability_decorator)
+        self.operations = LabOperationService(app, repository, operation_store, operation_runner=operation_runner)
+        self.smoke = LabSmokeService(app, repository, operation_store, operation_runner=operation_runner, operator_resolver=operator_resolver)
+        self.app = app
+
+    def metadata(self) -> dict[str, list[str]]: return self.registry.metadata()
+    def list_servers(self) -> list[dict[str, Any]]: return self.registry.list_servers()
+    def create_server(self, payload: dict[str, Any]) -> dict[str, Any]: return self.registry.create_server(payload)
+    def get_server(self, server_id: int) -> dict[str, Any]: return self.registry.get_server(server_id)
+    def update_server(self, server_id: int, payload: dict[str, Any]) -> dict[str, Any]: return self.registry.update_server(server_id, payload)
+    def check_server(self, server_id: int) -> dict[str, Any]: return self.health.check_server(server_id)
+    def check_all_servers(self) -> list[dict[str, Any]]: return self.health.check_all_servers()
+    def operation_history(self, server_id: int, *, limit: int = 20) -> list[dict[str, Any]]: return self.operations.operation_history(server_id, limit=limit)
+    def execute_operation(self, server_id: int, action: str, *, lines: int = 200) -> dict[str, Any]: return self.operations.execute_operation(server_id, action, lines=lines)
+    def smoke_all_servers(self) -> list[dict[str, Any]]: return self.smoke.smoke_all_servers()
+
+
+class DashboardSnapshotService:
+    """Own dashboard resource, summary, event, and restart-preview assembly."""
+
+    def __init__(self, app: ApplicationPort, repository: DashboardSnapshotRepositoryPort) -> None:
+        self.app = app
+        self.repository = repository
+
+    def snapshot(self) -> dict[str, Any]:
+        resources = collect_dashboard_resource_snapshot()
+        items = dashboard_all_group_items(self.app, self.repository)
+        return {"items": items, "summary": dashboard_summary(items, resources), "resources": resources, "events": dashboard_events(self.repository, items, resources)}
+
+    def restart_preview(self, service_id: str) -> dict[str, Any]:
+        return dashboard_group_item(self.app, self.repository, service_id)["restartPreview"]
+
+
+class DashboardActionService:
+    """Own dashboard bulk health and grouped operation use cases."""
 
     def __init__(
         self,
         app: ApplicationPort,
-        repository: LabRepositoryPort,
+        repository: LabOperationStorePort,
         *,
         health_check: Callable[[LabRepositoryPort, str], list[dict[str, Any]]],
-        operation_runner: Callable[..., dict[str, Any]],
+        operation_runner: LabOperationRunner,
     ) -> None:
         self.app = app
         self.repository = repository
         self._health_check = health_check
         self._operation_runner = operation_runner
 
-    def _snapshot_payload(
-        self, items: list[dict[str, Any]], resources: dict[str, Any]
+    def check_all(
+        self, snapshot: Callable[[], dict[str, Any]]
     ) -> dict[str, Any]:
-        return {
-            "items": items,
-            "summary": dashboard_summary(items, resources),
-            "resources": resources,
-            "events": dashboard_events(self.repository, items, resources),
-        }
-
-    def snapshot(self) -> dict[str, Any]:
-        resources = collect_dashboard_resource_snapshot()
-        items = dashboard_all_group_items(self.app, self.repository)
-        return self._snapshot_payload(items, resources)
-
-    def restart_preview(self, service_id: str) -> dict[str, Any]:
-        return dashboard_group_item(self.app, self.repository, service_id)["restartPreview"]
-
-    def check_all(self) -> dict[str, Any]:
         results = []
         for service_id in LAB_DASHBOARD_SERVICE_GROUPS:
             try:
@@ -276,7 +362,7 @@ class DashboardWorkflowService:
                 )
             except (KeyError, SimulatorValidationError, LabOperationError) as exc:
                 results.append({"serviceId": service_id, "error": str(exc)})
-        return {"results": results, **self.snapshot()}
+        return {"results": results, **snapshot()}
 
     def run_action(
         self, service_id: str, action: str, *, lines: int = 200
@@ -308,43 +394,31 @@ class DashboardWorkflowService:
             "output": result["output"],
         }
 
-    def run_child_action(
-        self,
-        service_id: str,
-        child_id: str,
-        action: str,
-        *,
-        lines: int = 200,
-    ) -> dict[str, Any]:
+    def run_child_action(self, service_id: str, child_id: str, action: str, *, lines: int = 200) -> dict[str, Any]:
         group, servers = dashboard_servers_for_group(self.repository, service_id)
         child = dashboard_child_for_group(group, child_id)
-        primary = next(
-            (server for server in servers if server["name"] == group["primary"]),
-            servers[0],
-        )
+        primary = next((server for server in servers if server["name"] == group["primary"]), servers[0])
         if action.strip().lower() == "check":
-            return {
-                "service": dashboard_group_item(self.app, self.repository, service_id),
-                "child": dashboard_child_item(self.app, child),
-            }
+            return {"service": dashboard_group_item(self.app, self.repository, service_id), "child": dashboard_child_item(self.app, child)}
         operation_action = dashboard_action_for_group(group, action)
-        result = self._operation_runner(
-            app=self.app,
-            store=self.repository,
-            server_id=int(primary["id"]),
-            action=operation_action,
-            lines=lines,
-            backing_services=[str(child["service"])],
-            operation_service_name=str(child["displayName"]),
-            refresh_health=False,
-        )
-        return {
-            "service": dashboard_group_item(self.app, self.repository, service_id),
-            "child": dashboard_child_item(self.app, child),
-            "operation": result["operation"],
-            "output": result["output"],
-        }
+        result = self._operation_runner(app=self.app, store=self.repository, server_id=int(primary["id"]), action=operation_action, lines=lines, backing_services=[str(child["service"])], operation_service_name=str(child["displayName"]), refresh_health=False)
+        return {"service": dashboard_group_item(self.app, self.repository, service_id), "child": dashboard_child_item(self.app, child), "operation": result["operation"], "output": result["output"]}
 
+
+class DashboardWorkflowService:
+    """Compatibility composition seam for focused dashboard use cases."""
+
+    def __init__(self, app: ApplicationPort, repository: LabRepositoryPort, *, health_check: Callable[[LabRepositoryPort, str], list[dict[str, Any]]], operation_runner: LabOperationRunner) -> None:
+        self.snapshot_service = DashboardSnapshotService(app, repository)
+        self.action_service = DashboardActionService(app, repository, health_check=health_check, operation_runner=operation_runner)
+        self.app = app
+        self.repository = repository
+
+    def snapshot(self) -> dict[str, Any]: return self.snapshot_service.snapshot()
+    def restart_preview(self, service_id: str) -> dict[str, Any]: return self.snapshot_service.restart_preview(service_id)
+    def check_all(self) -> dict[str, Any]: return self.action_service.check_all(self.snapshot)
+    def run_action(self, service_id: str, action: str, *, lines: int = 200) -> dict[str, Any]: return self.action_service.run_action(service_id, action, lines=lines)
+    def run_child_action(self, service_id: str, child_id: str, action: str, *, lines: int = 200) -> dict[str, Any]: return self.action_service.run_child_action(service_id, child_id, action, lines=lines)
 
 def run_lab_operation(
     *,
