@@ -122,6 +122,18 @@ FRONTEND_FUNCTION_PATTERN = re.compile(
 CSS_RULE_PATTERN = re.compile(r"(?:^|[{}])\s*([^@{}][^{}]*)\{", re.MULTILINE)
 CSS_FAMILY_PATTERN = re.compile(r"[.#][A-Za-z_-][\w-]*")
 FRONTEND_MODULE_PREFIX_NAME = "<module-prefix>"
+FRONTEND_JS_ROOT = ROOT / "frontend" / "static" / "js"
+FRONTEND_LAYER_DEPENDENCIES = {
+    "core": frozenset({"core"}),
+    "api": frozenset({"api", "core"}),
+    "state": frozenset({"state", "core"}),
+    "components": frozenset({"components", "state", "core"}),
+    "views": frozenset({"views", "api", "state", "components", "core"}),
+}
+FRONTEND_IMPORT_PATTERN = re.compile(
+    r'^\s*import\s+(?:.+?\s+from\s+)?["\'](?P<path>\.[^"\']+)["\'];?',
+    re.MULTILINE,
+)
 PROTECTED_SQL_TABLE_OWNERS = {
     "local_fhir_workflow_records": "backend/repositories/fhir_ledger.py",
     "local_fhir_sync_attempts": "backend/repositories/fhir_ledger.py",
@@ -805,6 +817,36 @@ def frontend_selector_families(source: str) -> dict[str, int]:
     return families
 
 
+def frontend_module_import_violations(relative: str, source: str) -> list[str]:
+    path = PurePosixPath(relative)
+    try:
+        layer = path.parts[path.parts.index("js") + 1]
+    except (ValueError, IndexError):
+        return []
+    allowed = FRONTEND_LAYER_DEPENDENCIES.get(layer, frozenset())
+    violations = []
+    for match in FRONTEND_IMPORT_PATTERN.finditer(source):
+        target = (path.parent / match.group("path")).as_posix()
+        normalized = PurePosixPath(target)
+        parts = []
+        for part in normalized.parts:
+            if part == "..":
+                if parts:
+                    parts.pop()
+            elif part != ".":
+                parts.append(part)
+        try:
+            target_layer = parts[parts.index("js") + 1]
+        except (ValueError, IndexError):
+            continue
+        if target_layer not in allowed:
+            line = source.count("\n", 0, match.start()) + 1
+            violations.append(
+                f"{relative}:{line} frontend {layer} module imports disallowed {target_layer} owner"
+            )
+    return violations
+
+
 def frontend_selector_violations(
     relative_path: str,
     source: str,
@@ -1185,6 +1227,49 @@ def repository_pure_responsibility_violations(relative: str, source: str) -> lis
 
 
 class ArchitectureContractTest(unittest.TestCase):
+    def test_frontend_modules_follow_declared_dependency_direction(self):
+        violations = []
+        for path in FRONTEND_JS_ROOT.rglob("*.js"):
+            relative = path.relative_to(ROOT).as_posix()
+            violations.extend(
+                frontend_module_import_violations(
+                    relative,
+                    path.read_text(encoding="utf-8"),
+                )
+            )
+        self.assertEqual([], violations)
+
+    def test_frontend_dependency_direction_rejects_lower_layer_view_imports(self):
+        fixtures = {
+            "api": 'import { render } from "../views/patient.js";\n',
+            "state": 'import { render } from "../views/order.js";\n',
+            "components": 'import { send } from "../api/oie.js";\n',
+            "core": 'import { state } from "../state/selection.js";\n',
+        }
+        for layer, source in fixtures.items():
+            with self.subTest(layer=layer):
+                violations = frontend_module_import_violations(
+                    f"frontend/static/js/{layer}/fixture.js",
+                    source,
+                )
+                self.assertEqual(1, len(violations))
+                self.assertIn(f"frontend {layer} module", violations[0])
+
+    def test_frontend_compatibility_delegate_rejects_lookalikes(self):
+        accepted = frontend_top_level_definition_occurrences(
+            "function setActiveView(viewId) { return activateView(viewId); }"
+        )[0]
+        self.assertTrue(is_frontend_compatibility_delegate(accepted))
+        rejected = (
+            "function setActiveView(viewId) { refreshDashboard(); return activateView(viewId); }",
+            "function setActiveView(viewId) { return activateView('other'); }",
+            "async function copyTextFromElement(elementId) { return navigator.clipboard.writeText(elementId); }",
+        )
+        for source in rejected:
+            with self.subTest(source=source):
+                definition = frontend_top_level_definition_occurrences(source)[0]
+                self.assertFalse(is_frontend_compatibility_delegate(definition))
+
     def test_responsibility_packages_exist(self):
         for package in RESPONSIBILITY_PACKAGES:
             with self.subTest(package=package):
