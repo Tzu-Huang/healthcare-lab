@@ -390,6 +390,31 @@ class WorkflowServiceTest(unittest.TestCase):
         )
         self.assertEqual([], payload["items"])
 
+    def test_dashboard_check_all_captures_snapshot_after_health_checks(self):
+        repository = LabWorkflowRepository([])
+        calls = []
+
+        def check(_repository, service_id):
+            calls.append(f"check:{service_id}")
+            return []
+
+        def snapshot():
+            calls.append("snapshot")
+            return {"items": ["post-check"], "summary": {}, "resources": {}, "events": []}
+
+        service = DashboardActionService(
+            object(), repository, health_check=check, operation_runner=Mock()
+        )
+        with patch.dict(
+            "backend.services.lab_workflow.LAB_DASHBOARD_SERVICE_GROUPS",
+            {"first": {}, "second": {}},
+            clear=True,
+        ):
+            payload = service.check_all(snapshot)
+
+        self.assertEqual(["check:first", "check:second", "snapshot"], calls)
+        self.assertEqual(["post-check"], payload["items"])
+
     def test_dashboard_action_targets_primary_and_ordered_backing_services(self):
         repository = LabWorkflowRepository([])
         runner = Mock(
