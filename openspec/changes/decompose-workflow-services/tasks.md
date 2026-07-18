@@ -4,7 +4,7 @@
 - [x] 1.2 Inventory Lab, FHIR, Order/dcm4chee, Patient, and GDT service responsibilities, callers, collaborators, runtime callbacks, compatibility seams, and current focused-test coverage.
 - [x] 1.3 Define the final focused service and coordinator ownership map, including concrete narrow port signatures and explicit reasons for any Patient or GDT responsibility that remains cohesive.
 - [x] 1.4 Add characterization for application extension keys, Blueprint inputs, runtime startup order, callbacks, and ZAC-46 OIE wiring before changing composition.
-- [ ] 1.5 Add architecture checks rejecting broad service ports, generic variadic or dynamic delegation, Flask/SQL/runtime implementation in services, and behavior-free forwarding wrappers without expanding baselines or allowlists.
+- [x] 1.5 Add architecture checks rejecting broad service ports, generic variadic or dynamic delegation, Flask/SQL/runtime implementation in services, and behavior-free forwarding wrappers without expanding baselines or allowlists.
 
 ## 2. Lab Control-Plane Use Cases
 
@@ -40,10 +40,10 @@
 
 ## 6. Composition, Compatibility, and Architecture Closure
 
-- [ ] 6.1 Compact `backend/app_factory.py` around explicit construction and registration while retaining ZAC-46 OIE management wiring, all extension keys, Blueprint inputs, patch seams, and startup order.
-- [ ] 6.2 Replace remaining broad service collaborators with concrete consumer-owned Protocols or typed callables and verify signatures contain no generic variadics, dynamic delegation, or bare `Any` returns.
-- [ ] 6.3 Update `docs/architecture.md` with final service/use-case owners, cross-context coordinators, composition destinations, and deferred ZAC-63 through ZAC-65 responsibilities.
-- [ ] 6.4 Shrink applicable workflow legacy baselines and document retained compatibility callers without adding replacement exceptions or removing facades owned by ZAC-65.
+- [x] 6.1 Compact `backend/app_factory.py` around explicit construction and registration while retaining ZAC-46 OIE management wiring, all extension keys, Blueprint inputs, patch seams, and startup order.
+- [x] 6.2 Replace remaining broad service collaborators with concrete consumer-owned Protocols or typed callables and verify signatures contain no generic variadics, dynamic delegation, or bare `Any` returns.
+- [x] 6.3 Update `docs/architecture.md` with final service/use-case owners, cross-context coordinators, composition destinations, and deferred ZAC-63 through ZAC-65 responsibilities.
+- [x] 6.4 Shrink applicable workflow legacy baselines and document retained compatibility callers without adding replacement exceptions or removing facades owned by ZAC-65.
 
 ## 7. Verification and Safety Audit
 

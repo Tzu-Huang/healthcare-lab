@@ -7,6 +7,17 @@ ROOT = Path(__file__).resolve().parents[2]
 TARGET_APIS = (
     "lab_servers.py", "dashboard.py", "fhir.py", "orders.py", "patients.py", "gdt.py",
 )
+TARGET_SERVICES = (
+    "coordination.py",
+    "dcm4chee_coordination.py",
+    "fhir_coordination.py",
+    "fhir_workflow.py",
+    "gdt_coordination.py",
+    "gdt_workflow.py",
+    "lab_workflow.py",
+    "order_workflow.py",
+    "patient_workflow.py",
+)
 
 
 def thin_variadic_or_dynamic_delegates(source: str) -> list[str]:
@@ -43,6 +54,23 @@ def behavior_free_facades(source: str) -> list[str]:
             for method in public
         ):
             violations.append(owner.name)
+    return violations
+
+
+def broad_protocol_methods(source: str) -> list[str]:
+    tree = ast.parse(source)
+    violations = []
+    for owner in (node for node in tree.body if isinstance(node, ast.ClassDef)):
+        if not any(
+            isinstance(base, ast.Name) and base.id == "Protocol"
+            for base in owner.bases
+        ):
+            continue
+        for method in (node for node in owner.body if isinstance(node, ast.FunctionDef)):
+            variadic = method.args.vararg is not None or method.args.kwarg is not None
+            bare_any_return = isinstance(method.returns, ast.Name) and method.returns.id == "Any"
+            if variadic or bare_any_return:
+                violations.append(f"{owner.name}.{method.name}")
     return violations
 
 
@@ -91,6 +119,21 @@ class Zac62ArchitectureEnforcementTest(unittest.TestCase):
             )
         self.assertEqual([], violations)
 
+    def test_services_reject_broad_protocols_and_behavior_free_wrappers(self):
+        protocol_violations = []
+        wrapper_violations = []
+        for filename in TARGET_SERVICES:
+            path = ROOT / "backend" / "services" / filename
+            source = path.read_text(encoding="utf-8")
+            protocol_violations.extend(
+                f"{path.name}:{name}" for name in broad_protocol_methods(source)
+            )
+            wrapper_violations.extend(
+                f"{path.name}:{name}" for name in behavior_free_facades(source)
+            )
+        self.assertEqual([], protocol_violations)
+        self.assertEqual([], wrapper_violations)
+
     def test_detectors_reject_regression_shapes(self):
         self.assertEqual(
             ["BroadService.forward", "BroadService.__getattr__"],
@@ -106,6 +149,15 @@ class Zac62ArchitectureEnforcementTest(unittest.TestCase):
                 "class NewWrapper:\n"
                 " def list(self): return self.owner.list()\n"
                 " def get(self, item_id): return self.owner.get(item_id)\n"
+            ),
+        )
+        self.assertEqual(
+            ["BroadPort.forward", "BroadPort.load"],
+            broad_protocol_methods(
+                "from typing import Any, Protocol\n"
+                "class BroadPort(Protocol):\n"
+                " def forward(self, *args): ...\n"
+                " def load(self) -> Any: ...\n"
             ),
         )
 
