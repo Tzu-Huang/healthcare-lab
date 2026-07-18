@@ -11,7 +11,7 @@
 - [ ] 2.2 Extract shared DOM, clipboard, formatting, status, navigation, JSON request, and normalized error behavior with focused tests and declared dependency direction.
 - [ ] 2.3 Replace writable cross-view globals with explicit shared navigation/selection state while leaving feature inventory, preview, expansion, and request state in its owning view.
 - [x] 2.4 Introduce idempotent feature initialization and activation seams, isolate initialization diagnostics, and verify repeated navigation does not duplicate handlers or requests.
-- [ ] 2.5 Extend architecture contracts so new catch-all responsibility and invalid frontend dependency direction fail while approved compatibility baselines may only shrink.
+- [x] 2.5 Extend architecture contracts so new catch-all responsibility and invalid frontend dependency direction fail while approved compatibility baselines may only shrink.
 
 ## 3. OIE and ZAC-50 integration milestone
 
