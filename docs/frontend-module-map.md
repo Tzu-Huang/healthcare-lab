@@ -95,3 +95,12 @@ revalidation (`SEND_FILE_MAX_AGE_DEFAULT` remains unset/`None`), so a browser
 reload revalidates changed child modules instead of retaining a long-lived
 immutable response. Architecture/integration verification must reject a
 positive static `max-age` unless a transitive versioning strategy is introduced.
+
+## OIE and Settings integration milestone
+
+The ZAC-50 integration milestone is complete when `frontend/static/js/views/oie.js`
+owns the operational OIE workbench state, rendering, send, and listener lifecycle;
+`frontend/static/js/api/oie.js` owns OIE endpoint access; and the reserved Settings
+API/view/state/component/style/template destinations remain free of product
+behavior. ZAC-50 may build its Settings workspace on those owners and MUST NOT
+add OIE or Settings business behavior back to `frontend/static/app.js`.

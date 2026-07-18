@@ -716,6 +716,7 @@ def is_frontend_compatibility_delegate(definition: FrontendDefinition) -> bool:
             "async function copyTextFromElement(elementId) { "
             "return copyElementText(elementId); }"
         ),
+        "renderOieInventory": "function renderOieInventory() { return renderOieView(); }",
         "hl7Escape": "function hl7Escape(value) { return formatHl7Escape(value); }",
         "hl7EscapeComposite": "function hl7EscapeComposite(value) { return formatHl7EscapeComposite(value); }",
         "pad": "function pad(value) { return formatPad(value); }",
