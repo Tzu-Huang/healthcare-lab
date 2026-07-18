@@ -16,9 +16,9 @@
 ## 3. OIE and ZAC-50 integration milestone
 
 - [x] 3.1 Establish empty but owned Settings API, view, state/component, style, template, and focused-test destinations without implementing ZAC-50 product behavior.
-- [ ] 3.2 Extract OIE endpoint adapters, feature state, rendering/components, listener interactions, and view lifecycle from the catch-all script while preserving OIE console behavior.
+- [x] 3.2 Extract OIE endpoint adapters, feature state, rendering/components, listener interactions, and view lifecycle from the catch-all script while preserving OIE console behavior.
 - [ ] 3.3 Move OIE location-bound structural assertions to their focused owners and add controlled interaction verification for inventory refresh, selection, preview, send, and listener controls.
-- [ ] 3.4 Verify and document the OIE/Settings foundation milestone that permits ZAC-50 implementation to begin without extending legacy assets.
+- [x] 3.4 Verify and document the OIE/Settings foundation milestone that permits ZAC-50 implementation to begin without extending legacy assets.
 
 ## 4. Dashboard, Patient, and Order extraction
 
