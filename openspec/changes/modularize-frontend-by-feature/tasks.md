@@ -3,7 +3,7 @@
 - [x] 1.1 Record the frontend source inventory, global state and function ownership, DOM/view boundaries, CSS selector families, current test collection baseline, and location-bound assertion inventory using the shared ZAC-63/ZAC-64 taxonomy.
 - [x] 1.2 Add or relocate characterization tests for navigation, startup, API/error behavior, cross-view selections, feature initialization, responsive layout, and existing representative workflows before moving their implementations.
 - [x] 1.3 Define focused verification commands for shared frontend infrastructure and every feature, and document which checks are owned by ZAC-63 versus ZAC-64.
-- [ ] 1.4 Characterize Flask static-module URL generation and transitive import caching, then select and test a no-build-compatible cache invalidation contract.
+- [x] 1.4 Characterize Flask static-module URL generation and transitive import caching, then select and test a no-build-compatible cache invalidation contract.
 
 ## 2. Native-module foundation
 

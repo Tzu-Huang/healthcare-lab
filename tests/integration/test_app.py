@@ -158,6 +158,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(b'data-project-mode="healthcare_lab"', response.data)
         self.assertIn(b"Server Health Dashboard", response.data)
         self.assertNotIn(b'id="protocol-mode"', response.data)
+
         self.assertIn(b'id="lab-console-view"', response.data)
         self.assertIn(b'id="patient-mode"', response.data)
         self.assertIn(b'class="table-wrap patient-local-table-wrap"', response.data)
@@ -224,6 +225,22 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn(b'id="gdt-ap-view"', response.data)
         self.assertNotIn(b"GDT AP Simulator", response.data)
         self.assertNotIn(b"Submit to Medplum", response.data)
+
+    def test_native_module_assets_use_conditional_revalidation(self):
+        response = self.client.get("/static/js/api/client.js")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("Cache-Control"), "no-cache")
+        self.assertTrue(response.headers.get("ETag"))
+        self.assertTrue(response.headers.get("Last-Modified"))
+
+        conditional = self.client.get(
+            "/static/js/api/client.js",
+            headers={"If-None-Match": response.headers["ETag"]},
+        )
+        self.assertEqual(conditional.status_code, 304)
+        conditional.close()
+        response.close()
 
     def test_frontend_exposes_dashboard_children_and_gdt_workspace_order_action(self):
         app_js = Path(__file__).resolve().parents[2] / "frontend" / "static" / "app.js"

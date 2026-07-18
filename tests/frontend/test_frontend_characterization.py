@@ -36,10 +36,11 @@ class FrontendCharacterizationTests(unittest.TestCase):
                 self.assertIn(f'"{view_id}"', self.script)
 
     def test_shared_request_contract_covers_transport_and_business_failures(self):
-        self.assertIn("async function requestJson(", self.script)
-        self.assertIn("async function requestJsonAllowBusinessFailure(", self.script)
-        self.assertIn("!response.ok || payload.success === false", self.script)
-        self.assertIn("if (!response.ok)", self.script)
+        client = (ROOT / "frontend" / "static" / "js" / "api" / "client.js").read_text(encoding="utf-8")
+        self.assertIn("export async function requestJson(", client)
+        self.assertIn("export async function requestJsonAllowBusinessFailure(", client)
+        self.assertIn("!response.ok || payload.success === false", client)
+        self.assertIn("if (!response.ok)", client)
 
     def test_navigation_characterizes_feature_activation(self):
         activation_calls = {

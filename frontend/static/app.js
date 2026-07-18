@@ -1,3 +1,7 @@
+import { requestJson, requestJsonAllowBusinessFailure } from "./js/api/client.js";
+import { setStatus } from "./js/components/status.js";
+import { createElement, rowCell } from "./js/core/dom.js";
+
 const byId = (id) => document.getElementById(id);
 
 let dashboardServices = [];
@@ -133,54 +137,6 @@ const ORDER_PATIENT_LABEL_BY_MODE = {
   gdt: "GDT",
   dicom: "DICOM",
 };
-
-function setStatus(id, message, state = "neutral") {
-  const element = byId(id);
-  if (!element) return;
-  element.textContent = message;
-  element.className = `status ${state}`;
-}
-
-async function requestJson(url, options = {}) {
-  const response = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    ...options,
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload.success === false) {
-    throw new Error(payload.error || response.statusText || "Request failed");
-  }
-  return payload;
-}
-
-async function requestJsonAllowBusinessFailure(url, options = {}) {
-  const response = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    ...options,
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.error || response.statusText || "Request failed");
-  }
-  return payload;
-}
-
-function createElement(tag, text = "", className = "") {
-  const element = document.createElement(tag);
-  if (text) element.textContent = text;
-  if (className) element.className = className;
-  return element;
-}
-
-function rowCell(content) {
-  const cell = document.createElement("td");
-  if (content instanceof Node) {
-    cell.appendChild(content);
-  } else {
-    cell.textContent = String(content ?? "");
-  }
-  return cell;
-}
 
 function setActiveView(viewId) {
   document.querySelectorAll(".app-view").forEach((view) => {
