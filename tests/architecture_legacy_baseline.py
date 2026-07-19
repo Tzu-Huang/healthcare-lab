@@ -222,7 +222,7 @@ FRONTEND_FUNCTION_BASELINE: frozenset[tuple[str, str]] = frozenset(
     tuple(line.split("|", 1))
     for line in """
 <module-prefix>|e3b0c44298fc1c14
-byId|580dcc965c0647c6
+byId|124f3169449f969f
 buildFhirOrderPreviewPayload|f74813ed4a5d3994
 buildGdtOrderPreviewPayload|2ce27ec95d4cb1fb
 buildOrderPreviewPayload|29c39842e5808a98
@@ -235,7 +235,7 @@ createOrderRecord|3b67aea5840bbf2c
 createPatientRecord|09862ef613f09e14
 currentOrderMode|bf23a42fec967e1c
 dcm4cheeActionsForResult|49b20326dcc6f71e
-dcm4cheeConsoleOrders|160b3946e4f69ec0
+dcm4cheeConsoleOrders|9b947ad007af173f
 dcm4cheeConsolePatients|760e34b4bd1c54ec
 dcm4cheeCopyButton|736f0e34985463f6
 dcm4cheeDetailBlock|4a6e094bb57aa8f4
@@ -257,7 +257,7 @@ dcm4cheeResultKey|23fa043503dc1eab
 dcm4cheeResultStatusClass|d5a75ef7659d061a
 dcm4cheeWorkflowStatusClass|ddaeab2efb1f6853
 dcm4cheeWorkflowSummary|d4891b00848e1520
-ensureDcm4cheeSelection|cb3d3ddd3c8a7d44
+ensureDcm4cheeSelection|9ffd3778b6cc2d6c
 fhirConcept|95bfe7b4e5a4bd57
 fhirOrderField|c74c765b0ac4aedc
 fhirOrderPayload|550ee8fdfd94902e
@@ -286,16 +286,16 @@ refreshDcm4cheeConsole|c89a0577a6ce4ac2
 refreshOrderPreview|4279f76d09a5d2f4
 refreshOrderWorkspace|e764382daebb7625
 refreshOrders|bda9a1532b277c9f
-refreshPatientDcm4cheeResults|8685ea9e7be9b7f0
+refreshPatientDcm4cheeResults|087665fbfcc1cf3c
 refreshPatientPreview|bb365f6a379d2f4d
 refreshPatients|900304e2042bd6b1
 renderDcm4cheeAttemptHistory|108e4210ed93c5fb
 renderDcm4cheeConsole|d6e893288e1d6cc8
-renderDcm4cheeExpandedOrders|7c4fa015b996a5b4
+renderDcm4cheeExpandedOrders|5ed6c4844d9b2c77
 renderDcm4cheeExpandedResults|a41f8a270f011de7
 renderDcm4cheeInstanceTable|02b79fdec934fe77
 renderDcm4cheeOrderActions|0942e99e4988827e
-renderDcm4cheePatientList|60fdd534c5ecc059
+renderDcm4cheePatientList|e461f7c84f1b898d
 renderDcm4cheePreview|36146c3dac20f1b2
 renderDcm4cheeProfileSummary|9f959acc8d65d264
 renderDcm4cheeResultGroup|731e7ab92cd5ccd0
@@ -303,13 +303,13 @@ renderDcm4cheeResultTable|481457348f928423
 renderDcm4cheeResultsBrowser|5eff0dafad8e017a
 renderDcm4cheeSelectedOrder|bd251e3b4dc5cf5a
 renderDcm4cheeSelectedPatient|4e28c8f646936b18
-renderDcm4cheeSelectors|7240357a6203a40f
+renderDcm4cheeSelectors|db369d99146866b4
 renderDcm4cheeSeriesDetails|fad0178408929d40
 renderDcm4cheeStudyDetails|cf29969b2cc86df6
 renderDcm4cheeWorkflowStrip|4fbead145a5ae548
 renderGdtMessage|3c00507446576905
 renderGdtRecord|1b9f17ffdfa1c5fc
-renderOrderPatientOptions|7bb9bc61f5cb7958
+renderOrderPatientOptions|b8dd40339441b14e
 renderOrderRecordList|cd11a6d17cd764f9
 renderOrderSummary|97f03a710b8a6181
 renderOrderValidation|b86c7af4719aff91
@@ -318,17 +318,17 @@ renderPatientRecordList|eba3cb099c20c1fe
 renderPatientSummaryFromPayload|0f8a27a3c78d0cc7
 renderPatientSummaryFromRecord|69c91af9b9512f3b
 renderPatientValidation|32d6ce8af8c9f03b
-retryDcm4cheeOrder|916d764d762033bb
+retryDcm4cheeOrder|11a506272f8fdf47
 retryPatientFhirSync|a79a8b42879d9301
-selectDcm4cheeOrder|4a1867d60eec6448
-selectDcm4cheePatient|3cb1acb3e24c9f14
-selectOrderRecord|013f3b04d9c46bc0
-selectedDcm4cheeOrder|1f4927127f342913
-selectedDcm4cheePatient|81fc7ba1fce7ce5c
+selectDcm4cheeOrder|3705ba0cbe46d211
+selectDcm4cheePatient|d791a29ae0d23328
+selectOrderRecord|ae83db87e6186815
+selectedDcm4cheeOrder|6f36805ede93772b
+selectedDcm4cheePatient|d54a2251e79b80e9
 selectedOrderPatient|c2da2cf765e2a4f7
 selectedOrderPatientReference|f4816d13973441f3
 selectedOrderPayloadPreview|05d63ddcf629ccc1
-sendDcm4cheeOrder|9fbbe14e2fd2d6dc
+sendDcm4cheeOrder|b9681a0fa79516b3
 setFhirOrderForm|0f05f464d96dcb55
 setOrderForm|1f5ce669e5fe820c
 setPatientForm|0ebf532331673221
@@ -339,7 +339,7 @@ updateOrderModeFields|dc3285a88f82d6c1
 updatePatientModeFields|ae5ae7cbb8bf5f6a
 validateOrderPayload|f38aab922de8c8c1
 validatePatientPayload|510a6434d82bda7c
-verifyDcm4cheeOrder|4828215adbbcc86a
+verifyDcm4cheeOrder|9712bbd6ecd623a3
 """.strip().splitlines()
 )
 
