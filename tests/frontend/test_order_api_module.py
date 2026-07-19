@@ -12,6 +12,7 @@ class OrderApiModuleTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.source = (ROOT / "frontend/static/js/api/order.js").read_text(encoding="utf-8")
         cls.bootstrap = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.view = (ROOT / "frontend/static/js/views/order.js").read_text(encoding="utf-8")
 
     def test_order_adapter_owns_order_and_dcm4chee_transport(self):
         for operation in (
@@ -24,7 +25,7 @@ class OrderApiModuleTests(unittest.TestCase):
             "fetchDcm4cheeAttempts",
         ):
             self.assertIn(f"export function {operation}", self.source)
-            self.assertIn(operation, self.bootstrap)
+            self.assertIn(operation, self.bootstrap + self.view)
 
     def test_bootstrap_has_no_direct_order_transport(self):
         self.assertNotIn('requestJson("/api/orders', self.bootstrap)

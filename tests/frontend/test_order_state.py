@@ -14,6 +14,7 @@ class OrderStateTests(unittest.TestCase):
         cls.path = ROOT / "frontend/static/js/state/order.js"
         cls.source = cls.path.read_text(encoding="utf-8")
         cls.bootstrap = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.view = (ROOT / "frontend/static/js/views/order.js").read_text(encoding="utf-8")
 
     def test_order_collections_and_record_selection_have_explicit_apis(self):
         for operation in (
@@ -25,7 +26,7 @@ class OrderStateTests(unittest.TestCase):
             "setSelectedOrderRecordKey",
         ):
             self.assertIn(f"export function {operation}", self.source)
-            self.assertIn(operation, self.bootstrap)
+            self.assertIn(operation, self.bootstrap + self.view)
         for legacy_global in ("let orderRecords", "let gdtOrderRecords", "let selectedOrderRecordKey"):
             self.assertNotIn(legacy_global, self.bootstrap)
 

@@ -273,7 +273,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("Create a ${orderPatientModeLabel(mode)} patient first", order_script)
         self.assertIn("const records = [...getOrderRecords(), ...getGdtOrderRecords()]", order_script)
         self.assertIn("fetchOrders()", script)
-        self.assertIn("fetchGdtOrders()", script)
+        self.assertIn("fetchGdtOrders()", order_script)
         self.assertIn('return "HL7 v2";', order_script)
         self.assertIn('rowCell(orderModeLabel(item, rowMode))', order_script)
         self.assertIn('rowCell(orderVisitNumber(item))', order_script)

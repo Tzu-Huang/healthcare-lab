@@ -1,6 +1,11 @@
 import { createElement, byId, rowCell } from "../core/dom.js";
 import { hl7Escape, hl7EscapeComposite, hl7Timestamp, localDatetimeValue, taipeiTimestamp } from "../core/formatting.js";
 import { getGdtOrderRecords, getOrderRecords } from "../state/order.js";
+import { getSelectedOrderRecordKey, setGdtOrderRecords, setOrderRecords } from "../state/order.js";
+import { replacePatientRecord } from "../state/patient.js";
+import { setSelectedOrderId, setSelectedPatientId } from "../state/selection.js";
+import { setStatus } from "../components/status.js";
+import { createOrder, fetchGdtOrders, fetchOrders, simulateDcm4cheeApReturn as simulateDcm4cheeApReturnRequest, syncDcm4cheeOrder, verifyDcm4cheeMwl } from "../api/order.js";
 import { getPatientRecords } from "../state/patient.js";
 import { getSelectedPatientId, setSelectedPatientId } from "../state/selection.js";
 
@@ -479,4 +484,137 @@ export function orderStateLabel(item, mode) {
   }
   const status = String(item.status || "").toLowerCase();
   return ["error", "rejected", "transport error"].includes(status) ? "Error" : "Accepted";
+}
+
+export async function refreshOrders() {
+  try {
+    const [ordersResult, gdtOrdersResult] = await Promise.all([
+      fetchOrders(),
+      fetchGdtOrders(),
+    ]);
+    setOrderRecords(ordersResult.items || []);
+    setGdtOrderRecords(gdtOrdersResult.items || []);
+    renderOrderRecordList();
+    const selected = [...getOrderRecords(), ...getGdtOrderRecords()]
+      .find((item) => orderListKey(item) === getSelectedOrderRecordKey());
+    if (selected) selectOrderRecord(selected, orderRecordMode(selected));
+  } catch (error) {
+    setStatus("order-form-status", "Refresh failed", "error");
+  }
+}
+
+export async function retryDcm4cheeOrder(orderId, button) {
+  if (button) button.disabled = true;
+  setStatus("order-form-status", "Retrying dcm4chee sync...", "pending");
+  try {
+    const result = await syncDcm4cheeOrder(orderId);
+    const mwl = result.item?.dcm4chee?.mwl || {};
+    setStatus("order-form-status", mwl.displayStatus || "dcm4chee sync updated", result.success ? "success" : "error");
+    setSelectedOrderId(orderId);
+    await refreshOrders();
+    await orderCoordinator.refreshDcm4cheeConsole?.();
+  } catch (error) {
+    setStatus("order-form-status", "Retry failed", "error");
+    setStatus("dcm4chee-console-status", error.message, "error");
+    byId("order-payload-preview").textContent = error.message;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+export async function sendDcm4cheeOrder(orderId, button) {
+  if (!orderId) return;
+  if (button) button.disabled = true;
+  setStatus("dcm4chee-send-status", "Sending...", "pending");
+  setStatus("dcm4chee-console-status", "Sending MWL order...", "pending");
+  try {
+    const result = await syncDcm4cheeOrder(orderId);
+    const mwl = result.item?.dcm4chee?.mwl || {};
+    setSelectedOrderId(orderId);
+    if (result.item?.patientRecordId) setSelectedPatientId(result.item.patientRecordId);
+    await orderCoordinator.refreshDcm4cheeConsole?.();
+    const label = mwl.displayStatus || (result.success ? "Order sent" : "Send failed");
+    setStatus("dcm4chee-send-status", label, result.success ? "success" : "error");
+  } catch (error) {
+    setStatus("dcm4chee-send-status", error.message, "error");
+    setStatus("dcm4chee-console-status", error.message, "error");
+  } finally {
+    if (button) button.disabled = !orderCoordinator.selectedDcm4cheeOrder?.();
+  }
+}
+
+export async function verifyDcm4cheeOrder(orderId, button) {
+  if (button) button.disabled = true;
+  setStatus("order-form-status", "Verifying dcm4chee MWL...", "pending");
+  try {
+    const result = await verifyDcm4cheeMwl(orderId);
+    const verification = result.verification || {};
+    const status = verification.status || "MWL verification updated";
+    setStatus("order-form-status", status, result.success ? "success" : "error");
+    setSelectedOrderId(orderId);
+    await refreshOrders();
+    await orderCoordinator.refreshDcm4cheeConsole?.();
+  } catch (error) {
+    setStatus("order-form-status", "Verification failed", "error");
+    setStatus("dcm4chee-console-status", error.message, "error");
+    byId("order-payload-preview").textContent = error.message;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+export async function simulateDcm4cheeApReturn(orderId, button, type = "both") {
+  if (button) button.disabled = true;
+  setStatus("order-form-status", "Recording simulated AP return...", "pending");
+  try {
+    const result = await simulateDcm4cheeApReturnRequest(orderId, type);
+    setStatus("order-form-status", `Simulated AP ${type.toUpperCase()} result recorded`, "success");
+    if (result.patient) {
+      replacePatientRecord(result.patient);
+    }
+    await orderCoordinator.refreshPatients?.();
+    await refreshOrders();
+    orderCoordinator.refreshDcm4cheeConsole?.();
+  } catch (error) {
+    setStatus("order-form-status", error.message, "error");
+    setStatus("dcm4chee-console-status", error.message, "error");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+export async function refreshOrderWorkspace() {
+  updateOrderModeFields();
+  await orderCoordinator.refreshPatients?.();
+  await refreshOrders();
+  refreshOrderPreview();
+}
+
+export async function createOrderRecord() {
+  const button = byId("create-order");
+  button.disabled = true;
+  setStatus("order-form-status", "Creating...", "pending");
+  try {
+    const mode = currentOrderMode();
+    const result = await createOrder(orderFormPayload(), mode);
+    const item = result.item;
+    setStatus(
+      "order-form-status",
+      mode === "gdt"
+        ? "GDT ECG order created"
+        : mode === "fhir"
+          ? "FHIR order created"
+          : mode === "dicom"
+            ? "DICOM MWL order created"
+            : "Local order created",
+      "success",
+    );
+    byId("order-payload-preview").textContent = item.payload || "";
+    await refreshOrders();
+  } catch (error) {
+    setStatus("order-form-status", "Create failed", "error");
+    byId("order-payload-preview").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
