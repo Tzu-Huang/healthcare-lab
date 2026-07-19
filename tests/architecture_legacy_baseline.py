@@ -175,9 +175,7 @@ loadDcm4cheeAttemptHistory
 
 
 
- openGdtOrderFlow orderListKey
-orderModeLabel
-orderRecordMode orderStateLabel orderVisitNumber
+ openGdtOrderFlow
 refreshDcm4cheeConsole
 
  refreshOrderWorkspace refreshOrders
@@ -195,7 +193,6 @@ renderGdtMessage renderGdtRecord
 
 
 
-renderOrderRecordList
 renderOrderSummary renderPatientDcm4cheeResults
 renderPatientSummaryFromRecord
 
@@ -250,11 +247,6 @@ gdtPatientFormPayload|c64195a464e6f026
 groupDcm4cheeResultsForBrowser|66f107b0638fc2f9
 loadDcm4cheeAttemptHistory|780c47f76b623488
 openGdtOrderFlow|9d2a252ce82f8051
-orderListKey|a3ec6dbb96876e80
-orderModeLabel|bd5864e4fcc7dc43
-orderRecordMode|b5bfa84fae5b63ab
-orderStateLabel|99e85e8413f1a79b
-orderVisitNumber|e5e3d9608612cbee
 refreshDcm4cheeConsole|363fe2a39148735b
 refreshOrderWorkspace|e764382daebb7625
 refreshOrders|b96ec08b9f5a068d
@@ -278,7 +270,6 @@ renderDcm4cheeStudyDetails|cf29969b2cc86df6
 renderDcm4cheeWorkflowStrip|4fbead145a5ae548
 renderGdtMessage|3c00507446576905
 renderGdtRecord|1b9f17ffdfa1c5fc
-renderOrderRecordList|17aae283e9505a3d
 renderOrderSummary|97f03a710b8a6181
 renderPatientDcm4cheeResults|3dd8c0f6e08e3c3e
 renderPatientSummaryFromRecord|2bd38af1fb047a06

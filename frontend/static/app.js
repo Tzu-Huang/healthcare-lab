@@ -14,7 +14,7 @@ import { getGdtOrderRecords, getOrderRecords, getSelectedOrderRecordKey, setGdtO
 import { createPatient, fetchPatients } from "./js/api/patient.js";
 import { createOrder, fetchDcm4cheeAttempts, fetchGdtOrders, fetchOrders, simulateDcm4cheeApReturn as simulateDcm4cheeApReturnRequest, syncDcm4cheeOrder, verifyDcm4cheeMwl } from "./js/api/order.js";
 import { buildPatientGdtPreviewPayload, configurePatientCoordinator, createPatientRecord, initializePatientView, patientPreviewMrn, refreshPatientDcm4cheeResults, refreshPatientPreview, refreshPatients, renderPatientSummaryFromPayload, retryPatientFhirSync } from "./js/views/patient.js";
-import { configureOrderCoordinator, currentOrderMode, initializeOrderView, orderFormPayload, orderVisitId, refreshOrderPreview, renderOrderPatientOptions, selectedOrderPatient, selectedOrderPatientReference, updateOrderModeFields } from "./js/views/order.js";
+import { configureOrderCoordinator, currentOrderMode, initializeOrderView, orderFormPayload, orderListKey, orderRecordMode, orderVisitId, refreshOrderPreview, renderOrderPatientOptions, renderOrderRecordList, selectedOrderPatient, selectedOrderPatientReference, updateOrderModeFields } from "./js/views/order.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -1258,87 +1258,6 @@ function selectOrderRecord(item, mode) {
   if (mode === "dicom") loadDcm4cheeAttemptHistory(item.id);
 }
 
-function renderOrderRecordList() {
-  const body = byId("order-record-list");
-  const records = [...getOrderRecords(), ...getGdtOrderRecords()].sort((left, right) => {
-    const rightTime = new Date(right.createdAt || 0).getTime();
-    const leftTime = new Date(left.createdAt || 0).getTime();
-    return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
-  });
-  body.replaceChildren();
-  if (!records.length) {
-    const row = document.createElement("tr");
-    const cell = rowCell("No local orders created yet.");
-    cell.colSpan = 8;
-    cell.className = "muted";
-    row.appendChild(cell);
-    body.appendChild(row);
-    return;
-  }
-  records.forEach((item) => {
-    const row = document.createElement("tr");
-    const summary = item.summary || {};
-    const rowMode = orderRecordMode(item);
-    const orderNumber = rowMode === "gdt" ? item.localGdtOrderNumber : item.localOrderNumber;
-    const orderCode = rowMode === "gdt" ? summary.testCode : summary.orderCode;
-    const statusLabel = orderStateLabel(item, rowMode);
-    const statusClass = statusLabel === "Accepted" ? "success" : "error";
-    row.append(
-      rowCell(orderNumber || item.id),
-      rowCell(orderModeLabel(item, rowMode)),
-      rowCell(summary.mrn),
-      rowCell(orderVisitNumber(item)),
-      rowCell(summary.name),
-      rowCell(orderCode),
-      rowCell(createElement("span", statusLabel, `status ${statusClass}`)),
-      rowCell(taipeiTimestamp(item.createdAt)),
-    );
-    row.addEventListener("click", () => selectOrderRecord(item, rowMode));
-    body.appendChild(row);
-  });
-}
-
-function orderVisitNumber(item) {
-  const summary = item?.summary || {};
-  return summary.visitNumber || summary.visitId || item?.visitNumber || item?.visitId || "-";
-}
-
-function orderRecordMode(item) {
-  if (item.protocolVersion === "FHIR R4") return "fhir";
-  if (item.protocolVersion === "GDT 2.1") return "gdt";
-  if (item.protocolVersion === "DICOM") return "dicom";
-  return "hl7-v251";
-}
-
-function orderListKey(item) {
-  return `${orderRecordMode(item)}:${item.id}`;
-}
-
-function orderModeLabel(item, mode) {
-  if (mode === "fhir" || item.protocolVersion === "FHIR R4") return "FHIR";
-  if (mode === "gdt" || item.protocolVersion === "GDT 2.1") return "GDT";
-  if (mode === "dicom" || item.protocolVersion === "DICOM") return "DICOM";
-  return "HL7 v2";
-}
-
-function orderStateLabel(item, mode) {
-  if (mode === "fhir") {
-    const serviceRequest = item.fhir?.serviceRequest || {};
-    const serviceRequestReference = serviceRequest.medplum?.reference || "";
-    return serviceRequest.sync?.status === "Synced"
-      && /^ServiceRequest\/[^/]+$/.test(serviceRequestReference)
-      ? "Accepted"
-      : "Error";
-  }
-  if (mode === "dicom") {
-    const mwl = item.dcm4chee?.mwl || {};
-    const status = mwl.mapping?.status || mwl.status || mwl.displayStatus || "";
-    return status === "Created" ? "Accepted" : "Error";
-  }
-  const status = String(item.status || "").toLowerCase();
-  return ["error", "rejected", "transport error"].includes(status) ? "Error" : "Accepted";
-}
-
 async function refreshOrders() {
   try {
     const [ordersResult, gdtOrdersResult] = await Promise.all([
@@ -1544,7 +1463,7 @@ const initializeApplication = () => {
     onRefresh: refreshPatients,
     onCopy: () => copyTextFromElement("patient-payload-preview"),
   });
-  configureOrderCoordinator({ renderSummary: renderOrderSummary });
+  configureOrderCoordinator({ renderSummary: renderOrderSummary, selectRecord: selectOrderRecord });
   initializeOrderView({
     onCreate: createOrderRecord,
     onRefresh: refreshOrders,
