@@ -220,7 +220,7 @@ FRONTEND_FUNCTION_BASELINE: frozenset[tuple[str, str]] = frozenset(
     tuple(line.split("|", 1))
     for line in """
 <module-prefix>|e3b0c44298fc1c14
-byId|80b74f0b1ad86da7
+byId|71033ffe5f5f4353
 buildFhirOrderPreviewPayload|f74813ed4a5d3994
 buildGdtOrderPreviewPayload|2ce27ec95d4cb1fb
 buildOrderPreviewPayload|29c39842e5808a98
@@ -228,8 +228,8 @@ createGdtPatientFromOrderFlow|86197c052f7ec659
 createOrderRecord|a60dfa7ecb6e7154
 currentOrderMode|bf23a42fec967e1c
 dcm4cheeActionsForResult|49b20326dcc6f71e
-dcm4cheeConsoleOrders|9b947ad007af173f
-dcm4cheeConsolePatients|78f9ba718af3b2d9
+dcm4cheeConsoleOrders|48d70810110335ae
+dcm4cheeConsolePatients|9b67ad23504bded2
 dcm4cheeCopyButton|736f0e34985463f6
 dcm4cheeDetailBlock|4a6e094bb57aa8f4
 dcm4cheeDisplayStatus|6c26216213ae3126
@@ -271,10 +271,10 @@ orderRecordMode|b5bfa84fae5b63ab
 orderStateLabel|99e85e8413f1a79b
 orderVisitId|926611e93a737933
 orderVisitNumber|e5e3d9608612cbee
-refreshDcm4cheeConsole|f000cd4aace20ca4
+refreshDcm4cheeConsole|363fe2a39148735b
 refreshOrderPreview|4279f76d09a5d2f4
 refreshOrderWorkspace|e764382daebb7625
-refreshOrders|971df575334078ab
+refreshOrders|b96ec08b9f5a068d
 renderDcm4cheeAttemptHistory|108e4210ed93c5fb
 renderDcm4cheeConsole|d6e893288e1d6cc8
 renderDcm4cheeExpandedOrders|5ed6c4844d9b2c77
@@ -296,7 +296,7 @@ renderDcm4cheeWorkflowStrip|4fbead145a5ae548
 renderGdtMessage|3c00507446576905
 renderGdtRecord|1b9f17ffdfa1c5fc
 renderOrderPatientOptions|e07db636910feb6c
-renderOrderRecordList|cd11a6d17cd764f9
+renderOrderRecordList|17aae283e9505a3d
 renderOrderSummary|97f03a710b8a6181
 renderOrderValidation|b86c7af4719aff91
 renderPatientDcm4cheeResults|3dd8c0f6e08e3c3e
@@ -304,8 +304,8 @@ renderPatientSummaryFromRecord|2bd38af1fb047a06
 retryDcm4cheeOrder|c2872d929d12a3c6
 selectDcm4cheeOrder|3705ba0cbe46d211
 selectDcm4cheePatient|d791a29ae0d23328
-selectOrderRecord|645787c43de3c8a4
-selectedDcm4cheeOrder|6f36805ede93772b
+selectOrderRecord|3a9316c56c6814ed
+selectedDcm4cheeOrder|9d6ef51237211668
 selectedDcm4cheePatient|d54a2251e79b80e9
 selectedOrderPatient|ef3ddb30e9f6261d
 selectedOrderPatientReference|f4816d13973441f3

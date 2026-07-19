@@ -270,7 +270,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("return getPatientRecords().filter((item) => item.protocolVersion === protocolVersion);", script)
         self.assertIn("const records = orderPatientRecordsForMode(mode);", script)
         self.assertIn("Create a ${orderPatientModeLabel(mode)} patient first", script)
-        self.assertIn("const records = [...orderRecords, ...gdtOrderRecords]", script)
+        self.assertIn("const records = [...getOrderRecords(), ...getGdtOrderRecords()]", script)
         self.assertIn("fetchOrders()", script)
         self.assertIn("fetchGdtOrders()", script)
         self.assertIn('return "HL7 v2";', script)
