@@ -24,6 +24,21 @@ class PatientViewModuleTests(unittest.TestCase):
             self.assertIn(f"export function {owner}", self.source)
             self.assertNotIn(f"function {owner}", self.bootstrap)
 
+    def test_patient_view_owns_form_and_validation_behavior(self):
+        self.assertIn("export const PATIENT_MODE_CONFIG", self.source)
+        for owner in (
+            "patientDemoPresetForMode",
+            "patientFormPayload",
+            "setPatientForm",
+            "updatePatientModeFields",
+            "validatePatientPayload",
+            "renderPatientValidation",
+        ):
+            self.assertIn(f"export function {owner}", self.source)
+            self.assertNotIn(f"function {owner}", self.bootstrap)
+
+        self.assertIn('../core/dom.js', self.source)
+
     def test_patient_preview_uses_shared_formatting_without_transport(self):
         self.assertIn('../core/formatting.js', self.source)
         self.assertNotIn("requestJson", self.source)

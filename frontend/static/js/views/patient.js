@@ -5,8 +5,139 @@ import {
   hl7EscapeComposite,
   hl7Timestamp,
 } from "../core/formatting.js";
+import { byId, createElement } from "../core/dom.js";
 
 const GENERATED_PATIENT_MRN_LABEL = "Generated on create";
+
+export const PATIENT_MODE_CONFIG = {
+  "hl7-v2": {
+    title: "HL7 v2.5.1 ADT A04",
+    payloadTitle: "MSH, EVN, PID, PV1",
+    emptyPreview: "Complete required Patient fields to preview an HL7 v2.5.1 ADT A04 payload.",
+  },
+  fhir: {
+    title: "FHIR R4 Patient",
+    payloadTitle: "Patient resource JSON",
+    emptyPreview: "Complete required Patient fields to preview a FHIR R4 Patient resource.",
+  },
+  gdt: {
+    title: "GDT 2.1 Patient Record",
+    payloadTitle: "GDT 6301 patient fields",
+    emptyPreview: "Complete required Patient fields to preview a GDT 2.1 patient record.",
+  },
+  dicom: {
+    title: "DICOM Patient Module",
+    payloadTitle: "Patient Module attributes",
+    emptyPreview: "Complete required Patient fields to preview DICOM Patient Module attributes.",
+  },
+};
+
+const patientDemoPreset = {
+  mrn: "", firstName: "Avery", middleName: "Lee", lastName: "Morgan", dob: "19850412", sex: "F",
+  visitNumber: "", patientClass: "O", assignedLocation: "CARDIOLOGY^ROOM1",
+  attendingProvider: "P123^Rivera^Elena", accountNumber: "ACC-1001", phone: "555-0100",
+  email: "avery.morgan@example.org", address: "100 Main St^^Boston^MA^02110", active: true,
+  addressLine: "", addressCity: "", addressState: "", addressPostalCode: "", addressCountry: "",
+  managingOrganizationReference: "", managingOrganizationDisplay: "",
+};
+
+const patientDemoModeOverrides = {
+  "hl7-v2": {
+    assignedLocation: "CARDIOLOGY^ROOM1", attendingProvider: "P123^Rivera^Elena",
+    accountNumber: "ACC-1001", address: "100 Main St^^Boston^MA^02110",
+  },
+  fhir: {
+    assignedLocation: "", attendingProvider: "", accountNumber: "", address: "100 Main St, Boston, MA 02110",
+    addressLine: "100 Main St", addressCity: "Boston", addressState: "MA", addressPostalCode: "02110",
+    addressCountry: "US", managingOrganizationReference: "Organization/healthcare-lab",
+    managingOrganizationDisplay: "Healthcare Lab",
+  },
+  gdt: { assignedLocation: "", attendingProvider: "", accountNumber: "", address: "100 Main St, Boston, MA 02110" },
+  dicom: { assignedLocation: "", attendingProvider: "", accountNumber: "", address: "100 Main St, Boston, MA 02110" },
+};
+
+export function patientDemoPresetForMode(mode) {
+  const normalizedMode = PATIENT_MODE_CONFIG[mode] ? mode : "hl7-v2";
+  return { ...patientDemoPreset, ...(patientDemoModeOverrides[normalizedMode] || {}), mode: normalizedMode };
+}
+
+export function patientFormPayload() {
+  return {
+    mode: byId("patient-mode").value,
+    mrn: byId("patient-mrn").value.trim(),
+    firstName: byId("patient-first-name").value.trim(),
+    middleName: byId("patient-middle-name").value.trim(),
+    lastName: byId("patient-last-name").value.trim(),
+    dob: byId("patient-dob").value.trim(),
+    sex: byId("patient-sex").value,
+    visitNumber: byId("patient-visit-number").value.trim(),
+    patientClass: byId("patient-class").value.trim() || "O",
+    assignedLocation: byId("patient-assigned-location").value.trim(),
+    attendingProvider: byId("patient-attending-provider").value.trim(),
+    accountNumber: byId("patient-account-number").value.trim(),
+    phone: byId("patient-phone").value.trim(),
+    email: byId("patient-email").value.trim(),
+    address: byId("patient-address").value.trim(),
+    active: byId("patient-active").value === "true",
+    addressLine: byId("patient-address-line").value.trim(),
+    addressCity: byId("patient-address-city").value.trim(),
+    addressState: byId("patient-address-state").value.trim(),
+    addressPostalCode: byId("patient-address-postal-code").value.trim(),
+    addressCountry: byId("patient-address-country").value.trim(),
+    managingOrganizationReference: byId("patient-managing-organization-reference").value.trim(),
+    managingOrganizationDisplay: byId("patient-managing-organization-display").value.trim(),
+  };
+}
+
+export function setPatientForm(payload) {
+  const values = {
+    "patient-mode": payload.mode || "hl7-v2", "patient-mrn": payload.mrn || "",
+    "patient-first-name": payload.firstName || "", "patient-middle-name": payload.middleName || "",
+    "patient-last-name": payload.lastName || "", "patient-dob": payload.dob || "",
+    "patient-sex": payload.sex || "F", "patient-visit-number": payload.visitNumber || "",
+    "patient-class": payload.patientClass || "O", "patient-assigned-location": payload.assignedLocation || "",
+    "patient-attending-provider": payload.attendingProvider || "", "patient-account-number": payload.accountNumber || "",
+    "patient-phone": payload.phone || "", "patient-email": payload.email || "", "patient-address": payload.address || "",
+    "patient-active": payload.active === false ? "false" : "true", "patient-address-line": payload.addressLine || "",
+    "patient-address-city": payload.addressCity || "", "patient-address-state": payload.addressState || "",
+    "patient-address-postal-code": payload.addressPostalCode || "", "patient-address-country": payload.addressCountry || "",
+    "patient-managing-organization-reference": payload.managingOrganizationReference || "",
+    "patient-managing-organization-display": payload.managingOrganizationDisplay || "",
+  };
+  Object.entries(values).forEach(([id, value]) => { byId(id).value = value; });
+}
+
+export function updatePatientModeFields(mode) {
+  const config = PATIENT_MODE_CONFIG[mode] || PATIENT_MODE_CONFIG["hl7-v2"];
+  byId("patient-mode-title").textContent = config.title;
+  byId("patient-payload-title").textContent = config.payloadTitle;
+  document.querySelectorAll("[data-patient-mode-field]").forEach((element) => {
+    const modes = String(element.dataset.patientModeField || "").split(/\s+/);
+    element.hidden = !modes.includes(mode);
+  });
+}
+
+export function validatePatientPayload(payload) {
+  const messages = [];
+  [["First name", payload.firstName], ["Last name", payload.lastName], ["DOB", payload.dob], ["Sex", payload.sex]]
+    .forEach(([label, value]) => { if (!String(value || "").trim()) messages.push(`${label} is required.`); });
+  if (payload.dob && !/^\d{8}$/.test(payload.dob)) messages.push("DOB must be YYYYMMDD.");
+  if (payload.sex && !["M", "F", "O", "U"].includes(payload.sex)) messages.push("Sex must be M, F, O, or U.");
+  return messages;
+}
+
+export function renderPatientValidation(messages) {
+  const container = byId("patient-validation");
+  container.replaceChildren();
+  if (!messages.length) {
+    container.appendChild(createElement("span", "Valid preview", "status success"));
+    return;
+  }
+  container.appendChild(createElement("span", "Needs input", "status pending"));
+  const list = document.createElement("ul");
+  messages.forEach((message) => list.appendChild(createElement("li", message)));
+  container.appendChild(list);
+}
 
 export function patientPreviewMrn(payload) {
   return String(payload?.mrn || "").trim() || GENERATED_PATIENT_MRN_LABEL;

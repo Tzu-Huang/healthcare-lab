@@ -244,7 +244,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         patient_script = (app_js.parent / "js" / "views" / "patient.js").read_text(encoding="utf-8")
 
         self.assertIn('const GENERATED_PATIENT_MRN_LABEL = "Generated on create";', patient_script)
-        self.assertIn('mrn: "",', script)
+        self.assertIn('mrn: "",', patient_script)
         self.assertIn("function patientPreviewMrn(payload)", patient_script)
         self.assertNotIn('["MRN", payload.mrn],', patient_script)
         self.assertIn("patientPreviewMrn(payload)", patient_script)
