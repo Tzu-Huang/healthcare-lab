@@ -158,7 +158,7 @@ FRONTEND_FUNCTION_NAME_INVENTORY: frozenset[str] = frozenset("""
  buildFhirOrderPreviewPayload buildGdtOrderPreviewPayload
 buildOrderPreviewPayload byId
   createGdtPatientFromOrderFlow
-createOrderRecord currentOrderMode
+createOrderRecord
  dcm4cheeActionsForResult dcm4cheeConsoleOrders dcm4cheeConsolePatients
 dcm4cheeCopyButton dcm4cheeDetailBlock dcm4cheeDisplayStatus dcm4cheeFirstArtifact
 dcm4cheeFirstValue dcm4cheeNestedTable dcm4cheeOpenButton dcm4cheeOrderActionButtons
@@ -178,7 +178,7 @@ loadDcm4cheeAttemptHistory
 
 
  openGdtOrderFlow orderAccountNumber orderFormPayload orderListKey
-orderModeLabel orderPatientModeLabel orderPatientProtocolForMode orderPatientRecordsForMode
+orderModeLabel
 orderRecordMode orderStateLabel orderVisitId orderVisitNumber
 refreshDcm4cheeConsole
 
@@ -197,7 +197,7 @@ renderGdtMessage renderGdtRecord
 
 
 
-renderOrderPatientOptions renderOrderRecordList
+renderOrderRecordList
 renderOrderSummary renderOrderValidation renderPatientDcm4cheeResults
 renderPatientSummaryFromRecord
 
@@ -208,10 +208,10 @@ selectDcm4cheePatient
  selectOrderRecord selectedDcm4cheeOrder selectedDcm4cheePatient
 
 
- selectedOrderPatient selectedOrderPatientReference selectedOrderPayloadPreview
+ selectedOrderPayloadPreview
 sendDcm4cheeOrder setFhirOrderForm setOrderForm
 simulateDcm4cheeApReturn splitFhirList
- summarizeDcm4cheeResultGroup updateOrderModeFields
+ summarizeDcm4cheeResultGroup
 validateOrderPayload verifyDcm4cheeOrder
 
 """.split())
@@ -220,13 +220,12 @@ FRONTEND_FUNCTION_BASELINE: frozenset[tuple[str, str]] = frozenset(
     tuple(line.split("|", 1))
     for line in """
 <module-prefix>|e3b0c44298fc1c14
-byId|71033ffe5f5f4353
+byId|bbbd640b3fc69975
 buildFhirOrderPreviewPayload|f74813ed4a5d3994
 buildGdtOrderPreviewPayload|2ce27ec95d4cb1fb
 buildOrderPreviewPayload|29c39842e5808a98
 createGdtPatientFromOrderFlow|86197c052f7ec659
 createOrderRecord|a60dfa7ecb6e7154
-currentOrderMode|bf23a42fec967e1c
 dcm4cheeActionsForResult|49b20326dcc6f71e
 dcm4cheeConsoleOrders|48d70810110335ae
 dcm4cheeConsolePatients|9b67ad23504bded2
@@ -264,9 +263,6 @@ orderAccountNumber|6a917d4b155cda08
 orderFormPayload|7b3529715e75b2ee
 orderListKey|a3ec6dbb96876e80
 orderModeLabel|bd5864e4fcc7dc43
-orderPatientModeLabel|bd28abe98cd5f32a
-orderPatientProtocolForMode|553df2f5ae1bd187
-orderPatientRecordsForMode|9daabad124bb0044
 orderRecordMode|b5bfa84fae5b63ab
 orderStateLabel|99e85e8413f1a79b
 orderVisitId|926611e93a737933
@@ -295,7 +291,6 @@ renderDcm4cheeStudyDetails|cf29969b2cc86df6
 renderDcm4cheeWorkflowStrip|4fbead145a5ae548
 renderGdtMessage|3c00507446576905
 renderGdtRecord|1b9f17ffdfa1c5fc
-renderOrderPatientOptions|e07db636910feb6c
 renderOrderRecordList|17aae283e9505a3d
 renderOrderSummary|97f03a710b8a6181
 renderOrderValidation|b86c7af4719aff91
@@ -307,8 +302,6 @@ selectDcm4cheePatient|d791a29ae0d23328
 selectOrderRecord|3a9316c56c6814ed
 selectedDcm4cheeOrder|9d6ef51237211668
 selectedDcm4cheePatient|d54a2251e79b80e9
-selectedOrderPatient|ef3ddb30e9f6261d
-selectedOrderPatientReference|f4816d13973441f3
 selectedOrderPayloadPreview|05d63ddcf629ccc1
 sendDcm4cheeOrder|932ae4dc22a576e8
 setFhirOrderForm|0f05f464d96dcb55
@@ -316,7 +309,6 @@ setOrderForm|1f5ce669e5fe820c
 simulateDcm4cheeApReturn|0ecb9a066cbb1f13
 splitFhirList|40c983243807ca21
 summarizeDcm4cheeResultGroup|4c6ce8b2862bada6
-updateOrderModeFields|dc3285a88f82d6c1
 validateOrderPayload|f38aab922de8c8c1
 verifyDcm4cheeOrder|27f61e43101f5b36
 """.strip().splitlines()

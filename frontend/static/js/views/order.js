@@ -1,0 +1,175 @@
+import { createElement, byId } from "../core/dom.js";
+import { hl7Timestamp, localDatetimeValue } from "../core/formatting.js";
+import { getPatientRecords } from "../state/patient.js";
+import { getSelectedPatientId, setSelectedPatientId } from "../state/selection.js";
+
+export const ORDER_MODE_CONFIG = {
+  "hl7-v251": { title: "HL7 v2.5.1 ORM O01", payloadTitle: "MSH, PID, PV1, ORC, OBR", emptyPreview: "Select a local patient to preview an HL7 v2.5.1 ORM O01 payload.", createLabel: "Create Order" },
+  fhir: { title: "FHIR R4 ServiceRequest", payloadTitle: "ServiceRequest resource JSON", emptyPreview: "Select a synced FHIR Patient to preview a ServiceRequest resource.", createLabel: "Create FHIR Order" },
+  gdt: { title: "GDT ECG Order", payloadTitle: "GDT-OUT with 8402=EKG01", emptyPreview: "Select or create a local patient to preview a GDT ECG order payload.", createLabel: "Create GDT Order" },
+  dicom: { title: "DICOM MWL Order", payloadTitle: "DICOM JSON MWL item", emptyPreview: "Select a local patient to preview a DICOM MWL payload.", createLabel: "Create DICOM MWL Order" },
+};
+
+const ORDER_PATIENT_PROTOCOL_BY_MODE = { "hl7-v251": "HL7 v2.5.1", fhir: "FHIR R4", gdt: "GDT 2.1", dicom: "DICOM" };
+const ORDER_PATIENT_LABEL_BY_MODE = { "hl7-v251": "HL7 v2", fhir: "FHIR R4", gdt: "GDT", dicom: "DICOM" };
+
+export const orderDemoPreset = {
+  priority: "R", orderingProvider: "1001^WANG^AMY", clinicalIndication: "Chest pain evaluation",
+  orderCode: "ECG12", orderCodeText: "12 Lead ECG", alternateCode: "93000",
+  alternateCodeText: "Electrocardiogram, routine ECG with at least 12 leads", alternateCodeSystem: "C4",
+};
+
+export function currentOrderMode() {
+  const selector = byId("order-protocol");
+  return ORDER_MODE_CONFIG[selector?.value] ? selector.value : "hl7-v251";
+}
+
+export function orderPatientProtocolForMode(mode = currentOrderMode()) {
+  return ORDER_PATIENT_PROTOCOL_BY_MODE[mode] || ORDER_PATIENT_PROTOCOL_BY_MODE["hl7-v251"];
+}
+
+export function orderPatientModeLabel(mode = currentOrderMode()) {
+  return ORDER_PATIENT_LABEL_BY_MODE[mode] || ORDER_PATIENT_LABEL_BY_MODE["hl7-v251"];
+}
+
+export function orderPatientRecordsForMode(mode = currentOrderMode()) {
+  const protocolVersion = orderPatientProtocolForMode(mode);
+  return getPatientRecords().filter((item) => item.protocolVersion === protocolVersion);
+}
+
+export function selectedOrderPatient() {
+  const selectedId = Number(byId("order-patient")?.value || 0);
+  return getPatientRecords().find((item) => Number(item.id) === selectedId) || null;
+}
+
+export function selectedOrderPatientReference() {
+  return selectedOrderPatient()?.fhir?.medplum?.reference || "";
+}
+
+export function renderOrderPatientOptions() {
+  const selector = byId("order-patient");
+  if (!selector) return;
+  const current = selector.value || String(getSelectedPatientId() || "");
+  const mode = currentOrderMode();
+  const records = orderPatientRecordsForMode(mode);
+  selector.replaceChildren();
+  if (!getPatientRecords().length || !records.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = getPatientRecords().length ? `Create a ${orderPatientModeLabel(mode)} patient first` : "Create a patient first";
+    selector.appendChild(option);
+    selector.disabled = true;
+    return;
+  }
+  selector.disabled = false;
+  records.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = `${item.summary?.mrn || item.id} - ${item.summary?.name || "Patient"}`;
+    selector.appendChild(option);
+  });
+  if ([...selector.options].some((option) => option.value === current)) selector.value = current;
+  setSelectedPatientId(Number(selector.value || 0) || null);
+}
+
+export function updateOrderModeFields() {
+  const mode = currentOrderMode();
+  const config = ORDER_MODE_CONFIG[mode];
+  byId("order-mode-title").textContent = config.title;
+  const payloadTitle = byId("order-payload-title");
+  if (payloadTitle) payloadTitle.textContent = config.payloadTitle;
+  byId("create-order").textContent = config.createLabel;
+  document.querySelectorAll("[data-order-mode-field]").forEach((element) => {
+    const modes = String(element.dataset.orderModeField || "").split(/\s+/);
+    element.hidden = !modes.includes(mode);
+  });
+  renderOrderPatientOptions();
+  const subject = byId("fhir-subject-reference");
+  if (subject) subject.value = selectedOrderPatientReference();
+}
+
+function fhirOrderField(id) {
+  return byId(id)?.value.trim() || "";
+}
+
+export function fhirOrderPayload() {
+  const asNeeded = fhirOrderField("fhir-as-needed-boolean");
+  const payload = {
+    resourceType: "ServiceRequest", id: fhirOrderField("fhir-service-request-id"), identifier: fhirOrderField("fhir-identifier"),
+    identifierSystem: fhirOrderField("fhir-identifier-system"), identifierValue: fhirOrderField("fhir-identifier-value"),
+    instantiatesCanonical: fhirOrderField("fhir-instantiates-canonical"), instantiatesUri: fhirOrderField("fhir-instantiates-uri"),
+    basedOn: fhirOrderField("fhir-based-on"), replaces: fhirOrderField("fhir-replaces"), requisitionSystem: fhirOrderField("fhir-requisition-system"),
+    requisitionValue: fhirOrderField("fhir-requisition-value"), status: fhirOrderField("fhir-status") || "active", intent: fhirOrderField("fhir-intent") || "order",
+    category: fhirOrderField("fhir-category"), priority: fhirOrderField("fhir-priority") || "routine", doNotPerform: fhirOrderField("fhir-do-not-perform") === "true",
+    codeSystem: fhirOrderField("fhir-code-system"), codeCode: fhirOrderField("fhir-code-code"), codeDisplay: fhirOrderField("fhir-code-display"),
+    orderDetail: fhirOrderField("fhir-order-detail"), quantityValue: fhirOrderField("fhir-quantity-value"), quantityUnit: fhirOrderField("fhir-quantity-unit"),
+    subject: selectedOrderPatientReference(), encounter: fhirOrderField("fhir-encounter"), occurrenceDateTime: fhirOrderField("fhir-occurrence"),
+    asNeededCodeText: fhirOrderField("fhir-as-needed-code-text"), authoredOn: fhirOrderField("fhir-authored-on"), requester: fhirOrderField("fhir-requester"),
+    performerType: fhirOrderField("fhir-performer-type"), performer: fhirOrderField("fhir-performer"), locationCode: fhirOrderField("fhir-location-code"),
+    locationReference: fhirOrderField("fhir-location-reference"), reasonCodeText: fhirOrderField("fhir-reason-code-text"), reasonReference: fhirOrderField("fhir-reason-reference"),
+    insurance: fhirOrderField("fhir-insurance"), supportingInfo: fhirOrderField("fhir-supporting-info"), specimen: fhirOrderField("fhir-specimen"),
+    bodySite: fhirOrderField("fhir-body-site"), note: fhirOrderField("fhir-note"), patientInstruction: fhirOrderField("fhir-patient-instruction"),
+    relevantHistory: fhirOrderField("fhir-relevant-history"),
+  };
+  if (asNeeded) payload.asNeededBoolean = asNeeded === "true";
+  return payload;
+}
+
+export function orderFormPayload() {
+  const mode = currentOrderMode();
+  const patientRecordId = Number(byId("order-patient").value || 0);
+  if (mode === "gdt") return { mode, patientRecordId, requestedAt: byId("order-requested-at").value.trim(), orderingProvider: byId("order-provider").value.trim(), clinicalIndication: byId("order-indication").value.trim(), attachmentUrl: byId("gdt-attachment-url").value.trim(), gdtTestCode: "EKG01" };
+  if (mode === "fhir") {
+    const fhir = fhirOrderPayload();
+    return { mode, patientRecordId, priority: fhir.priority, requestedAt: fhir.occurrenceDateTime, orderingProvider: fhir.requester, clinicalIndication: fhir.reasonCodeText, orderCode: fhir.codeCode, orderCodeText: fhir.codeDisplay, alternateCode: orderDemoPreset.alternateCode, alternateCodeText: orderDemoPreset.alternateCodeText, alternateCodeSystem: orderDemoPreset.alternateCodeSystem, fhir };
+  }
+  return { mode, patientRecordId, priority: byId("order-priority").value, requestedAt: byId("order-requested-at").value.trim(), orderingProvider: byId("order-provider").value.trim(), clinicalIndication: byId("order-indication").value.trim(), orderCode: byId("order-code").value.trim(), orderCodeText: orderDemoPreset.orderCodeText, alternateCode: byId("order-alternate-code").value.trim(), alternateCodeText: orderDemoPreset.alternateCodeText, alternateCodeSystem: orderDemoPreset.alternateCodeSystem };
+}
+
+export function setFhirOrderForm(payload) {
+  const setValue = (id, value) => { const element = byId(id); if (element) element.value = value || ""; };
+  const values = { "fhir-status": payload.status || "active", "fhir-intent": payload.intent || "order", "fhir-category": payload.category || "Procedure", "fhir-priority": payload.priority || "routine", "fhir-do-not-perform": payload.doNotPerform || "false", "fhir-code-system": payload.codeSystem || "urn:healthcare-lab:service-code", "fhir-code-code": payload.codeCode || orderDemoPreset.orderCode, "fhir-code-display": payload.codeDisplay || orderDemoPreset.orderCodeText, "fhir-reason-code-text": payload.reasonCodeText, "fhir-requester": payload.requester, "fhir-performer-type": payload.performerType, "fhir-location-code": payload.locationCode, "fhir-quantity-value": payload.quantityValue, "fhir-quantity-unit": payload.quantityUnit, "fhir-note": payload.note, "fhir-patient-instruction": payload.patientInstruction };
+  Object.entries(values).forEach(([id, value]) => setValue(id, value));
+  if (!fhirOrderField("fhir-occurrence")) setValue("fhir-occurrence", localDatetimeValue());
+  if (!fhirOrderField("fhir-authored-on")) setValue("fhir-authored-on", localDatetimeValue());
+}
+
+export function setOrderForm(payload) {
+  if (currentOrderMode() === "fhir") setFhirOrderForm(payload.fhir || payload);
+  byId("order-priority").value = payload.priority || "R";
+  byId("order-provider").value = payload.orderingProvider || orderDemoPreset.orderingProvider;
+  byId("order-indication").value = payload.clinicalIndication || "";
+  byId("order-code").value = payload.orderCode || orderDemoPreset.orderCode;
+  byId("order-alternate-code").value = payload.alternateCode || orderDemoPreset.alternateCode;
+  if (!byId("order-requested-at").value.trim()) byId("order-requested-at").value = hl7Timestamp();
+}
+
+export function validateOrderPayload(payload) {
+  const messages = [];
+  if (!payload.patientRecordId) messages.push("Patient is required.");
+  if (payload.mode === "fhir") {
+    const patient = selectedOrderPatient();
+    if (!payload.fhir?.status) messages.push("FHIR status is required.");
+    if (!payload.fhir?.intent) messages.push("FHIR intent is required.");
+    if (!payload.fhir?.codeCode && !payload.fhir?.codeDisplay) messages.push("FHIR order code is required.");
+    if (!patient?.fhir?.medplum?.reference || patient?.fhir?.sync?.status !== "Synced") messages.push("FHIR Order requires a synced FHIR Patient.");
+  }
+  if (payload.mode === "hl7-v251") {
+    if (!payload.orderingProvider) messages.push("Ordering provider is required.");
+    if (!payload.orderCode) messages.push("Order code is required.");
+    if (!payload.alternateCode) messages.push("Alternate code is required.");
+  }
+  if (payload.mode !== "fhir" && payload.requestedAt && !/^\d{8}(\d{4})?(\d{2})?$/.test(payload.requestedAt)) messages.push("Requested time must be YYYYMMDD, YYYYMMDDHHMM, or YYYYMMDDHHMMSS.");
+  return messages;
+}
+
+export function renderOrderValidation(messages) {
+  const container = byId("order-validation");
+  container.replaceChildren();
+  container.appendChild(createElement("span", messages.length ? "Needs input" : "Valid preview", messages.length ? "status pending" : "status success"));
+  if (messages.length) {
+    const list = document.createElement("ul");
+    messages.forEach((message) => list.appendChild(createElement("li", message)));
+    container.appendChild(list);
+  }
+}
