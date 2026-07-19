@@ -8,34 +8,16 @@ import { initializeOieView, refreshOieInventory, renderOieInventory as renderOie
 import { initializeDashboardView, refreshDashboard, statusClass as dashboardStatusClass } from "./js/views/dashboard.js";
 import { initializeGdtView, refreshGdtConsole, selectedGdtPatient as selectedGdtPatientFromView } from "./js/views/gdt.js";
 import { initializeFhirView, refreshMedplumInventory } from "./js/views/fhir.js";
+import { getSelectedOrderId, getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "./js/state/selection.js";
 
 const byId = (id) => document.getElementById(id);
 
-let dashboardServices = [];
-let dashboardEvents = [];
-let dashboardResources = null;
-let expandedDashboardServiceIds = new Set();
 let patientRecords = [];
 let orderRecords = [];
 let gdtOrderRecords = [];
-let selectedOrderRecordId = null;
 let selectedOrderRecordKey = "";
 let dcm4cheeProfileDiagnostics = null;
-let selectedDcm4cheePatientId = null;
-let selectedDcm4cheeOrderId = null;
 let expandedDcm4cheePatientIds = new Set();
-let gdtWorkbench = { patients: [], bridgeInbox: [] };
-let gdtBridgeConfig = null;
-let selectedGdtPatientId = null;
-let expandedGdtPatientIds = new Set();
-let selectedGdtPayload = "";
-let selectedGdtPatientRawPreview = { patientId: null, payload: "" };
-let oieInventory = [];
-let oieUnmatchedResults = [];
-let selectedOiePatientId = null;
-let selectedOieOrderId = null;
-let expandedOiePatientIds = new Set();
-let selectedOiePayload = "";
 
 const VIEW_TITLES = {
   "lab-console-view": "Service Health",
@@ -877,7 +859,7 @@ function dcm4cheeConsolePatients() {
   ));
 }
 
-function dcm4cheeConsoleOrders(patientId = selectedDcm4cheePatientId) {
+function dcm4cheeConsoleOrders(patientId = getSelectedPatientId()) {
   return orderRecords.filter((item) => (
     item.protocolVersion === "DICOM"
     && (!patientId || Number(item.patientRecordId) === Number(patientId))
@@ -885,12 +867,12 @@ function dcm4cheeConsoleOrders(patientId = selectedDcm4cheePatientId) {
 }
 
 function selectedDcm4cheePatient() {
-  const selectedId = Number(selectedDcm4cheePatientId || 0);
+  const selectedId = Number(getSelectedPatientId() || 0);
   return dcm4cheeConsolePatients().find((item) => Number(item.id) === selectedId) || null;
 }
 
 function selectedDcm4cheeOrder() {
-  const selectedId = Number(selectedDcm4cheeOrderId || 0);
+  const selectedId = Number(getSelectedOrderId() || 0);
   return orderRecords.find((item) => item.protocolVersion === "DICOM" && Number(item.id) === selectedId) || null;
 }
 
@@ -959,18 +941,18 @@ function dcm4cheeOrderActionButtons(order) {
 }
 
 function selectDcm4cheePatient(patientId) {
-  selectedDcm4cheePatientId = patientId;
+  setSelectedPatientId(patientId);
   const patientOrders = dcm4cheeConsoleOrders(patientId);
-  if (!patientOrders.some((item) => Number(item.id) === Number(selectedDcm4cheeOrderId))) {
-    selectedDcm4cheeOrderId = patientOrders[0]?.id || null;
+  if (!patientOrders.some((item) => Number(item.id) === Number(getSelectedOrderId()))) {
+    setSelectedOrderId(patientOrders[0]?.id || null);
   }
   renderDcm4cheeConsole();
 }
 
 function selectDcm4cheeOrder(orderId) {
-  selectedDcm4cheeOrderId = orderId;
+  setSelectedOrderId(orderId);
   const order = selectedDcm4cheeOrder();
-  if (order?.patientRecordId) selectedDcm4cheePatientId = order.patientRecordId;
+  if (order?.patientRecordId) setSelectedPatientId(order.patientRecordId);
   renderDcm4cheeConsole();
   if (orderId) loadDcm4cheeAttemptHistory(orderId, "dcm4chee-console-attempt-history");
 }
@@ -978,16 +960,16 @@ function selectDcm4cheeOrder(orderId) {
 function ensureDcm4cheeSelection() {
   const patients = dcm4cheeConsolePatients();
   if (!patients.length) {
-    selectedDcm4cheePatientId = null;
-    selectedDcm4cheeOrderId = null;
+    setSelectedPatientId(null);
+    setSelectedOrderId(null);
     return;
   }
-  if (!selectedDcm4cheePatientId || !patients.some((item) => Number(item.id) === Number(selectedDcm4cheePatientId))) {
-    selectedDcm4cheePatientId = patients[0].id;
+  if (!getSelectedPatientId() || !patients.some((item) => Number(item.id) === Number(getSelectedPatientId()))) {
+    setSelectedPatientId(patients[0].id);
   }
-  const orders = dcm4cheeConsoleOrders(selectedDcm4cheePatientId);
-  if (!orders.some((item) => Number(item.id) === Number(selectedDcm4cheeOrderId))) {
-    selectedDcm4cheeOrderId = orders[0]?.id || null;
+  const orders = dcm4cheeConsoleOrders(getSelectedPatientId());
+  if (!orders.some((item) => Number(item.id) === Number(getSelectedOrderId()))) {
+    setSelectedOrderId(orders[0]?.id || null);
   }
 }
 
@@ -1005,11 +987,11 @@ function renderDcm4cheeSelectors() {
       const name = patient.summary?.name || "Unnamed patient";
       patientSelect.appendChild(new Option(`${mrn} - ${name}`, String(patient.id)));
     });
-    patientSelect.value = String(selectedDcm4cheePatientId || "");
+    patientSelect.value = String(getSelectedPatientId() || "");
   }
   patientSelect.disabled = !patients.length;
 
-  const orders = dcm4cheeConsoleOrders(selectedDcm4cheePatientId);
+  const orders = dcm4cheeConsoleOrders(getSelectedPatientId());
   orderSelect.replaceChildren();
   if (!orders.length) {
     orderSelect.appendChild(new Option("No DICOM MWL orders", ""));
@@ -1018,7 +1000,7 @@ function renderDcm4cheeSelectors() {
       const code = order.summary?.orderCode || order.orderCode || "DICOM";
       orderSelect.appendChild(new Option(`${dcm4cheeOrderLabel(order)} - ${code}`, String(order.id)));
     });
-    orderSelect.value = String(selectedDcm4cheeOrderId || "");
+    orderSelect.value = String(getSelectedOrderId() || "");
   }
   orderSelect.disabled = !orders.length;
 }
@@ -1087,7 +1069,7 @@ function renderDcm4cheeExpandedOrders(orders) {
     const mwl = order.dcm4chee?.mwl || {};
     const mapping = mwl.mapping || {};
     const row = document.createElement("tr");
-    row.classList.toggle("selected-row", Number(order.id) === Number(selectedDcm4cheeOrderId));
+    row.classList.toggle("selected-row", Number(order.id) === Number(getSelectedOrderId()));
     row.append(
       rowCell(dcm4cheeOrderLabel(order)),
       rowCell(order.summary?.orderCode || order.orderCode || "-"),
@@ -1153,7 +1135,7 @@ function renderDcm4cheePatientList() {
     });
     actions.appendChild(refreshButton);
     const row = document.createElement("tr");
-    row.className = Number(patient.id) === Number(selectedDcm4cheePatientId) ? "selected-row" : "";
+    row.className = Number(patient.id) === Number(getSelectedPatientId()) ? "selected-row" : "";
     const toggleButton = createElement("button", "V", "dcm4chee-patient-toggle");
     toggleButton.type = "button";
     toggleButton.classList.toggle("expanded", expandedDcm4cheePatientIds.has(patientId));
@@ -1611,7 +1593,7 @@ async function refreshPatientDcm4cheeResults(patientId, button, options = {}) {
     });
     const patient = result.patient || {};
     patientRecords = patientRecords.map((item) => Number(item.id) === Number(patient.id) ? patient : item);
-    selectedDcm4cheePatientId = patient.id || selectedDcm4cheePatientId;
+    setSelectedPatientId(patient.id || getSelectedPatientId());
     renderPatientRecordList();
     byId("patient-payload-preview").textContent = patient.payload || "";
     renderPatientSummaryFromRecord(patient);
@@ -1623,8 +1605,7 @@ async function refreshPatientDcm4cheeResults(patientId, button, options = {}) {
       result.success ? "success" : "warning",
     );
     if (options.orderId) {
-      selectedOrderRecordId = options.orderId;
-      selectedDcm4cheeOrderId = options.orderId;
+      setSelectedOrderId(options.orderId);
       setStatus("order-form-status", `PACS results refreshed (${count})`, result.success ? "success" : "warning");
       await refreshOrders();
     }
@@ -1789,7 +1770,7 @@ function setOrderForm(payload) {
 function renderOrderPatientOptions() {
   const selector = byId("order-patient");
   if (!selector) return;
-  const current = selector.value;
+  const current = selector.value || String(getSelectedPatientId() || "");
   const mode = currentOrderMode();
   const records = orderPatientRecordsForMode(mode);
   selector.replaceChildren();
@@ -1819,6 +1800,7 @@ function renderOrderPatientOptions() {
   if ([...selector.options].some((option) => option.value === current)) {
     selector.value = current;
   }
+  setSelectedPatientId(Number(selector.value || 0) || null);
 }
 
 function validateOrderPayload(payload) {
@@ -2242,7 +2224,8 @@ function selectedOrderPayloadPreview(item, mode) {
 }
 
 function selectOrderRecord(item, mode) {
-  selectedOrderRecordId = item.id;
+  setSelectedOrderId(item.id);
+  setSelectedPatientId(item.patientRecordId || null);
   selectedOrderRecordKey = orderListKey(item);
   const summary = item.summary || {};
   const selectedPatient = patientRecords.find((patient) => Number(patient.id) === Number(item.patientRecordId));
@@ -2389,8 +2372,7 @@ async function retryDcm4cheeOrder(orderId, button) {
     });
     const mwl = result.item?.dcm4chee?.mwl || {};
     setStatus("order-form-status", mwl.displayStatus || "dcm4chee sync updated", result.success ? "success" : "error");
-    selectedOrderRecordId = orderId;
-    selectedDcm4cheeOrderId = orderId;
+    setSelectedOrderId(orderId);
     await refreshOrders();
     await refreshDcm4cheeConsole();
   } catch (error) {
@@ -2413,8 +2395,8 @@ async function sendDcm4cheeOrder(orderId, button) {
       body: JSON.stringify({}),
     });
     const mwl = result.item?.dcm4chee?.mwl || {};
-    selectedDcm4cheeOrderId = orderId;
-    if (result.item?.patientRecordId) selectedDcm4cheePatientId = result.item.patientRecordId;
+    setSelectedOrderId(orderId);
+    if (result.item?.patientRecordId) setSelectedPatientId(result.item.patientRecordId);
     await refreshDcm4cheeConsole();
     const label = mwl.displayStatus || (result.success ? "Order sent" : "Send failed");
     setStatus("dcm4chee-send-status", label, result.success ? "success" : "error");
@@ -2437,8 +2419,7 @@ async function verifyDcm4cheeOrder(orderId, button) {
     const verification = result.verification || {};
     const status = verification.status || "MWL verification updated";
     setStatus("order-form-status", status, result.success ? "success" : "error");
-    selectedOrderRecordId = orderId;
-    selectedDcm4cheeOrderId = orderId;
+    setSelectedOrderId(orderId);
     await refreshOrders();
     await refreshDcm4cheeConsole();
   } catch (error) {
@@ -2607,7 +2588,7 @@ const initializeApplication = () => {
   });
   byId("copy-dcm4chee-payload").addEventListener("click", () => copyTextFromElement("dcm4chee-payload-preview"));
   byId("send-dcm4chee-order").addEventListener("click", (event) => {
-    if (selectedDcm4cheeOrderId) sendDcm4cheeOrder(selectedDcm4cheeOrderId, event.currentTarget);
+    if (getSelectedOrderId()) sendDcm4cheeOrder(getSelectedOrderId(), event.currentTarget);
   });
   byId("create-gdt-ecg-order").addEventListener("click", openGdtOrderFlow);
   setActiveView("lab-console-view");
