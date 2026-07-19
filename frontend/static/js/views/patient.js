@@ -7,8 +7,18 @@ import {
   taipeiTimestamp,
 } from "../core/formatting.js";
 import { byId, createElement, rowCell } from "../core/dom.js";
+import { setStatus } from "../components/status.js";
+import {
+  createPatient,
+  fetchPatients,
+  refreshPatientDcm4cheeResults as refreshPatientDcm4cheeResultsRequest,
+  retryPatientFhirSync as retryPatientFhirSyncRequest,
+} from "../api/patient.js";
+import { getPatientRecords, replacePatientRecord, setPatientRecords } from "../state/patient.js";
+import { getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "../state/selection.js";
 
 const GENERATED_PATIENT_MRN_LABEL = "Generated on create";
+let patientCoordinator = {};
 
 export const PATIENT_MODE_CONFIG = {
   "hl7-v2": {
@@ -253,6 +263,107 @@ export function initializePatientView({ onCreate, onRefresh, onCopy }) {
   byId("create-patient").addEventListener("click", onCreate);
   byId("refresh-patients").addEventListener("click", onRefresh);
   byId("copy-patient-payload").addEventListener("click", onCopy);
+}
+
+export function configurePatientCoordinator(coordinator = {}) {
+  patientCoordinator = coordinator;
+}
+
+function renderPatientRecords() {
+  renderPatientRecordList(getPatientRecords(), { onSelect: patientCoordinator.onSelectRecord });
+}
+
+export async function refreshPatients() {
+  try {
+    const result = await fetchPatients();
+    setPatientRecords(result.items || []);
+    renderPatientRecords();
+    patientCoordinator.renderOrderPatientOptions?.();
+  } catch (_error) {
+    setStatus("patient-form-status", "Refresh failed", "error");
+  }
+}
+
+export async function createPatientRecord() {
+  const button = byId("create-patient");
+  button.disabled = true;
+  setStatus("patient-form-status", "Creating...", "pending");
+  try {
+    const result = await createPatient(patientFormPayload());
+    const item = result.item;
+    const syncStatus = item.fhir?.sync?.status || item.dcm4chee?.patient?.status || "";
+    setStatus(
+      "patient-form-status",
+      syncStatus === "Synced"
+        ? (item.protocolVersion === "DICOM" ? "dcm4chee patient synced" : "FHIR patient synced")
+        : "Local patient created",
+      syncStatus === "Sync failed" ? "warning" : "success",
+    );
+    byId("patient-payload-preview").textContent = item.payload || "";
+    renderPatientSummaryFromPayload({
+      ...(item.patient || {}),
+      visitNumber: item.visitNumber,
+      patientClass: item.patientClass,
+      assignedLocation: item.assignedLocation,
+    }, item.createdAt, item.dcm4chee?.patient || null, {
+      renderDetailBlock: patientCoordinator.renderDetailBlock,
+    });
+    await refreshPatients();
+  } catch (error) {
+    setStatus("patient-form-status", "Create failed", "error");
+    byId("patient-payload-preview").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+export async function retryPatientFhirSync(patientId, button) {
+  button.disabled = true;
+  setStatus("patient-form-status", "Retrying FHIR sync...", "pending");
+  try {
+    const result = await retryPatientFhirSyncRequest(patientId);
+    const syncStatus = result.item?.fhir?.sync?.status || "";
+    setStatus(
+      "patient-form-status",
+      syncStatus === "Synced" ? "FHIR patient synced" : "FHIR sync needs attention",
+      syncStatus === "Synced" ? "success" : "warning",
+    );
+    await refreshPatients();
+  } catch (error) {
+    setStatus("patient-form-status", error.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+export async function refreshPatientDcm4cheeResults(patientId, button, options = {}) {
+  if (button) button.disabled = true;
+  setStatus("patient-form-status", "Refreshing dcm4chee results...", "pending");
+  if (options.orderId) setStatus("order-form-status", "Refreshing PACS results...", "pending");
+  try {
+    const result = await refreshPatientDcm4cheeResultsRequest(patientId);
+    const patient = result.patient || {};
+    replacePatientRecord(patient);
+    setSelectedPatientId(patient.id || getSelectedPatientId());
+    renderPatientRecords();
+    byId("patient-payload-preview").textContent = patient.payload || "";
+    patientCoordinator.onSelectRecord?.(patient);
+    patientCoordinator.renderDcm4cheeConsole?.();
+    const count = (patient.dcm4chee?.dicomResults || []).length;
+    setStatus("patient-form-status", `dcm4chee results refreshed (${count})`, result.success ? "success" : "warning");
+    if (options.orderId) {
+      setSelectedOrderId(options.orderId);
+      setStatus("order-form-status", `PACS results refreshed (${count})`, result.success ? "success" : "warning");
+      await patientCoordinator.refreshOrders?.();
+    }
+    setStatus("dcm4chee-console-status", `PACS results refreshed (${count})`, result.success ? "success" : "warning");
+  } catch (error) {
+    setStatus("patient-form-status", error.message, "error");
+    if (options.orderId) setStatus("order-form-status", error.message, "error");
+    setStatus("dcm4chee-console-status", error.message, "error");
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 export function patientPreviewMrn(payload) {

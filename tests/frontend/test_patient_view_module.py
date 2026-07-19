@@ -61,6 +61,20 @@ class PatientViewModuleTests(unittest.TestCase):
             self.assertIn(control, self.source)
         self.assertIn("initializePatientView({", self.bootstrap)
 
+    def test_patient_view_owns_async_coordination(self):
+        for owner in (
+            "configurePatientCoordinator",
+            "refreshPatients",
+            "createPatientRecord",
+            "retryPatientFhirSync",
+            "refreshPatientDcm4cheeResults",
+        ):
+            self.assertIn(f"export {'async ' if owner != 'configurePatientCoordinator' else ''}function {owner}", self.source)
+            self.assertNotIn(f"function {owner}", self.bootstrap)
+        self.assertIn('../api/patient.js', self.source)
+        self.assertIn('../state/patient.js', self.source)
+        self.assertIn("configurePatientCoordinator({", self.bootstrap)
+
     def test_patient_preview_uses_shared_formatting_without_transport(self):
         self.assertIn('../core/formatting.js', self.source)
         self.assertNotIn("requestJson", self.source)
