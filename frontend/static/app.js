@@ -1,4 +1,4 @@
-import { requestJson, requestJsonAllowBusinessFailure } from "./js/api/client.js";
+import { requestJson } from "./js/api/client.js";
 import { setStatus } from "./js/components/status.js";
 import { copyTextFromElement as copyElementText } from "./js/core/clipboard.js";
 import { createElement, rowCell } from "./js/core/dom.js";
@@ -11,6 +11,7 @@ import { initializeFhirView, refreshMedplumInventory } from "./js/views/fhir.js"
 import { getSelectedOrderId, getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "./js/state/selection.js";
 import { getPatientRecords, replacePatientRecord, setPatientRecords } from "./js/state/patient.js";
 import { createPatient, fetchPatients } from "./js/api/patient.js";
+import { createOrder, fetchDcm4cheeAttempts, fetchGdtOrders, fetchOrders, simulateDcm4cheeApReturn as simulateDcm4cheeApReturnRequest, syncDcm4cheeOrder, verifyDcm4cheeMwl } from "./js/api/order.js";
 import { buildPatientGdtPreviewPayload, configurePatientCoordinator, createPatientRecord, initializePatientView, patientPreviewMrn, refreshPatientDcm4cheeResults, refreshPatientPreview, refreshPatients, renderPatientSummaryFromPayload, retryPatientFhirSync } from "./js/views/patient.js";
 
 const byId = (id) => document.getElementById(id);
@@ -1003,7 +1004,7 @@ async function refreshDcm4cheeConsole() {
   try {
     const [patientsResult, ordersResult, diagnosticsResult] = await Promise.all([
       fetchPatients("DICOM"),
-      requestJson("/api/orders"),
+      fetchOrders(),
       requestJson("/api/dcm4chee/profile/diagnostics"),
     ]);
     setPatientRecords(patientsResult.items || []);
@@ -1712,7 +1713,7 @@ async function loadDcm4cheeAttemptHistory(orderId, containerId = "dcm4chee-attem
   const container = byId(containerId);
   if (!container) return;
   try {
-    const result = await requestJson(`/api/orders/${orderId}/dcm4chee-attempts`);
+    const result = await fetchDcm4cheeAttempts(orderId);
     renderDcm4cheeAttemptHistory(result.items || [], containerId);
   } catch (error) {
     container.replaceChildren(createElement("h3", "dcm4chee Attempts"), createElement("p", error.message, "muted"));
@@ -1853,8 +1854,8 @@ function orderStateLabel(item, mode) {
 async function refreshOrders() {
   try {
     const [ordersResult, gdtOrdersResult] = await Promise.all([
-      requestJson("/api/orders"),
-      requestJson("/api/gdt/orders"),
+      fetchOrders(),
+      fetchGdtOrders(),
     ]);
     orderRecords = ordersResult.items || [];
     gdtOrderRecords = gdtOrdersResult.items || [];
@@ -1870,10 +1871,7 @@ async function retryDcm4cheeOrder(orderId, button) {
   if (button) button.disabled = true;
   setStatus("order-form-status", "Retrying dcm4chee sync...", "pending");
   try {
-    const result = await requestJsonAllowBusinessFailure(`/api/orders/${orderId}/dcm4chee-sync`, {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    const result = await syncDcm4cheeOrder(orderId);
     const mwl = result.item?.dcm4chee?.mwl || {};
     setStatus("order-form-status", mwl.displayStatus || "dcm4chee sync updated", result.success ? "success" : "error");
     setSelectedOrderId(orderId);
@@ -1894,10 +1892,7 @@ async function sendDcm4cheeOrder(orderId, button) {
   setStatus("dcm4chee-send-status", "Sending...", "pending");
   setStatus("dcm4chee-console-status", "Sending MWL order...", "pending");
   try {
-    const result = await requestJsonAllowBusinessFailure(`/api/orders/${orderId}/dcm4chee-sync`, {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    const result = await syncDcm4cheeOrder(orderId);
     const mwl = result.item?.dcm4chee?.mwl || {};
     setSelectedOrderId(orderId);
     if (result.item?.patientRecordId) setSelectedPatientId(result.item.patientRecordId);
@@ -1916,10 +1911,7 @@ async function verifyDcm4cheeOrder(orderId, button) {
   if (button) button.disabled = true;
   setStatus("order-form-status", "Verifying dcm4chee MWL...", "pending");
   try {
-    const result = await requestJsonAllowBusinessFailure(`/api/orders/${orderId}/dcm4chee-mwl-verify`, {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    const result = await verifyDcm4cheeMwl(orderId);
     const verification = result.verification || {};
     const status = verification.status || "MWL verification updated";
     setStatus("order-form-status", status, result.success ? "success" : "error");
@@ -1939,10 +1931,7 @@ async function simulateDcm4cheeApReturn(orderId, button, type = "both") {
   if (button) button.disabled = true;
   setStatus("order-form-status", "Recording simulated AP return...", "pending");
   try {
-    const result = await requestJson(`/api/orders/${orderId}/dcm4chee-simulated-ap-return`, {
-      method: "POST",
-      body: JSON.stringify({ type }),
-    });
+    const result = await simulateDcm4cheeApReturnRequest(orderId, type);
     setStatus("order-form-status", `Simulated AP ${type.toUpperCase()} result recorded`, "success");
     if (result.patient) {
       replacePatientRecord(result.patient);
@@ -1971,10 +1960,7 @@ async function createOrderRecord() {
   setStatus("order-form-status", "Creating...", "pending");
   try {
     const mode = currentOrderMode();
-    const result = await requestJson(mode === "gdt" ? "/api/gdt/orders" : "/api/orders", {
-      method: "POST",
-      body: JSON.stringify(orderFormPayload()),
-    });
+    const result = await createOrder(orderFormPayload(), mode);
     const item = result.item;
     setStatus(
       "order-form-status",
