@@ -9,12 +9,12 @@ import { initializeDashboardView, refreshDashboard, statusClass as dashboardStat
 import { initializeGdtView, refreshGdtConsole, selectedGdtPatient as selectedGdtPatientFromView } from "./js/views/gdt.js";
 import { initializeFhirView, refreshMedplumInventory } from "./js/views/fhir.js";
 import { getSelectedOrderId, getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "./js/state/selection.js";
+import { getPatientRecords, replacePatientRecord, setPatientRecords } from "./js/state/patient.js";
 import { createPatient, fetchPatients, refreshPatientDcm4cheeResults as refreshPatientDcm4cheeResultsRequest, retryPatientFhirSync as retryPatientFhirSyncRequest } from "./js/api/patient.js";
 import { buildPatientGdtPreviewPayload, initializePatientView, patientFormPayload, patientPreviewMrn, refreshPatientPreview, renderPatientRecordList, renderPatientSummaryFromPayload } from "./js/views/patient.js";
 
 const byId = (id) => document.getElementById(id);
 
-let patientRecords = [];
 let orderRecords = [];
 let gdtOrderRecords = [];
 let selectedOrderRecordKey = "";
@@ -98,7 +98,7 @@ function orderPatientModeLabel(mode = currentOrderMode()) {
 
 function orderPatientRecordsForMode(mode = currentOrderMode()) {
   const protocolVersion = orderPatientProtocolForMode(mode);
-  return patientRecords.filter((item) => item.protocolVersion === protocolVersion);
+  return getPatientRecords().filter((item) => item.protocolVersion === protocolVersion);
 }
 
 function updateOrderModeFields() {
@@ -524,7 +524,7 @@ function dcm4cheeConsolePatients() {
       .filter((item) => item.protocolVersion === "DICOM" && item.patientRecordId)
       .map((item) => Number(item.patientRecordId)),
   );
-  return patientRecords.filter((item) => (
+  return getPatientRecords().filter((item) => (
     item.protocolVersion === "DICOM"
     || item.dcm4chee?.patient
     || patientIdsWithDicomOrders.has(Number(item.id))
@@ -557,7 +557,7 @@ function dcm4cheeOrderLabel(order) {
 }
 
 function dcm4cheeOrderPatient(order) {
-  return patientRecords.find((patient) => Number(patient.id) === Number(order?.patientRecordId)) || null;
+  return getPatientRecords().find((patient) => Number(patient.id) === Number(order?.patientRecordId)) || null;
 }
 
 function dcm4cheeOrderStatus(order) {
@@ -1006,7 +1006,7 @@ async function refreshDcm4cheeConsole() {
       requestJson("/api/orders"),
       requestJson("/api/dcm4chee/profile/diagnostics"),
     ]);
-    patientRecords = patientsResult.items || [];
+    setPatientRecords(patientsResult.items || []);
     orderRecords = ordersResult.items || [];
     dcm4cheeProfileDiagnostics = diagnosticsResult;
     renderDcm4cheeConsole();
@@ -1115,7 +1115,7 @@ function renderDcm4cheeOrderActions(orderId, patientId, mwl = {}, mapping = {}) 
 }
 
 function renderPatientRecords() {
-  renderPatientRecordList(patientRecords, {
+  renderPatientRecordList(getPatientRecords(), {
     onSelect: (item) => {
       byId("patient-payload-preview").textContent = item.payload || "";
       renderPatientSummaryFromRecord(item);
@@ -1135,7 +1135,7 @@ function fhirSyncStatusClass(status) {
 async function refreshPatients() {
   try {
     const result = await fetchPatients();
-    patientRecords = result.items || [];
+    setPatientRecords(result.items || []);
     renderPatientRecords();
     renderOrderPatientOptions();
   } catch (error) {
@@ -1200,7 +1200,7 @@ async function refreshPatientDcm4cheeResults(patientId, button, options = {}) {
   try {
     const result = await refreshPatientDcm4cheeResultsRequest(patientId);
     const patient = result.patient || {};
-    patientRecords = patientRecords.map((item) => Number(item.id) === Number(patient.id) ? patient : item);
+    replacePatientRecord(patient);
     setSelectedPatientId(patient.id || getSelectedPatientId());
     renderPatientRecords();
     byId("patient-payload-preview").textContent = patient.payload || "";
@@ -1229,7 +1229,7 @@ async function refreshPatientDcm4cheeResults(patientId, button, options = {}) {
 
 function selectedOrderPatient() {
   const selectedId = Number(byId("order-patient")?.value || 0);
-  return patientRecords.find((item) => Number(item.id) === selectedId) || null;
+  return getPatientRecords().find((item) => Number(item.id) === selectedId) || null;
 }
 
 function selectedOrderPatientReference() {
@@ -1382,7 +1382,7 @@ function renderOrderPatientOptions() {
   const mode = currentOrderMode();
   const records = orderPatientRecordsForMode(mode);
   selector.replaceChildren();
-  if (!patientRecords.length) {
+  if (!getPatientRecords().length) {
     const option = document.createElement("option");
     option.value = "";
     option.textContent = "Create a patient first";
@@ -1836,7 +1836,7 @@ function selectOrderRecord(item, mode) {
   setSelectedPatientId(item.patientRecordId || null);
   selectedOrderRecordKey = orderListKey(item);
   const summary = item.summary || {};
-  const selectedPatient = patientRecords.find((patient) => Number(patient.id) === Number(item.patientRecordId));
+  const selectedPatient = getPatientRecords().find((patient) => Number(patient.id) === Number(item.patientRecordId));
   byId("order-payload-preview").textContent = selectedOrderPayloadPreview(item, mode);
   renderOrderSummary({
     mode,
@@ -2049,8 +2049,7 @@ async function simulateDcm4cheeApReturn(orderId, button, type = "both") {
     });
     setStatus("order-form-status", `Simulated AP ${type.toUpperCase()} result recorded`, "success");
     if (result.patient) {
-      const index = patientRecords.findIndex((item) => Number(item.id) === Number(result.patient.id));
-      if (index >= 0) patientRecords[index] = result.patient;
+      replacePatientRecord(result.patient);
     }
     await refreshPatients();
     await refreshOrders();
