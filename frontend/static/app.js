@@ -10,8 +10,8 @@ import { initializeGdtView, refreshGdtConsole, selectedGdtPatient as selectedGdt
 import { initializeFhirView, refreshMedplumInventory } from "./js/views/fhir.js";
 import { getSelectedOrderId, getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "./js/state/selection.js";
 import { getPatientRecords, replacePatientRecord, setPatientRecords } from "./js/state/patient.js";
-import { createPatient, fetchPatients, refreshPatientDcm4cheeResults as refreshPatientDcm4cheeResultsRequest, retryPatientFhirSync as retryPatientFhirSyncRequest } from "./js/api/patient.js";
-import { buildPatientGdtPreviewPayload, initializePatientView, patientFormPayload, patientPreviewMrn, refreshPatientPreview, renderPatientRecordList, renderPatientSummaryFromPayload } from "./js/views/patient.js";
+import { createPatient, fetchPatients } from "./js/api/patient.js";
+import { buildPatientGdtPreviewPayload, configurePatientCoordinator, createPatientRecord, initializePatientView, patientPreviewMrn, refreshPatientDcm4cheeResults, refreshPatientPreview, refreshPatients, renderPatientSummaryFromPayload, retryPatientFhirSync } from "./js/views/patient.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -1114,15 +1114,6 @@ function renderDcm4cheeOrderActions(orderId, patientId, mwl = {}, mapping = {}) 
   return actions;
 }
 
-function renderPatientRecords() {
-  renderPatientRecordList(getPatientRecords(), {
-    onSelect: (item) => {
-      byId("patient-payload-preview").textContent = item.payload || "";
-      renderPatientSummaryFromRecord(item);
-    },
-  });
-}
-
 function fhirSyncStatusClass(status) {
   return {
     "Synced": "success",
@@ -1130,101 +1121,6 @@ function fhirSyncStatusClass(status) {
     "Syncing": "pending",
     "Pending sync": "pending",
   }[status] || "neutral";
-}
-
-async function refreshPatients() {
-  try {
-    const result = await fetchPatients();
-    setPatientRecords(result.items || []);
-    renderPatientRecords();
-    renderOrderPatientOptions();
-  } catch (error) {
-    setStatus("patient-form-status", "Refresh failed", "error");
-  }
-}
-
-async function createPatientRecord() {
-  const button = byId("create-patient");
-  button.disabled = true;
-  setStatus("patient-form-status", "Creating...", "pending");
-  try {
-    const result = await createPatient(patientFormPayload());
-    const item = result.item;
-    const syncStatus = item.fhir?.sync?.status || item.dcm4chee?.patient?.status || "";
-    setStatus(
-      "patient-form-status",
-      syncStatus === "Synced"
-        ? (item.protocolVersion === "DICOM" ? "dcm4chee patient synced" : "FHIR patient synced")
-        : "Local patient created",
-      syncStatus === "Sync failed" ? "warning" : "success",
-    );
-    byId("patient-payload-preview").textContent = item.payload || "";
-    renderPatientSummaryFromPayload({
-      ...(item.patient || {}),
-      visitNumber: item.visitNumber,
-      patientClass: item.patientClass,
-      assignedLocation: item.assignedLocation,
-    }, item.createdAt, item.dcm4chee?.patient || null, { renderDetailBlock: dcm4cheeDetailBlock });
-    await refreshPatients();
-  } catch (error) {
-    setStatus("patient-form-status", "Create failed", "error");
-    byId("patient-payload-preview").textContent = error.message;
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function retryPatientFhirSync(patientId, button) {
-  button.disabled = true;
-  setStatus("patient-form-status", "Retrying FHIR sync...", "pending");
-  try {
-    const result = await retryPatientFhirSyncRequest(patientId);
-    const syncStatus = result.item?.fhir?.sync?.status || "";
-    setStatus(
-      "patient-form-status",
-      syncStatus === "Synced" ? "FHIR patient synced" : "FHIR sync needs attention",
-      syncStatus === "Synced" ? "success" : "warning",
-    );
-    await refreshPatients();
-  } catch (error) {
-    setStatus("patient-form-status", error.message, "error");
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function refreshPatientDcm4cheeResults(patientId, button, options = {}) {
-  if (button) button.disabled = true;
-  setStatus("patient-form-status", "Refreshing dcm4chee results...", "pending");
-  if (options.orderId) setStatus("order-form-status", "Refreshing PACS results...", "pending");
-  try {
-    const result = await refreshPatientDcm4cheeResultsRequest(patientId);
-    const patient = result.patient || {};
-    replacePatientRecord(patient);
-    setSelectedPatientId(patient.id || getSelectedPatientId());
-    renderPatientRecords();
-    byId("patient-payload-preview").textContent = patient.payload || "";
-    renderPatientSummaryFromRecord(patient);
-    renderDcm4cheeConsole();
-    const count = (patient.dcm4chee?.dicomResults || []).length;
-    setStatus(
-      "patient-form-status",
-      `dcm4chee results refreshed (${count})`,
-      result.success ? "success" : "warning",
-    );
-    if (options.orderId) {
-      setSelectedOrderId(options.orderId);
-      setStatus("order-form-status", `PACS results refreshed (${count})`, result.success ? "success" : "warning");
-      await refreshOrders();
-    }
-    setStatus("dcm4chee-console-status", `PACS results refreshed (${count})`, result.success ? "success" : "warning");
-  } catch (error) {
-    setStatus("patient-form-status", error.message, "error");
-    if (options.orderId) setStatus("order-form-status", error.message, "error");
-    setStatus("dcm4chee-console-status", error.message, "error");
-  } finally {
-    if (button) button.disabled = false;
-  }
 }
 
 function selectedOrderPatient() {
@@ -2158,6 +2054,16 @@ const initializeApplication = () => {
   initializeOieView();
   initializeGdtView({ buildPatientPreviewPayload: buildPatientGdtPreviewPayload });
   initializeFhirView();
+  configurePatientCoordinator({
+    onSelectRecord: (item) => {
+      byId("patient-payload-preview").textContent = item.payload || "";
+      renderPatientSummaryFromRecord(item);
+    },
+    renderOrderPatientOptions,
+    renderDetailBlock: dcm4cheeDetailBlock,
+    renderDcm4cheeConsole,
+    refreshOrders,
+  });
   initializePatientView({
     onCreate: createPatientRecord,
     onRefresh: refreshPatients,
