@@ -47,6 +47,20 @@ class PatientViewModuleTests(unittest.TestCase):
         self.assertIn("onSelect(item)", self.source)
         self.assertIn("renderDetailBlock", self.source)
 
+    def test_patient_view_owns_preview_lifecycle(self):
+        for owner in ("refreshPatientPreview", "initializePatientView"):
+            self.assertIn(f"export function {owner}", self.source)
+            self.assertNotIn(f"function {owner}", self.bootstrap)
+        for control in (
+            "load-patient-demo",
+            "refresh-patient-preview",
+            "create-patient",
+            "refresh-patients",
+            "copy-patient-payload",
+        ):
+            self.assertIn(control, self.source)
+        self.assertIn("initializePatientView({", self.bootstrap)
+
     def test_patient_preview_uses_shared_formatting_without_transport(self):
         self.assertIn('../core/formatting.js', self.source)
         self.assertNotIn("requestJson", self.source)
