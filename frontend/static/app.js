@@ -10,7 +10,7 @@ import { initializeGdtView, refreshGdtConsole, selectedGdtPatient as selectedGdt
 import { initializeFhirView, refreshMedplumInventory } from "./js/views/fhir.js";
 import { getSelectedOrderId, getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "./js/state/selection.js";
 import { createPatient, fetchPatients, refreshPatientDcm4cheeResults as refreshPatientDcm4cheeResultsRequest, retryPatientFhirSync as retryPatientFhirSyncRequest } from "./js/api/patient.js";
-import { PATIENT_MODE_CONFIG, buildPatientGdtPreviewPayload, buildPatientPreviewPayload, patientDemoPresetForMode, patientFormPayload, patientPreviewMrn, renderPatientValidation, setPatientForm, updatePatientModeFields, validatePatientPayload } from "./js/views/patient.js";
+import { PATIENT_MODE_CONFIG, buildPatientGdtPreviewPayload, buildPatientPreviewPayload, patientDemoPresetForMode, patientFormPayload, patientPreviewMrn, renderPatientRecordList, renderPatientValidation, setPatientForm, updatePatientModeFields, validatePatientPayload } from "./js/views/patient.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -1161,59 +1161,13 @@ function refreshPatientPreview() {
     : buildPatientPreviewPayload(payload);
 }
 
-function renderPatientRecordList() {
-  const body = byId("patient-record-list");
-  body.replaceChildren();
-  if (!patientRecords.length) {
-    const row = document.createElement("tr");
-    const cell = rowCell("No local patients created yet.");
-    cell.colSpan = 9;
-    cell.className = "muted";
-    row.appendChild(cell);
-    body.appendChild(row);
-    return;
-  }
-  patientRecords.forEach((item) => {
-    const row = document.createElement("tr");
-    const summary = item.summary || {};
-    const fhir = item.fhir || null;
-    const dcm4cheePatient = item.dcm4chee?.patient || null;
-    const stateLabel = patientStateLabel(item);
-    const stateClass = stateLabel === "OK" ? "success" : stateLabel === "Error" ? "error" : "neutral";
-    row.append(
-      rowCell(item.localPatientNumber || item.id),
-      rowCell(item.protocolVersion),
-      rowCell(summary.mrn),
-      rowCell(summary.name),
-      rowCell(summary.dob),
-      rowCell(summary.sex),
-      rowCell(summary.visitNumber),
-      rowCell(createElement("span", stateLabel, `status ${stateClass}`)),
-      rowCell(taipeiTimestamp(item.createdAt)),
-    );
-    row.addEventListener("click", () => {
+function renderPatientRecords() {
+  renderPatientRecordList(patientRecords, {
+    onSelect: (item) => {
       byId("patient-payload-preview").textContent = item.payload || "";
       renderPatientSummaryFromRecord(item);
-    });
-    body.appendChild(row);
+    },
   });
-}
-
-function patientStateLabel(item) {
-  if (item.protocolVersion === "FHIR R4") {
-    const fhir = item.fhir || {};
-    const syncStatus = fhir.sync?.status || "";
-    const reference = fhir.medplum?.reference || "";
-    return syncStatus === "Synced" && /^Patient\/[^/]+$/.test(reference) ? "OK" : "Error";
-  }
-  if (item.protocolVersion === "DICOM") {
-    const dcm4cheePatient = item.dcm4chee?.patient || {};
-    const syncStatus = dcm4cheePatient.displayStatus || dcm4cheePatient.status || "";
-    return syncStatus === "Synced" && dcm4cheePatient.ack?.code === "AA" ? "OK" : "Error";
-  }
-  const validation = item.validation || {};
-  const messages = Array.isArray(validation.messages) ? validation.messages : [];
-  return messages.length ? "Error" : "OK";
 }
 
 function fhirSyncStatusClass(status) {
@@ -1229,7 +1183,7 @@ async function refreshPatients() {
   try {
     const result = await fetchPatients();
     patientRecords = result.items || [];
-    renderPatientRecordList();
+    renderPatientRecords();
     renderOrderPatientOptions();
   } catch (error) {
     setStatus("patient-form-status", "Refresh failed", "error");
@@ -1295,7 +1249,7 @@ async function refreshPatientDcm4cheeResults(patientId, button, options = {}) {
     const patient = result.patient || {};
     patientRecords = patientRecords.map((item) => Number(item.id) === Number(patient.id) ? patient : item);
     setSelectedPatientId(patient.id || getSelectedPatientId());
-    renderPatientRecordList();
+    renderPatientRecords();
     byId("patient-payload-preview").textContent = patient.payload || "";
     renderPatientSummaryFromRecord(patient);
     renderDcm4cheeConsole();

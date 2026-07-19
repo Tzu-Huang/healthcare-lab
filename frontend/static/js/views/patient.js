@@ -4,8 +4,9 @@ import {
   hl7Escape,
   hl7EscapeComposite,
   hl7Timestamp,
+  taipeiTimestamp,
 } from "../core/formatting.js";
-import { byId, createElement } from "../core/dom.js";
+import { byId, createElement, rowCell } from "../core/dom.js";
 
 const GENERATED_PATIENT_MRN_LABEL = "Generated on create";
 
@@ -137,6 +138,54 @@ export function renderPatientValidation(messages) {
   const list = document.createElement("ul");
   messages.forEach((message) => list.appendChild(createElement("li", message)));
   container.appendChild(list);
+}
+
+export function patientStateLabel(item) {
+  if (item.protocolVersion === "FHIR R4") {
+    const syncStatus = item.fhir?.sync?.status || "";
+    const reference = item.fhir?.medplum?.reference || "";
+    return syncStatus === "Synced" && /^Patient\/[^/]+$/.test(reference) ? "OK" : "Error";
+  }
+  if (item.protocolVersion === "DICOM") {
+    const patient = item.dcm4chee?.patient || {};
+    const syncStatus = patient.displayStatus || patient.status || "";
+    return syncStatus === "Synced" && patient.ack?.code === "AA" ? "OK" : "Error";
+  }
+  const messages = Array.isArray(item.validation?.messages) ? item.validation.messages : [];
+  return messages.length ? "Error" : "OK";
+}
+
+export function renderPatientRecordList(records, { onSelect } = {}) {
+  const body = byId("patient-record-list");
+  body.replaceChildren();
+  if (!records.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell("No local patients created yet.");
+    cell.colSpan = 9;
+    cell.className = "muted";
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  records.forEach((item) => {
+    const summary = item.summary || {};
+    const stateLabel = patientStateLabel(item);
+    const stateClass = stateLabel === "OK" ? "success" : stateLabel === "Error" ? "error" : "neutral";
+    const row = document.createElement("tr");
+    row.append(
+      rowCell(item.localPatientNumber || item.id),
+      rowCell(item.protocolVersion),
+      rowCell(summary.mrn),
+      rowCell(summary.name),
+      rowCell(summary.dob),
+      rowCell(summary.sex),
+      rowCell(summary.visitNumber),
+      rowCell(createElement("span", stateLabel, `status ${stateClass}`)),
+      rowCell(taipeiTimestamp(item.createdAt)),
+    );
+    if (onSelect) row.addEventListener("click", () => onSelect(item));
+    body.appendChild(row);
+  });
 }
 
 export function patientPreviewMrn(payload) {
