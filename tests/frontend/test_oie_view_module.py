@@ -12,6 +12,22 @@ class OieViewModuleTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.source = (ROOT / "frontend/static/js/views/oie.js").read_text(encoding="utf-8")
         cls.entrypoint = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.template = (ROOT / "frontend/templates/index.html").read_text(encoding="utf-8")
+
+    def test_oie_template_structure_has_a_focused_owner(self):
+        for marker in (
+            'class="table-wrap oie-patient-table-wrap"',
+            'class="lab-panel oie-transmission-panel"',
+            'class="compact-output oie-preview-output"',
+            'id="oie-selected-order-title"',
+            'id="send-selected-oie-order"',
+            'Host / IP<input id="oie-send-host"',
+            'id="oie-send-host" value="{{ oie_order_host }}"',
+            'id="oie-listener-port" value="{{ oie_result_port }}"',
+            'id="oie-unmatched-result-list"',
+        ):
+            self.assertIn(marker, self.template)
+        self.assertNotIn('id="oie-order-list"', self.template)
 
     def test_oie_owns_feature_state_and_rendering(self):
         self.assertIn("const state = {", self.source)
