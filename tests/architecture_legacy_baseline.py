@@ -179,8 +179,8 @@ loadDcm4cheeAttemptHistory
 
  openGdtOrderFlow orderAccountNumber orderFormPayload orderListKey
 orderModeLabel orderPatientModeLabel orderPatientProtocolForMode orderPatientRecordsForMode
-orderRecordMode orderStateLabel orderVisitId orderVisitNumber patientDemoPresetForMode
-patientFormPayload patientStateLabel refreshDcm4cheeConsole
+orderRecordMode orderStateLabel orderVisitId orderVisitNumber
+patientStateLabel refreshDcm4cheeConsole
 
  refreshOrderPreview refreshOrderWorkspace refreshOrders
 refreshPatientDcm4cheeResults refreshPatientPreview refreshPatients
@@ -200,7 +200,7 @@ renderGdtMessage renderGdtRecord
 
 renderOrderPatientOptions renderOrderRecordList
 renderOrderSummary renderOrderValidation renderPatientDcm4cheeResults renderPatientRecordList
-renderPatientSummaryFromPayload renderPatientSummaryFromRecord renderPatientValidation
+renderPatientSummaryFromPayload renderPatientSummaryFromRecord
 
 
 retryDcm4cheeOrder retryPatientFhirSync
@@ -210,10 +210,10 @@ selectDcm4cheePatient
 
 
  selectedOrderPatient selectedOrderPatientReference selectedOrderPayloadPreview
-sendDcm4cheeOrder setFhirOrderForm setOrderForm setPatientForm
+sendDcm4cheeOrder setFhirOrderForm setOrderForm
 simulateDcm4cheeApReturn splitFhirList
  summarizeDcm4cheeResultGroup updateOrderModeFields
-updatePatientModeFields validateOrderPayload validatePatientPayload verifyDcm4cheeOrder
+validateOrderPayload verifyDcm4cheeOrder
 
 """.split())
 
@@ -221,7 +221,7 @@ FRONTEND_FUNCTION_BASELINE: frozenset[tuple[str, str]] = frozenset(
     tuple(line.split("|", 1))
     for line in """
 <module-prefix>|e3b0c44298fc1c14
-byId|124f3169449f969f
+byId|c6f086e09f1c6f6a
 buildFhirOrderPreviewPayload|f74813ed4a5d3994
 buildGdtOrderPreviewPayload|2ce27ec95d4cb1fb
 buildOrderPreviewPayload|29c39842e5808a98
@@ -273,8 +273,6 @@ orderRecordMode|b5bfa84fae5b63ab
 orderStateLabel|99e85e8413f1a79b
 orderVisitId|926611e93a737933
 orderVisitNumber|e5e3d9608612cbee
-patientDemoPresetForMode|52a0c01881e6dd2f
-patientFormPayload|53ef93c7b52b9f73
 patientStateLabel|a367d3197603da20
 refreshDcm4cheeConsole|1554e14716400d7f
 refreshOrderPreview|4279f76d09a5d2f4
@@ -311,7 +309,6 @@ renderPatientDcm4cheeResults|3dd8c0f6e08e3c3e
 renderPatientRecordList|eba3cb099c20c1fe
 renderPatientSummaryFromPayload|0f8a27a3c78d0cc7
 renderPatientSummaryFromRecord|69c91af9b9512f3b
-renderPatientValidation|32d6ce8af8c9f03b
 retryDcm4cheeOrder|11a506272f8fdf47
 retryPatientFhirSync|ee82c5029fb0bf81
 selectDcm4cheeOrder|3705ba0cbe46d211
@@ -325,14 +322,11 @@ selectedOrderPayloadPreview|05d63ddcf629ccc1
 sendDcm4cheeOrder|b9681a0fa79516b3
 setFhirOrderForm|0f05f464d96dcb55
 setOrderForm|1f5ce669e5fe820c
-setPatientForm|0ebf532331673221
 simulateDcm4cheeApReturn|336c8cfbc8354f2e
 splitFhirList|40c983243807ca21
 summarizeDcm4cheeResultGroup|4c6ce8b2862bada6
 updateOrderModeFields|dc3285a88f82d6c1
-updatePatientModeFields|ae5ae7cbb8bf5f6a
 validateOrderPayload|f38aab922de8c8c1
-validatePatientPayload|510a6434d82bda7c
 verifyDcm4cheeOrder|9712bbd6ecd623a3
 """.strip().splitlines()
 )
