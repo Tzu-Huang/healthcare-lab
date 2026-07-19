@@ -9,6 +9,7 @@ import { initializeDashboardView, refreshDashboard, statusClass as dashboardStat
 import { initializeGdtView, refreshGdtConsole, selectedGdtPatient as selectedGdtPatientFromView } from "./js/views/gdt.js";
 import { initializeFhirView, refreshMedplumInventory } from "./js/views/fhir.js";
 import { getSelectedOrderId, getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "./js/state/selection.js";
+import { createPatient, fetchPatients, refreshPatientDcm4cheeResults as refreshPatientDcm4cheeResultsRequest, retryPatientFhirSync as retryPatientFhirSyncRequest } from "./js/api/patient.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -1330,7 +1331,7 @@ async function refreshDcm4cheeConsole() {
   setStatus("dcm4chee-console-status", "Refreshing...", "pending");
   try {
     const [patientsResult, ordersResult, diagnosticsResult] = await Promise.all([
-      requestJson("/api/patients?protocolVersion=DICOM"),
+      fetchPatients("DICOM"),
       requestJson("/api/orders"),
       requestJson("/api/dcm4chee/profile/diagnostics"),
     ]);
@@ -1520,7 +1521,7 @@ function fhirSyncStatusClass(status) {
 
 async function refreshPatients() {
   try {
-    const result = await requestJson("/api/patients");
+    const result = await fetchPatients();
     patientRecords = result.items || [];
     renderPatientRecordList();
     renderOrderPatientOptions();
@@ -1534,10 +1535,7 @@ async function createPatientRecord() {
   button.disabled = true;
   setStatus("patient-form-status", "Creating...", "pending");
   try {
-    const result = await requestJson("/api/patients", {
-      method: "POST",
-      body: JSON.stringify(patientFormPayload()),
-    });
+    const result = await createPatient(patientFormPayload());
     const item = result.item;
     const syncStatus = item.fhir?.sync?.status || item.dcm4chee?.patient?.status || "";
     setStatus(
@@ -1567,7 +1565,7 @@ async function retryPatientFhirSync(patientId, button) {
   button.disabled = true;
   setStatus("patient-form-status", "Retrying FHIR sync...", "pending");
   try {
-    const result = await requestJson(`/api/patients/${patientId}/fhir-sync`, { method: "POST" });
+    const result = await retryPatientFhirSyncRequest(patientId);
     const syncStatus = result.item?.fhir?.sync?.status || "";
     setStatus(
       "patient-form-status",
@@ -1587,10 +1585,7 @@ async function refreshPatientDcm4cheeResults(patientId, button, options = {}) {
   setStatus("patient-form-status", "Refreshing dcm4chee results...", "pending");
   if (options.orderId) setStatus("order-form-status", "Refreshing PACS results...", "pending");
   try {
-    const result = await requestJsonAllowBusinessFailure(`/api/patients/${patientId}/dcm4chee-results-refresh`, {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    const result = await refreshPatientDcm4cheeResultsRequest(patientId);
     const patient = result.patient || {};
     patientRecords = patientRecords.map((item) => Number(item.id) === Number(patient.id) ? patient : item);
     setSelectedPatientId(patient.id || getSelectedPatientId());
@@ -2510,10 +2505,7 @@ async function createGdtPatientFromOrderFlow() {
   button.disabled = true;
   setStatus("order-form-status", "Creating patient...", "pending");
   try {
-    const result = await requestJson("/api/patients", {
-      method: "POST",
-      body: JSON.stringify(gdtPatientFormPayload()),
-    });
+    const result = await createPatient(gdtPatientFormPayload());
     await refreshPatients();
     byId("order-patient").value = String(result.item.id);
     setStatus("order-form-status", "Patient ready for GDT order", "success");
