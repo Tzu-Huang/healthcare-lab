@@ -1,5 +1,6 @@
-import { createElement, byId } from "../core/dom.js";
-import { hl7Escape, hl7EscapeComposite, hl7Timestamp, localDatetimeValue } from "../core/formatting.js";
+import { createElement, byId, rowCell } from "../core/dom.js";
+import { hl7Escape, hl7EscapeComposite, hl7Timestamp, localDatetimeValue, taipeiTimestamp } from "../core/formatting.js";
+import { getGdtOrderRecords, getOrderRecords } from "../state/order.js";
 import { getPatientRecords } from "../state/patient.js";
 import { getSelectedPatientId, setSelectedPatientId } from "../state/selection.js";
 
@@ -397,4 +398,85 @@ export function buildOrderPreviewPayload(payload, patient) {
     `ORC|NW|${orderNumber}|||||^^^${hl7Escape(requestedAt)}^${hl7Escape(payload.priority)}||${timestamp}|||${hl7EscapeComposite(payload.orderingProvider)}`,
     `OBR|1|${orderNumber}||${serviceId}|${hl7Escape(payload.priority)}|${hl7Escape(requestedAt)}||||||||${hl7Escape(payload.clinicalIndication)}|||${hl7EscapeComposite(payload.orderingProvider)}`,
   ].join("\r");
+}
+
+export function renderOrderRecordList() {
+  const body = byId("order-record-list");
+  const records = [...getOrderRecords(), ...getGdtOrderRecords()].sort((left, right) => {
+    const rightTime = new Date(right.createdAt || 0).getTime();
+    const leftTime = new Date(left.createdAt || 0).getTime();
+    return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
+  });
+  body.replaceChildren();
+  if (!records.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell("No local orders created yet.");
+    cell.colSpan = 8;
+    cell.className = "muted";
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  records.forEach((item) => {
+    const row = document.createElement("tr");
+    const summary = item.summary || {};
+    const rowMode = orderRecordMode(item);
+    const orderNumber = rowMode === "gdt" ? item.localGdtOrderNumber : item.localOrderNumber;
+    const orderCode = rowMode === "gdt" ? summary.testCode : summary.orderCode;
+    const statusLabel = orderStateLabel(item, rowMode);
+    const statusClass = statusLabel === "Accepted" ? "success" : "error";
+    row.append(
+      rowCell(orderNumber || item.id),
+      rowCell(orderModeLabel(item, rowMode)),
+      rowCell(summary.mrn),
+      rowCell(orderVisitNumber(item)),
+      rowCell(summary.name),
+      rowCell(orderCode),
+      rowCell(createElement("span", statusLabel, `status ${statusClass}`)),
+      rowCell(taipeiTimestamp(item.createdAt)),
+    );
+    row.addEventListener("click", () => orderCoordinator.selectRecord?.(item, rowMode));
+    body.appendChild(row);
+  });
+}
+
+export function orderVisitNumber(item) {
+  const summary = item?.summary || {};
+  return summary.visitNumber || summary.visitId || item?.visitNumber || item?.visitId || "-";
+}
+
+export function orderRecordMode(item) {
+  if (item.protocolVersion === "FHIR R4") return "fhir";
+  if (item.protocolVersion === "GDT 2.1") return "gdt";
+  if (item.protocolVersion === "DICOM") return "dicom";
+  return "hl7-v251";
+}
+
+export function orderListKey(item) {
+  return `${orderRecordMode(item)}:${item.id}`;
+}
+
+export function orderModeLabel(item, mode) {
+  if (mode === "fhir" || item.protocolVersion === "FHIR R4") return "FHIR";
+  if (mode === "gdt" || item.protocolVersion === "GDT 2.1") return "GDT";
+  if (mode === "dicom" || item.protocolVersion === "DICOM") return "DICOM";
+  return "HL7 v2";
+}
+
+export function orderStateLabel(item, mode) {
+  if (mode === "fhir") {
+    const serviceRequest = item.fhir?.serviceRequest || {};
+    const serviceRequestReference = serviceRequest.medplum?.reference || "";
+    return serviceRequest.sync?.status === "Synced"
+      && /^ServiceRequest\/[^/]+$/.test(serviceRequestReference)
+      ? "Accepted"
+      : "Error";
+  }
+  if (mode === "dicom") {
+    const mwl = item.dcm4chee?.mwl || {};
+    const status = mwl.mapping?.status || mwl.status || mwl.displayStatus || "";
+    return status === "Created" ? "Accepted" : "Error";
+  }
+  const status = String(item.status || "").toLowerCase();
+  return ["error", "rejected", "transport error"].includes(status) ? "Error" : "Accepted";
 }
