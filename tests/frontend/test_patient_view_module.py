@@ -40,11 +40,12 @@ class PatientViewModuleTests(unittest.TestCase):
         self.assertIn('../core/dom.js', self.source)
 
     def test_patient_view_owns_patient_record_table(self):
-        for owner in ("patientStateLabel", "renderPatientRecordList"):
+        for owner in ("patientStateLabel", "renderPatientRecordList", "renderPatientSummaryFromPayload"):
             self.assertIn(f"export function {owner}", self.source)
             self.assertNotIn(f"function {owner}", self.bootstrap)
         self.assertIn('byId("patient-record-list")', self.source)
         self.assertIn("onSelect(item)", self.source)
+        self.assertIn("renderDetailBlock", self.source)
 
     def test_patient_preview_uses_shared_formatting_without_transport(self):
         self.assertIn('../core/formatting.js', self.source)

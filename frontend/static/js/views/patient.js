@@ -188,6 +188,46 @@ export function renderPatientRecordList(records, { onSelect } = {}) {
   });
 }
 
+export function renderPatientSummaryFromPayload(
+  payload,
+  createdAt = "",
+  dcm4cheePatient = null,
+  { renderDetailBlock } = {},
+) {
+  const container = byId("patient-summary");
+  container.replaceChildren();
+  const rows = [
+    ["MRN", patientPreviewMrn(payload)],
+    ["Name", [payload.firstName, payload.middleName, payload.lastName].filter(Boolean).join(" ")],
+    ["DOB", payload.dob],
+    ["Sex", payload.sex],
+    ["Email", payload.email],
+    ["Class", payload.patientClass || "O"],
+    ["Visit", payload.visitNumber || "Generated on create"],
+    ["Location", payload.assignedLocation],
+    ["Created", taipeiTimestamp(createdAt)],
+  ];
+  rows.forEach(([label, value]) => {
+    const item = document.createElement("p");
+    item.appendChild(createElement("strong", `${label}: `));
+    item.appendChild(document.createTextNode(value || "-"));
+    container.appendChild(item);
+  });
+  if (dcm4cheePatient && renderDetailBlock) {
+    container.appendChild(renderDetailBlock("dcm4chee Patient", [
+      ["Status", dcm4cheePatient.displayStatus || dcm4cheePatient.status],
+      ["Retryable", dcm4cheePatient.retryable ? "Yes" : "No"],
+      ["Patient ID", dcm4cheePatient.patientId],
+      ["Issuer", dcm4cheePatient.issuerOfPatientId],
+      ["HL7", dcm4cheePatient.hl7Host && dcm4cheePatient.hl7Port ? `${dcm4cheePatient.hl7Host}:${dcm4cheePatient.hl7Port}` : ""],
+      ["ACK", dcm4cheePatient.ack?.code],
+      ["Error Type", dcm4cheePatient.lastErrorType],
+      ["Error", dcm4cheePatient.lastError],
+      ["Last Sync", dcm4cheePatient.lastSyncAt],
+    ]));
+  }
+}
+
 export function patientPreviewMrn(payload) {
   return String(payload?.mrn || "").trim() || GENERATED_PATIENT_MRN_LABEL;
 }
