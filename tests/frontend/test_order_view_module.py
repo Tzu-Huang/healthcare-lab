@@ -57,6 +57,12 @@ class OrderViewModuleTests(unittest.TestCase):
         for contract in ("ORM^O01^ORM_O01", 'resourceType: "ServiceRequest"', '"00400100"', '["8402", "EKG01"]'):
             self.assertIn(contract, self.source)
 
+    def test_order_view_owns_preview_lifecycle(self):
+        for owner in ("configureOrderCoordinator", "refreshOrderPreview", "initializeOrderView"):
+            self.assertIn(f"export function {owner}", self.source)
+            self.assertNotIn(f"function {owner}", self.bootstrap)
+        self.assertIn("initializeOrderView({", self.bootstrap)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,6 +12,7 @@ export const ORDER_MODE_CONFIG = {
 
 const ORDER_PATIENT_PROTOCOL_BY_MODE = { "hl7-v251": "HL7 v2.5.1", fhir: "FHIR R4", gdt: "GDT 2.1", dicom: "DICOM" };
 const ORDER_PATIENT_LABEL_BY_MODE = { "hl7-v251": "HL7 v2", fhir: "FHIR R4", gdt: "GDT", dicom: "DICOM" };
+let orderCoordinator = {};
 
 export const orderDemoPreset = {
   priority: "R", orderingProvider: "1001^WANG^AMY", clinicalIndication: "Chest pain evaluation",
@@ -172,6 +173,38 @@ export function renderOrderValidation(messages) {
     messages.forEach((message) => list.appendChild(createElement("li", message)));
     container.appendChild(list);
   }
+}
+
+export function configureOrderCoordinator(coordinator = {}) {
+  orderCoordinator = coordinator;
+}
+
+export function refreshOrderPreview() {
+  updateOrderModeFields();
+  const payload = orderFormPayload();
+  const patient = selectedOrderPatient();
+  const messages = validateOrderPayload(payload);
+  renderOrderValidation(messages);
+  orderCoordinator.renderSummary?.(payload, patient);
+  byId("order-payload-preview").textContent = messages.length
+    ? ORDER_MODE_CONFIG[currentOrderMode()].emptyPreview
+    : buildOrderPreviewPayload(payload, patient);
+}
+
+export function initializeOrderView({ onCreate, onRefresh, onCopy, onCreateGdtPatient }) {
+  byId("load-order-demo").addEventListener("click", () => {
+    setOrderForm(orderDemoPreset);
+    refreshOrderPreview();
+  });
+  document.querySelectorAll("#order-view input, #order-view select").forEach((element) => {
+    element.addEventListener("input", refreshOrderPreview);
+    element.addEventListener("change", refreshOrderPreview);
+  });
+  byId("refresh-order-preview").addEventListener("click", refreshOrderPreview);
+  byId("create-gdt-patient").addEventListener("click", onCreateGdtPatient);
+  byId("create-order").addEventListener("click", onCreate);
+  byId("refresh-orders").addEventListener("click", onRefresh);
+  byId("copy-order-payload").addEventListener("click", onCopy);
 }
 
 function renderGdtRecord(code, value) {

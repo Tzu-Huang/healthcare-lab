@@ -14,7 +14,7 @@ import { getGdtOrderRecords, getOrderRecords, getSelectedOrderRecordKey, setGdtO
 import { createPatient, fetchPatients } from "./js/api/patient.js";
 import { createOrder, fetchDcm4cheeAttempts, fetchGdtOrders, fetchOrders, simulateDcm4cheeApReturn as simulateDcm4cheeApReturnRequest, syncDcm4cheeOrder, verifyDcm4cheeMwl } from "./js/api/order.js";
 import { buildPatientGdtPreviewPayload, configurePatientCoordinator, createPatientRecord, initializePatientView, patientPreviewMrn, refreshPatientDcm4cheeResults, refreshPatientPreview, refreshPatients, renderPatientSummaryFromPayload, retryPatientFhirSync } from "./js/views/patient.js";
-import { ORDER_MODE_CONFIG, buildFhirOrderPreviewPayload, buildGdtOrderPreviewPayload, buildOrderPreviewPayload, currentOrderMode, orderDemoPreset, orderFormPayload, orderVisitId, renderOrderPatientOptions, renderOrderValidation, selectedOrderPatient, selectedOrderPatientReference, setOrderForm, updateOrderModeFields, validateOrderPayload } from "./js/views/order.js";
+import { configureOrderCoordinator, currentOrderMode, initializeOrderView, orderFormPayload, orderVisitId, refreshOrderPreview, renderOrderPatientOptions, selectedOrderPatient, selectedOrderPatientReference, updateOrderModeFields } from "./js/views/order.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -1258,18 +1258,6 @@ function selectOrderRecord(item, mode) {
   if (mode === "dicom") loadDcm4cheeAttemptHistory(item.id);
 }
 
-function refreshOrderPreview() {
-  updateOrderModeFields();
-  const payload = orderFormPayload();
-  const patient = selectedOrderPatient();
-  const messages = validateOrderPayload(payload);
-  renderOrderValidation(messages);
-  renderOrderSummary(payload, patient);
-  byId("order-payload-preview").textContent = messages.length
-    ? ORDER_MODE_CONFIG[currentOrderMode()].emptyPreview
-    : buildOrderPreviewPayload(payload, patient);
-}
-
 function renderOrderRecordList() {
   const body = byId("order-record-list");
   const records = [...getOrderRecords(), ...getGdtOrderRecords()].sort((left, right) => {
@@ -1556,19 +1544,13 @@ const initializeApplication = () => {
     onRefresh: refreshPatients,
     onCopy: () => copyTextFromElement("patient-payload-preview"),
   });
-  byId("load-order-demo").addEventListener("click", () => {
-    setOrderForm(orderDemoPreset);
-    refreshOrderPreview();
+  configureOrderCoordinator({ renderSummary: renderOrderSummary });
+  initializeOrderView({
+    onCreate: createOrderRecord,
+    onRefresh: refreshOrders,
+    onCopy: () => copyTextFromElement("order-payload-preview"),
+    onCreateGdtPatient: createGdtPatientFromOrderFlow,
   });
-  document.querySelectorAll("#order-view input, #order-view select").forEach((element) => {
-    element.addEventListener("input", refreshOrderPreview);
-    element.addEventListener("change", refreshOrderPreview);
-  });
-  byId("refresh-order-preview").addEventListener("click", refreshOrderPreview);
-  byId("create-gdt-patient").addEventListener("click", createGdtPatientFromOrderFlow);
-  byId("create-order").addEventListener("click", createOrderRecord);
-  byId("refresh-orders").addEventListener("click", refreshOrders);
-  byId("copy-order-payload").addEventListener("click", () => copyTextFromElement("order-payload-preview"));
   byId("refresh-dcm4chee-console").addEventListener("click", refreshDcm4cheeConsole);
   byId("dcm4chee-patient-select").addEventListener("change", (event) => {
     if (event.target.value) selectDcm4cheePatient(Number(event.target.value));

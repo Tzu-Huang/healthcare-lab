@@ -336,7 +336,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("medplum-service-request-select", fhir_script)
         self.assertIn("medplum-diagnostic-report-select", fhir_script)
         self.assertIn("medplum-related-row", fhir_script)
-        self.assertIn("buildFhirOrderPreviewPayload", script)
+        self.assertIn("buildFhirOrderPreviewPayload", order_script)
         self.assertIn("FHIR Order requires a synced FHIR Patient", order_script)
         self.assertIn('payload.mode === "hl7-v251"', order_script)
         self.assertIn("FHIR order code is required.", order_script)
