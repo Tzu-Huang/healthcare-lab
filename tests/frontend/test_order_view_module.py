@@ -34,6 +34,18 @@ class OrderViewModuleTests(unittest.TestCase):
         self.assertIn("getPatientRecords()", self.source)
         self.assertIn("setSelectedPatientId", self.source)
 
+    def test_order_view_owns_form_and_validation_behavior(self):
+        for owner in (
+            "fhirOrderPayload",
+            "orderFormPayload",
+            "setFhirOrderForm",
+            "setOrderForm",
+            "validateOrderPayload",
+            "renderOrderValidation",
+        ):
+            self.assertIn(f"export function {owner}", self.source)
+            self.assertNotIn(f"function {owner}", self.bootstrap)
+
 
 if __name__ == "__main__":
     unittest.main()
