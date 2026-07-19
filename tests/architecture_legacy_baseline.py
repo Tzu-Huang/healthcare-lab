@@ -166,8 +166,8 @@ dcm4cheeOrderLabel dcm4cheeOrderPatient dcm4cheeOrderPreviewPayload dcm4cheeOrde
 dcm4cheeOrderStatus dcm4cheeOrderVerificationStatus dcm4cheePatientLabel dcm4cheePatientSection
 dcm4cheeResultKey dcm4cheeResultStatusClass dcm4cheeWorkflowStatusClass dcm4cheeWorkflowSummary
  ensureDcm4cheeSelection
-fhirConcept fhirOrderField
-fhirOrderPayload fhirReferenceList fhirSyncStatusClass
+fhirConcept
+fhirReferenceList fhirSyncStatusClass
 gdtPatientFormPayload
 groupDcm4cheeResultsForBrowser
 loadDcm4cheeAttemptHistory
@@ -177,7 +177,7 @@ loadDcm4cheeAttemptHistory
 
 
 
- openGdtOrderFlow orderAccountNumber orderFormPayload orderListKey
+ openGdtOrderFlow orderAccountNumber orderListKey
 orderModeLabel
 orderRecordMode orderStateLabel orderVisitId orderVisitNumber
 refreshDcm4cheeConsole
@@ -198,7 +198,7 @@ renderGdtMessage renderGdtRecord
 
 
 renderOrderRecordList
-renderOrderSummary renderOrderValidation renderPatientDcm4cheeResults
+renderOrderSummary renderPatientDcm4cheeResults
 renderPatientSummaryFromRecord
 
 
@@ -209,10 +209,10 @@ selectDcm4cheePatient
 
 
  selectedOrderPayloadPreview
-sendDcm4cheeOrder setFhirOrderForm setOrderForm
+sendDcm4cheeOrder
 simulateDcm4cheeApReturn splitFhirList
  summarizeDcm4cheeResultGroup
-validateOrderPayload verifyDcm4cheeOrder
+verifyDcm4cheeOrder
 
 """.split())
 
@@ -251,8 +251,6 @@ dcm4cheeWorkflowStatusClass|ddaeab2efb1f6853
 dcm4cheeWorkflowSummary|d4891b00848e1520
 ensureDcm4cheeSelection|9ffd3778b6cc2d6c
 fhirConcept|95bfe7b4e5a4bd57
-fhirOrderField|c74c765b0ac4aedc
-fhirOrderPayload|550ee8fdfd94902e
 fhirReferenceList|10ec74c08ba5dd99
 fhirSyncStatusClass|d8f2fca5e3492941
 gdtPatientFormPayload|c64195a464e6f026
@@ -260,7 +258,6 @@ groupDcm4cheeResultsForBrowser|66f107b0638fc2f9
 loadDcm4cheeAttemptHistory|780c47f76b623488
 openGdtOrderFlow|9d2a252ce82f8051
 orderAccountNumber|6a917d4b155cda08
-orderFormPayload|7b3529715e75b2ee
 orderListKey|a3ec6dbb96876e80
 orderModeLabel|bd5864e4fcc7dc43
 orderRecordMode|b5bfa84fae5b63ab
@@ -293,7 +290,6 @@ renderGdtMessage|3c00507446576905
 renderGdtRecord|1b9f17ffdfa1c5fc
 renderOrderRecordList|17aae283e9505a3d
 renderOrderSummary|97f03a710b8a6181
-renderOrderValidation|b86c7af4719aff91
 renderPatientDcm4cheeResults|3dd8c0f6e08e3c3e
 renderPatientSummaryFromRecord|2bd38af1fb047a06
 retryDcm4cheeOrder|c2872d929d12a3c6
@@ -304,12 +300,9 @@ selectedDcm4cheeOrder|9d6ef51237211668
 selectedDcm4cheePatient|d54a2251e79b80e9
 selectedOrderPayloadPreview|05d63ddcf629ccc1
 sendDcm4cheeOrder|932ae4dc22a576e8
-setFhirOrderForm|0f05f464d96dcb55
-setOrderForm|1f5ce669e5fe820c
 simulateDcm4cheeApReturn|0ecb9a066cbb1f13
 splitFhirList|40c983243807ca21
 summarizeDcm4cheeResultGroup|4c6ce8b2862bada6
-validateOrderPayload|f38aab922de8c8c1
 verifyDcm4cheeOrder|27f61e43101f5b36
 """.strip().splitlines()
 )
