@@ -75,6 +75,20 @@ class OrderViewModuleTests(unittest.TestCase):
             self.assertIn(f"export function {owner}", self.source)
             self.assertNotIn(f"function {owner}", self.bootstrap)
 
+    def test_order_view_owns_async_order_and_dcm4chee_actions(self):
+        for owner in (
+            "refreshOrders",
+            "retryDcm4cheeOrder",
+            "sendDcm4cheeOrder",
+            "verifyDcm4cheeOrder",
+            "simulateDcm4cheeApReturn",
+            "refreshOrderWorkspace",
+            "createOrderRecord",
+        ):
+            self.assertIn(f"export async function {owner}", self.source)
+            self.assertNotIn(f"function {owner}", self.bootstrap)
+        self.assertIn('../api/order.js', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

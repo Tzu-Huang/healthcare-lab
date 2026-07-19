@@ -9,12 +9,12 @@ import { initializeDashboardView, refreshDashboard, statusClass as dashboardStat
 import { initializeGdtView, refreshGdtConsole, selectedGdtPatient as selectedGdtPatientFromView } from "./js/views/gdt.js";
 import { initializeFhirView, refreshMedplumInventory } from "./js/views/fhir.js";
 import { getSelectedOrderId, getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "./js/state/selection.js";
-import { getPatientRecords, replacePatientRecord, setPatientRecords } from "./js/state/patient.js";
-import { getGdtOrderRecords, getOrderRecords, getSelectedOrderRecordKey, setGdtOrderRecords, setOrderRecords, setSelectedOrderRecordKey } from "./js/state/order.js";
+import { getPatientRecords, setPatientRecords } from "./js/state/patient.js";
+import { getOrderRecords, setOrderRecords, setSelectedOrderRecordKey } from "./js/state/order.js";
 import { createPatient, fetchPatients } from "./js/api/patient.js";
-import { createOrder, fetchDcm4cheeAttempts, fetchGdtOrders, fetchOrders, simulateDcm4cheeApReturn as simulateDcm4cheeApReturnRequest, syncDcm4cheeOrder, verifyDcm4cheeMwl } from "./js/api/order.js";
+import { fetchDcm4cheeAttempts, fetchOrders } from "./js/api/order.js";
 import { buildPatientGdtPreviewPayload, configurePatientCoordinator, createPatientRecord, initializePatientView, patientPreviewMrn, refreshPatientDcm4cheeResults, refreshPatientPreview, refreshPatients, renderPatientSummaryFromPayload, retryPatientFhirSync } from "./js/views/patient.js";
-import { configureOrderCoordinator, currentOrderMode, initializeOrderView, orderFormPayload, orderListKey, orderRecordMode, orderVisitId, refreshOrderPreview, renderOrderPatientOptions, renderOrderRecordList, selectedOrderPatient, selectedOrderPatientReference, updateOrderModeFields } from "./js/views/order.js";
+import { configureOrderCoordinator, createOrderRecord, currentOrderMode, initializeOrderView, orderListKey, orderRecordMode, orderVisitId, refreshOrderPreview, refreshOrders, refreshOrderWorkspace, renderOrderPatientOptions, renderOrderRecordList, retryDcm4cheeOrder, selectedOrderPatientReference, sendDcm4cheeOrder, simulateDcm4cheeApReturn, updateOrderModeFields, verifyDcm4cheeOrder } from "./js/views/order.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -1258,139 +1258,6 @@ function selectOrderRecord(item, mode) {
   if (mode === "dicom") loadDcm4cheeAttemptHistory(item.id);
 }
 
-async function refreshOrders() {
-  try {
-    const [ordersResult, gdtOrdersResult] = await Promise.all([
-      fetchOrders(),
-      fetchGdtOrders(),
-    ]);
-    setOrderRecords(ordersResult.items || []);
-    setGdtOrderRecords(gdtOrdersResult.items || []);
-    renderOrderRecordList();
-    const selected = [...getOrderRecords(), ...getGdtOrderRecords()]
-      .find((item) => orderListKey(item) === getSelectedOrderRecordKey());
-    if (selected) selectOrderRecord(selected, orderRecordMode(selected));
-  } catch (error) {
-    setStatus("order-form-status", "Refresh failed", "error");
-  }
-}
-
-async function retryDcm4cheeOrder(orderId, button) {
-  if (button) button.disabled = true;
-  setStatus("order-form-status", "Retrying dcm4chee sync...", "pending");
-  try {
-    const result = await syncDcm4cheeOrder(orderId);
-    const mwl = result.item?.dcm4chee?.mwl || {};
-    setStatus("order-form-status", mwl.displayStatus || "dcm4chee sync updated", result.success ? "success" : "error");
-    setSelectedOrderId(orderId);
-    await refreshOrders();
-    await refreshDcm4cheeConsole();
-  } catch (error) {
-    setStatus("order-form-status", "Retry failed", "error");
-    setStatus("dcm4chee-console-status", error.message, "error");
-    byId("order-payload-preview").textContent = error.message;
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
-
-async function sendDcm4cheeOrder(orderId, button) {
-  if (!orderId) return;
-  if (button) button.disabled = true;
-  setStatus("dcm4chee-send-status", "Sending...", "pending");
-  setStatus("dcm4chee-console-status", "Sending MWL order...", "pending");
-  try {
-    const result = await syncDcm4cheeOrder(orderId);
-    const mwl = result.item?.dcm4chee?.mwl || {};
-    setSelectedOrderId(orderId);
-    if (result.item?.patientRecordId) setSelectedPatientId(result.item.patientRecordId);
-    await refreshDcm4cheeConsole();
-    const label = mwl.displayStatus || (result.success ? "Order sent" : "Send failed");
-    setStatus("dcm4chee-send-status", label, result.success ? "success" : "error");
-  } catch (error) {
-    setStatus("dcm4chee-send-status", error.message, "error");
-    setStatus("dcm4chee-console-status", error.message, "error");
-  } finally {
-    if (button) button.disabled = !selectedDcm4cheeOrder();
-  }
-}
-
-async function verifyDcm4cheeOrder(orderId, button) {
-  if (button) button.disabled = true;
-  setStatus("order-form-status", "Verifying dcm4chee MWL...", "pending");
-  try {
-    const result = await verifyDcm4cheeMwl(orderId);
-    const verification = result.verification || {};
-    const status = verification.status || "MWL verification updated";
-    setStatus("order-form-status", status, result.success ? "success" : "error");
-    setSelectedOrderId(orderId);
-    await refreshOrders();
-    await refreshDcm4cheeConsole();
-  } catch (error) {
-    setStatus("order-form-status", "Verification failed", "error");
-    setStatus("dcm4chee-console-status", error.message, "error");
-    byId("order-payload-preview").textContent = error.message;
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
-
-async function simulateDcm4cheeApReturn(orderId, button, type = "both") {
-  if (button) button.disabled = true;
-  setStatus("order-form-status", "Recording simulated AP return...", "pending");
-  try {
-    const result = await simulateDcm4cheeApReturnRequest(orderId, type);
-    setStatus("order-form-status", `Simulated AP ${type.toUpperCase()} result recorded`, "success");
-    if (result.patient) {
-      replacePatientRecord(result.patient);
-    }
-    await refreshPatients();
-    await refreshOrders();
-    refreshDcm4cheeConsole();
-  } catch (error) {
-    setStatus("order-form-status", error.message, "error");
-    setStatus("dcm4chee-console-status", error.message, "error");
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
-
-async function refreshOrderWorkspace() {
-  updateOrderModeFields();
-  await refreshPatients();
-  await refreshOrders();
-  refreshOrderPreview();
-}
-
-async function createOrderRecord() {
-  const button = byId("create-order");
-  button.disabled = true;
-  setStatus("order-form-status", "Creating...", "pending");
-  try {
-    const mode = currentOrderMode();
-    const result = await createOrder(orderFormPayload(), mode);
-    const item = result.item;
-    setStatus(
-      "order-form-status",
-      mode === "gdt"
-        ? "GDT ECG order created"
-        : mode === "fhir"
-          ? "FHIR order created"
-          : mode === "dicom"
-            ? "DICOM MWL order created"
-            : "Local order created",
-      "success",
-    );
-    byId("order-payload-preview").textContent = item.payload || "";
-    await refreshOrders();
-  } catch (error) {
-    setStatus("order-form-status", "Create failed", "error");
-    byId("order-payload-preview").textContent = error.message;
-  } finally {
-    button.disabled = false;
-  }
-}
-
 function gdtPatientFormPayload() {
   return {
     mode: "gdt",
@@ -1463,7 +1330,13 @@ const initializeApplication = () => {
     onRefresh: refreshPatients,
     onCopy: () => copyTextFromElement("patient-payload-preview"),
   });
-  configureOrderCoordinator({ renderSummary: renderOrderSummary, selectRecord: selectOrderRecord });
+  configureOrderCoordinator({
+    renderSummary: renderOrderSummary,
+    selectRecord: selectOrderRecord,
+    refreshPatients,
+    refreshDcm4cheeConsole,
+    selectedDcm4cheeOrder,
+  });
   initializeOrderView({
     onCreate: createOrderRecord,
     onRefresh: refreshOrders,

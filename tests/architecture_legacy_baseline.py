@@ -157,7 +157,6 @@ FRONTEND_FUNCTION_NAME_INVENTORY: frozenset[str] = frozenset("""
 
  byId
   createGdtPatientFromOrderFlow
-createOrderRecord
  dcm4cheeActionsForResult dcm4cheeConsoleOrders dcm4cheeConsolePatients
 dcm4cheeCopyButton dcm4cheeDetailBlock dcm4cheeDisplayStatus dcm4cheeFirstArtifact
 dcm4cheeFirstValue dcm4cheeNestedTable dcm4cheeOpenButton dcm4cheeOrderActionButtons
@@ -178,7 +177,6 @@ loadDcm4cheeAttemptHistory
  openGdtOrderFlow
 refreshDcm4cheeConsole
 
- refreshOrderWorkspace refreshOrders
 renderDcm4cheeAttemptHistory renderDcm4cheeConsole renderDcm4cheeExpandedOrders
 renderDcm4cheeExpandedResults renderDcm4cheeInstanceTable renderDcm4cheeOrderActions
 renderDcm4cheePatientList renderDcm4cheePreview renderDcm4cheeProfileSummary
@@ -197,17 +195,13 @@ renderOrderSummary renderPatientDcm4cheeResults
 renderPatientSummaryFromRecord
 
 
-retryDcm4cheeOrder
  selectDcm4cheeOrder
 selectDcm4cheePatient
  selectOrderRecord selectedDcm4cheeOrder selectedDcm4cheePatient
 
 
  selectedOrderPayloadPreview
-sendDcm4cheeOrder
-simulateDcm4cheeApReturn
  summarizeDcm4cheeResultGroup
-verifyDcm4cheeOrder
 
 """.split())
 
@@ -217,7 +211,6 @@ FRONTEND_FUNCTION_BASELINE: frozenset[tuple[str, str]] = frozenset(
 <module-prefix>|e3b0c44298fc1c14
 byId|bbbd640b3fc69975
 createGdtPatientFromOrderFlow|86197c052f7ec659
-createOrderRecord|a60dfa7ecb6e7154
 dcm4cheeActionsForResult|49b20326dcc6f71e
 dcm4cheeConsoleOrders|48d70810110335ae
 dcm4cheeConsolePatients|9b67ad23504bded2
@@ -248,8 +241,6 @@ groupDcm4cheeResultsForBrowser|66f107b0638fc2f9
 loadDcm4cheeAttemptHistory|780c47f76b623488
 openGdtOrderFlow|9d2a252ce82f8051
 refreshDcm4cheeConsole|363fe2a39148735b
-refreshOrderWorkspace|e764382daebb7625
-refreshOrders|b96ec08b9f5a068d
 renderDcm4cheeAttemptHistory|108e4210ed93c5fb
 renderDcm4cheeConsole|d6e893288e1d6cc8
 renderDcm4cheeExpandedOrders|5ed6c4844d9b2c77
@@ -273,17 +264,13 @@ renderGdtRecord|1b9f17ffdfa1c5fc
 renderOrderSummary|97f03a710b8a6181
 renderPatientDcm4cheeResults|3dd8c0f6e08e3c3e
 renderPatientSummaryFromRecord|2bd38af1fb047a06
-retryDcm4cheeOrder|c2872d929d12a3c6
 selectDcm4cheeOrder|3705ba0cbe46d211
 selectDcm4cheePatient|d791a29ae0d23328
 selectOrderRecord|3a9316c56c6814ed
 selectedDcm4cheeOrder|9d6ef51237211668
 selectedDcm4cheePatient|d54a2251e79b80e9
 selectedOrderPayloadPreview|05d63ddcf629ccc1
-sendDcm4cheeOrder|932ae4dc22a576e8
-simulateDcm4cheeApReturn|0ecb9a066cbb1f13
 summarizeDcm4cheeResultGroup|4c6ce8b2862bada6
-verifyDcm4cheeOrder|27f61e43101f5b36
 """.strip().splitlines()
 )
 
