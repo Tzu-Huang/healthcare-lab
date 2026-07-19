@@ -10,15 +10,13 @@ import { initializeGdtView, refreshGdtConsole, selectedGdtPatient as selectedGdt
 import { initializeFhirView, refreshMedplumInventory } from "./js/views/fhir.js";
 import { getSelectedOrderId, getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "./js/state/selection.js";
 import { getPatientRecords, replacePatientRecord, setPatientRecords } from "./js/state/patient.js";
+import { getGdtOrderRecords, getOrderRecords, getSelectedOrderRecordKey, setGdtOrderRecords, setOrderRecords, setSelectedOrderRecordKey } from "./js/state/order.js";
 import { createPatient, fetchPatients } from "./js/api/patient.js";
 import { createOrder, fetchDcm4cheeAttempts, fetchGdtOrders, fetchOrders, simulateDcm4cheeApReturn as simulateDcm4cheeApReturnRequest, syncDcm4cheeOrder, verifyDcm4cheeMwl } from "./js/api/order.js";
 import { buildPatientGdtPreviewPayload, configurePatientCoordinator, createPatientRecord, initializePatientView, patientPreviewMrn, refreshPatientDcm4cheeResults, refreshPatientPreview, refreshPatients, renderPatientSummaryFromPayload, retryPatientFhirSync } from "./js/views/patient.js";
 
 const byId = (id) => document.getElementById(id);
 
-let orderRecords = [];
-let gdtOrderRecords = [];
-let selectedOrderRecordKey = "";
 let dcm4cheeProfileDiagnostics = null;
 let expandedDcm4cheePatientIds = new Set();
 
@@ -521,7 +519,7 @@ function renderPatientSummaryFromRecord(item) {
 
 function dcm4cheeConsolePatients() {
   const patientIdsWithDicomOrders = new Set(
-    orderRecords
+    getOrderRecords()
       .filter((item) => item.protocolVersion === "DICOM" && item.patientRecordId)
       .map((item) => Number(item.patientRecordId)),
   );
@@ -533,7 +531,7 @@ function dcm4cheeConsolePatients() {
 }
 
 function dcm4cheeConsoleOrders(patientId = getSelectedPatientId()) {
-  return orderRecords.filter((item) => (
+  return getOrderRecords().filter((item) => (
     item.protocolVersion === "DICOM"
     && (!patientId || Number(item.patientRecordId) === Number(patientId))
   ));
@@ -546,7 +544,7 @@ function selectedDcm4cheePatient() {
 
 function selectedDcm4cheeOrder() {
   const selectedId = Number(getSelectedOrderId() || 0);
-  return orderRecords.find((item) => item.protocolVersion === "DICOM" && Number(item.id) === selectedId) || null;
+  return getOrderRecords().find((item) => item.protocolVersion === "DICOM" && Number(item.id) === selectedId) || null;
 }
 
 function dcm4cheePatientLabel(patient) {
@@ -1008,7 +1006,7 @@ async function refreshDcm4cheeConsole() {
       requestJson("/api/dcm4chee/profile/diagnostics"),
     ]);
     setPatientRecords(patientsResult.items || []);
-    orderRecords = ordersResult.items || [];
+    setOrderRecords(ordersResult.items || []);
     dcm4cheeProfileDiagnostics = diagnosticsResult;
     renderDcm4cheeConsole();
     setStatus(
@@ -1731,7 +1729,7 @@ function selectedOrderPayloadPreview(item, mode) {
 function selectOrderRecord(item, mode) {
   setSelectedOrderId(item.id);
   setSelectedPatientId(item.patientRecordId || null);
-  selectedOrderRecordKey = orderListKey(item);
+  setSelectedOrderRecordKey(orderListKey(item));
   const summary = item.summary || {};
   const selectedPatient = getPatientRecords().find((patient) => Number(patient.id) === Number(item.patientRecordId));
   byId("order-payload-preview").textContent = selectedOrderPayloadPreview(item, mode);
@@ -1772,7 +1770,7 @@ function refreshOrderPreview() {
 
 function renderOrderRecordList() {
   const body = byId("order-record-list");
-  const records = [...orderRecords, ...gdtOrderRecords].sort((left, right) => {
+  const records = [...getOrderRecords(), ...getGdtOrderRecords()].sort((left, right) => {
     const rightTime = new Date(right.createdAt || 0).getTime();
     const leftTime = new Date(left.createdAt || 0).getTime();
     return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
@@ -1857,10 +1855,11 @@ async function refreshOrders() {
       fetchOrders(),
       fetchGdtOrders(),
     ]);
-    orderRecords = ordersResult.items || [];
-    gdtOrderRecords = gdtOrdersResult.items || [];
+    setOrderRecords(ordersResult.items || []);
+    setGdtOrderRecords(gdtOrdersResult.items || []);
     renderOrderRecordList();
-    const selected = [...orderRecords, ...gdtOrderRecords].find((item) => orderListKey(item) === selectedOrderRecordKey);
+    const selected = [...getOrderRecords(), ...getGdtOrderRecords()]
+      .find((item) => orderListKey(item) === getSelectedOrderRecordKey());
     if (selected) selectOrderRecord(selected, orderRecordMode(selected));
   } catch (error) {
     setStatus("order-form-status", "Refresh failed", "error");
