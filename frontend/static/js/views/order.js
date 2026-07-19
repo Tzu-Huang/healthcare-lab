@@ -1,5 +1,5 @@
 import { createElement, byId } from "../core/dom.js";
-import { hl7Timestamp, localDatetimeValue } from "../core/formatting.js";
+import { hl7Escape, hl7EscapeComposite, hl7Timestamp, localDatetimeValue } from "../core/formatting.js";
 import { getPatientRecords } from "../state/patient.js";
 import { getSelectedPatientId, setSelectedPatientId } from "../state/selection.js";
 
@@ -172,4 +172,196 @@ export function renderOrderValidation(messages) {
     messages.forEach((message) => list.appendChild(createElement("li", message)));
     container.appendChild(list);
   }
+}
+
+function renderGdtRecord(code, value) {
+  const fieldCode = String(code || "").trim();
+  const content = String(value ?? "").trim().replace(/[\r\n]+/g, " ");
+  return `${String(3 + 4 + content.length + 2).padStart(3, "0")}${fieldCode}${content}\r\n`;
+}
+
+function renderGdtMessage(records, setType) {
+  let totalLength = "00000";
+  for (let index = 0; index < 8; index += 1) {
+    const payload = [["8000", setType], ["8100", totalLength], ["9218", "02.10"], ["9206", "3"], ...records]
+      .map(([code, value]) => renderGdtRecord(code, value)).join("");
+    const nextLength = String(payload.length).padStart(5, "0");
+    if (nextLength === totalLength) return payload;
+    totalLength = nextLength;
+  }
+  return "";
+}
+
+export function orderVisitId(patient) {
+  return patient?.visitNumber || "VISIT-ORD-GENERATED";
+}
+
+function orderAccountNumber(patient) {
+  return patient?.accountNumber || "ACC-ORD-GENERATED";
+}
+
+export function buildGdtOrderPreviewPayload(payload, patient) {
+  const patientData = patient?.patient || {};
+  const summary = patient?.summary || {};
+  const dob = summary.dob || "";
+  const birthDate = dob.length === 8 ? `${dob.slice(6)}${dob.slice(4, 6)}${dob.slice(0, 4)}` : dob;
+  const records = [
+    ["8315", "LABGDT"],
+    ["8316", "HCLAB"],
+    ["3000", summary.mrn || ""],
+    ["3101", patientData.lastName || ""],
+    ["3102", patientData.firstName || ""],
+    ["3103", birthDate],
+    ["6200", "GDT-ORD-GENERATED"],
+    ["8402", "EKG01"],
+  ];
+  const sexCode = { M: "1", F: "2" }[summary.sex];
+  if (sexCode) records.push(["3110", sexCode]);
+  if (payload.requestedAt) records.push(["6220", payload.requestedAt]);
+  if (payload.orderingProvider) records.push(["6227", payload.orderingProvider]);
+  if (payload.clinicalIndication) records.push(["6228", payload.clinicalIndication]);
+  return renderGdtMessage(records, "6302");
+}
+
+function splitFhirList(value) {
+  return String(value || "")
+    .replaceAll(",", "\n")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function fhirReferenceList(value) {
+  return splitFhirList(value).map((reference) => ({ reference }));
+}
+
+function fhirConcept(text, code = "", system = "", display = "") {
+  const concept = {};
+  if (text) concept.text = text;
+  if (code || system || display) {
+    const coding = {};
+    if (system) coding.system = system;
+    if (code) coding.code = code;
+    if (display) coding.display = display;
+    concept.coding = [coding];
+    if (!concept.text) concept.text = display || code;
+  }
+  return concept;
+}
+
+export function buildFhirOrderPreviewPayload(payload) {
+  const fhir = payload.fhir || {};
+  const resource = {
+    resourceType: "ServiceRequest",
+    status: fhir.status || "active",
+    intent: fhir.intent || "order",
+    subject: { reference: selectedOrderPatientReference() || "Patient/<synced-id>" },
+    identifier: [
+      {
+        system: fhir.identifierSystem || "https://healthcare-lab.local/fhir/identifier/service-request",
+        value: fhir.identifierValue || "local-order-records-generated",
+      },
+    ],
+    code: fhirConcept(
+      fhir.codeDisplay || orderDemoPreset.orderCodeText,
+      fhir.codeCode || orderDemoPreset.orderCode,
+      fhir.codeSystem || "urn:healthcare-lab:service-code",
+      fhir.codeDisplay || orderDemoPreset.orderCodeText,
+    ),
+  };
+  if (fhir.id) resource.id = fhir.id;
+  splitFhirList(fhir.identifier).forEach((item) => {
+    const [system, value] = item.includes("|") ? item.split("|", 2) : ["", item];
+    resource.identifier.push(system ? { system, value } : { value });
+  });
+  if (fhir.instantiatesCanonical) resource.instantiatesCanonical = splitFhirList(fhir.instantiatesCanonical);
+  if (fhir.instantiatesUri) resource.instantiatesUri = splitFhirList(fhir.instantiatesUri);
+  ["basedOn", "replaces", "reasonReference", "insurance", "supportingInfo", "specimen", "relevantHistory"].forEach((key) => {
+    const references = fhirReferenceList(fhir[key]);
+    if (references.length) resource[key] = references;
+  });
+  if (fhir.requisitionSystem || fhir.requisitionValue) {
+    resource.requisition = {};
+    if (fhir.requisitionSystem) resource.requisition.system = fhir.requisitionSystem;
+    if (fhir.requisitionValue) resource.requisition.value = fhir.requisitionValue;
+  }
+  if (fhir.category) resource.category = [fhirConcept(fhir.category)];
+  if (fhir.priority) resource.priority = fhir.priority;
+  resource.doNotPerform = Boolean(fhir.doNotPerform);
+  if (fhir.orderDetail) resource.orderDetail = [fhirConcept(fhir.orderDetail)];
+  if (fhir.quantityValue || fhir.quantityUnit) {
+    resource.quantityQuantity = {};
+    if (fhir.quantityValue) resource.quantityQuantity.value = Number(fhir.quantityValue);
+    if (fhir.quantityUnit) resource.quantityQuantity.unit = fhir.quantityUnit;
+  }
+  if (fhir.encounter) resource.encounter = { reference: fhir.encounter };
+  if (fhir.occurrenceDateTime) resource.occurrenceDateTime = fhir.occurrenceDateTime;
+  if (typeof fhir.asNeededBoolean === "boolean") resource.asNeededBoolean = fhir.asNeededBoolean;
+  if (fhir.asNeededCodeText) resource.asNeededCodeableConcept = fhirConcept(fhir.asNeededCodeText);
+  if (fhir.authoredOn) resource.authoredOn = fhir.authoredOn;
+  if (fhir.requester) resource.requester = fhir.requester.includes("/") ? { reference: fhir.requester } : { display: fhir.requester };
+  if (fhir.performerType) resource.performerType = fhirConcept(fhir.performerType);
+  const performer = fhirReferenceList(fhir.performer);
+  if (performer.length) resource.performer = performer;
+  if (fhir.locationCode) resource.locationCode = [fhirConcept(fhir.locationCode)];
+  const locationReference = fhirReferenceList(fhir.locationReference);
+  if (locationReference.length) resource.locationReference = locationReference;
+  if (fhir.reasonCodeText) resource.reasonCode = [fhirConcept(fhir.reasonCodeText)];
+  if (fhir.bodySite) resource.bodySite = [fhirConcept(fhir.bodySite)];
+  if (fhir.note) resource.note = [{ text: fhir.note }];
+  if (fhir.patientInstruction) resource.patientInstruction = fhir.patientInstruction;
+  return JSON.stringify(resource, null, 2);
+}
+
+export function buildOrderPreviewPayload(payload, patient) {
+  if (payload.mode === "gdt") return buildGdtOrderPreviewPayload(payload, patient);
+  if (payload.mode === "fhir") return buildFhirOrderPreviewPayload(payload, patient);
+  if (payload.mode === "dicom") {
+    const patientData = patient?.patient || {};
+    const summary = patient?.summary || {};
+    return JSON.stringify({
+      "00100010": { vr: "PN", Value: [{ Alphabetic: [patientData.lastName, patientData.firstName, patientData.middleName].filter(Boolean).join("^") }] },
+      "00100020": { vr: "LO", Value: [summary.mrn || ""] },
+      "00100021": { vr: "LO", Value: ["local-dcm4chee"] },
+      "00100030": { vr: "DA", Value: [summary.dob || ""] },
+      "00100040": { vr: "CS", Value: [summary.sex || "U"] },
+      "00080050": { vr: "SH", Value: ["ACC-GENERATED"] },
+      "0020000D": { vr: "UI", Value: ["UID-GENERATED"] },
+      "00401001": { vr: "SH", Value: ["RP-GENERATED"] },
+      "00741202": { vr: "LO", Value: [payload.orderCodeText || orderDemoPreset.orderCodeText] },
+      "00400100": {
+        vr: "SQ",
+        Value: [{
+          "00400001": { vr: "AE", Value: ["ECG_AP"] },
+          "00400009": { vr: "SH", Value: ["SPS-GENERATED"] },
+          "00400020": { vr: "CS", Value: ["SCHEDULED"] },
+        }],
+      },
+    }, null, 2);
+  }
+  const timestamp = hl7Timestamp();
+  const requestedAt = payload.requestedAt || timestamp;
+  const orderNumber = "ORD-GENERATED";
+  const patientData = patient?.patient || {};
+  const summary = patient?.summary || {};
+  const patientName = [
+    patientData.lastName,
+    patientData.firstName,
+    patientData.middleName,
+  ].map(hl7Escape).filter(Boolean).join("^");
+  const serviceId = [
+    payload.orderCode || orderDemoPreset.orderCode,
+    orderDemoPreset.orderCodeText,
+    "L",
+    payload.alternateCode || orderDemoPreset.alternateCode,
+    orderDemoPreset.alternateCodeText,
+    orderDemoPreset.alternateCodeSystem,
+  ].map(hl7Escape).join("^");
+  return [
+    `MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|${timestamp}||ORM^O01^ORM_O01|ORMPREVIEW${timestamp}|P|2.5.1||||||UNICODE UTF-8`,
+    `PID|1||${hl7Escape(summary.mrn)}^^^HEALTHCARE_LAB^MR||${patientName}||${hl7Escape(summary.dob)}|${hl7Escape(summary.sex)}|||||||||||${hl7Escape(orderAccountNumber(patient))}`,
+    `PV1|1|${hl7Escape(patient?.patientClass || "O")}|${hl7EscapeComposite(patient?.assignedLocation || "")}||||${hl7EscapeComposite(payload.orderingProvider)}||||||||||||${hl7Escape(orderVisitId(patient))}`,
+    `ORC|NW|${orderNumber}|||||^^^${hl7Escape(requestedAt)}^${hl7Escape(payload.priority)}||${timestamp}|||${hl7EscapeComposite(payload.orderingProvider)}`,
+    `OBR|1|${orderNumber}||${serviceId}|${hl7Escape(payload.priority)}|${hl7Escape(requestedAt)}||||||||${hl7Escape(payload.clinicalIndication)}|||${hl7EscapeComposite(payload.orderingProvider)}`,
+  ].join("\r");
 }

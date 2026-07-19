@@ -155,8 +155,7 @@ workflow|backend/dashboard_services.py|<module>._RESOURCE_SNAPSHOT_CACHE_LOCK|c3
 
 FRONTEND_FUNCTION_NAME_INVENTORY: frozenset[str] = frozenset("""
 
- buildFhirOrderPreviewPayload buildGdtOrderPreviewPayload
-buildOrderPreviewPayload byId
+ byId
   createGdtPatientFromOrderFlow
 createOrderRecord
  dcm4cheeActionsForResult dcm4cheeConsoleOrders dcm4cheeConsolePatients
@@ -166,8 +165,7 @@ dcm4cheeOrderLabel dcm4cheeOrderPatient dcm4cheeOrderPreviewPayload dcm4cheeOrde
 dcm4cheeOrderStatus dcm4cheeOrderVerificationStatus dcm4cheePatientLabel dcm4cheePatientSection
 dcm4cheeResultKey dcm4cheeResultStatusClass dcm4cheeWorkflowStatusClass dcm4cheeWorkflowSummary
  ensureDcm4cheeSelection
-fhirConcept
-fhirReferenceList fhirSyncStatusClass
+fhirSyncStatusClass
 gdtPatientFormPayload
 groupDcm4cheeResultsForBrowser
 loadDcm4cheeAttemptHistory
@@ -177,9 +175,9 @@ loadDcm4cheeAttemptHistory
 
 
 
- openGdtOrderFlow orderAccountNumber orderListKey
+ openGdtOrderFlow orderListKey
 orderModeLabel
-orderRecordMode orderStateLabel orderVisitId orderVisitNumber
+orderRecordMode orderStateLabel orderVisitNumber
 refreshDcm4cheeConsole
 
  refreshOrderPreview refreshOrderWorkspace refreshOrders
@@ -210,7 +208,7 @@ selectDcm4cheePatient
 
  selectedOrderPayloadPreview
 sendDcm4cheeOrder
-simulateDcm4cheeApReturn splitFhirList
+simulateDcm4cheeApReturn
  summarizeDcm4cheeResultGroup
 verifyDcm4cheeOrder
 
@@ -221,9 +219,6 @@ FRONTEND_FUNCTION_BASELINE: frozenset[tuple[str, str]] = frozenset(
     for line in """
 <module-prefix>|e3b0c44298fc1c14
 byId|bbbd640b3fc69975
-buildFhirOrderPreviewPayload|f74813ed4a5d3994
-buildGdtOrderPreviewPayload|2ce27ec95d4cb1fb
-buildOrderPreviewPayload|29c39842e5808a98
 createGdtPatientFromOrderFlow|86197c052f7ec659
 createOrderRecord|a60dfa7ecb6e7154
 dcm4cheeActionsForResult|49b20326dcc6f71e
@@ -250,19 +245,15 @@ dcm4cheeResultStatusClass|d5a75ef7659d061a
 dcm4cheeWorkflowStatusClass|ddaeab2efb1f6853
 dcm4cheeWorkflowSummary|d4891b00848e1520
 ensureDcm4cheeSelection|9ffd3778b6cc2d6c
-fhirConcept|95bfe7b4e5a4bd57
-fhirReferenceList|10ec74c08ba5dd99
 fhirSyncStatusClass|d8f2fca5e3492941
 gdtPatientFormPayload|c64195a464e6f026
 groupDcm4cheeResultsForBrowser|66f107b0638fc2f9
 loadDcm4cheeAttemptHistory|780c47f76b623488
 openGdtOrderFlow|9d2a252ce82f8051
-orderAccountNumber|6a917d4b155cda08
 orderListKey|a3ec6dbb96876e80
 orderModeLabel|bd5864e4fcc7dc43
 orderRecordMode|b5bfa84fae5b63ab
 orderStateLabel|99e85e8413f1a79b
-orderVisitId|926611e93a737933
 orderVisitNumber|e5e3d9608612cbee
 refreshDcm4cheeConsole|363fe2a39148735b
 refreshOrderPreview|4279f76d09a5d2f4
@@ -301,7 +292,6 @@ selectedDcm4cheePatient|d54a2251e79b80e9
 selectedOrderPayloadPreview|05d63ddcf629ccc1
 sendDcm4cheeOrder|932ae4dc22a576e8
 simulateDcm4cheeApReturn|0ecb9a066cbb1f13
-splitFhirList|40c983243807ca21
 summarizeDcm4cheeResultGroup|4c6ce8b2862bada6
 verifyDcm4cheeOrder|27f61e43101f5b36
 """.strip().splitlines()

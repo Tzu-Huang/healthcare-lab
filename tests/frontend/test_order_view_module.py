@@ -46,6 +46,17 @@ class OrderViewModuleTests(unittest.TestCase):
             self.assertIn(f"export function {owner}", self.source)
             self.assertNotIn(f"function {owner}", self.bootstrap)
 
+    def test_order_view_owns_protocol_preview_builders(self):
+        for owner in (
+            "buildGdtOrderPreviewPayload",
+            "buildFhirOrderPreviewPayload",
+            "buildOrderPreviewPayload",
+        ):
+            self.assertIn(f"export function {owner}", self.source)
+            self.assertNotIn(f"function {owner}", self.bootstrap)
+        for contract in ("ORM^O01^ORM_O01", 'resourceType: "ServiceRequest"', '"00400100"', '["8402", "EKG01"]'):
+            self.assertIn(contract, self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
