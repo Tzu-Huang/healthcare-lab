@@ -10,7 +10,7 @@ import { initializeGdtView, refreshGdtConsole, selectedGdtPatient as selectedGdt
 import { initializeFhirView, refreshMedplumInventory } from "./js/views/fhir.js";
 import { getSelectedOrderId, getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "./js/state/selection.js";
 import { createPatient, fetchPatients, refreshPatientDcm4cheeResults as refreshPatientDcm4cheeResultsRequest, retryPatientFhirSync as retryPatientFhirSyncRequest } from "./js/api/patient.js";
-import { PATIENT_MODE_CONFIG, buildPatientGdtPreviewPayload, buildPatientPreviewPayload, patientDemoPresetForMode, patientFormPayload, patientPreviewMrn, renderPatientRecordList, renderPatientValidation, setPatientForm, updatePatientModeFields, validatePatientPayload } from "./js/views/patient.js";
+import { PATIENT_MODE_CONFIG, buildPatientGdtPreviewPayload, buildPatientPreviewPayload, patientDemoPresetForMode, patientFormPayload, patientPreviewMrn, renderPatientRecordList, renderPatientSummaryFromPayload, renderPatientValidation, setPatientForm, updatePatientModeFields, validatePatientPayload } from "./js/views/patient.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -217,41 +217,6 @@ function renderGdtMessage(records, setType) {
     totalLength = nextLength;
   }
   return "";
-}
-
-function renderPatientSummaryFromPayload(payload, createdAt = "", dcm4cheePatient = null) {
-  const container = byId("patient-summary");
-  container.replaceChildren();
-  const rows = [
-    ["MRN", patientPreviewMrn(payload)],
-    ["Name", [payload.firstName, payload.middleName, payload.lastName].filter(Boolean).join(" ")],
-    ["DOB", payload.dob],
-    ["Sex", payload.sex],
-    ["Email", payload.email],
-    ["Class", payload.patientClass || "O"],
-    ["Visit", payload.visitNumber || "Generated on create"],
-    ["Location", payload.assignedLocation],
-    ["Created", taipeiTimestamp(createdAt)],
-  ];
-  rows.forEach(([label, value]) => {
-    const item = document.createElement("p");
-    item.appendChild(createElement("strong", `${label}: `));
-    item.appendChild(document.createTextNode(value || "-"));
-    container.appendChild(item);
-  });
-  if (dcm4cheePatient) {
-    container.appendChild(dcm4cheeDetailBlock("dcm4chee Patient", [
-      ["Status", dcm4cheePatient.displayStatus || dcm4cheePatient.status],
-      ["Retryable", dcm4cheePatient.retryable ? "Yes" : "No"],
-      ["Patient ID", dcm4cheePatient.patientId],
-      ["Issuer", dcm4cheePatient.issuerOfPatientId],
-      ["HL7", dcm4cheePatient.hl7Host && dcm4cheePatient.hl7Port ? `${dcm4cheePatient.hl7Host}:${dcm4cheePatient.hl7Port}` : ""],
-      ["ACK", dcm4cheePatient.ack?.code],
-      ["Error Type", dcm4cheePatient.lastErrorType],
-      ["Error", dcm4cheePatient.lastError],
-      ["Last Sync", dcm4cheePatient.lastSyncAt],
-    ]));
-  }
 }
 
 function dcm4cheeResultStatusClass(status) {
@@ -549,7 +514,7 @@ function renderPatientSummaryFromRecord(item) {
     visitNumber: item.visitNumber,
     patientClass: item.patientClass,
     assignedLocation: item.assignedLocation,
-  }, item.createdAt);
+  }, item.createdAt, item.dcm4chee?.patient || null, { renderDetailBlock: dcm4cheeDetailBlock });
   renderPatientDcm4cheeResults(byId("patient-summary"), item);
 }
 
@@ -1211,7 +1176,7 @@ async function createPatientRecord() {
       visitNumber: item.visitNumber,
       patientClass: item.patientClass,
       assignedLocation: item.assignedLocation,
-    }, item.createdAt, item.dcm4chee?.patient || null);
+    }, item.createdAt, item.dcm4chee?.patient || null, { renderDetailBlock: dcm4cheeDetailBlock });
     await refreshPatients();
   } catch (error) {
     setStatus("patient-form-status", "Create failed", "error");
