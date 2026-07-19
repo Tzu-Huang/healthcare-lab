@@ -228,6 +228,33 @@ export function renderPatientSummaryFromPayload(
   }
 }
 
+export function refreshPatientPreview() {
+  const payload = patientFormPayload();
+  updatePatientModeFields(payload.mode);
+  const messages = validatePatientPayload(payload);
+  renderPatientValidation(messages);
+  renderPatientSummaryFromPayload(payload);
+  const config = PATIENT_MODE_CONFIG[payload.mode] || PATIENT_MODE_CONFIG["hl7-v2"];
+  byId("patient-payload-preview").textContent = messages.length
+    ? config.emptyPreview
+    : buildPatientPreviewPayload(payload);
+}
+
+export function initializePatientView({ onCreate, onRefresh, onCopy }) {
+  byId("load-patient-demo").addEventListener("click", () => {
+    setPatientForm(patientDemoPresetForMode(byId("patient-mode").value));
+    refreshPatientPreview();
+  });
+  document.querySelectorAll("#patient-view input, #patient-view select").forEach((element) => {
+    element.addEventListener("input", refreshPatientPreview);
+    element.addEventListener("change", refreshPatientPreview);
+  });
+  byId("refresh-patient-preview").addEventListener("click", refreshPatientPreview);
+  byId("create-patient").addEventListener("click", onCreate);
+  byId("refresh-patients").addEventListener("click", onRefresh);
+  byId("copy-patient-payload").addEventListener("click", onCopy);
+}
+
 export function patientPreviewMrn(payload) {
   return String(payload?.mrn || "").trim() || GENERATED_PATIENT_MRN_LABEL;
 }

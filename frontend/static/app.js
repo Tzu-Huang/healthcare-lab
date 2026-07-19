@@ -10,7 +10,7 @@ import { initializeGdtView, refreshGdtConsole, selectedGdtPatient as selectedGdt
 import { initializeFhirView, refreshMedplumInventory } from "./js/views/fhir.js";
 import { getSelectedOrderId, getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "./js/state/selection.js";
 import { createPatient, fetchPatients, refreshPatientDcm4cheeResults as refreshPatientDcm4cheeResultsRequest, retryPatientFhirSync as retryPatientFhirSyncRequest } from "./js/api/patient.js";
-import { PATIENT_MODE_CONFIG, buildPatientGdtPreviewPayload, buildPatientPreviewPayload, patientDemoPresetForMode, patientFormPayload, patientPreviewMrn, renderPatientRecordList, renderPatientSummaryFromPayload, renderPatientValidation, setPatientForm, updatePatientModeFields, validatePatientPayload } from "./js/views/patient.js";
+import { buildPatientGdtPreviewPayload, initializePatientView, patientFormPayload, patientPreviewMrn, refreshPatientPreview, renderPatientRecordList, renderPatientSummaryFromPayload } from "./js/views/patient.js";
 
 const byId = (id) => document.getElementById(id);
 
@@ -1114,18 +1114,6 @@ function renderDcm4cheeOrderActions(orderId, patientId, mwl = {}, mapping = {}) 
   return actions;
 }
 
-function refreshPatientPreview() {
-  const payload = patientFormPayload();
-  updatePatientModeFields(payload.mode);
-  const messages = validatePatientPayload(payload);
-  renderPatientValidation(messages);
-  renderPatientSummaryFromPayload(payload);
-  const config = PATIENT_MODE_CONFIG[payload.mode] || PATIENT_MODE_CONFIG["hl7-v2"];
-  byId("patient-payload-preview").textContent = messages.length
-    ? config.emptyPreview
-    : buildPatientPreviewPayload(payload);
-}
-
 function renderPatientRecords() {
   renderPatientRecordList(patientRecords, {
     onSelect: (item) => {
@@ -2171,26 +2159,19 @@ const initializeApplication = () => {
   initializeOieView();
   initializeGdtView({ buildPatientPreviewPayload: buildPatientGdtPreviewPayload });
   initializeFhirView();
-  byId("load-patient-demo").addEventListener("click", () => {
-    setPatientForm(patientDemoPresetForMode(byId("patient-mode").value));
-    refreshPatientPreview();
+  initializePatientView({
+    onCreate: createPatientRecord,
+    onRefresh: refreshPatients,
+    onCopy: () => copyTextFromElement("patient-payload-preview"),
   });
   byId("load-order-demo").addEventListener("click", () => {
     setOrderForm(orderDemoPreset);
     refreshOrderPreview();
   });
-  document.querySelectorAll("#patient-view input, #patient-view select").forEach((element) => {
-    element.addEventListener("input", refreshPatientPreview);
-    element.addEventListener("change", refreshPatientPreview);
-  });
   document.querySelectorAll("#order-view input, #order-view select").forEach((element) => {
     element.addEventListener("input", refreshOrderPreview);
     element.addEventListener("change", refreshOrderPreview);
   });
-  byId("refresh-patient-preview").addEventListener("click", refreshPatientPreview);
-  byId("create-patient").addEventListener("click", createPatientRecord);
-  byId("refresh-patients").addEventListener("click", refreshPatients);
-  byId("copy-patient-payload").addEventListener("click", () => copyTextFromElement("patient-payload-preview"));
   byId("refresh-order-preview").addEventListener("click", refreshOrderPreview);
   byId("create-gdt-patient").addEventListener("click", createGdtPatientFromOrderFlow);
   byId("create-order").addEventListener("click", createOrderRecord);
