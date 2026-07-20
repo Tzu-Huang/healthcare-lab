@@ -36,10 +36,10 @@
 
 ## 6. Settings UI Safety Surface
 
-- [ ] 6.1 Present managed and external Channels distinctly with classification, identity evidence, current status, and read-only external controls.
-- [ ] 6.2 Add owned-field previews before every action and disable actions for conflicts, stale state, unsupported transitions, or missing confirmation.
-- [ ] 6.3 Add explicit delete confirmation tied to the logical type and clear step-level presentation for success, failure, partial failure, and required refresh.
-- [ ] 6.4 Add frontend tests proving there is no bulk/force/adopt/redeploy-all control and that stale/conflict/external states cannot trigger mutation requests.
+- [x] 6.1 Present managed and external Channels distinctly with classification, identity evidence, current status, and read-only external controls.
+- [x] 6.2 Add owned-field previews before every action and disable actions for conflicts, stale state, unsupported transitions, or missing confirmation.
+- [x] 6.3 Add explicit delete confirmation tied to the logical type and clear step-level presentation for success, failure, partial failure, and required refresh.
+- [x] 6.4 Add frontend tests proving there is no bulk/force/adopt/redeploy-all control and that stale/conflict/external states cannot trigger mutation requests.
 
 ## 7. Verification
 
