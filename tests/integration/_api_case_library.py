@@ -42,6 +42,12 @@ from backend.lab_store import (
     DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
     render_gdt_message,
 )
+from tests.support import (
+    DisposableAppCase,
+    FakeDbConnection,
+    FakeDockerSocketLabOperationAdapter,
+    FakeHttpResponse,
+)
 
 
 def frontend_styles() -> str:
@@ -65,92 +71,7 @@ def frontend_styles() -> str:
     )
 
 
-class FakeHttpResponse:
-    def __init__(self, body, status=200):
-        self.body = body
-        self.status = status
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        return False
-
-    def read(self):
-        return self.body
-
-
-class FakeDockerSocketLabOperationAdapter(DockerSocketLabOperationAdapter):
-    def __init__(self):
-        super().__init__()
-        self.requested_paths = []
-
-    def is_available(self) -> bool:
-        return True
-
-    def containers_for_service(self, service_name):
-        return [{"Id": "container-1", "Names": [f"/{service_name}-1"]}]
-
-    def request(self, method, path):
-        self.requested_paths.append(path)
-        return 204, b""
-
-
-class FakeDbCursor:
-    def __init__(self, rows=None, execute_error=None):
-        self.rows = rows or []
-        self.execute_error = execute_error
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        return False
-
-    def execute(self, query, params):
-        if self.execute_error:
-            raise self.execute_error
-
-    def fetchall(self):
-        return self.rows
-
-
-class FakeDbConnection:
-    def __init__(self, rows=None, execute_error=None):
-        self.rows = rows or []
-        self.execute_error = execute_error
-        self.closed = False
-
-    def cursor(self):
-        return FakeDbCursor(self.rows, self.execute_error)
-
-    def close(self):
-        self.closed = True
-
-
-class HealthcareLabApiTests(unittest.TestCase):
-    def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        app = create_app(str(Path(self.temp_dir.name) / "app.db"))
-        app.config.update(
-            TESTING=True,
-            GDT_BRIDGE_PATH=str(Path(self.temp_dir.name) / "gdt-bridge"),
-            MEDPLUM_CLIENT_ID="demo-client",
-            MEDPLUM_CLIENT_SECRET="demo-secret",
-            MEDPLUM_SCOPE="openid",
-            MEDPLUM_TOKEN_URL="",
-            OIE_MLLP_ORDER_HOST="localhost",
-            DCM4CHEE_DIMSE_HOST="127.0.0.1",
-            DCM4CHEE_HL7_HOST="127.0.0.1",
-            DCM4CHEE_DICOMWEB_BASE_URL="http://127.0.0.1:8082/dcm4chee-arc/aets/WORKLIST/rs",
-            DCM4CHEE_QIDO_RS_URL="http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
-            DCM4CHEE_WADO_RS_URL="http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
-            DCM4CHEE_STOW_RS_URL="http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs",
-        )
-        self.client = app.test_client()
-
-    def tearDown(self):
-        self.temp_dir.cleanup()
+class HealthcareLabApiTests(DisposableAppCase):
 
     @staticmethod
     def oie_settings_payload(**overrides):
@@ -4485,6 +4406,19 @@ class HealthcareLabApiTests(unittest.TestCase):
             ),
             "Down",
         )
+
+# This file remains an auditable case library while feature owner modules
+# register selected methods. Removing the public test names prevents unittest
+# from collecting the legacy catch-all class directly.
+for _method_name in tuple(
+    name for name in vars(HealthcareLabApiTests) if name.startswith("test_")
+):
+    setattr(
+        HealthcareLabApiTests,
+        "_case_" + _method_name[5:],
+        getattr(HealthcareLabApiTests, _method_name),
+    )
+    delattr(HealthcareLabApiTests, _method_name)
 
 
 if __name__ == "__main__":
