@@ -36,7 +36,7 @@
 
 ## 6. CSS and template ownership
 
-- [ ] 6.1 Establish base, layout, component, and feature-view CSS layers while preserving the characterized cascade order and making the retained global stylesheet a thin loader.
+- [x] 6.1 Establish base, layout, component, and feature-view CSS layers while preserving the characterized cascade order and making the retained global stylesheet a thin loader.
 - [ ] 6.2 Scope feature-only selectors beneath their owning workspace and verify existing responsive behavior at representative desktop and narrow viewport widths.
 - [ ] 6.3 Move stabilized Dashboard, Patient, Order, FHIR, dcm4chee, OIE, and GDT markup into feature-owned Flask partials while preserving DOM IDs, accessibility semantics, and route rendering.
 - [ ] 6.4 Keep the application shell and sidebar ownership explicit, reserve the Settings include point, and update structural tests so they follow rendered ownership rather than one physical template file.

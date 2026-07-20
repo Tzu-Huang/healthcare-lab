@@ -44,6 +44,14 @@ from backend.lab_store import (
 )
 
 
+def frontend_styles() -> str:
+    root = Path(__file__).resolve().parents[2] / "frontend" / "static" / "css"
+    return "\n".join(
+        (root / path).read_text(encoding="utf-8")
+        for path in ("base.css", "layout.css", "components.css", "views/application.css")
+    )
+
+
 class FakeHttpResponse:
     def __init__(self, body, status=200):
         self.body = body
@@ -354,8 +362,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("Live Results", html)
         self.assertNotIn("Task", html)
 
-        styles_path = Path(__file__).resolve().parents[2] / "frontend" / "static" / "styles.css"
-        styles = styles_path.read_text(encoding="utf-8")
+        styles = frontend_styles()
         self.assertIn(".medplum-patient-toggle", styles)
         self.assertIn(".medplum-patient-detail-row td", styles)
         self.assertIn(".medplum-patient-rollup-content", styles)
@@ -363,8 +370,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn(".medplum-context-column", styles)
 
     def test_sidebar_views_hide_inactive_pages(self):
-        styles_path = Path(__file__).resolve().parents[2] / "frontend" / "static" / "styles.css"
-        styles = styles_path.read_text(encoding="utf-8")
+        styles = frontend_styles()
         self.assertIn(".app-view[hidden]", styles)
         self.assertIn("display: none", styles)
         self.assertIn(".patient-local-table-wrap", styles)
@@ -2778,7 +2784,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertIn("AP C-STORE Result", dcm4chee_view)
         self.assertIn("Reconciliation", dcm4chee_view)
 
-        styles = Path("frontend/static/styles.css").read_text(encoding="utf-8")
+        styles = frontend_styles()
         self.assertIn(".dcm4chee-workflow-strip", styles)
         self.assertIn(".dcm4chee-console-grid", styles)
         self.assertIn(".dcm4chee-workflow-panel", styles)
