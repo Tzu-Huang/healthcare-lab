@@ -43,12 +43,13 @@ frontend/static/
   js/
     api/           # HTTP calls only
     views/         # patient, order, FHIR, GDT, OIE, dcm4chee, and dashboard views
-    components/    # reusable tables, buttons, summaries, and protocol previews
+    components/    # reusable presentation used by at least two feature contracts
     state/         # selection and workspace state without DOM or transport logic
   css/
-    base/          # tokens, reset, typography, and layout primitives
-    components/    # reusable component styles
-    views/         # bounded-context workspace styles
+    base.css       # tokens, reset, and typography
+    layout.css     # application shell, sidebar, and shared responsive layout
+    components.css # reusable component styles
+    views/         # bounded-context workspace styles scoped by view root
 
 tests/
   api/
@@ -101,11 +102,11 @@ implementation begins.
 | Lab control-plane | Docker socket/CLI resource collection in `backend/dashboard_services.py` | transport | `backend/clients/docker.py` | `tests/clients/test_docker.py` | no new transport in the catch-all module |
 | Lab control-plane | Health checks, operations, smoke checks, dashboard actions, and resource snapshot coordination | workflow / HTTP | `backend/services/lab_workflow.py`, `backend/services/dashboard_workflow.py`, lab/dashboard API modules | matching service/API tests | existing services/APIs are owners |
 | Application | Dependency construction, Blueprint registration, and configured runtime startup in `backend/app_factory.py` | composition | `backend/app_factory.py` | `tests/integration/test_app_factory.py` | this is the composition owner, not a general facade |
-| Frontend | HTTP helpers currently in `frontend/static/app.js` | transport | `frontend/static/js/api/` by bounded context | browser/E2E tests | `app.js` remains a loader/legacy entrypoint only |
-| Frontend | Patient, order, FHIR, GDT, OIE, dcm4chee, and dashboard rendering in `app.js` | view | `frontend/static/js/views/` by bounded context | browser/E2E tests | retained functions form a frozen baseline |
-| Frontend | Tables, buttons, summaries, protocol previews, and shared DOM helpers in `app.js` | component | `frontend/static/js/components/` | component/browser tests | retained functions form a frozen baseline |
-| Frontend | Selected records, filters, modes, and workspace state in `app.js` | state | `frontend/static/js/state/` | state/browser tests | retained globals form a frozen baseline |
-| Frontend | Base, component, and workspace rules in `frontend/static/styles.css` | presentation | `frontend/static/css/base/`, `components/`, `views/` | browser/E2E tests | retained selectors form a frozen baseline |
+| Frontend | Shared and feature HTTP operations | transport | `frontend/static/js/api/` by bounded context | focused API/browser tests | compatibility `app.js` imports `js/app.js` only |
+| Frontend | Patient, order, FHIR, GDT, OIE, dcm4chee, and dashboard rendering | view | `frontend/static/js/views/` by bounded context | focused view/browser tests | views initialize idempotently through the application coordinator |
+| Frontend | Status and genuinely reusable presentation | component | `frontend/static/js/components/` | component/browser tests | reuse requires at least two feature consumers without feature branching |
+| Frontend | Shared selections and feature-owned inventory/request state | state | `frontend/static/js/state/` | focused state/browser tests | cross-view coordination uses explicit selection/coordinator APIs |
+| Frontend | Base, layout, component, and scoped workspace rules | presentation | `frontend/static/css/*.css`, `frontend/static/css/views/` | characterization/browser tests | `styles.css` is an ordered import-only loader |
 | Tests | Mixed API, workflow, repository, runtime, and transport assertions in `tests/integration/test_app.py` | test | matching responsibility package under `tests/`; retain only cross-boundary cases in `integration/` | n/a | assertions move before legacy cases are removed |
 
 ## ZAC-62 workflow service ownership
