@@ -97,6 +97,13 @@ class FrontendCharacterizationTests(unittest.TestCase):
             self.style_loader.splitlines(),
         )
 
+    def test_stylesheet_layers_do_not_split_selector_rules(self):
+        owners = [path.read_text(encoding="utf-8") for path in STYLE_OWNERS]
+        for path, source in zip(STYLE_OWNERS, owners, strict=True):
+            with self.subTest(path=path.name):
+                self.assertTrue(source.rstrip().endswith("}"))
+        self.assertTrue(owners[2].lstrip().startswith("button,\n.button {"))
+
 
 if __name__ == "__main__":
     unittest.main()
