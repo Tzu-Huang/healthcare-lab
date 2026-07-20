@@ -6,7 +6,7 @@ class FhirStoreTests(StoreCaseSupport):
     """Focused assertion owner for FhirStoreTests."""
 
     def test_fhir_patient_common_fields_and_paired_ledger_metadata(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "fhir",
                 "mrn": "MRN-FHIR-001",
@@ -49,8 +49,8 @@ class FhirStoreTests(StoreCaseSupport):
             },
         )
 
-        fhir_record = self.store.create_patient_fhir_workflow_record(patient)
-        refreshed = self.store.get_patient_record(patient["id"])
+        fhir_record = self.dependencies.patient_fhir.create_patient_fhir_workflow_record(patient)
+        refreshed = self.dependencies.patient_repository.get_patient_record(patient["id"])
         self.assertEqual(fhir_record["resourceType"], "Patient")
         self.assertEqual(fhir_record["localSourceId"], str(patient["id"]))
         self.assertEqual(refreshed["fhir"]["recordId"], fhir_record["id"])
@@ -61,7 +61,7 @@ class FhirStoreTests(StoreCaseSupport):
         )
 
     def test_fhir_workflow_record_persists_status_identifier_and_resource(self):
-        item = self.store.create_fhir_workflow_record(
+        item = self.dependencies.fhir_ledger.create_fhir_workflow_record(
             {
                 "localSourceType": "local_patient_records",
                 "localSourceId": "1",
@@ -87,9 +87,9 @@ class FhirStoreTests(StoreCaseSupport):
                 "value": "local-patient-records-1",
             },
         )
-        self.assertEqual(self.store.list_fhir_workflow_records()[0]["id"], item["id"])
+        self.assertEqual(self.dependencies.fhir_ledger.list_fhir_workflow_records()[0]["id"], item["id"])
 
-        duplicate = self.store.create_fhir_workflow_record(
+        duplicate = self.dependencies.fhir_ledger.create_fhir_workflow_record(
             {
                 "localSourceType": "local_patient_records",
                 "localSourceId": "1",
@@ -101,12 +101,12 @@ class FhirStoreTests(StoreCaseSupport):
         )
         self.assertEqual(duplicate["id"], item["id"])
         self.assertTrue(duplicate["resource"]["active"])
-        self.assertEqual(len(self.store.list_fhir_workflow_records()), 1)
+        self.assertEqual(len(self.dependencies.fhir_ledger.list_fhir_workflow_records()), 1)
 
     def test_fhir_workflow_mapping_metadata_covers_supported_resources(self):
         mappings = {
             item["resourceType"]: item
-            for item in self.store.list_fhir_resource_mappings()
+            for item in list_fhir_resource_mappings()
         }
 
         self.assertEqual(
@@ -129,7 +129,7 @@ class FhirStoreTests(StoreCaseSupport):
         self.assertNotIn("Task", mappings["Provenance"]["dependsOn"])
 
     def test_fhir_order_builds_service_request_and_requires_synced_patient(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "fhir",
                 "mrn": "MRN-FHIR-ORDER-001",
@@ -141,16 +141,16 @@ class FhirStoreTests(StoreCaseSupport):
         )
 
         with self.assertRaisesRegex(SimulatorValidationError, "synced Medplum Patient"):
-            self.store.create_fhir_order_record({"mode": "fhir", "patientRecordId": patient["id"]})
+            self.dependencies.order_fhir.create_fhir_order_record({"mode": "fhir", "patientRecordId": patient["id"]})
 
-        patient_fhir = self.store.create_patient_fhir_workflow_record(patient)
-        self.store.mark_fhir_sync_success(
+        patient_fhir = self.dependencies.patient_fhir.create_patient_fhir_workflow_record(patient)
+        self.dependencies.fhir_ledger.mark_fhir_sync_success(
             patient_fhir["id"],
             medplum_resource_id="patient-1",
             medplum_resource_reference="Patient/patient-1",
         )
 
-        order = self.store.create_fhir_order_record(
+        order = self.dependencies.order_fhir.create_fhir_order_record(
             {
                 "mode": "fhir",
                 "patientRecordId": patient["id"],
@@ -183,20 +183,20 @@ class FhirStoreTests(StoreCaseSupport):
         self.assertEqual(resource["reasonCode"][0]["text"], "Chest pain evaluation")
         self.assertEqual(resource["note"][0]["text"], "Internal note")
 
-        service_request = self.store.create_order_service_request_fhir_workflow_record(order)
-        self.store.mark_fhir_sync_success(
+        service_request = self.dependencies.order_fhir.create_order_service_request_fhir_workflow_record(order)
+        self.dependencies.fhir_ledger.mark_fhir_sync_success(
             service_request["id"],
             medplum_resource_id="sr-1",
             medplum_resource_reference="ServiceRequest/sr-1",
         )
 
         self.assertEqual(service_request["identifier"]["value"], f"local-order-records-{order['id']}")
-        refreshed = self.store.get_order_record(order["id"])
+        refreshed = self.dependencies.order_repository.get_order_record(order["id"])
         self.assertEqual(refreshed["fhir"]["serviceRequest"]["resourceType"], "ServiceRequest")
         self.assertEqual(set(refreshed["fhir"]), {"serviceRequest"})
 
     def test_fhir_sync_attempts_and_failure_details_are_preserved(self):
-        item = self.store.create_fhir_workflow_record(
+        item = self.dependencies.fhir_ledger.create_fhir_workflow_record(
             {
                 "localSourceType": "local_order_records",
                 "localSourceId": "42",
@@ -212,9 +212,9 @@ class FhirStoreTests(StoreCaseSupport):
             "issue": [{"severity": "error", "diagnostics": "subject missing"}],
         }
 
-        syncing = self.store.mark_fhir_syncing(item["id"])
+        syncing = self.dependencies.fhir_ledger.mark_fhir_syncing(item["id"])
         self.assertEqual(syncing["sync"]["status"], "Syncing")
-        attempt = self.store.record_fhir_sync_attempt(
+        attempt = self.dependencies.fhir_ledger.record_fhir_sync_attempt(
             item["id"],
             method="POST",
             request_url="http://medplum/fhir/R4/ServiceRequest",
@@ -224,7 +224,7 @@ class FhirStoreTests(StoreCaseSupport):
             operation_outcome=outcome,
             error_text="Medplum returned HTTP 400",
         )
-        failed = self.store.mark_fhir_sync_failure(
+        failed = self.dependencies.fhir_ledger.mark_fhir_sync_failure(
             item["id"],
             error_text="Medplum returned HTTP 400",
             operation_outcome=outcome,
@@ -235,17 +235,17 @@ class FhirStoreTests(StoreCaseSupport):
         self.assertEqual(failed["sync"]["status"], "Sync failed")
         self.assertEqual(failed["sync"]["operationOutcome"], outcome)
         self.assertIn("HTTP 400", failed["sync"]["error"])
-        self.assertEqual(self.store.list_fhir_sync_attempts(item["id"])[0]["id"], attempt["id"])
+        self.assertEqual(self.dependencies.fhir_ledger.list_fhir_sync_attempts(item["id"])[0]["id"], attempt["id"])
 
     def test_fhir_sync_success_preserves_medplum_reference_and_ordering(self):
-        patient = self.store.create_fhir_workflow_record(
+        patient = self.dependencies.fhir_ledger.create_fhir_workflow_record(
             {
                 "localSourceType": "local_patient_records",
                 "localSourceId": "1",
                 "resource": {"resourceType": "Patient"},
             }
         )
-        report = self.store.create_fhir_workflow_record(
+        report = self.dependencies.fhir_ledger.create_fhir_workflow_record(
             {
                 "localSourceType": "local_fhir_results",
                 "localSourceId": "99",
@@ -253,11 +253,11 @@ class FhirStoreTests(StoreCaseSupport):
             }
         )
 
-        synced = self.store.mark_fhir_sync_success(
+        synced = self.dependencies.fhir_ledger.mark_fhir_sync_success(
             patient["id"],
             medplum_resource_id="patient-medplum-id",
         )
-        ordered = self.store.ordered_fhir_workflow_records([report["id"], patient["id"]])
+        ordered = self.dependencies.fhir_ledger.ordered_fhir_workflow_records([report["id"], patient["id"]])
 
         self.assertEqual(synced["sync"]["status"], "Synced")
         self.assertEqual(synced["medplum"]["id"], "patient-medplum-id")
@@ -265,26 +265,26 @@ class FhirStoreTests(StoreCaseSupport):
         self.assertEqual([item["resourceType"] for item in ordered], ["Patient", "DiagnosticReport"])
 
     def test_fhir_synced_record_update_marks_changed_payload_pending(self):
-        item = self.store.create_fhir_workflow_record(
+        item = self.dependencies.fhir_ledger.create_fhir_workflow_record(
             {
                 "localSourceType": "local_patient_records",
                 "localSourceId": "1",
                 "resource": {"resourceType": "Patient", "active": True},
             }
         )
-        synced = self.store.mark_fhir_sync_success(
+        synced = self.dependencies.fhir_ledger.mark_fhir_sync_success(
             item["id"],
             medplum_resource_id="patient-medplum-id",
         )
 
-        unchanged = self.store.create_fhir_workflow_record(
+        unchanged = self.dependencies.fhir_ledger.create_fhir_workflow_record(
             {
                 "localSourceType": "local_patient_records",
                 "localSourceId": "1",
                 "resource": {"resourceType": "Patient", "active": True},
             }
         )
-        changed = self.store.create_fhir_workflow_record(
+        changed = self.dependencies.fhir_ledger.create_fhir_workflow_record(
             {
                 "localSourceType": "local_patient_records",
                 "localSourceId": "1",

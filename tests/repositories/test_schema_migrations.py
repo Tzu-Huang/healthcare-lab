@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backend.lab_store import DemoStore
+from backend.application_composition import assemble_application_dependencies
 from backend.repositories.database import SQLiteDatabase
 from backend.repositories.schema import ADDITIVE_COLUMNS, APPLICATION_MIGRATIONS
 
@@ -45,7 +45,7 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
     def test_fresh_migrated_schema_matches_legacy_initializer(self):
         legacy_path = self.root / "legacy.db"
         migrated_path = self.root / "migrated.db"
-        DemoStore(legacy_path)
+        assemble_application_dependencies(legacy_path)
 
         database = SQLiteDatabase(migrated_path, migrations=APPLICATION_MIGRATIONS)
         database.initialize()
@@ -58,8 +58,8 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
 
     def test_current_unversioned_database_is_recorded_without_data_loss(self):
         database_path = self.root / "current.db"
-        store = DemoStore(database_path)
-        patient = store.create_patient_record(
+        store = assemble_application_dependencies(database_path)
+        patient = store.patient_repository.create_patient_record(
             {
                 "mrn": "MRN-UNVERSIONED-1",
                 "firstName": "Current",

@@ -1,4 +1,4 @@
-from app import DockerSocketLabOperationAdapter
+from backend.lab_operations import DockerSocketLabOperationAdapter
 
 
 class FakeHttpResponse:

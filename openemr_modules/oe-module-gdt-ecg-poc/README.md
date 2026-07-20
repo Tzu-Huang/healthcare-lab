@@ -18,7 +18,8 @@ This is a scaffold for the OpenEMR-facing side of the `OpenEMR + GDT bridge` pro
 The live PoC implementation currently runs in the Flask demo app in this repo:
 
 - `app.py`
-- `backend/lab_store.py`
+- `backend/application_composition.py`
+- `backend/services/gdt_workflow.py`
 - `frontend/templates/index.html`
 - `frontend/static/app.js`
 

@@ -6,7 +6,7 @@ class GdtStoreTests(StoreCaseSupport):
     """Focused assertion owner for GdtStoreTests."""
 
     def test_gdt_order_creation_persists_fixed_ekg01_order(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "gdt",
                 "mrn": "MRN-GDT-001",
@@ -17,7 +17,7 @@ class GdtStoreTests(StoreCaseSupport):
             }
         )
 
-        order = self.store.create_gdt_order_record(
+        order = self.dependencies.gdt_workflow.create_gdt_order_record(
             {
                 "patientRecordId": patient["id"],
                 "requestedAt": "20260706110000",
@@ -53,11 +53,11 @@ class GdtStoreTests(StoreCaseSupport):
         self.assertEqual(order["attachments"][0]["url"], "http://localhost/reports/demo.pdf")
         self.assertEqual(order["attachments"][0]["role"], "order-attachment")
         self.assertIn("order-created", {event["eventType"] for event in order["events"]})
-        self.assertEqual(self.store.list_gdt_order_records()[0]["id"], order["id"])
-        self.assertEqual(self.store.list_gdt_orders()[0]["orderNumber"], "GDT-ORD-000001")
+        self.assertEqual(self.dependencies.gdt_workflow.list_gdt_order_records()[0]["id"], order["id"])
+        self.assertEqual(self.dependencies.gdt_workflow.list_gdt_orders()[0]["orderNumber"], "GDT-ORD-000001")
 
     def test_gdt_patient_number_override_is_snapshotted(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "gdt",
                 "mrn": "MRN-GDT-OVERRIDE",
@@ -68,7 +68,7 @@ class GdtStoreTests(StoreCaseSupport):
             }
         )
 
-        order = self.store.create_gdt_order_record(
+        order = self.dependencies.gdt_workflow.create_gdt_order_record(
             {
                 "patientRecordId": patient["id"],
                 "gdtPatientNumberOverride": "MANUAL-3000-01",
@@ -82,7 +82,7 @@ class GdtStoreTests(StoreCaseSupport):
         self.assertIn("patient-number-overridden", {event["eventType"] for event in order["events"]})
 
     def test_gdt_result_import_persists_canonical_message_attachments_and_events(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "gdt",
                 "mrn": "MRN-GDT-RESULT",
@@ -92,7 +92,7 @@ class GdtStoreTests(StoreCaseSupport):
                 "sex": "F",
             }
         )
-        order = self.store.create_gdt_order_record({"patientRecordId": patient["id"]})
+        order = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"]})
         result_payload = render_gdt_message(
             [
                 ("3000", order["gdtPatientNumber"]),
@@ -118,7 +118,7 @@ class GdtStoreTests(StoreCaseSupport):
             set_type="6310",
         )
 
-        result = self.store.record_gdt_result(
+        result = self.dependencies.gdt_workflow.record_gdt_result(
             {"rawGdtText": result_payload, "sourceFile": "device-result.gdt"}
         )
 
@@ -132,7 +132,7 @@ class GdtStoreTests(StoreCaseSupport):
         self.assertEqual(result["canonical"]["result"]["comments"], ["Reviewed by device"])
         self.assertEqual(result["canonical"]["result"]["formattedText"], ["Automated ECG summary"])
         self.assertEqual(result["canonical"]["validation"], {"errors": [], "warnings": []})
-        updated_order = self.store.get_gdt_order_record(order["id"])
+        updated_order = self.dependencies.gdt_workflow.get_gdt_order_record(order["id"])
         self.assertEqual(updated_order["status"], "Result received")
         by_role = {attachment["role"]: attachment for attachment in updated_order["attachments"]}
         self.assertEqual(by_role["report"]["reference"], "reports/ecg-result.pdf")
@@ -154,14 +154,14 @@ class GdtStoreTests(StoreCaseSupport):
             set_type="6310",
         )
 
-        result = self.store.record_gdt_result({"rawGdtText": result_payload})
+        result = self.dependencies.gdt_workflow.record_gdt_result({"rawGdtText": result_payload})
 
         self.assertEqual(result["messageType"], "6310")
         self.assertEqual(result["matchStatus"], "unmatched")
         self.assertEqual(result["rawGdtText"], result_payload)
 
     def test_gdt_result_without_order_identifier_does_not_guess_latest_patient_order(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "gdt",
                 "mrn": "MRN-GDT-MULTI",
@@ -171,10 +171,10 @@ class GdtStoreTests(StoreCaseSupport):
                 "sex": "F",
             }
         )
-        first_order = self.store.create_gdt_order_record(
+        first_order = self.dependencies.gdt_workflow.create_gdt_order_record(
             {"patientRecordId": patient["id"], "clinicalIndication": "First order"}
         )
-        second_order = self.store.create_gdt_order_record(
+        second_order = self.dependencies.gdt_workflow.create_gdt_order_record(
             {"patientRecordId": patient["id"], "clinicalIndication": "Second order"}
         )
         result_payload = render_gdt_message(
@@ -186,15 +186,15 @@ class GdtStoreTests(StoreCaseSupport):
             set_type="6310",
         )
 
-        result = self.store.record_gdt_result({"rawGdtText": result_payload})
+        result = self.dependencies.gdt_workflow.record_gdt_result({"rawGdtText": result_payload})
 
         self.assertEqual(result["matchStatus"], "unmatched")
         self.assertIsNone(result["orderRecordId"])
-        self.assertEqual(self.store.get_gdt_order_record(first_order["id"])["status"], "Created")
-        self.assertEqual(self.store.get_gdt_order_record(second_order["id"])["status"], "Created")
+        self.assertEqual(self.dependencies.gdt_workflow.get_gdt_order_record(first_order["id"])["status"], "Created")
+        self.assertEqual(self.dependencies.gdt_workflow.get_gdt_order_record(second_order["id"])["status"], "Created")
 
     def test_gdt_order_events_do_not_include_other_order_lifecycle_events(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "gdt",
                 "mrn": "MRN-GDT-EVENTS",
@@ -204,14 +204,14 @@ class GdtStoreTests(StoreCaseSupport):
                 "sex": "F",
             }
         )
-        first_order = self.store.create_gdt_order_record(
+        first_order = self.dependencies.gdt_workflow.create_gdt_order_record(
             {"patientRecordId": patient["id"], "clinicalIndication": "First order"}
         )
-        second_order = self.store.create_gdt_order_record(
+        second_order = self.dependencies.gdt_workflow.create_gdt_order_record(
             {"patientRecordId": patient["id"], "clinicalIndication": "Second order"}
         )
 
-        first_events = self.store.list_gdt_events(first_order["id"])
+        first_events = self.dependencies.gdt_workflow.list_gdt_events(first_order["id"])
         first_order_created = [
             event
             for event in first_events
@@ -230,7 +230,7 @@ class GdtStoreTests(StoreCaseSupport):
         self.assertIn("patient-number-generated", {event["eventType"] for event in first_events})
 
     def test_gdt_order_creation_rejects_non_mvp_8402_codes(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mrn": "MRN-GDT-002",
                 "firstName": "Avery",
@@ -241,10 +241,10 @@ class GdtStoreTests(StoreCaseSupport):
         )
 
         with self.assertRaises(SimulatorValidationError):
-            self.store.create_gdt_order_record({"patientRecordId": patient["id"], "gdtTestCode": "EKG04"})
+            self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"], "gdtTestCode": "EKG04"})
 
         with self.assertRaises(SimulatorValidationError):
-            self.store.create_gdt_order_record({"patientRecordId": patient["id"], "gdtTestCode": "ERGO01"})
+            self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"], "gdtTestCode": "ERGO01"})
 
 
 if __name__ == "__main__":

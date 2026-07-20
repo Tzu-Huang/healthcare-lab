@@ -4,15 +4,15 @@ import unittest
 from pathlib import Path
 
 from backend.domain.errors import SimulatorValidationError
-from backend.lab_store import DemoStore
+from backend.application_composition import assemble_application_dependencies
 from backend.repositories.oie_settings import OieSettingsRepository
 
 
 class OieSettingsRepositoryTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.store = DemoStore(Path(self.directory.name) / "lab.db")
-        self.repository = self.store.oie_settings_repository
+        self.dependencies = assemble_application_dependencies(Path(self.directory.name) / "lab.db")
+        self.repository = self.dependencies.oie_settings_repository
 
     def tearDown(self):
         self.directory.cleanup()
@@ -61,7 +61,7 @@ class OieSettingsRepositoryTest(unittest.TestCase):
         )
         self.assertNotIn("password", profile["managementApi"])
         self.assertNotIn("Admin", json.dumps(profile))
-        with self.store.connect() as connection:
+        with self.dependencies.database.connect() as connection:
             password = connection.execute(
                 "SELECT management_api_password FROM oie_settings_profiles"
             ).fetchone()[0]
@@ -102,7 +102,7 @@ class OieSettingsRepositoryTest(unittest.TestCase):
         )
 
         updated = self.repository.update(payload)
-        reopened = DemoStore(self.store.path)
+        reopened = assemble_application_dependencies(self.dependencies.database.path)
         persisted = reopened.oie_settings_repository.get()
 
         self.assertEqual(updated, persisted)
@@ -121,7 +121,7 @@ class OieSettingsRepositoryTest(unittest.TestCase):
             [item["logicalType"] for item in replaced["managedChannels"]],
             ["order-ingress"],
         )
-        with reopened.connect() as connection:
+        with reopened.database.connect() as connection:
             password = connection.execute(
                 "SELECT management_api_password FROM oie_settings_profiles"
             ).fetchone()[0]
