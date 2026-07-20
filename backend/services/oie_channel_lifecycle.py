@@ -6,10 +6,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping
 from xml.etree import ElementTree as ET
 
-from backend.domain.oie_channel_lifecycle import ChannelClassification, LifecycleOperation, LiveChannel, ManagedChannelType, PersistedChannelMapping, reconcile_inventory
+from backend.domain.oie_channel_lifecycle import ChannelClassification, LifecycleOperation, LiveChannel, ManagedChannelType, OieMappingConflictError, PersistedChannelMapping, reconcile_inventory
 from backend.domain.oie_management import OieManagementError
-from backend.repositories.oie_settings import OieMappingConflictError
-from backend.templates.oie_channels import compile_orm_to_ap, compile_oru_to_hlab, orm_to_ap_config, oru_to_hlab_config
+from backend.templates.oie_channels import compile_orm_to_ap, compile_oru_to_hlab, normalized_state, normalized_state_from_payload, orm_to_ap_config, oru_to_hlab_config
 
 
 class LifecycleGuardError(RuntimeError):
@@ -75,7 +74,7 @@ class OieManagedChannelLifecycleService:
                 self._audit(self._event(operation_id, action, kind, snapshot, "success"))
                 return self._success(kind, action, operation_id, steps)
             return self._delete(kind, snapshot, operation_id, steps)
-        except (OieManagementError, OieMappingConflictError, LifecycleGuardError) as exc:
+        except (OieManagementError, LifecycleGuardError, OieMappingConflictError) as exc:
             category = getattr(getattr(exc, "category", None), "value", None) or getattr(exc, "category", "failure")
             steps.append({"name": action.value, "status": "failed", "errorCategory": category})
             partial = any(s["status"] == "succeeded" and s["name"] != "revalidate" for s in steps)
@@ -104,13 +103,17 @@ class OieManagedChannelLifecycleService:
         steps.append({"name": "persist", "status": "succeeded"}); return self._success(kind, LifecycleOperation.DELETE, operation_id, steps)
 
     def _snapshots(self):
+        if not getattr(self.client, "_authenticated", True):
+            self.client.login()
         items = self.client.list_channels().values.get("items", ())
         live = [self._live(item) for item in items]
         allowed = {kind.value for kind in ManagedChannelType}; mappings = []
         for item in self.repository.get()["managedChannels"]:
             if item["logicalType"] in allowed:
                 mappings.append(PersistedChannelMapping(ManagedChannelType(item["logicalType"]), item["channelId"], item["channelName"], int(item["templateVersion"] or 1), int(item["lastKnownRevision"]) if item["lastKnownRevision"] else None))
-        return reconcile_inventory((orm_to_ap_config(self.ap_host), oru_to_hlab_config()), mappings, live)
+        return reconcile_inventory((orm_to_ap_config(self.ap_host), oru_to_hlab_config()), mappings, live,
+                                   normalize_desired=normalized_state,
+                                   normalize_payload=normalized_state_from_payload)
 
     def _snapshot(self, kind): return next(item for item in self._snapshots() if item.logical_type is kind)
     def _created(self, kind):

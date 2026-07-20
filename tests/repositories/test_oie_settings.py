@@ -5,7 +5,8 @@ from pathlib import Path
 
 from backend.domain.errors import SimulatorValidationError
 from backend.application_composition import assemble_application_dependencies
-from backend.repositories.oie_settings import OieMappingConflictError, OieSettingsRepository
+from backend.domain.oie_channel_lifecycle import OieMappingConflictError
+from backend.repositories.oie_settings import OieSettingsRepository
 
 
 class OieSettingsRepositoryTest(unittest.TestCase):

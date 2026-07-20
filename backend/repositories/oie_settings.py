@@ -11,15 +11,12 @@ from threading import RLock
 from typing import Any, Mapping
 
 from backend.domain.oie import validate_settings_payload as validate_oie_settings_payload
+from backend.domain.oie_channel_lifecycle import OieMappingConflictError
 from backend.mappers.oie import project_settings_profile as serialize_oie_settings_profile
 
 ProfileValidator = Callable[[dict[str, Any]], dict[str, Any]]
 ProfileSerializer = Callable[[Row, list[Row]], dict[str, Any]]
 ConnectionFactory = Callable[[], AbstractContextManager[Connection]]
-
-
-class OieMappingConflictError(RuntimeError):
-    """The managed mapping changed since lifecycle state was inspected."""
 
 
 _AUDIT_FIELDS = {

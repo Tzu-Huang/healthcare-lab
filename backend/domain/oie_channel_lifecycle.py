@@ -5,11 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 from xml.etree import ElementTree as ET
 
 from backend.domain.oie_channels import ManagedChannelConfig, ManagedChannelType
-from backend.templates.oie_channels import normalized_state, normalized_state_from_payload
+
+
+class OieMappingConflictError(RuntimeError):
+    """The managed mapping changed since lifecycle state was inspected."""
 
 
 class ChannelClassification(StrEnum):
@@ -154,12 +157,15 @@ def reconcile_inventory(
     desired: Iterable[ManagedChannelConfig],
     persisted: Iterable[PersistedChannelMapping],
     live_channels: Iterable[LiveChannel],
+    *,
+    normalize_desired: Callable[[ManagedChannelConfig], Mapping[str, Any]],
+    normalize_payload: Callable[[str], Mapping[str, Any]],
 ) -> tuple[ChannelSnapshot, ...]:
     """Reconcile three sources of truth without adopting ambiguous Channels."""
     configs = sorted(desired, key=lambda item: item.logical_type.value)
     mappings = {item.logical_type: item for item in persisted}
     live = sorted(live_channels, key=lambda item: (item.channel_id, item.name))
-    parsed = {item.channel_id: _parse_identity(item) for item in live}
+    parsed = {item.channel_id: _parse_identity(item, normalize_payload) for item in live}
     associated_ids: set[str] = set()
     snapshots: list[ChannelSnapshot] = []
 
@@ -206,8 +212,8 @@ def reconcile_inventory(
             classification = ChannelClassification.MISSING
             diffs = ()
         else:
-            actual = normalized_state_from_payload(observed.payload)
-            diffs = owned_field_differences(normalized_state(config), actual)
+            actual = normalize_payload(observed.payload)
+            diffs = owned_field_differences(normalize_desired(config), actual)
             classification = ChannelClassification.DRIFTED if diffs else ChannelClassification.UNCHANGED
         snapshots.append(ChannelSnapshot(
             logical_type=config.logical_type,
@@ -255,7 +261,7 @@ def _diff(path: str, desired: Any, observed: Any, output: list[OwnedFieldDiff]) 
         output.append(OwnedFieldDiff(path, desired, observed))
 
 
-def _parse_identity(channel: LiveChannel) -> tuple[str | None, str | None]:
+def _parse_identity(channel: LiveChannel, normalize_payload) -> tuple[str | None, str | None]:
     try:
         root = ET.fromstring(channel.payload)
         marker = root.findtext("description")
@@ -263,7 +269,7 @@ def _parse_identity(channel: LiveChannel) -> tuple[str | None, str | None]:
             raise ValueError("description is required")
         # Validate the complete normalized owned surface only for marker-looking payloads.
         if marker.startswith("Managed by Healthcare Lab"):
-            normalized_state_from_payload(channel.payload)
+            normalize_payload(channel.payload)
         return None, marker
     except (ET.ParseError, ValueError, TypeError) as exc:
         return type(exc).__name__, None
