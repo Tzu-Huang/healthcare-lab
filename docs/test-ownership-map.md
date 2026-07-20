@@ -101,6 +101,18 @@ The migration may increase collection counts when a support contract or an
 explicit compatibility owner adds characterization coverage. Any such change
 must be recorded with the resulting count and reason in the change devlog.
 
+## Final collection comparison for this change
+
+| Collection | Baseline | ZAC-64 result | Difference | Explanation |
+|---|---:|---:|---:|---|
+| Complete discovery | 484 | 488 | +4 | Four support-contract characterization tests were added. |
+| Integration responsibility selection | 125 | 125 | 0 | All legacy integration methods retained under focused owners. |
+| Repository responsibility selection | 27 | 27 | 0 | All legacy store methods retained under focused owners. |
+
+The 125 integration and 27 repository method names are preserved while their
+module-qualified IDs now point to focused owner classes. No legacy behavior
+assertion was removed; the four-count increase is limited to support contracts.
+
 ## ZAC-65 compatibility handoff
 
 The compatibility owner preserves tests for the retained `DemoStore` facade,
