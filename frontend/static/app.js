@@ -10,6 +10,7 @@ import { initializeFhirView, refreshMedplumInventory } from "./js/views/fhir.js"
 import { getSelectedOrderId, getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "./js/state/selection.js";
 import { getPatientRecords, setPatientRecords } from "./js/state/patient.js";
 import { getOrderRecords, setOrderRecords, setSelectedOrderRecordKey } from "./js/state/order.js";
+import { getDcm4cheeProfileDiagnostics, isDcm4cheePatientExpanded, setDcm4cheeProfileDiagnostics, toggleDcm4cheePatientExpanded } from "./js/state/dcm4chee.js";
 import { createPatient, fetchPatients } from "./js/api/patient.js";
 import { fetchOrders } from "./js/api/order.js";
 import { fetchDcm4cheeAttempts, fetchDcm4cheeProfileDiagnostics } from "./js/api/dcm4chee.js";
@@ -17,9 +18,6 @@ import { buildPatientGdtPreviewPayload, configurePatientCoordinator, createPatie
 import { configureOrderCoordinator, createOrderRecord, currentOrderMode, initializeOrderView, orderListKey, orderRecordMode, orderVisitId, refreshOrderPreview, refreshOrders, refreshOrderWorkspace, renderOrderPatientOptions, renderOrderRecordList, retryDcm4cheeOrder, selectedOrderPatientReference, sendDcm4cheeOrder, simulateDcm4cheeApReturn, updateOrderModeFields, verifyDcm4cheeOrder } from "./js/views/order.js";
 
 const byId = (id) => document.getElementById(id);
-
-let dcm4cheeProfileDiagnostics = null;
-let expandedDcm4cheePatientIds = new Set();
 
 const VIEW_TITLES = {
   "lab-console-view": "Service Health",
@@ -705,19 +703,15 @@ function renderDcm4cheePatientList() {
     row.className = Number(patient.id) === Number(getSelectedPatientId()) ? "selected-row" : "";
     const toggleButton = createElement("button", "V", "dcm4chee-patient-toggle");
     toggleButton.type = "button";
-    toggleButton.classList.toggle("expanded", expandedDcm4cheePatientIds.has(patientId));
-    toggleButton.setAttribute("aria-expanded", String(expandedDcm4cheePatientIds.has(patientId)));
+    toggleButton.classList.toggle("expanded", isDcm4cheePatientExpanded(patientId));
+    toggleButton.setAttribute("aria-expanded", String(isDcm4cheePatientExpanded(patientId)));
     toggleButton.setAttribute(
       "aria-label",
-      expandedDcm4cheePatientIds.has(patientId) ? "Collapse patient orders and results" : "Expand patient orders and results",
+      isDcm4cheePatientExpanded(patientId) ? "Collapse patient orders and results" : "Expand patient orders and results",
     );
     toggleButton.addEventListener("click", (event) => {
       event.stopPropagation();
-      if (expandedDcm4cheePatientIds.has(patientId)) {
-        expandedDcm4cheePatientIds.delete(patientId);
-      } else {
-        expandedDcm4cheePatientIds.add(patientId);
-      }
+      toggleDcm4cheePatientExpanded(patientId);
       renderDcm4cheeConsole();
     });
     row.append(
@@ -732,7 +726,7 @@ function renderDcm4cheePatientList() {
     row.addEventListener("click", () => selectDcm4cheePatient(patient.id));
     body.appendChild(row);
 
-    if (expandedDcm4cheePatientIds.has(patientId)) {
+    if (isDcm4cheePatientExpanded(patientId)) {
       const detailRow = document.createElement("tr");
       detailRow.className = "dcm4chee-patient-detail-row";
       const detailCell = document.createElement("td");
@@ -857,16 +851,17 @@ function renderDcm4cheeProfileSummary() {
   const container = byId("dcm4chee-profile-summary");
   if (!container) return;
   container.replaceChildren();
-  if (!dcm4cheeProfileDiagnostics) {
+  const diagnostics = getDcm4cheeProfileDiagnostics();
+  if (!diagnostics) {
     container.appendChild(createElement("p", "Profile diagnostics are not loaded.", "muted"));
     return;
   }
   container.appendChild(dcm4cheeDetailBlock("Profile", [
-    ["Profile", dcm4cheeProfileDiagnostics.profileName],
-    ["Status", dcm4cheeProfileDiagnostics.valid ? "Valid" : "Needs attention"],
-    ["Summary", dcm4cheeProfileDiagnostics.summary],
+    ["Profile", diagnostics.profileName],
+    ["Status", diagnostics.valid ? "Valid" : "Needs attention"],
+    ["Summary", diagnostics.summary],
   ]));
-  const checks = dcm4cheeProfileDiagnostics.checks || [];
+  const checks = diagnostics.checks || [];
   if (checks.length) {
     const list = createElement("div", "", "dcm4chee-diagnostic-checks full-width");
     checks.forEach((check) => {
@@ -903,7 +898,7 @@ async function refreshDcm4cheeConsole() {
     ]);
     setPatientRecords(patientsResult.items || []);
     setOrderRecords(ordersResult.items || []);
-    dcm4cheeProfileDiagnostics = diagnosticsResult;
+    setDcm4cheeProfileDiagnostics(diagnosticsResult);
     renderDcm4cheeConsole();
     setStatus(
       "dcm4chee-console-status",
