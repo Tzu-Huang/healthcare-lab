@@ -37,6 +37,21 @@ otherwise presentation remains inside its feature. Cross-view patient/order
 selection belongs to `js/state/selection.js`; feature inventory and preview
 state remain with the feature.
 
+### Shared-owner audit
+
+| Shared owner | Consumers | Decision |
+|---|---|---|
+| `components/status.js` | dashboard, patient, order, FHIR, OIE, and GDT views | Retain: all consumers use the same status text/state presentation contract without feature branching. |
+| `components/settings-shell.js` | Settings view only | Reserved destination rather than a reusable component; it contains only the ZAC-50 boundary message and must not acquire cross-feature behavior. |
+| `core/dom.js` | every implemented feature view | Retain: generic element lookup/construction and table-cell helpers. |
+| `core/clipboard.js` | FHIR, OIE, and GDT views plus the compatibility coordinator | Retain: shared clipboard interaction with no feature branching. |
+| `core/formatting.js` | patient, order, FHIR, OIE, and GDT views plus the compatibility coordinator | Retain: protocol/display formatting primitives shared without workflow ownership. |
+| `core/navigation.js` | application bootstrap | Retain as application-shell infrastructure, not a feature component. |
+
+No feature-specific renderer or request workflow qualifies as a shared
+component. Such behavior remains in its owning view/API module even when the
+bootstrap temporarily coordinates it during extraction.
+
 ## Dependency direction
 
 ```text
