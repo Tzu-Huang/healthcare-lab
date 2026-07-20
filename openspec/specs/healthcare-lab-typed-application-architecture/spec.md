@@ -23,11 +23,14 @@ API modules SHALL map HTTP input and output through services; services SHALL coo
 - **AND** mapper modules do not depend on SQLite connection APIs or repository implementations
 
 ### Requirement: Process entrypoint remains thin
-`app.py` SHALL contain only process entrypoint and compatibility wiring, while `backend/app_factory.py` SHALL own Flask application creation, dependency assembly, Blueprint registration, and configured runtime startup.
+
+`app.py` SHALL contain only the supported process entrypoint wiring, while `backend/app_factory.py` SHALL own Flask application creation, explicit dependency assembly, Blueprint registration, and configured runtime startup. Test-only whole-module aliases and obsolete compatibility exports MUST NOT be retained as part of the process-entrypoint contract.
 
 #### Scenario: Entrypoint contract is tested
-- **WHEN** the architecture contract test inspects `app.py`
-- **THEN** it finds no route implementations, SQL operations, external protocol implementations, listener or watcher class implementations, or workflow orchestration
+
+- **WHEN** architecture and startup checks inspect and import `app.py`
+- **THEN** it exposes the documented application entrypoint required by deployment
+- **AND** it contains no route implementations, SQL operations, external protocol implementations, listener or watcher class implementations, workflow orchestration, whole-module aliasing for patch compatibility, or obsolete helper re-exports
 
 ### Requirement: HTTP and runtime behavior remains compatible
 The modularization SHALL preserve existing URLs, request and response shapes, HTTP status codes, persistence semantics, integration behavior, and runtime startup and shutdown behavior.
@@ -104,17 +107,18 @@ Healthcare Lab SHALL publish target backend, frontend, and test trees and SHALL 
 
 ### Requirement: Compatibility facades are explicit migration seams
 
-Healthcare Lab SHALL enumerate allowed compatibility facades and their owning destinations. A compatibility facade MAY re-export or delegate existing behavior during incremental migration, but MUST NOT own new SQL, payload, workflow, or transport implementation, and new callers MUST import the owning module directly.
+Healthcare Lab SHALL enumerate any remaining compatibility facades and their owning destinations. A retained facade MUST have an identified current consumer and removal boundary, MUST delegate or re-export only the named implementation, and MUST NOT own new SQL, payload, workflow, transport, composition, or generic dependency-access behavior. `DemoStore`, `backend.lab_store`, and the `demo_store` Flask extension MUST NOT appear in that enumeration.
 
-#### Scenario: Existing caller uses an allowed facade
+#### Scenario: Existing caller uses a remaining allowed facade
 
-- **WHEN** an existing caller still imports a symbol through an enumerated compatibility facade
+- **WHEN** an identified caller imports a symbol through an enumerated compatibility facade that remains outside the ZAC-65 removal set
 - **THEN** the facade delegates or re-exports the implementation from its named owner without changing observable behavior
+- **AND** its owner, consumer, and removal boundary are documented
 
-#### Scenario: New behavior targets a compatibility module
+#### Scenario: Removed or new facade is referenced
 
-- **WHEN** a change attempts to add SQL, payload, workflow, or transport implementation to a compatibility facade or retained catch-all module
-- **THEN** the architecture contract rejects the placement and directs the responsibility to its named owner
+- **WHEN** code imports `backend.lab_store`, accesses the `demo_store` Flask extension, introduces a generic forwarding facade, or adds a caller to another compatibility module
+- **THEN** the architecture contract rejects it and directs the caller to the responsibility-specific owner
 
 ### Requirement: Catch-all enforcement preserves only a reviewed legacy baseline
 
@@ -186,20 +190,6 @@ Healthcare Lab SHALL isolate OpenEMR MariaDB connection and procedure-order quer
 
 - **WHEN** the configured MariaDB reports a supported missing procedure-order table condition
 - **THEN** the adapter preserves the existing empty-list or degraded verification behavior without changing SQLite state
-
-### Requirement: Extracted boundaries retain compatibility-only DemoStore seams
-
-`DemoStore` SHALL expose only explicit delegation for retained lab and OIE methods needed by existing callers. New composition and service code MUST use the owning repository or external adapter directly, and architecture enforcement SHALL remove the extracted implementation from the reviewed legacy baseline without adding replacement exceptions.
-
-#### Scenario: Existing caller uses DemoStore
-
-- **WHEN** an existing caller invokes a retained lab or OIE persistence method on `DemoStore`
-- **THEN** `DemoStore` delegates to the owning repository and returns the existing result shape and errors
-
-#### Scenario: Architecture contract inspects extraction
-
-- **WHEN** architecture tests inspect `lab_store.py` and the responsibility-specific modules
-- **THEN** extracted SQL and OpenEMR query implementation are absent from `lab_store.py`, lower layers follow the declared dependency direction, and no new legacy-baseline exception is required
 
 ### Requirement: Repository extraction verification is isolated and behavior-preserving
 
@@ -578,19 +568,19 @@ Decomposed services SHALL remain independent of Flask request or response object
 
 ### Requirement: Composition remains compact and compatible
 
-Application assembly SHALL explicitly construct and register decomposed services without implementing workflow decisions. Existing routes, extension keys, Blueprint inputs, callback seams, runtime startup and shutdown order, public responses, errors, persistence semantics, and external integration behavior MUST remain compatible.
+Application assembly SHALL explicitly construct and register services and runtime collaborators without implementing workflow decisions or publishing a broad service locator. Existing routes, supported narrow extension keys, Blueprint inputs, runtime callback seams, startup and shutdown order, public responses, errors, persistence semantics, and external integration behavior MUST remain compatible; the internal `demo_store` extension key and test-only patch/import paths are explicitly removed from compatibility scope.
 
 #### Scenario: Application composition is updated
 
-- **WHEN** decomposed services replace an oversized workflow in `backend/app_factory.py`
-- **THEN** the composition root performs only explicit construction, dependency assembly, registration, and configured startup
-- **AND** existing API and runtime characterization passes without consumer migration
+- **WHEN** explicit application dependencies replace `DemoStore` in `backend/app_factory.py`
+- **THEN** the composition root performs only construction, dependency assembly, registration, and configured startup
+- **AND** API, runtime, persistence, and process-entrypoint characterization passes without a broad replacement container
 
-#### Scenario: ZAC-46 integration baseline is present
+#### Scenario: Runtime object requires Flask lifecycle lookup
 
-- **WHEN** ZAC-62 product implementation begins or updates application composition
-- **THEN** ZAC-46 has been merged and the ZAC-62 branch has been updated from that mainline
-- **AND** the persisted OIE management client and settings composition introduced by ZAC-46 remains registered and covered by characterization
+- **WHEN** a listener, watcher, or configured runtime service must be retrieved through Flask lifecycle state
+- **THEN** it uses an existing narrow, purpose-named extension key
+- **AND** no `demo_store`, `dependencies`, `repositories`, `services`, or equivalent broad extension is introduced
 
 ### Requirement: Service decomposition is verified incrementally and safely
 
@@ -606,3 +596,50 @@ Healthcare Lab SHALL characterize each affected workflow before movement and ver
 
 - **WHEN** implementation would require changing ZAC-46 OIE client/settings responsibilities, ZAC-47 channel domain/templates, frontend modularization, broad test-file organization, facade removal, schema/data, public contracts, live services, dependencies, or architecture exceptions
 - **THEN** implementation stops before that action and reports the smallest required scope or integration decision
+
+### Requirement: Application composition exposes only explicit dependencies
+
+Healthcare Lab SHALL construct the shared database lifecycle, repositories, enrichment loaders, coordinators, and runtime collaborators in a dedicated application-composition owner with explicitly declared typed outputs. The composition result MUST NOT implement business operations, arbitrary forwarding, dynamic attribute lookup, or act as a service locator, and APIs, services, clients, repositories, and runtime components MUST receive only their declared narrow dependencies.
+
+#### Scenario: Application dependencies are assembled
+
+- **WHEN** the Flask application is created for a disposable database
+- **THEN** one shared database owner initializes migrations and maintenance and supplies its connection factory and application lock to the named repositories
+- **AND** each service, Blueprint, listener, watcher, and coordinator receives only its explicitly consumed collaborators
+
+#### Scenario: Broad replacement container is introduced
+
+- **WHEN** architecture checks inspect application composition and production consumers
+- **THEN** they reject business delegates, `__getattr__`, arbitrary forwarding, generic service lookup, or a broad composition object passed into a consumer
+
+### Requirement: DemoStore and its internal compatibility access are removed
+
+Healthcare Lab SHALL NOT contain or import `DemoStore` or `backend.lab_store`, SHALL NOT publish `app.extensions["demo_store"]`, and SHALL NOT replace them with an equivalently broad store, dependency, repository, or service extension. Remaining constants, helpers, repositories, and coordinators MUST be imported from their responsibility-specific owners.
+
+#### Scenario: Production and tests are scanned after cleanup
+
+- **WHEN** verification scans application, backend, and test sources
+- **THEN** no `DemoStore`, `backend.lab_store`, or `demo_store` Flask extension reference remains
+- **AND** architecture compatibility fingerprints, delegate maps, allowlists, and legacy-baseline entries for the removed facade are absent rather than renamed or refreshed
+
+#### Scenario: Integration test needs application state
+
+- **WHEN** an integration test must prepare or inspect persistence state
+- **THEN** it uses public HTTP behavior, a named owner fixture, or explicit focused injection
+- **AND** production does not expose a broad container solely for test access
+
+### Requirement: Facade removal preserves supported behavior and data
+
+Removing the internal facade and compatibility exports SHALL preserve HTTP routes, request and response semantics, configuration keys, process startup, SQLite schema and stored rows, migration and maintenance ordering, transaction and lock behavior, protocol payloads, external-integration behavior, and runtime startup/shutdown lifecycle.
+
+#### Scenario: Existing database and application are opened after cleanup
+
+- **WHEN** the application initializes against a disposable database representing supported existing schema state
+- **THEN** the same migrations and maintenance run without destructive data changes
+- **AND** application creation and focused API/runtime characterization pass without live external services
+
+#### Scenario: Obsolete internal compatibility caller is encountered
+
+- **WHEN** a repository-local test or module still imports `backend.lab_store`, invokes a `DemoStore` delegate, reads the `demo_store` extension, or patches an obsolete compatibility export
+- **THEN** the caller migrates to the responsibility owner or explicit injection
+- **AND** no shim is introduced unless a separately approved public compatibility contract is identified
