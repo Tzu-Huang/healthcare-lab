@@ -122,6 +122,19 @@ FRONTEND_FUNCTION_PATTERN = re.compile(
 CSS_RULE_PATTERN = re.compile(r"(?:^|[{}])\s*([^@{}][^{}]*)\{", re.MULTILINE)
 CSS_FAMILY_PATTERN = re.compile(r"[.#][A-Za-z_-][\w-]*")
 FRONTEND_MODULE_PREFIX_NAME = "<module-prefix>"
+FRONTEND_JS_ROOT = ROOT / "frontend" / "static" / "js"
+FRONTEND_LAYER_DEPENDENCIES = {
+    "app.js": frozenset({"views"}),
+    "core": frozenset({"core"}),
+    "api": frozenset({"api", "core"}),
+    "state": frozenset({"state", "core"}),
+    "components": frozenset({"components", "state", "core"}),
+    "views": frozenset({"views", "api", "state", "components", "core"}),
+}
+FRONTEND_IMPORT_PATTERN = re.compile(
+    r'^\s*import\s+(?:.+?\s+from\s+)?["\'](?P<path>\.[^"\']+)["\'];?',
+    re.MULTILINE,
+)
 PROTECTED_SQL_TABLE_OWNERS = {
     "local_fhir_workflow_records": "backend/repositories/fhir_ledger.py",
     "local_fhir_sync_attempts": "backend/repositories/fhir_ledger.py",
@@ -349,6 +362,7 @@ class FrontendDefinition:
     line: int
     fingerprint: str
     category: str
+    body: str
 
     @property
     def baseline_key(self) -> tuple[str, str]:
@@ -674,6 +688,7 @@ def frontend_top_level_definition_occurrences(source: str) -> list[FrontendDefin
                 line=source.count("\n", 0, match.start()) + 1,
                 fingerprint=stable_source_fingerprint(body),
                 category=frontend_definition_category(name, body),
+                body=body,
             )
         )
     return definitions
@@ -683,21 +698,65 @@ def frontend_top_level_definitions(source: str) -> dict[str, FrontendDefinition]
     return {
         definition.name: definition
         for definition in frontend_top_level_definition_occurrences(source)
+        if not is_frontend_compatibility_delegate(definition)
     }
 
 
-def frontend_definition_inventory(source: str) -> frozenset[tuple[str, str]]:
+def is_frontend_compatibility_delegate(definition: FrontendDefinition) -> bool:
+    normalized = re.sub(r"\s+", " ", definition.body).strip()
+    if definition.name == "initializeApplication":
+        return (
+            normalized.startswith("const initializeApplication = () => {")
+            and normalized.endswith(
+                'document.addEventListener("DOMContentLoaded", initializeApplication);'
+            )
+        )
+    allowed = {
+        "setActiveView": "function setActiveView(viewId) { return activateView(viewId); }",
+        "copyTextFromElement": (
+            "async function copyTextFromElement(elementId) { "
+            "return copyElementText(elementId); }"
+        ),
+        "renderOieInventory": "function renderOieInventory() { return renderOieView(); }",
+        "statusClass": "function statusClass(status) { return dashboardStatusClass(status); }",
+        "selectedGdtPatient": "function selectedGdtPatient() { return selectedGdtPatientFromView(); }",
+        "hl7Escape": "function hl7Escape(value) { return formatHl7Escape(value); }",
+        "hl7EscapeComposite": "function hl7EscapeComposite(value) { return formatHl7EscapeComposite(value); }",
+        "pad": "function pad(value) { return formatPad(value); }",
+        "hl7Timestamp": "function hl7Timestamp(date = new Date()) { return formatHl7Timestamp(date); }",
+        "localDatetimeValue": "function localDatetimeValue(date = new Date()) { return formatLocalDatetimeValue(date); }",
+        "taipeiTimestamp": "function taipeiTimestamp(value) { return formatTaipeiTimestamp(value); }",
+        "gdtTaipeiTimestamp": "function gdtTaipeiTimestamp(value) { return formatGdtTaipeiTimestamp(value); }",
+        "fhirBirthDate": "function fhirBirthDate(dob) { return formatFhirBirthDate(dob); }",
+        "fhirGender": "function fhirGender(sex) { return formatFhirGender(sex); }",
+    }
+    expected = allowed.get(definition.name)
+    if normalized == expected:
+        return True
+    return definition.name == "statusClass" and bool(expected) and normalized.startswith(expected)
+
+
+def frontend_module_prefix_source(source: str) -> str:
     first_definition = FRONTEND_FUNCTION_PATTERN.search(source)
     prefix_end = first_definition.start() if first_definition else len(source)
+    return "\n".join(
+        line
+        for line in source[:prefix_end].splitlines()
+        if not line.strip().startswith("import ")
+    ).strip()
+
+
+def frontend_definition_inventory(source: str) -> frozenset[tuple[str, str]]:
     inventory = {
         (
             FRONTEND_MODULE_PREFIX_NAME,
-            stable_source_fingerprint(source[:prefix_end]),
+            stable_source_fingerprint(frontend_module_prefix_source(source)),
         )
     }
     inventory.update(
         definition.baseline_key
         for definition in frontend_top_level_definition_occurrences(source)
+        if not is_frontend_compatibility_delegate(definition)
     )
     return frozenset(inventory)
 
@@ -724,9 +783,12 @@ def frontend_function_violations(
         )
         for definition in definitions
         if definition.baseline_key not in baseline
+        and not is_frontend_compatibility_delegate(definition)
     ]
     seen_names: set[str] = set()
     for definition in definitions:
+        if is_frontend_compatibility_delegate(definition):
+            continue
         if definition.name in seen_names:
             violations.append(
                 PlacementViolation(
@@ -737,11 +799,9 @@ def frontend_function_violations(
                 )
             )
         seen_names.add(definition.name)
-    first_definition = FRONTEND_FUNCTION_PATTERN.search(source)
-    prefix_end = first_definition.start() if first_definition else len(source)
     prefix_key = (
         FRONTEND_MODULE_PREFIX_NAME,
-        stable_source_fingerprint(source[:prefix_end]),
+        stable_source_fingerprint(frontend_module_prefix_source(source)),
     )
     if prefix_key not in baseline:
         violations.insert(
@@ -771,6 +831,36 @@ def frontend_selector_families(source: str) -> dict[str, int]:
             for family in CSS_FAMILY_PATTERN.finditer(selector):
                 families.setdefault(family.group(0), line)
     return families
+
+
+def frontend_module_import_violations(relative: str, source: str) -> list[str]:
+    path = PurePosixPath(relative)
+    try:
+        layer = path.parts[path.parts.index("js") + 1]
+    except (ValueError, IndexError):
+        return []
+    allowed = FRONTEND_LAYER_DEPENDENCIES.get(layer, frozenset())
+    violations = []
+    for match in FRONTEND_IMPORT_PATTERN.finditer(source):
+        target = (path.parent / match.group("path")).as_posix()
+        normalized = PurePosixPath(target)
+        parts = []
+        for part in normalized.parts:
+            if part == "..":
+                if parts:
+                    parts.pop()
+            elif part != ".":
+                parts.append(part)
+        try:
+            target_layer = parts[parts.index("js") + 1]
+        except (ValueError, IndexError):
+            continue
+        if target_layer not in allowed:
+            line = source.count("\n", 0, match.start()) + 1
+            violations.append(
+                f"{relative}:{line} frontend {layer} module imports disallowed {target_layer} owner"
+            )
+    return violations
 
 
 def frontend_selector_violations(
@@ -1153,6 +1243,49 @@ def repository_pure_responsibility_violations(relative: str, source: str) -> lis
 
 
 class ArchitectureContractTest(unittest.TestCase):
+    def test_frontend_modules_follow_declared_dependency_direction(self):
+        violations = []
+        for path in FRONTEND_JS_ROOT.rglob("*.js"):
+            relative = path.relative_to(ROOT).as_posix()
+            violations.extend(
+                frontend_module_import_violations(
+                    relative,
+                    path.read_text(encoding="utf-8"),
+                )
+            )
+        self.assertEqual([], violations)
+
+    def test_frontend_dependency_direction_rejects_lower_layer_view_imports(self):
+        fixtures = {
+            "api": 'import { render } from "../views/patient.js";\n',
+            "state": 'import { render } from "../views/order.js";\n',
+            "components": 'import { send } from "../api/oie.js";\n',
+            "core": 'import { state } from "../state/selection.js";\n',
+        }
+        for layer, source in fixtures.items():
+            with self.subTest(layer=layer):
+                violations = frontend_module_import_violations(
+                    f"frontend/static/js/{layer}/fixture.js",
+                    source,
+                )
+                self.assertEqual(1, len(violations))
+                self.assertIn(f"frontend {layer} module", violations[0])
+
+    def test_frontend_compatibility_delegate_rejects_lookalikes(self):
+        accepted = frontend_top_level_definition_occurrences(
+            "function setActiveView(viewId) { return activateView(viewId); }"
+        )[0]
+        self.assertTrue(is_frontend_compatibility_delegate(accepted))
+        rejected = (
+            "function setActiveView(viewId) { refreshDashboard(); return activateView(viewId); }",
+            "function setActiveView(viewId) { return activateView('other'); }",
+            "async function copyTextFromElement(elementId) { return navigator.clipboard.writeText(elementId); }",
+        )
+        for source in rejected:
+            with self.subTest(source=source):
+                definition = frontend_top_level_definition_occurrences(source)[0]
+                self.assertFalse(is_frontend_compatibility_delegate(definition))
+
     def test_responsibility_packages_exist(self):
         for package in RESPONSIBILITY_PACKAGES:
             with self.subTest(package=package):

@@ -1,0 +1,82 @@
+      <section id="lab-console-view" class="app-view lab-console" aria-label="Healthcare Interoperability Lab Console">
+        <div class="lab-console-header">
+          <div>
+            <p class="eyebrow">Local Runtime</p>
+            <h2>HL7 v2, FHIR, GDT, DICOM</h2>
+          </div>
+          <div class="lab-console-actions">
+            <span id="dashboard-refresh-status" class="status neutral">Loading services...</span>
+            <button id="refresh-dashboard" type="button">Refresh</button>
+            <button id="run-all-lab-checks" class="primary" type="button">Run Checks</button>
+          </div>
+        </div>
+
+        <section class="lab-summary-strip">
+          <div class="lab-summary-tile">
+            <strong id="dashboard-total-count" class="lab-summary-value">0</strong>
+            <span class="lab-summary-label">Total</span>
+          </div>
+          <div class="lab-summary-tile">
+            <strong id="dashboard-running-count" class="lab-summary-value">0</strong>
+            <span class="lab-summary-label">Running</span>
+          </div>
+          <div class="lab-summary-tile">
+            <strong id="dashboard-attention-count" class="lab-summary-value">0</strong>
+            <span class="lab-summary-label">Attention</span>
+          </div>
+          <div class="lab-summary-tile">
+            <strong id="dashboard-cpu-total" class="lab-summary-value">0%</strong>
+            <span class="lab-summary-label">CPU</span>
+          </div>
+          <div class="lab-summary-tile">
+            <strong id="dashboard-memory-total" class="lab-summary-value">0%</strong>
+            <span class="lab-summary-label">Memory</span>
+          </div>
+        </section>
+
+        <section class="dashboard-main-grid">
+          <div class="lab-panel dashboard-services-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Service Groups</p>
+                <h2>Lab Services</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Service</th><th>Status</th><th>Checks</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="dashboard-service-list"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="lab-panel dashboard-resource-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Runtime</p>
+                <h2>Resource Usage</h2>
+              </div>
+            </div>
+            <div id="dashboard-resource-usage" class="resource-usage-list"></div>
+          </div>
+        </section>
+
+        <section class="lab-panel dashboard-log-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Operations</p>
+              <h2>Recent Events</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Time</th><th>Level</th><th>Message</th></tr>
+              </thead>
+              <tbody id="dashboard-event-log"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>

@@ -1,0 +1,278 @@
+.medplum-workspace {
+display: grid;
+  gap: 16px;
+  margin: 22px 0 34px;
+}
+
+#medplum-view .medplum-console-grid {
+display: grid;
+  grid-template-columns: minmax(560px, 1.45fr) minmax(340px, 0.55fr);
+  gap: 18px;
+  align-items: start;
+}
+
+#medplum-view .medplum-console-grid.patient-focused-grid {
+grid-template-columns: minmax(560px, 1.45fr) minmax(340px, 0.55fr);
+}
+
+#medplum-view .medplum-patient-panel,
+#medplum-view .medplum-selected-patient-panel,
+#medplum-view .medplum-workflow-panel,
+#medplum-view .medplum-json-console {
+min-width: 0;
+}
+
+#medplum-view .medplum-context-column {
+display: grid;
+  min-width: 0;
+  gap: 18px;
+}
+
+#medplum-view .medplum-workflow-controls {
+grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+#medplum-view .medplum-related-section {
+margin-top: 18px;
+}
+
+#medplum-view .medplum-diagnostic-report-section {
+display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+#medplum-view .medplum-diagnostic-report-rollup {
+display: grid;
+  gap: 12px;
+}
+
+#medplum-view .medplum-diagnostic-report-group {
+border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+#medplum-view .medplum-diagnostic-report-group > summary {
+display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+#medplum-view .medplum-diagnostic-report-table-wrap {
+border-top: 1px solid var(--line);
+  max-height: 280px;
+  overflow: auto;
+}
+
+#medplum-view .medplum-diagnostic-report-table {
+table-layout: auto;
+  min-width: 100%;
+}
+
+#medplum-view .medplum-diagnostic-report-table th,
+#medplum-view .medplum-diagnostic-report-table td {
+white-space: nowrap;
+}
+
+#medplum-view .medplum-diagnostic-report-table td:first-child {
+min-width: 180px;
+}
+
+#medplum-view .medplum-diagnostic-report-table td:nth-child(4),
+#medplum-view .medplum-diagnostic-report-table td:nth-child(5) {
+overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+#medplum-view .medplum-related-list,
+#medplum-view .medplum-related-group {
+display: grid;
+  gap: 10px;
+}
+
+#medplum-view .medplum-related-group h3 {
+margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+#medplum-view .medplum-related-row {
+display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) minmax(180px, 0.6fr);
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  text-align: left;
+}
+
+#medplum-view .medplum-related-row:hover {
+border-color: var(--ui-blue);
+}
+
+#medplum-view .medplum-related-row code {
+overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+#medplum-view .medplum-json-preview {
+max-height: 520px;
+}
+
+@media (max-width: 900px) {
+#medplum-view .medplum-console-grid,
+#medplum-view .medplum-workflow-controls {
+grid-template-columns: 1fr;
+}
+}
+
+#medplum-view .medplum-patient-table {
+min-width: 880px;
+  table-layout: fixed;
+}
+
+#medplum-view .medplum-patient-table-wrap {
+height: 560px;
+  max-height: 560px;
+  overflow: auto;
+}
+
+#medplum-view .medplum-patient-table thead th {
+position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #ffffff;
+}
+
+#medplum-view .medplum-patient-table th:nth-child(1),
+#medplum-view .medplum-patient-table td:nth-child(1) {
+width: 38px;
+}
+
+#medplum-view .medplum-patient-table th:nth-child(2),
+#medplum-view .medplum-patient-table td:nth-child(2) {
+width: 128px;
+}
+
+#medplum-view .medplum-patient-table th:nth-child(4),
+#medplum-view .medplum-patient-table td:nth-child(4) {
+width: 126px;
+}
+
+#medplum-view .medplum-patient-table th:nth-child(5),
+#medplum-view .medplum-patient-table td:nth-child(5),
+#medplum-view .medplum-patient-table th:nth-child(6),
+#medplum-view .medplum-patient-table td:nth-child(6) {
+width: 72px;
+  text-align: right;
+}
+
+#medplum-view .medplum-patient-table th:last-child,
+#medplum-view .medplum-patient-table td:last-child {
+width: 150px;
+  text-align: right;
+}
+
+#medplum-view .medplum-patient-toggle {
+min-width: 24px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #405068;
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+#medplum-view .medplum-patient-toggle:hover {
+background: transparent;
+  color: #1d4ed8;
+}
+
+#medplum-view .medplum-patient-detail-row td {
+padding: 14px;
+  background: #ffffff;
+}
+
+#medplum-view .medplum-patient-rollup-content {
+display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+#medplum-view .medplum-patient-section {
+display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+#medplum-view .medplum-patient-section-heading {
+margin-bottom: 0;
+}
+
+#medplum-view .medplum-patient-section h3,
+#medplum-view .medplum-workflow-panel h3 {
+margin: 0;
+  color: #13233a;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+#medplum-view .medplum-nested-table-wrap {
+max-width: 100%;
+  overflow-x: auto;
+}
+
+#medplum-view .medplum-nested-table {
+width: auto;
+  min-width: 920px;
+  table-layout: auto;
+}
+
+#medplum-view .medplum-nested-table th,
+#medplum-view .medplum-nested-table td {
+white-space: nowrap;
+}
+
+#medplum-view .medplum-nested-table th:nth-child(2),
+#medplum-view .medplum-nested-table td:nth-child(2),
+#medplum-view .medplum-nested-table th:nth-child(4),
+#medplum-view .medplum-nested-table td:nth-child(4) {
+white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+#medplum-view .medplum-nested-table th:last-child,
+#medplum-view .medplum-nested-table td:last-child {
+width: 1%;
+  text-align: right;
+}
+
+#medplum-view .medplum-nested-table .compact-actions {
+min-width: max-content;
+}
+
+@media (max-width: 1150px) {
+#medplum-view .medplum-console-grid,
+#medplum-view .medplum-console-grid.patient-focused-grid,
+#medplum-view .medplum-workflow-controls {
+grid-template-columns: 1fr;
+}
+}
+
+@media (max-width: 720px) {
+#medplum-view .medplum-patient-table-wrap {
+height: 440px;
+    max-height: 440px;
+}
+}
