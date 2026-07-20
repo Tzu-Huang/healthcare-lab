@@ -1,13 +1,10 @@
 import { createElement, byId, rowCell } from "../core/dom.js";
 import { hl7Escape, hl7EscapeComposite, hl7Timestamp, localDatetimeValue, taipeiTimestamp } from "../core/formatting.js";
-import { getGdtOrderRecords, getOrderRecords } from "../state/order.js";
-import { getSelectedOrderRecordKey, setGdtOrderRecords, setOrderRecords } from "../state/order.js";
-import { replacePatientRecord } from "../state/patient.js";
-import { setSelectedOrderId, setSelectedPatientId } from "../state/selection.js";
+import { getGdtOrderRecords, getOrderRecords, getSelectedOrderRecordKey, setGdtOrderRecords, setOrderRecords } from "../state/order.js";
+import { getPatientRecords, replacePatientRecord } from "../state/patient.js";
+import { getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "../state/selection.js";
 import { setStatus } from "../components/status.js";
 import { createOrder, fetchGdtOrders, fetchOrders, simulateDcm4cheeApReturn as simulateDcm4cheeApReturnRequest, syncDcm4cheeOrder, verifyDcm4cheeMwl } from "../api/order.js";
-import { getPatientRecords } from "../state/patient.js";
-import { getSelectedPatientId, setSelectedPatientId } from "../state/selection.js";
 
 export const ORDER_MODE_CONFIG = {
   "hl7-v251": { title: "HL7 v2.5.1 ORM O01", payloadTitle: "MSH, PID, PV1, ORC, OBR", emptyPreview: "Select a local patient to preview an HL7 v2.5.1 ORM O01 payload.", createLabel: "Create Order" },
