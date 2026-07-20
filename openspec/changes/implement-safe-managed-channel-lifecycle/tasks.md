@@ -43,7 +43,7 @@
 
 ## 7. Verification
 
-- [ ] 7.1 Run focused lifecycle domain, repository, service, API, composition, and frontend tests and record stable pass/fail evidence.
-- [ ] 7.2 Run the repository quality checks and confirm existing OIE settings, management-client, template, patient, order, and result workflows remain compatible.
-- [ ] 7.3 Audit logs, API fixtures, exception text, and persisted lifecycle records for credentials, cookies, authorization material, PHI, HL7 content, and complete Channel payload leakage.
-- [ ] 7.4 Validate all OpenSpec artifacts and document any deferred live OIE 4.5.2 validation without weakening mocked safety acceptance criteria.
+- [x] 7.1 Run focused lifecycle domain, repository, service, API, composition, and frontend tests and record stable pass/fail evidence.
+- [x] 7.2 Run the repository quality checks and confirm existing OIE settings, management-client, template, patient, order, and result workflows remain compatible.
+- [x] 7.3 Audit logs, API fixtures, exception text, and persisted lifecycle records for credentials, cookies, authorization material, PHI, HL7 content, and complete Channel payload leakage.
+- [x] 7.4 Validate all OpenSpec artifacts and document any deferred live OIE 4.5.2 validation without weakening mocked safety acceptance criteria.
