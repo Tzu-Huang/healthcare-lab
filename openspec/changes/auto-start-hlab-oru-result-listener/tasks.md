@@ -34,7 +34,7 @@
 
 ## 6. Regression, Architecture, and Operations
 
-- [ ] 6.1 Run existing ORU parse, ACK, persistence, duplicate, Patient/Order matching, unmatched-result, workbench, and API regression coverage.
+- [x] 6.1 Run existing ORU parse, ACK, persistence, duplicate, Patient/Order matching, unmatched-result, workbench, and API regression coverage.
 - [x] 6.2 Update architecture and operator documentation with persisted Settings ownership, temporary Stop semantics, degraded recovery, and the single-process listener limitation.
-- [ ] 6.3 Verify runtime, service, API, composition, frontend, architecture, full regression, syntax/compile, diff, and strict OpenSpec checks without requiring live OIE or AP services.
-- [ ] 6.4 Audit the final diff against ZAC-49 scope and record that OIE Channel mutation, multi-replica coordination, HLAB pull/fetch, and unrelated ZAC-50 managed-Channel UI remain unchanged.
+- [x] 6.3 Verify runtime, service, API, composition, frontend, architecture, full regression, syntax/compile, diff, and strict OpenSpec checks without requiring live OIE or AP services.
+- [x] 6.4 Audit the final diff against ZAC-49 scope and record that OIE Channel mutation, multi-replica coordination, HLAB pull/fetch, and unrelated ZAC-50 managed-Channel UI remain unchanged.
