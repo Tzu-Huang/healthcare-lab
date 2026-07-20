@@ -158,6 +158,10 @@ class OieInteractionTests(unittest.TestCase):
             },
             "managedChannels": [],
         }
+        listener_status = {
+            "state": "running", "running": True,
+            "host": "127.0.0.1", "port": 6665, "mllpFraming": True,
+        }
 
         def handle_api(route: Route) -> None:
             request = route.request
@@ -169,17 +173,15 @@ class OieInteractionTests(unittest.TestCase):
                 profile["resultListener"] = saved["resultListener"]
                 payload = {"success": True, "item": profile, "runtimeReloadRequired": True}
             elif path == "/api/oie/result-listener/status":
-                payload = {"success": True, "item": {
-                    "state": "stopped", "running": False,
-                    "host": "127.0.0.1", "port": 6665, "mllpFraming": True,
-                }}
+                payload = {"success": True, "item": listener_status}
             elif path == "/api/oie/result-listener/retry":
-                payload = {"success": True, "item": {
+                listener_status.update({
                     "state": "running", "running": True,
                     "host": profile["resultListener"]["host"],
                     "port": profile["resultListener"]["port"],
                     "mllpFraming": profile["resultListener"]["mllpFraming"],
-                }}
+                })
+                payload = {"success": True, "item": listener_status}
             else:
                 route.continue_()
                 return
@@ -190,6 +192,15 @@ class OieInteractionTests(unittest.TestCase):
         page.locator('[data-nav-target="settings-view"]').click()
         page.locator("#settings-listener-host").fill("127.0.0.2")
         page.locator("#save-listener-settings").click()
+        reminder = page.locator("#settings-listener-reload-reminder")
+        reminder.wait_for(state="visible")
+        self.assertIn("not active", reminder.inner_text())
+
+        page.reload(wait_until="networkidle")
+        page.locator('[data-nav-target="settings-view"]').click()
+        page.wait_for_function(
+            "document.querySelector('#settings-listener-host').value === '127.0.0.2'"
+        )
         reminder = page.locator("#settings-listener-reload-reminder")
         reminder.wait_for(state="visible")
         self.assertIn("not active", reminder.inner_text())

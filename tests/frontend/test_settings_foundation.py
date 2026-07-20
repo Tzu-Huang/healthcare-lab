@@ -43,7 +43,9 @@ class SettingsFoundationTests(unittest.TestCase):
         component = (ROOT / "frontend/static/js/components/settings-shell.js").read_text(encoding="utf-8")
 
         self.assertIn("runtimeReloadRequired", source)
+        self.assertIn("!listenerSettingsMatchStatus(state.profile, status.item)", source)
         self.assertIn("listenerSettingsMatchStatus", state)
+        self.assertIn("intendedDisabledStateMatches", state)
         self.assertIn("function saveSettings(", api)
         self.assertIn("function retrySettingsListener(", api)
         self.assertIn("Stop and Retry", component)
