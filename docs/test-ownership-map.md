@@ -77,7 +77,7 @@ now discoverable by feature.
 | FHIR ledger/order workflow persistence | existing FHIR repository suites | `python -m unittest tests.repositories.test_fhir_ledger tests.repositories.test_fhir_workflow_characterization` |
 | GDT workflow and result persistence | `tests/repositories/test_gdt_workflow.py` | `python -m unittest tests.repositories.test_gdt_workflow` |
 | OIE settings/result persistence | `tests/repositories/test_oie.py tests/repositories/test_oie_settings.py` | `python -m unittest tests.repositories.test_oie tests.repositories.test_oie_settings` |
-| retained `DemoStore` and compatibility imports | `tests/repositories/test_compatibility.py` | `python -m unittest tests.repositories.test_compatibility` |
+| explicit application construction and absence of a broad facade | `tests/test_application_composition.py` | `python -m unittest tests.test_application_composition` |
 
 Pure validation, payload and template assertions continue to be owned by the
 corresponding `tests/domain`, `tests/mappers`, and `tests/templates` suites.
@@ -93,14 +93,14 @@ python -m unittest discover -s tests/integration -t .
 python -m unittest discover -s tests/repositories -t .
 python -m unittest discover -s tests/frontend -t .
 python -m unittest discover -s tests -t .
-python -m py_compile app.py backend\\lab_store.py `
+python -m py_compile app.py backend\\app_factory.py backend\\application_composition.py `
   tests\\support\\app.py tests\\support\\fakes.py tests\\support\\test_contracts.py `
   tests\\integration\\_case_support.py tests\\integration\\test_application_shell.py `
   tests\\integration\\test_cross_feature_workflows.py tests\\integration\\test_dashboard_lab_api.py `
   tests\\integration\\test_dcm4chee_api.py tests\\integration\\test_fhir_api.py `
   tests\\integration\\test_gdt_api.py tests\\integration\\test_oie_api.py `
   tests\\integration\\test_order_api.py tests\\integration\\test_patient_api.py `
-  tests\\repositories\\_case_support.py tests\\repositories\\test_compatibility.py `
+  tests\\repositories\\_case_support.py `
   tests\\repositories\\test_dcm4chee_store.py tests\\repositories\\test_fhir_store.py `
   tests\\repositories\\test_gdt_store.py tests\\repositories\\test_oie_store.py `
   tests\\repositories\\test_patient_order_store.py tests\\repositories\\test_template_compatibility.py `
@@ -126,9 +126,9 @@ module-qualified IDs now point to focused owner classes. No legacy behavior
 assertion was removed; the five-count increase is limited to support and
 ownership contracts.
 
-## ZAC-65 compatibility handoff
+## ZAC-65 composition handoff
 
-The compatibility owner preserves tests for the retained `DemoStore` facade,
-legacy imports, and migration behavior until ZAC-65 removes the corresponding
-seams. ZAC-64 does not delete those assertions or change production
-compatibility behavior.
+ZAC-65 removed the broad persistence facade and its compatibility-only test.
+Disposable test applications now retain named repository fixtures outside
+Flask, while integration assertions use HTTP or those focused owners. The
+application composition result is data-only and remains private to startup.

@@ -19,7 +19,7 @@ class Zac62CompositionBaselineTests(unittest.TestCase):
             'app.extensions["oie_management_client"] = create_oie_management_client(',
             source,
         )
-        self.assertIn("store.oie_settings_repository", source)
+        self.assertIn("dependencies.oie_settings_repository", source)
 
     def test_workflow_extensions_are_registered_before_blueprint_composition(self):
         source = APP_FACTORY.read_text(encoding="utf-8")

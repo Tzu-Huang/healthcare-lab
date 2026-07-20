@@ -2,16 +2,20 @@ import unittest
 import json
 from pathlib import Path
 
-from backend.lab_store import (
+from backend.application_composition import assemble_application_dependencies
+
+from backend.application_defaults import (
     DCM4CHEE_MWL_STATUS_CREATED,
     DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE,
     DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
     DCM4CHEE_PATIENT_SYNC_STATUS_PENDING,
     DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
-    DemoStore,
     SimulatorValidationError,
     render_gdt_message,
 )
+from backend.services.oie_workflow import compose_oie_workbench
+from backend.services.protocol_compatibility import list_fhir_resource_mappings
+from backend.templates import dicom as dicom_templates
 from tests.support import DisposableStoreCase
 
 
@@ -45,5 +49,22 @@ class StoreCaseSupport(DisposableStoreCase):
         }
         payload.update(overrides)
         return payload
+
+    def oie_workbench(self):
+        return compose_oie_workbench(
+            self.oie_coordination.list_oie_local_adt_inventory(),
+            self.oie_coordination.list_oie_local_order_inventory(),
+            self.dependencies.oie_repository.list_oie_results(),
+        )
+
+
+
+def build_dcm4chee_mwl_payload(order, profile, *, uid_root="1.2.826.0.1.3680043.10.543"):
+    return dicom_templates.build_mwl_payload(
+        order,
+        profile,
+        uid_root=uid_root,
+        timestamp_factory=lambda: "20260720120000",
+    )
 
 __all__ = [name for name in globals() if not name.startswith("_")]

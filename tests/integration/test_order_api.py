@@ -33,7 +33,7 @@ class OrderApiTests(ApiCaseSupport):
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.get_json()["items"][0]["localOrderNumber"], item["localOrderNumber"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_order_api_creates_only_fhir_service_request(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
         patient = self.create_synced_fhir_patient()
@@ -98,7 +98,7 @@ class OrderApiTests(ApiCaseSupport):
         self.assertRegex(service_request["occurrenceDateTime"], r"^2026-07-08T10:30:00[+-]\d{2}:\d{2}$")
         self.assertRegex(service_request["authoredOn"], r"^2026-07-08T09:00:00[+-]\d{2}:\d{2}$")
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_order_api_preserves_fhir_service_request_sync_failure(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
         patient = self.create_synced_fhir_patient()
@@ -159,8 +159,8 @@ class OrderApiTests(ApiCaseSupport):
         self.assertEqual(set(item["fhir"]), {"serviceRequest"})
 
     def test_historical_fhir_task_is_excluded_from_active_api_contracts(self):
-        store = self.client.application.extensions["demo_store"]
-        record = store.create_fhir_workflow_record(
+        store = self.dependencies
+        record = store.fhir_ledger.create_fhir_workflow_record(
             {
                 "localSourceType": "local_order_records",
                 "localSourceId": "historical-task",
@@ -173,7 +173,7 @@ class OrderApiTests(ApiCaseSupport):
                 },
             }
         )
-        with store.connect() as connection:
+        with store.database.connect() as connection:
             connection.execute(
                 """
                 UPDATE local_fhir_workflow_records

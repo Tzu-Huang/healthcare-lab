@@ -73,30 +73,30 @@ implementation begins.
 
 | Context | Current responsibility and source | Category | Named destination | Matching tests | Compatibility |
 |---|---|---|---|---|---|
-| Patient | Validation, normalization, MRN/visit allocation, persistence, row presentation, and ADT/FHIR/GDT/DICOM construction | domain / persistence / presentation / payload | `backend/domain/patient.py`, `backend/repositories/patients.py`, `backend/mappers/patient.py`, `backend/templates/patient.py` | matching mirrored test modules | `DemoStore` may delegate existing methods only |
+| Patient | Validation, normalization, MRN/visit allocation, persistence, row presentation, and ADT/FHIR/GDT/DICOM construction | domain / persistence / presentation / payload | `backend/domain/patient.py`, `backend/repositories/patients.py`, `backend/mappers/patient.py`, `backend/templates/patient.py` | matching mirrored test modules | consumers use the named repository or workflow port |
 | Patient | Patient creation, FHIR sync, and dcm4chee refresh coordination | workflow / HTTP | `backend/services/patient_workflow.py`, `backend/api/patients.py` | `tests/services/test_patient_workflow.py`, `tests/api/test_patients.py` | existing service/API paths are owners |
-| Order | Validation, identifier allocation, persistence, row presentation, ORM, FHIR ServiceRequest, and DICOM MWL construction | domain / persistence / presentation / payload | `backend/domain/order.py`, `backend/domain/fhir_order.py`, `backend/repositories/orders.py`, `backend/mappers/order.py`, `backend/templates/order.py`, `backend/templates/fhir.py`, `backend/templates/dicom.py` | matching mirrored test modules | `DemoStore` may delegate existing methods only |
+| Order | Validation, identifier allocation, persistence, row presentation, ORM, FHIR ServiceRequest, and DICOM MWL construction | domain / persistence / presentation / payload | `backend/domain/order.py`, `backend/domain/fhir_order.py`, `backend/repositories/orders.py`, `backend/mappers/order.py`, `backend/templates/order.py`, `backend/templates/fhir.py`, `backend/templates/dicom.py` | matching mirrored test modules | consumers use the named repository or workflow port |
 | Order | Order creation, send, retry, verification, and simulated-return coordination | workflow / HTTP | `backend/services/order_workflow.py`, `backend/api/orders.py` | `tests/services/test_order_workflow.py`, `tests/api/test_orders.py` | existing service/API paths are owners |
-| FHIR | Resource mapping, identifier rules, workflow ledger, sync-attempt persistence, and presentation | domain / persistence / presentation | `backend/domain/fhir_ledger.py`, `backend/repositories/fhir_ledger.py`, `backend/mappers/fhir.py` | matching mirrored test modules | `DemoStore` may delegate retained operations |
+| FHIR | Resource mapping, identifier rules, workflow ledger, sync-attempt persistence, and presentation | domain / persistence / presentation | `backend/domain/fhir_ledger.py`, `backend/repositories/fhir_ledger.py`, `backend/mappers/fhir.py` | matching mirrored test modules | consumers use the named ledger or workflow port |
 | FHIR | Medplum authentication and HTTP operations | transport | `backend/clients/medplum.py` | `tests/clients/test_medplum.py` | current client is the owner |
 | FHIR | Resource sync, inventory, retry, and DiagnosticReport coordination | workflow / HTTP | `backend/services/fhir_workflow.py`, `backend/api/fhir.py` | `tests/services/test_fhir_workflow.py`, `tests/api/test_fhir.py` | existing service/API paths are owners |
 | GDT | Encoding, parsing, validation, inbound interpretation, outbound construction, and presentation | domain / payload / presentation | `backend/domain/gdt_protocol.py`, `backend/templates/gdt.py`, `backend/mappers/gdt.py` | matching mirrored test modules | `backend/gdt_adapter.py` may re-export retained symbols |
-| GDT | Five-table workflow ledger and bridge filesystem readiness | persistence / infrastructure health | `backend/repositories/gdt_workflow.py`, `backend/repositories/gdt_bridge_health.py` | matching repository tests | filesystem readiness stays in `gdt_bridge_health.py`; `DemoStore` may delegate retained operations |
+| GDT | Five-table workflow ledger and bridge filesystem readiness | persistence / infrastructure health | `backend/repositories/gdt_workflow.py`, `backend/repositories/gdt_bridge_health.py` | matching repository tests | filesystem readiness stays in `gdt_bridge_health.py`; consumers use focused owners |
 | GDT | Order export, inbox import, demo result, and workbench coordination | workflow / HTTP | `backend/services/gdt_workflow.py`, `backend/api/gdt.py` | `tests/services/test_gdt_workflow.py`, `tests/api/test_gdt.py` | existing service/API paths are owners |
 | GDT | Inbound folder watching and lifecycle state | runtime | `backend/runtime/gdt_bridge_watcher.py` | `tests/runtime/test_gdt_bridge_watcher.py` | current runtime module is the owner |
-| OIE | Settings/result validation, persistence, and presentation | domain / persistence / presentation | `backend/domain/oie.py`, `backend/repositories/oie_settings.py`, `backend/repositories/oie.py`, `backend/mappers/oie.py` | matching mirrored test modules | settings delegation may remain in `DemoStore` |
+| OIE | Settings/result validation, persistence, and presentation | domain / persistence / presentation | `backend/domain/oie.py`, `backend/repositories/oie_settings.py`, `backend/repositories/oie.py`, `backend/mappers/oie.py` | matching mirrored test modules | settings and results use their named repositories |
 | OIE | MLLP send operations and future management API calls | transport | `backend/clients/oie.py`, `backend/clients/oie_management.py` | matching `tests/clients/` modules | current/future clients are owners |
-| OIE | ACK/ORU parsing and generated channel payloads | domain / payload | `backend/domain/oie.py`, `backend/templates/oie_channels.py` | `tests/domain/test_oie.py`, `tests/templates/test_oie_channels.py` | no new payload logic in `DemoStore` |
+| OIE | ACK/ORU parsing and generated channel payloads | domain / payload | `backend/domain/oie.py`, `backend/templates/oie_channels.py` | `tests/domain/test_oie.py`, `tests/templates/test_oie_channels.py` | payload logic remains with domain/template owners |
 | OIE | Workbench, settings, listener, channel lifecycle, and diagnostics coordination | workflow / HTTP | OIE modules under `backend/services/`, `backend/api/oie.py` | matching `tests/services/` and `tests/api/` modules | existing API may expand only by calling services |
 | OIE | Result listener, lifecycle state, and runtime diagnostics | runtime | `backend/runtime/oie_result_listener.py` and named diagnostics runtime modules | matching `tests/runtime/` modules | current listener module is the owner |
-| dcm4chee | DICOM identifiers, UID rules, status policy, payload construction, and row presentation | domain / payload / presentation | `backend/domain/dicom.py`, `backend/templates/dicom.py`, `backend/mappers/dicom.py` | matching mirrored test modules | no new rules or presentation in `DemoStore` |
-| dcm4chee Patient sync | Patient-sync mappings, attempts, ACK/error transitions, and enrichment reads | persistence | `backend/repositories/dcm4chee_patient_sync.py` | `tests/repositories/test_dcm4chee_patient_sync.py` | `DemoStore` may expose mechanical delegates only |
-| dcm4chee MWL | MWL mappings, attempts, verification state, reconciliation lookup, and startup backfill | persistence | `backend/repositories/dcm4chee_mwl.py` | `tests/repositories/test_dcm4chee_mwl.py` | `DemoStore` may expose mechanical delegates only |
-| dcm4chee Results | Result records, reconciliation persistence, refresh generations, diagnostics, and snapshot publication | persistence | `backend/repositories/dcm4chee_results.py` | `tests/repositories/test_dcm4chee_results.py` | `DemoStore` may expose mechanical delegates only |
+| dcm4chee | DICOM identifiers, UID rules, status policy, payload construction, and row presentation | domain / payload / presentation | `backend/domain/dicom.py`, `backend/templates/dicom.py`, `backend/mappers/dicom.py` | matching mirrored test modules | rules and presentation remain with focused owners |
+| dcm4chee Patient sync | Patient-sync mappings, attempts, ACK/error transitions, and enrichment reads | persistence | `backend/repositories/dcm4chee_patient_sync.py` | `tests/repositories/test_dcm4chee_patient_sync.py` | consumers use the named repository |
+| dcm4chee MWL | MWL mappings, attempts, verification state, reconciliation lookup, and startup backfill | persistence | `backend/repositories/dcm4chee_mwl.py` | `tests/repositories/test_dcm4chee_mwl.py` | consumers use the named repository/coordinator |
+| dcm4chee Results | Result records, reconciliation persistence, refresh generations, diagnostics, and snapshot publication | persistence | `backend/repositories/dcm4chee_results.py` | `tests/repositories/test_dcm4chee_results.py` | consumers use the named repository/coordinator |
 | dcm4chee | E2E fixtures, evidence aggregation, and simulated AP returns | workflow | `backend/services/dcm4chee_coordination.py` | focused repository tests and `tests/integration/test_app.py` | composed from explicit patient, order, sync, MWL, and result capabilities |
 | dcm4chee | DICOMweb, QIDO, MWL, patient, and verification requests | transport | `backend/clients/dcm4chee.py` | `tests/clients/test_dcm4chee.py` | current client is the owner |
 | dcm4chee | Patient/order sync, verification, retry, refresh, evidence, and reconciliation coordination | workflow / HTTP | named patient/order/dcm4chee services and `backend/api/dcm4chee.py` | matching service/API tests | cross-context work stays in an explicit service |
-| Lab control-plane | Lab server validation, registry, health, operation history, and presentation | domain / persistence / presentation | `backend/domain/lab.py`, `backend/repositories/lab.py`, `backend/mappers/lab.py` | matching mirrored test modules | `DemoStore` may delegate retained operations |
+| Lab control-plane | Lab server validation, registry, health, operation history, and presentation | domain / persistence / presentation | `backend/domain/lab.py`, `backend/repositories/lab.py`, `backend/mappers/lab.py` | matching mirrored test modules | consumers use the narrow lab application repository |
 | Lab control-plane | Docker socket/Compose operations in `backend/lab_operations.py` | transport | `backend/clients/docker.py` | `tests/clients/test_docker.py` | `lab_operations.py` may re-export adapters during migration |
 | Lab control-plane | Dashboard status/summary projections in `backend/dashboard_services.py` | domain | `backend/domain/dashboard.py` | `tests/domain/test_dashboard.py` | no new projections in the catch-all module |
 | Lab control-plane | Docker socket/CLI resource collection in `backend/dashboard_services.py` | transport | `backend/clients/docker.py` | `tests/clients/test_docker.py` | no new transport in the catch-all module |
@@ -127,12 +127,12 @@ The composition root retains the ZAC-46 OIE management client, settings
 service, workflow service, result-listener extension keys, Blueprint inputs,
 and startup order. ZAC-47 continues to own OIE channel domain/template modules.
 ZAC-63 owns frontend modularization, ZAC-64 broad test-file decomposition, and
-ZAC-65 removal of `DemoStore`, compatibility exports, and workflow facades.
+ZAC-65 explicit application composition and removal of the former broad facade.
 
 The workflow baseline audit found no ZAC-62-owned entries in
 `tests/architecture_legacy_baseline.py` to remove: affected API callers already
 import their service ports directly. Retained compatibility callers are
-`backend/app_factory.py`, `DemoStore` protocol composition, runtime callbacks,
+`backend/app_factory.py`, explicit protocol composition, runtime callbacks,
 and tests that patch the published `backend.app_factory` seams. These callers
 remain frozen under the existing architecture contract; no replacement
 baseline or allowlist entry was added.
@@ -166,9 +166,8 @@ the same or shrink during normal feature work.
 
 | Facade / legacy source | Retained callers | Owning destination | Allowed behavior |
 |---|---|---|---|
-| `app.py` | process launchers and tests patching `app.<symbol>` | `backend/app_factory.py` and registered modules | alias the application module and invoke `main`; no definitions |
-| `backend/lab_store.py:DemoStore` | composition wiring, repository ports, runtime ports, and legacy tests | bounded-context repositories, domain modules, and templates in the map | retain reviewed methods or delegate; no new classified implementation |
-| `backend/gdt_adapter.py` | `DemoStore`, services, and legacy adapter tests | `backend/domain/gdt.py` and `backend/templates/gdt.py` | retain or re-export reviewed symbols only |
+| `app.py` | process launchers | `backend/app_factory.py` | import the supported app/factory/main symbols and invoke `main`; no whole-module alias |
+| `backend/gdt_adapter.py` | services and legacy adapter tests | `backend/domain/gdt.py` and `backend/templates/gdt.py` | retain or re-export reviewed symbols only |
 | `backend/dashboard_services.py` | lab workflow, composition, and legacy tests | `backend/domain/dashboard.py`, `backend/clients/docker.py`, `backend/services/dashboard_workflow.py` | retain reviewed functions only |
 | `backend/lab_operations.py` | composition, lab workflow, and legacy tests | `backend/clients/docker.py` plus lab domain errors | retain or re-export reviewed adapters only |
 | `frontend/static/app.js` | `frontend/templates/index.html` | categorized modules under `frontend/static/js/` | retain reviewed globals/functions or load owners; no new top-level responsibility |
@@ -190,7 +189,7 @@ Future OIE work has preassigned destinations:
 - ZAC-51: diagnostics services, audit repositories, and runtime diagnostics.
 - ZAC-52: repeatable helpers under `tests/e2e/` and verification documentation.
 
-New OIE persistence must use an OIE repository. Do not add new OIE persistence methods directly to `DemoStore`; retained methods may delegate during compatibility migration.
+New OIE persistence must use a named OIE repository and be exposed through a focused workflow port.
 
 ## Frontend placement
 

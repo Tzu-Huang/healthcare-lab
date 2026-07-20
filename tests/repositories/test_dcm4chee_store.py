@@ -6,7 +6,7 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
     """Focused assertion owner for Dcm4cheeStoreTests."""
 
     def test_dcm4chee_mapping_backfills_from_existing_attempts(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mrn": "MRN-A04-001",
                 "firstName": "Avery",
@@ -25,11 +25,11 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
             "dimse": {"calledAETitle": "DCM4CHEE"},
             "mwl": {"aeTitle": "DCM4CHEE", "defaultScheduledStationAETitle": "ECG_AP"},
         }
-        order = self.store.create_dcm4chee_order_record(
+        order = self.dependencies.order_repository.create_dcm4chee_order_record(
             {"patientRecordId": patient["id"], "requestedAt": "20260708103000"}
         )
-        payload = self.store.build_dcm4chee_mwl_payload(order, profile)
-        attempt = self.store.create_dcm4chee_mwl_attempt(
+        payload = build_dcm4chee_mwl_payload(order, profile)
+        attempt = self.dependencies.dcm4chee_mwl_attempt_coordinator.create_dcm4chee_mwl_attempt(
             int(order["id"]),
             profile,
             request_payload=payload,
@@ -37,13 +37,13 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
             http_status=200,
             response_body='{"created":true}',
         )
-        with self.store.connect() as connection:
+        with self.dependencies.database.connect() as connection:
             connection.execute("DELETE FROM local_dcm4chee_mwl_mappings")
             connection.execute("UPDATE local_dcm4chee_mwl_attempts SET mapping_id = NULL")
 
-        reopened = DemoStore(self.store.path)
-        mapping = reopened.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
-        attempts = reopened.list_dcm4chee_mwl_attempts(int(order["id"]))
+        reopened = assemble_application_dependencies(self.dependencies.database.path)
+        mapping = reopened.dcm4chee_mwl_repository.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
+        attempts = reopened.dcm4chee_mwl_repository.list_dcm4chee_mwl_attempts(int(order["id"]))
 
         self.assertIsNotNone(mapping)
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
@@ -51,10 +51,10 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
         self.assertEqual(mapping["accessionNumber"], "ACC-000001")
         self.assertEqual(mapping["patientId"], "MRN-A04-001")
         self.assertEqual(attempts[0]["mappingId"], mapping["id"])
-        self.assertEqual(self.store.list_order_records()[0]["id"], order["id"])
+        self.assertEqual(self.dependencies.order_repository.list_order_records()[0]["id"], order["id"])
 
     def test_dcm4chee_patient_sync_mapping_attempt_and_patient_view(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "dicom",
                 "mrn": "MRN-DCM-001",
@@ -77,8 +77,8 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
             },
         }
 
-        sync = self.store.upsert_dcm4chee_patient_sync(int(patient["id"]), profile)
-        attempt = self.store.create_dcm4chee_patient_sync_attempt(
+        sync = self.dependencies.dcm4chee_patient_sync_repository.upsert_dcm4chee_patient_sync(int(patient["id"]), profile)
+        attempt = self.dependencies.dcm4chee_patient_sync_repository.create_dcm4chee_patient_sync_attempt(
             int(patient["id"]),
             profile,
             patient_sync_id=int(sync["id"]),
@@ -86,19 +86,19 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
             request_url="mllp://dcm4chee:2575",
             request_payload="MSH|^~\\&|...",
         )
-        updated_attempt = self.store.update_dcm4chee_patient_sync_attempt_result(
+        updated_attempt = self.dependencies.dcm4chee_patient_sync_repository.update_dcm4chee_patient_sync_attempt_result(
             int(attempt["id"]),
             attempt_status=DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
             response_payload="MSH|^~\\&|...\rMSA|AA|ADT1|OK",
             ack={"code": "AA", "controlId": "ADT1", "text": "OK"},
         )
-        updated_sync = self.store.update_dcm4chee_patient_sync_from_attempt(
+        updated_sync = self.dependencies.dcm4chee_patient_sync_repository.update_dcm4chee_patient_sync_from_attempt(
             int(sync["id"]),
             updated_attempt,
             sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
         )
-        refreshed = self.store.get_patient_record(int(patient["id"]))
-        attempts = self.store.list_dcm4chee_patient_sync_attempts(int(patient["id"]))
+        refreshed = self.dependencies.patient_repository.get_patient_record(int(patient["id"]))
+        attempts = self.dependencies.dcm4chee_patient_sync_repository.list_dcm4chee_patient_sync_attempts(int(patient["id"]))
 
         self.assertEqual(sync["status"], DCM4CHEE_PATIENT_SYNC_STATUS_PENDING)
         self.assertEqual(updated_sync["status"], DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED)
@@ -110,7 +110,7 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
         self.assertEqual(refreshed["dcm4chee"]["patient"]["status"], DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED)
 
     def test_dcm4chee_patient_sync_failure_is_retryable(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "dicom",
                 "mrn": "MRN-DCM-002",
@@ -132,13 +132,13 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
             },
         }
 
-        sync = self.store.upsert_dcm4chee_patient_sync(
+        sync = self.dependencies.dcm4chee_patient_sync_repository.upsert_dcm4chee_patient_sync(
             int(patient["id"]),
             profile,
             sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
             increment_retry=True,
         )
-        attempt = self.store.create_dcm4chee_patient_sync_attempt(
+        attempt = self.dependencies.dcm4chee_patient_sync_repository.create_dcm4chee_patient_sync_attempt(
             int(patient["id"]),
             profile,
             patient_sync_id=int(sync["id"]),
@@ -146,7 +146,7 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
             error_type="dcm4chee_hl7_unreachable",
             error_text="connection refused",
         )
-        updated_sync = self.store.update_dcm4chee_patient_sync_from_attempt(
+        updated_sync = self.dependencies.dcm4chee_patient_sync_repository.update_dcm4chee_patient_sync_from_attempt(
             int(sync["id"]),
             attempt,
             sync_status=DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
@@ -156,7 +156,7 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
         self.assertTrue(updated_sync["retryable"])
         self.assertEqual(updated_sync["retryCount"], 1)
         self.assertEqual(updated_sync["lastErrorType"], "dcm4chee_hl7_unreachable")
-        self.assertEqual(self.store.get_patient_record(int(patient["id"]))["id"], patient["id"])
+        self.assertEqual(self.dependencies.patient_repository.get_patient_record(int(patient["id"]))["id"], patient["id"])
 
 
 if __name__ == "__main__":

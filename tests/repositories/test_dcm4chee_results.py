@@ -12,7 +12,7 @@ from backend.domain.statuses import (
     DCM4CHEE_RESULT_STATUS_NO_RESULT,
     DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
 )
-from backend.lab_store import DemoStore
+from backend.application_composition import assemble_application_dependencies
 
 
 class Dcm4cheeResultRepositoryTests(unittest.TestCase):
@@ -20,11 +20,11 @@ class Dcm4cheeResultRepositoryTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.path = Path(self.temp_dir.name) / "results.db"
-        self.store = DemoStore(self.path)
-        self.patient = self.store.create_patient_record(
+        self.dependencies = assemble_application_dependencies(self.path)
+        self.patient = self.dependencies.patient_repository.create_patient_record(
             {"mrn": "MRN-RESULT-001", "firstName": "Katherine", "lastName": "Johnson", "dob": "19180826", "sex": "F"}
         )
-        self.order = self.store.create_dcm4chee_order_record({"patientRecordId": self.patient["id"]})
+        self.order = self.dependencies.order_repository.create_dcm4chee_order_record({"patientRecordId": self.patient["id"]})
         self.profile = {
             "profileName": "local-dcm4chee",
             "dimse": {"calledAETitle": "DCM4CHEE"},
@@ -32,7 +32,7 @@ class Dcm4cheeResultRepositoryTests(unittest.TestCase):
             "dicomweb": {"wadoRsUrl": "http://example.test/dicomweb"},
             "viewer": {"studyUrlTemplate": "http://example.test/view/{studyInstanceUid}"},
         }
-        self.mapping = self.store.upsert_dcm4chee_mwl_mapping(int(self.order["id"]), self.profile)
+        self.mapping = self.dependencies.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(int(self.order["id"]), self.profile)
 
     def metadata(self, **overrides: str) -> dict[str, str]:
         values = {
@@ -50,69 +50,69 @@ class Dcm4cheeResultRepositoryTests(unittest.TestCase):
         return values
 
     def test_shared_lock_reconciliation_links_and_rollback(self) -> None:
-        self.assertIs(self.store.dcm4chee_result_repository.lock, self.store.database.lock)
-        result = self.store.upsert_dcm4chee_result_record(
+        self.assertIs(self.dependencies.dcm4chee_result_repository.lock, self.dependencies.database.lock)
+        result = self.dependencies.dcm4chee_result_repository.upsert_dcm4chee_result_record(
             self.metadata(), self.profile, patient_record_id=int(self.patient["id"])
         )
         self.assertEqual(result["reconciliationStatus"], DCM4CHEE_RESULT_STATUS_MATCHED)
         self.assertEqual(result["orderRecordId"], self.order["id"])
         self.assertIn(self.mapping["studyInstanceUid"], result["viewerUrl"])
 
-        with self.store.connect() as connection:
+        with self.dependencies.database.connect() as connection:
             connection.execute(
                 """CREATE TRIGGER reject_result_update
                    BEFORE UPDATE ON local_dcm4chee_result_records
                    BEGIN SELECT RAISE(ABORT, 'test rollback'); END"""
             )
         with self.assertRaisesRegex(sqlite3.IntegrityError, "test rollback"):
-            self.store.upsert_dcm4chee_result_record(
+            self.dependencies.dcm4chee_result_repository.upsert_dcm4chee_result_record(
                 self.metadata(modality="DOC"), self.profile,
                 patient_record_id=int(self.patient["id"]),
             )
-        self.assertEqual(self.store.get_dcm4chee_result_record(int(result["id"]))["modality"], "ECG")
+        self.assertEqual(self.dependencies.dcm4chee_result_repository.get_dcm4chee_result_record(int(result["id"]))["modality"], "ECG")
 
     def test_completed_snapshots_generation_order_and_diagnostics(self) -> None:
         patient_id = int(self.patient["id"])
-        self.store.begin_dcm4chee_result_refresh(patient_id, "generation-1")
-        first = self.store.upsert_dcm4chee_result_record(
+        self.dependencies.dcm4chee_result_repository.begin_dcm4chee_result_refresh(patient_id, "generation-1")
+        first = self.dependencies.dcm4chee_result_repository.upsert_dcm4chee_result_record(
             self.metadata(), self.profile, patient_record_id=patient_id,
             refresh_generation="generation-1",
         )
-        self.store.complete_dcm4chee_result_refresh(patient_id, "generation-1")
-        self.store.begin_dcm4chee_result_refresh(patient_id, "generation-2")
-        self.store.record_dcm4chee_result_refresh_diagnostic(
+        self.dependencies.dcm4chee_result_repository.complete_dcm4chee_result_refresh(patient_id, "generation-1")
+        self.dependencies.dcm4chee_result_repository.begin_dcm4chee_result_refresh(patient_id, "generation-2")
+        self.dependencies.dcm4chee_result_repository.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient_id, profile=self.profile,
             status=DCM4CHEE_RESULT_STATUS_NO_RESULT, refresh_generation="generation-2",
         )
-        self.assertEqual([item["id"] for item in self.store.list_dcm4chee_results_for_patient(patient_id)], [first["id"]])
-        snapshot = self.store.complete_dcm4chee_result_refresh(patient_id, "generation-2")
+        self.assertEqual([item["id"] for item in self.dependencies.dcm4chee_result_repository.list_dcm4chee_results_for_patient(patient_id)], [first["id"]])
+        snapshot = self.dependencies.dcm4chee_result_repository.complete_dcm4chee_result_refresh(patient_id, "generation-2")
         self.assertEqual([item["reconciliationStatus"] for item in snapshot], [DCM4CHEE_RESULT_STATUS_NO_RESULT])
 
-        stale = self.store.upsert_dcm4chee_result_record(
+        stale = self.dependencies.dcm4chee_result_repository.upsert_dcm4chee_result_record(
             self.metadata(), self.profile, patient_record_id=patient_id,
             refresh_generation="generation-1",
         )
         self.assertEqual(stale["refreshGeneration"], "generation-1")
         self.assertEqual(
-            [item["reconciliationStatus"] for item in self.store.get_patient_record(patient_id)["dcm4chee"]["dicomResults"]],
+            [item["reconciliationStatus"] for item in self.dependencies.patient_repository.get_patient_record(patient_id)["dcm4chee"]["dicomResults"]],
             [DCM4CHEE_RESULT_STATUS_NO_RESULT],
         )
 
     def test_refresh_completion_failure_preserves_previous_snapshot(self) -> None:
         patient_id = int(self.patient["id"])
-        self.store.begin_dcm4chee_result_refresh(patient_id, "generation-1")
-        first = self.store.upsert_dcm4chee_result_record(
+        self.dependencies.dcm4chee_result_repository.begin_dcm4chee_result_refresh(patient_id, "generation-1")
+        first = self.dependencies.dcm4chee_result_repository.upsert_dcm4chee_result_record(
             self.metadata(), self.profile, patient_record_id=patient_id,
             refresh_generation="generation-1",
         )
-        self.store.complete_dcm4chee_result_refresh(patient_id, "generation-1")
+        self.dependencies.dcm4chee_result_repository.complete_dcm4chee_result_refresh(patient_id, "generation-1")
 
-        self.store.begin_dcm4chee_result_refresh(patient_id, "generation-2")
-        self.store.upsert_dcm4chee_result_record(
+        self.dependencies.dcm4chee_result_repository.begin_dcm4chee_result_refresh(patient_id, "generation-2")
+        self.dependencies.dcm4chee_result_repository.upsert_dcm4chee_result_record(
             self.metadata(modality="DOC"), self.profile, patient_record_id=patient_id,
             refresh_generation="generation-2",
         )
-        with self.store.connect() as connection:
+        with self.dependencies.database.connect() as connection:
             connection.execute(
                 """CREATE TRIGGER reject_refresh_publication
                    BEFORE UPDATE OF completed_at, results_snapshot_json
@@ -122,11 +122,11 @@ class Dcm4cheeResultRepositoryTests(unittest.TestCase):
             )
 
         with self.assertRaisesRegex(sqlite3.IntegrityError, "reject refresh publication"):
-            self.store.complete_dcm4chee_result_refresh(patient_id, "generation-2")
+            self.dependencies.dcm4chee_result_repository.complete_dcm4chee_result_refresh(patient_id, "generation-2")
 
-        reopened = DemoStore(self.path)
-        visible = reopened.list_dcm4chee_results_for_patient(patient_id)
-        with reopened.connect() as connection:
+        reopened = assemble_application_dependencies(self.path)
+        visible = reopened.dcm4chee_result_repository.list_dcm4chee_results_for_patient(patient_id)
+        with reopened.database.connect() as connection:
             failed_run = connection.execute(
                 """SELECT completed_at, results_snapshot_json
                    FROM local_dcm4chee_result_refresh_runs

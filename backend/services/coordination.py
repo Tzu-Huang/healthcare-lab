@@ -1,4 +1,4 @@
-"""Explicit typed workflow adapters for protocol coordination retained by DemoStore."""
+"""Explicit typed workflow adapters for protocol coordination."""
 
 from __future__ import annotations
 

@@ -2,14 +2,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backend.lab_store import DemoStore
+from backend.application_composition import assemble_application_dependencies
 
 
 class OieRepositoryCharacterizationTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.store = DemoStore(Path(self.directory.name) / "oie.db")
-        self.repository = self.store.oie_repository
+        self.dependencies = assemble_application_dependencies(Path(self.directory.name) / "oie.db")
+        self.repository = self.dependencies.oie_repository
 
     def tearDown(self):
         self.directory.cleanup()
@@ -35,11 +35,11 @@ class OieRepositoryCharacterizationTests(unittest.TestCase):
                          [error["id"], accepted["id"]])
 
     def test_patient_and_order_matching(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {"mrn": "MRN-OIE", "firstName": "Avery", "lastName": "Morgan",
              "dob": "19850412", "sex": "F", "mode": "hl7-v2"}
         )
-        order = self.store.create_order_record({"patientRecordId": patient["id"]})
+        order = self.dependencies.order_repository.create_order_record({"patientRecordId": patient["id"]})
         patient_only = self.repository.record_oie_result(
             "patient", {"messageControlId": "ORU-P", "messageType": "ORU^R01",
                         "patientMrn": "MRN-OIE", "placerOrderNumber": "missing",
@@ -56,11 +56,11 @@ class OieRepositoryCharacterizationTests(unittest.TestCase):
         self.assertEqual(matched["matchedOrderRecordId"], order["id"])
 
     def test_store_and_database_share_write_lock(self):
-        self.assertIs(self.store.lock, self.store.database.lock)
-        self.assertIs(self.repository.lock, self.store.database.lock)
+        self.assertIs(self.dependencies.database.lock, self.dependencies.database.lock)
+        self.assertIs(self.repository.lock, self.dependencies.database.lock)
 
     def test_store_compatibility_delegates_match_direct_repository(self):
-        self.assertEqual(self.store.list_oie_results(), self.repository.list_oie_results())
+        self.assertEqual(self.dependencies.oie_repository.list_oie_results(), self.repository.list_oie_results())
 
 
 if __name__ == "__main__":

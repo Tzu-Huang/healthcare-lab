@@ -47,5 +47,7 @@ packaging remain in the ECG AP Simulator boundary.
 ## Current Migration State
 
 This folder now owns the Healthcare Lab dashboard and lab control plane only.
-The Flask app imports its persistence layer from `backend/lab_store.py`; legacy
-ECG AP Simulator backend modules have been removed from `backend/`.
+`backend/application_composition.py` constructs the shared database, named
+repositories, and coordinators. Consumers receive narrow, purpose-specific
+ports; the Flask application does not publish a broad dependency container.
+Legacy ECG AP Simulator backend modules have been removed from `backend/`.

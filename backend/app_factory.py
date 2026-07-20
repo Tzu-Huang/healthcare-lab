@@ -12,7 +12,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from flask import Flask, jsonify, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 try:
@@ -81,12 +81,8 @@ from backend.services.coordination import (
     OrderProtocolCoordinator,
     PatientProtocolCoordinator,
 )
-from backend.services.fhir_coordination import FhirOrderCoordinator, PatientFhirCoordinator
-from backend.services.gdt_coordination import GdtWorkflowCoordinator, build_gdt_order_request
-from backend.templates.fhir import build_service_request
-from backend.repositories.fhir_ledger import FhirLedgerRepository
-from backend.repositories.gdt_workflow import GdtWorkflowRepository
 from backend.services.oie_workflow import (
+    OieInventoryCoordination,
     OieWorkflowService,
     accept_oie_result_payload,
     build_hl7_ack,
@@ -124,12 +120,15 @@ from backend.services.fhir_workflow import (
 from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain.dicom import validate_dcm4chee_profile
+from backend.domain import dicom as dicom_domain
 from backend.domain import fhir as fhir_domain
+from backend.templates import dicom as dicom_templates
 from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as RuntimeGdtBridgeInboundWatcher
 from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
 from backend.runtime.lazy_wsgi import LazyWsgiApplication
 from backend.services.oie_settings import OieSettingsService, create_oie_management_client
-from backend.lab_composition import dashboard_services, lab_server_services
+from backend.application_composition import assemble_application_dependencies
+from backend.lab_composition import LabApplicationRepository, dashboard_services, lab_server_services
 from backend.services.lab_workflow import (
     dashboard_all_group_items,
     dashboard_child_item,
@@ -140,7 +139,7 @@ from backend.services.lab_workflow import (
     run_lab_operation,
     run_lab_server_health_check,
 )
-from backend.lab_store import (
+from backend.application_defaults import (
     DCM4CHEE_MWL_OPERATION_CREATE,
     DCM4CHEE_MWL_OPERATION_VERIFY,
     DCM4CHEE_MWL_STATUS_CREATED,
@@ -158,7 +157,6 @@ from backend.lab_store import (
     DCM4CHEE_RESULT_STATUS_DUPLICATE,
     DCM4CHEE_RESULT_STATUS_NO_RESULT,
     DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
-    DemoStore,
     LAB_OPERATION_ACTIONS,
     LAB_HEALTH_STATUSES,
     LAB_SERVER_PROTOCOLS,
@@ -168,10 +166,12 @@ from backend.lab_store import (
     FHIR_SYNC_STATUS_PENDING,
     FHIR_SYNC_STATUS_SYNCED,
     OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES,
+    ORDER_PROTOCOL_VERSION,
     ORDER_STATUS_ACCEPTED,
     ORDER_STATUS_ERROR,
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_TRANSPORT_ERROR,
+    PATIENT_MODES,
     SimulatorValidationError,
     hl7_timestamp,
     now_iso,
@@ -224,7 +224,7 @@ request_dcm4chee_patient_create = dcm4chee_client.request_dcm4chee_patient_creat
 request_dcm4chee_mwl_readback = dcm4chee_client.request_dcm4chee_mwl_readback
 request_dcm4chee_mwl_verification = dcm4chee_client.request_dcm4chee_mwl_verification
 request_dcm4chee_qido = dcm4chee_client.request_dcm4chee_qido
-def create_app(database_path: str | None = None) -> Flask:
+def create_app(database_path: str | None = None, *, dependency_receiver: Callable[[object], None] | None = None, order_coordination_receiver: Callable[[object], None] | None = None) -> Flask:
     app = Flask(
         __name__,
         template_folder=str(PROJECT_ROOT / "frontend" / "templates"),
@@ -233,76 +233,68 @@ def create_app(database_path: str | None = None) -> Flask:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
     app.config.update(load_application_config(app.instance_path, database_path))
     Path(app.config["DATABASE_PATH"]).parent.mkdir(parents=True, exist_ok=True)
-    store = DemoStore(app.config["DATABASE_PATH"])
-    fhir_ledger = FhirLedgerRepository(
-        store.database.connect, store.database.lock, timestamp_factory=now_iso,
-    )
-    patient_fhir = PatientFhirCoordinator(store.patient_repository, fhir_ledger)
-    order_fhir = FhirOrderCoordinator(
-        store.patient_repository, store.order_repository, fhir_ledger,
-        timestamp_factory=now_iso, storage_timestamp_factory=hl7_timestamp,
-        resource_builder=build_service_request,
-    )
-    gdt_repository = GdtWorkflowRepository(
-        store.database.connect, store.database.lock, timestamp_factory=now_iso,
-        patient_loader=store.patient_repository.get_patient_record,
-        patient_list_loader=store.patient_repository.list_patient_records,
-        order_builder=build_gdt_order_request,
-    )
-    gdt_workflow = GdtWorkflowCoordinator(gdt_repository)
+    dependencies = assemble_application_dependencies(app.config["DATABASE_PATH"])
+    if dependency_receiver is not None:
+        dependency_receiver(dependencies)
+    fhir_ledger = dependencies.fhir_ledger
+    patient_fhir = dependencies.patient_fhir
+    order_fhir = dependencies.order_fhir
+    gdt_workflow = dependencies.gdt_workflow
     patient_coordination = PatientProtocolCoordinator(
-        begin_dcm4chee_result_refresh=store.dcm4chee_result_repository.begin_dcm4chee_result_refresh,
-        build_dcm4chee_patient_adt_payload=store.build_dcm4chee_patient_adt_payload,
-        complete_dcm4chee_result_refresh=store.dcm4chee_result_repository.complete_dcm4chee_result_refresh,
-        create_dcm4chee_e2e_demo_fixture=store.dcm4chee_workflow_coordinator.create_dcm4chee_e2e_demo_fixture,
-        create_dcm4chee_patient_sync_attempt=store.dcm4chee_patient_sync_repository.create_dcm4chee_patient_sync_attempt,
-        create_patient_fhir_workflow_record=store.create_patient_fhir_workflow_record,
-        dcm4chee_datasets_from_response_body=store.dcm4chee_datasets_from_response_body,
-        dcm4chee_result_metadata_from_dataset=store.dcm4chee_result_metadata_from_dataset,
-        get_dcm4chee_patient_sync_for_patient=store.dcm4chee_patient_sync_repository.get_dcm4chee_patient_sync_for_patient,
-        get_patient_record=store.patient_repository.get_patient_record,
-        get_fhir_workflow_record=store.get_fhir_workflow_record,
-        list_dcm4chee_mwl_mappings_for_patient=store.dcm4chee_mwl_repository.list_dcm4chee_mwl_mappings_for_patient,
-        mark_fhir_sync_failure=store.mark_fhir_sync_failure,
-        mark_fhir_sync_success=store.mark_fhir_sync_success,
-        mark_fhir_syncing=store.mark_fhir_syncing,
-        record_fhir_sync_attempt=store.record_fhir_sync_attempt,
-        record_dcm4chee_result_refresh_diagnostic=store.dcm4chee_result_repository.record_dcm4chee_result_refresh_diagnostic,
-        update_dcm4chee_patient_sync_attempt_result=store.dcm4chee_patient_sync_repository.update_dcm4chee_patient_sync_attempt_result,
-        update_dcm4chee_patient_sync_from_attempt=store.dcm4chee_patient_sync_repository.update_dcm4chee_patient_sync_from_attempt,
-        upsert_dcm4chee_patient_sync=store.dcm4chee_patient_sync_repository.upsert_dcm4chee_patient_sync,
-        upsert_dcm4chee_result_record=store.dcm4chee_result_repository.upsert_dcm4chee_result_record,
+        begin_dcm4chee_result_refresh=dependencies.dcm4chee_result_repository.begin_dcm4chee_result_refresh,
+        build_dcm4chee_patient_adt_payload=lambda patient, profile, **kwargs: dicom_templates.build_patient_adt_payload(patient, profile, timestamp_factory=hl7_timestamp, **kwargs),
+        complete_dcm4chee_result_refresh=dependencies.dcm4chee_result_repository.complete_dcm4chee_result_refresh,
+        create_dcm4chee_e2e_demo_fixture=dependencies.dcm4chee_workflow_coordinator.create_dcm4chee_e2e_demo_fixture,
+        create_dcm4chee_patient_sync_attempt=dependencies.dcm4chee_patient_sync_repository.create_dcm4chee_patient_sync_attempt,
+        create_patient_fhir_workflow_record=patient_fhir.create_patient_fhir_workflow_record,
+        dcm4chee_datasets_from_response_body=dicom_domain.datasets_from_response_body,
+        dcm4chee_result_metadata_from_dataset=dicom_domain.result_metadata_from_dataset,
+        get_dcm4chee_patient_sync_for_patient=dependencies.dcm4chee_patient_sync_repository.get_dcm4chee_patient_sync_for_patient,
+        get_patient_record=dependencies.patient_repository.get_patient_record,
+        get_fhir_workflow_record=fhir_ledger.get_fhir_workflow_record,
+        list_dcm4chee_mwl_mappings_for_patient=dependencies.dcm4chee_mwl_repository.list_dcm4chee_mwl_mappings_for_patient,
+        mark_fhir_sync_failure=fhir_ledger.mark_fhir_sync_failure,
+        mark_fhir_sync_success=fhir_ledger.mark_fhir_sync_success,
+        mark_fhir_syncing=fhir_ledger.mark_fhir_syncing,
+        record_fhir_sync_attempt=fhir_ledger.record_fhir_sync_attempt,
+        record_dcm4chee_result_refresh_diagnostic=dependencies.dcm4chee_result_repository.record_dcm4chee_result_refresh_diagnostic,
+        update_dcm4chee_patient_sync_attempt_result=dependencies.dcm4chee_patient_sync_repository.update_dcm4chee_patient_sync_attempt_result,
+        update_dcm4chee_patient_sync_from_attempt=dependencies.dcm4chee_patient_sync_repository.update_dcm4chee_patient_sync_from_attempt,
+        upsert_dcm4chee_patient_sync=dependencies.dcm4chee_patient_sync_repository.upsert_dcm4chee_patient_sync,
+        upsert_dcm4chee_result_record=dependencies.dcm4chee_result_repository.upsert_dcm4chee_result_record,
     )
     order_coordination = OrderProtocolCoordinator(
-        build_dcm4chee_mwl_payload=store.build_dcm4chee_mwl_payload,
-        create_dcm4chee_mwl_attempt=store.dcm4chee_mwl_attempt_coordinator.create_dcm4chee_mwl_attempt,
-        create_dcm4chee_mwl_profile_failure_attempt=store.dcm4chee_mwl_repository.create_dcm4chee_mwl_profile_failure_attempt,
-        create_dcm4chee_mwl_verification_attempt=store.dcm4chee_mwl_repository.create_dcm4chee_mwl_verification_attempt,
-        create_dcm4chee_order_record=store.order_repository.create_dcm4chee_order_record,
-        create_fhir_order_record=store.create_fhir_order_record,
-        create_order_service_request_fhir_workflow_record=store.create_order_service_request_fhir_workflow_record,
-        create_simulated_dcm4chee_ap_return=store.dcm4chee_workflow_coordinator.create_simulated_dcm4chee_ap_return,
-        dcm4chee_datasets_from_response_body=store.dcm4chee_datasets_from_response_body,
-        dcm4chee_e2e_evidence_for_order=store.dcm4chee_workflow_coordinator.dcm4chee_e2e_evidence_for_order,
-        dcm4chee_identifiers_from_dataset=store.dcm4chee_identifiers_from_dataset,
-        dcm4chee_identifiers_from_payload=store.dcm4chee_identifiers_from_payload,
-        dcm4chee_identifiers_from_response_body=store.dcm4chee_identifiers_from_response_body,
-        dcm4chee_mwl_verification_query_from_mapping=store.dcm4chee_mwl_verification_query_from_mapping,
-        get_dcm4chee_mwl_mapping_for_order=store.dcm4chee_mwl_repository.get_dcm4chee_mwl_mapping_for_order,
-        get_dcm4chee_patient_sync_for_patient=store.dcm4chee_patient_sync_repository.get_dcm4chee_patient_sync_for_patient,
-        get_fhir_workflow_record=store.get_fhir_workflow_record,
-        get_order_record=store.order_repository.get_order_record,
-        get_patient_record=store.patient_repository.get_patient_record,
-        list_dcm4chee_mwl_attempts=store.dcm4chee_mwl_repository.list_dcm4chee_mwl_attempts,
-        mark_fhir_sync_failure=store.mark_fhir_sync_failure,
-        mark_fhir_sync_success=store.mark_fhir_sync_success,
-        mark_fhir_syncing=store.mark_fhir_syncing,
-        record_fhir_sync_attempt=store.record_fhir_sync_attempt,
-        update_dcm4chee_mwl_attempt_result=store.dcm4chee_mwl_repository.update_dcm4chee_mwl_attempt_result,
-        update_dcm4chee_mwl_mapping_from_attempt=store.dcm4chee_mwl_repository.update_dcm4chee_mwl_mapping_from_attempt,
-        update_dcm4chee_mwl_verification_result=store.dcm4chee_mwl_repository.update_dcm4chee_mwl_verification_result,
-        upsert_dcm4chee_mwl_mapping=store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping,
+        build_dcm4chee_mwl_payload=lambda order, profile, **kwargs: dicom_templates.build_mwl_payload(order, profile, timestamp_factory=hl7_timestamp, **kwargs),
+        create_dcm4chee_mwl_attempt=dependencies.dcm4chee_mwl_attempt_coordinator.create_dcm4chee_mwl_attempt,
+        create_dcm4chee_mwl_profile_failure_attempt=dependencies.dcm4chee_mwl_repository.create_dcm4chee_mwl_profile_failure_attempt,
+        create_dcm4chee_mwl_verification_attempt=dependencies.dcm4chee_mwl_repository.create_dcm4chee_mwl_verification_attempt,
+        create_dcm4chee_order_record=dependencies.order_repository.create_dcm4chee_order_record,
+        create_fhir_order_record=order_fhir.create_fhir_order_record,
+        create_order_service_request_fhir_workflow_record=order_fhir.create_order_service_request_fhir_workflow_record,
+        create_simulated_dcm4chee_ap_return=dependencies.dcm4chee_workflow_coordinator.create_simulated_dcm4chee_ap_return,
+        dcm4chee_datasets_from_response_body=dicom_domain.datasets_from_response_body,
+        dcm4chee_e2e_evidence_for_order=dependencies.dcm4chee_workflow_coordinator.dcm4chee_e2e_evidence_for_order,
+        dcm4chee_identifiers_from_dataset=dicom_domain.identifiers_from_dataset,
+        dcm4chee_identifiers_from_payload=lambda order, profile, **kwargs: dicom_templates.identifiers_from_payload(order, profile, timestamp_factory=hl7_timestamp, **kwargs),
+        dcm4chee_identifiers_from_response_body=dicom_domain.identifiers_from_response_body,
+        dcm4chee_mwl_verification_query_from_mapping=dicom_domain.verification_query_from_mapping,
+        get_dcm4chee_mwl_mapping_for_order=dependencies.dcm4chee_mwl_repository.get_dcm4chee_mwl_mapping_for_order,
+        get_dcm4chee_patient_sync_for_patient=dependencies.dcm4chee_patient_sync_repository.get_dcm4chee_patient_sync_for_patient,
+        get_fhir_workflow_record=fhir_ledger.get_fhir_workflow_record,
+        get_order_record=dependencies.order_repository.get_order_record,
+        get_patient_record=dependencies.patient_repository.get_patient_record,
+        list_dcm4chee_mwl_attempts=dependencies.dcm4chee_mwl_repository.list_dcm4chee_mwl_attempts,
+        mark_fhir_sync_failure=fhir_ledger.mark_fhir_sync_failure,
+        mark_fhir_sync_success=fhir_ledger.mark_fhir_sync_success,
+        mark_fhir_syncing=fhir_ledger.mark_fhir_syncing,
+        record_fhir_sync_attempt=fhir_ledger.record_fhir_sync_attempt,
+        update_dcm4chee_mwl_attempt_result=dependencies.dcm4chee_mwl_repository.update_dcm4chee_mwl_attempt_result,
+        update_dcm4chee_mwl_mapping_from_attempt=dependencies.dcm4chee_mwl_repository.update_dcm4chee_mwl_mapping_from_attempt,
+        update_dcm4chee_mwl_verification_result=dependencies.dcm4chee_mwl_repository.update_dcm4chee_mwl_verification_result,
+        upsert_dcm4chee_mwl_mapping=dependencies.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping,
     )
+    if order_coordination_receiver is not None:
+        order_coordination_receiver(order_coordination)
     gdt_bridge_watcher = GdtBridgeInboundWatcher(
         gdt_workflow,
         app.config["GDT_BRIDGE_PATH"],
@@ -322,17 +314,26 @@ def create_app(database_path: str | None = None) -> Flask:
         database=app.config["OPENEMR_DB_NAME"],
         allowed_procedure_codes=app.config["OPENEMR_GDT_PROCEDURE_CODES"],
     )
-    app.extensions["demo_store"] = store
+    lab_operations = LabApplicationRepository(
+        dependencies.lab_repository,
+        gdt_inventory=dependencies.gdt_repository.list_gdt_orders,
+    )
+    oie_coordination = OieInventoryCoordination(
+        dependencies.patient_repository,
+        dependencies.order_repository,
+        patient_protocol=PATIENT_MODES["hl7-v2"]["protocol"],
+        order_protocol=ORDER_PROTOCOL_VERSION,
+    )
     app.extensions["openemr_procedure_order_source"] = openemr_source
     app.extensions["oie_result_listener"] = OieResultListener(
-        store.oie_repository, accept_oie_result_payload
+        dependencies.oie_repository, accept_oie_result_payload
     )
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
-    app.extensions["oie_settings_service"] = OieSettingsService(store.oie_settings_repository)
-    app.extensions["oie_management_client"] = create_oie_management_client(store.oie_settings_repository)
+    app.extensions["oie_settings_service"] = OieSettingsService(dependencies.oie_settings_repository)
+    app.extensions["oie_management_client"] = create_oie_management_client(dependencies.oie_settings_repository)
     app.extensions["oie_workflow_service"] = OieWorkflowService(
-        store.oie_repository,
-        store,
+        dependencies.oie_repository,
+        oie_coordination,
         app.config,
         app.extensions["oie_result_listener"],
         result_handler=accept_oie_result_payload,
@@ -349,7 +350,7 @@ def create_app(database_path: str | None = None) -> Flask:
         create_lab_servers_blueprint(
             *lab_server_services(
                 app,
-                store,
+                lab_operations,
                 operation_runner=lambda **values: run_lab_operation(**values),
                 health_checker=lambda repository, server_id: run_lab_server_health_check(repository, server_id),
             )
@@ -359,7 +360,7 @@ def create_app(database_path: str | None = None) -> Flask:
         create_dashboard_blueprint(
             *dashboard_services(
                 app,
-                store,
+                lab_operations,
                 operation_runner=lambda **values: run_lab_operation(**values),
                 health_checker=lambda repository, server_id: run_lab_server_health_check(repository, server_id),
             )
@@ -379,7 +380,7 @@ def create_app(database_path: str | None = None) -> Flask:
 
     def configured_medplum_base_url() -> str:
         medplum = next(
-            (item for item in store.list_lab_servers() if item["name"] == "Medplum"),
+            (item for item in dependencies.lab_repository.list_servers() if item["name"] == "Medplum"),
             None,
         )
         return str((medplum or {}).get("baseUrl") or "").strip()
@@ -411,7 +412,7 @@ def create_app(database_path: str | None = None) -> Flask:
         )
     )
     patient_service = PatientWorkflowService(
-        store.patient_repository,
+        dependencies.patient_repository,
         app.config,
         fhir_capability=workflow_operations.patient_fhir,
         fixture_capability=workflow_operations.fixture,
@@ -427,7 +428,7 @@ def create_app(database_path: str | None = None) -> Flask:
         patient_service.result_refresh_service, patient_service.fixture_service,
     ))
     order_service = OrderWorkflowService(
-                store.order_repository,
+                dependencies.order_repository,
                 app.config,
                 fhir_capability=workflow_operations.order_fhir,
                 dcm_order_capability=workflow_operations.dcm_order,

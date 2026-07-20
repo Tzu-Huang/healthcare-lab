@@ -127,7 +127,7 @@ class GdtApiTests(ApiCaseSupport):
 
         with patch.object(Path, "replace", replace_with_archive_failure):
             result = import_gdt_bridge_files(
-                self.client.application.extensions["demo_store"],
+                self.dependencies.gdt_workflow,
                 self.client.application.config["GDT_BRIDGE_PATH"],
                 stable_seconds=0,
             )
@@ -149,7 +149,7 @@ class GdtApiTests(ApiCaseSupport):
         bad_file.write_text("8000|NOT-GDT\n", encoding="utf-8")
 
         result = import_gdt_bridge_files(
-            self.client.application.extensions["demo_store"],
+            self.dependencies.gdt_workflow,
             bridge_root,
             stable_seconds=0,
         )
@@ -167,7 +167,7 @@ class GdtApiTests(ApiCaseSupport):
         accepted = self.write_gdt_result_file(order, "AIS_GER_0002.GDT", text="Right receiver")
 
         result = import_gdt_bridge_files(
-            self.client.application.extensions["demo_store"],
+            self.dependencies.gdt_workflow,
             self.client.application.config["GDT_BRIDGE_PATH"],
             filename_profile="gdt35",
             receiver_id="AIS",
@@ -199,7 +199,7 @@ class GdtApiTests(ApiCaseSupport):
         observations = {}
 
         first = import_gdt_bridge_files(
-            self.client.application.extensions["demo_store"],
+            self.dependencies.gdt_workflow,
             self.client.application.config["GDT_BRIDGE_PATH"],
             require_stable=True,
             stable_seconds=0,
@@ -209,7 +209,7 @@ class GdtApiTests(ApiCaseSupport):
         self.assertTrue(inbound.exists())
 
         second = import_gdt_bridge_files(
-            self.client.application.extensions["demo_store"],
+            self.dependencies.gdt_workflow,
             self.client.application.config["GDT_BRIDGE_PATH"],
             require_stable=True,
             stable_seconds=0,
@@ -230,7 +230,7 @@ class GdtApiTests(ApiCaseSupport):
         os.utime(second, (old + 5, old + 5))
 
         result = import_gdt_bridge_files(
-            self.client.application.extensions["demo_store"],
+            self.dependencies.gdt_workflow,
             self.client.application.config["GDT_BRIDGE_PATH"],
             stable_seconds=0,
         )

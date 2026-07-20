@@ -7,7 +7,7 @@ import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.lab_store import DemoStore
+from backend.application_composition import assemble_application_dependencies
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,9 +45,9 @@ class DisposableResourceGuardTests(unittest.TestCase):
                 temporary_root, temporary_root / "protocol-characterization.db"
             )
 
-            store = DemoStore(database_path)
+            store = assemble_application_dependencies(database_path)
 
-            self.assertEqual(Path(store.path).resolve(), database_path)
+            self.assertEqual(Path(store.database.path).resolve(), database_path)
             self.assertNotIn(ROOT / "instance", database_path.parents)
 
     def test_repository_instance_and_other_non_temporary_paths_are_rejected(self):

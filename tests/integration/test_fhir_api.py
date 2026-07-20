@@ -51,8 +51,8 @@ class FhirApiTests(ApiCaseSupport):
                 },
             },
         ).get_json()["item"]
-        store = self.client.application.extensions["demo_store"]
-        store.mark_fhir_sync_success(
+        store = self.dependencies
+        store.fhir_ledger.mark_fhir_sync_success(
             patient["id"],
             medplum_resource_id="patient-created",
             medplum_resource_reference="Patient/patient-created",
@@ -76,7 +76,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertEqual(preview.get_json()["source"], "local-submitted")
         self.assertEqual(preview.get_json()["resource"]["subject"]["reference"], "Patient/patient-created")
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_record_preview_uses_medplum_live_json_for_synced_resource(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
         created = self.client.post(
@@ -87,8 +87,8 @@ class FhirApiTests(ApiCaseSupport):
                 "resource": {"resourceType": "Patient", "active": True},
             },
         ).get_json()["item"]
-        store = self.client.application.extensions["demo_store"]
-        store.mark_fhir_sync_success(
+        store = self.dependencies
+        store.fhir_ledger.mark_fhir_sync_success(
             created["id"],
             medplum_resource_id="patient-created",
             medplum_resource_reference="Patient/patient-created",
@@ -128,7 +128,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertTrue(body["live"]["fetched"])
         self.assertFalse(body["resource"]["active"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_record_preview_falls_back_to_local_json_when_live_fetch_fails(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
         created = self.client.post(
@@ -139,8 +139,8 @@ class FhirApiTests(ApiCaseSupport):
                 "resource": {"resourceType": "Patient", "active": True},
             },
         ).get_json()["item"]
-        store = self.client.application.extensions["demo_store"]
-        store.mark_fhir_sync_success(
+        store = self.dependencies
+        store.fhir_ledger.mark_fhir_sync_success(
             created["id"],
             medplum_resource_id="patient-created",
             medplum_resource_reference="Patient/patient-created",
@@ -171,7 +171,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertIn("medplum down", body["live"]["error"])
         self.assertTrue(body["resource"]["active"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_diagnostic_reports_fetches_patient_bundle_and_summaries(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
         calls = []
@@ -249,7 +249,7 @@ class FhirApiTests(ApiCaseSupport):
         )
         self.assertTrue(any("subject=Patient%2Fpatient-1" in url for _method, url in calls))
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_diagnostic_reports_empty_bundle_is_successful(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
 
@@ -280,7 +280,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertTrue(body["empty"])
         self.assertEqual(body["reports"], [])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_diagnostic_reports_falls_back_when_based_on_search_is_unsupported(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
 
@@ -361,7 +361,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertEqual(body["reports"][0]["relationshipType"], "order-linked")
         self.assertEqual(body["reports"][1]["relationshipType"], "patient-level")
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_diagnostic_reports_prefers_based_on_when_subject_search_fails(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
 
@@ -419,7 +419,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertEqual([item["id"] for item in body["reports"]], ["linked"])
         self.assertEqual(body["reports"][0]["relationshipType"], "order-linked")
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_diagnostic_reports_surfaces_unauthorized_fetch(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
 
@@ -453,7 +453,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertEqual(body["statusCode"], 401)
         self.assertEqual(body["operationOutcome"]["resourceType"], "OperationOutcome")
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_diagnostic_reports_rejects_malformed_bundle(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
 
@@ -483,7 +483,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertFalse(body["success"])
         self.assertIn("non-Bundle", body["error"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_resource_preview_fetches_live_binary_reference(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
 
@@ -522,7 +522,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertEqual(body["reference"], "Binary/bin-1")
         self.assertEqual(body["resource"]["resourceType"], "Binary")
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_sync_reuses_existing_medplum_resource_by_identifier(self, urlopen):
         created = self.client.post(
             "/api/fhir/records",
@@ -577,7 +577,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertEqual(len(attempts), 1)
         self.assertEqual(attempts[0]["method"], "GET")
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_sync_creates_once_when_identifier_is_missing(self, urlopen):
         created = self.client.post(
             "/api/fhir/records",
@@ -632,7 +632,7 @@ class FhirApiTests(ApiCaseSupport):
         retry_methods = [method for method, _url in calls if not _url.endswith("/oauth2/token")]
         self.assertEqual(retry_methods, ["GET", "POST", "GET"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_sync_updates_existing_medplum_resource_after_local_change(self, urlopen):
         created = self.client.post(
             "/api/fhir/records",
@@ -697,7 +697,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertEqual(put_payloads[0]["id"], "patient-created")
         self.assertFalse(put_payloads[0]["active"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_sync_failure_preserves_operation_outcome(self, urlopen):
         created = self.client.post(
             "/api/fhir/records",
