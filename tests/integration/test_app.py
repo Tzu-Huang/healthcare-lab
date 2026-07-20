@@ -48,7 +48,20 @@ def frontend_styles() -> str:
     root = Path(__file__).resolve().parents[2] / "frontend" / "static" / "css"
     return "\n".join(
         (root / path).read_text(encoding="utf-8")
-        for path in ("base.css", "layout.css", "components.css", "views/application.css")
+        for path in (
+            "base.css",
+            "layout.css",
+            "components.css",
+            "views/application.css",
+            "views/dashboard.css",
+            "views/patient.css",
+            "views/order.css",
+            "views/fhir.css",
+            "views/dcm4chee.css",
+            "views/oie.css",
+            "views/gdt.css",
+            "views/settings.css",
+        )
     )
 
 
