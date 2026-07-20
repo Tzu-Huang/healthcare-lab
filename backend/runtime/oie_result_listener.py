@@ -50,12 +50,14 @@ class OieResultListener:
         self._socket: socket.socket | None = None
         self._stop_event = threading.Event()
         self._lock = threading.RLock()
+        self._state = "stopped"
         self.last_error = ""
         self.last_received_at = ""
 
     def status(self) -> dict[str, Any]:
         with self._lock:
             return {
+                "state": self._state,
                 "running": bool(self._thread and self._thread.is_alive()),
                 "host": self.host,
                 "port": self.port,
@@ -84,12 +86,17 @@ class OieResultListener:
                 server.settimeout(0.5)
             except OSError as exc:
                 server.close()
+                self.host = host
+                self.port = int(port)
+                self.framing = bool(framing)
+                self._state = "degraded"
                 self.last_error = str(exc)
                 raise ValidationError(f"Listener could not start: {exc}") from exc
             self.host = host
             self.port = int(port)
             self.framing = bool(framing)
             self.last_error = ""
+            self._state = "running"
             self._stop_event.clear()
             self._socket = server
             self._thread = threading.Thread(target=self._serve, name="oie-result-listener", daemon=True)
@@ -107,6 +114,9 @@ class OieResultListener:
             thread = self._thread
         if thread:
             thread.join(timeout=2)
+        with self._lock:
+            self._state = "stopped"
+            self.last_error = ""
         return self.status()
 
     def _serve(self) -> None:
@@ -123,16 +133,20 @@ class OieResultListener:
                 except OSError:
                     if not self._stop_event.is_set():
                         with self._lock:
+                            self._state = "degraded"
                             self.last_error = "Listener socket closed unexpectedly."
                     break
                 with connection:
                     self._handle_connection(connection)
         except OSError as exc:
             with self._lock:
+                self._state = "degraded"
                 self.last_error = str(exc)
         finally:
             with self._lock:
                 self._socket = None
+                if self._stop_event.is_set():
+                    self._state = "stopped"
             try:
                 server.close()
             except OSError:

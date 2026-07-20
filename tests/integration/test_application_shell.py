@@ -231,6 +231,7 @@ class ApplicationShellTests(ApiCaseSupport):
         self.assertIn("/api/oie/local-orders", routes)
         self.assertIn("/api/oie/settings", routes)
         self.assertIn("/api/oie/result-listener/start", routes)
+        self.assertIn("/api/oie/result-listener/retry", routes)
         self.assertIn("/api/oie/workbench", routes)
         self.assertIn("/api/oie/results", routes)
         self.assertNotIn("/api/listener/start", routes)

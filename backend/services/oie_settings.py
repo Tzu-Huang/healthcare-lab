@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from backend.clients.oie_management import OieManagementClient
@@ -13,6 +14,14 @@ class OieSettingsRepositoryPort(Protocol):
     def get(self) -> dict[str, Any]: ...
 
     def update(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+    def get_result_listener_configuration(self) -> Mapping[str, Any]: ...
+
+
+@dataclass(frozen=True)
+class OieSettingsUpdateResult:
+    profile: dict[str, Any]
+    runtime_reload_required: bool
 
 
 class OieManagementConfigurationSource(Protocol):
@@ -48,5 +57,10 @@ class OieSettingsService:
     def get_profile(self) -> dict[str, Any]:
         return self._repository.get()
 
-    def update_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._repository.update(payload)
+    def update_profile(self, payload: dict[str, Any]) -> OieSettingsUpdateResult:
+        before = self._repository.get().get("resultListener")
+        profile = self._repository.update(payload)
+        return OieSettingsUpdateResult(
+            profile=profile,
+            runtime_reload_required=before != profile.get("resultListener"),
+        )

@@ -24,10 +24,14 @@ def create_oie_blueprint(
     @blueprint.put("/api/oie/settings")
     def update_oie_settings():
         try:
-            item = settings.update_profile(request.get_json(silent=True))
+            result = settings.update_profile(request.get_json(silent=True))
         except SimulatorValidationError as exc:
             return error(str(exc), 400)
-        return jsonify({"success": True, "item": item})
+        return jsonify({
+            "success": True,
+            "item": result.profile,
+            "runtimeReloadRequired": result.runtime_reload_required,
+        })
 
     @blueprint.get("/api/oie/local-adt-patients")
     def list_oie_local_adt_patients():
@@ -73,7 +77,15 @@ def create_oie_blueprint(
     @blueprint.post("/api/oie/result-listener/start")
     def start_oie_result_listener():
         try:
-            item = workflow.start_listener(request.get_json(silent=True) or {})
+            item = workflow.start_listener()
+        except (ValueError, ValidationError) as exc:
+            return error(str(exc), 400)
+        return jsonify({"success": True, "item": item})
+
+    @blueprint.post("/api/oie/result-listener/retry")
+    def retry_oie_result_listener():
+        try:
+            item = workflow.retry_listener()
         except (ValueError, ValidationError) as exc:
             return error(str(exc), 400)
         return jsonify({"success": True, "item": item})

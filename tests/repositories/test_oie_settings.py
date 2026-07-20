@@ -75,6 +75,21 @@ class OieSettingsRepositoryTest(unittest.TestCase):
         self.assertEqual("Admin", private_configuration["password"])
         self.assertEqual(10.0, private_configuration["timeout_seconds"])
 
+    def test_private_listener_configuration_is_narrow_and_persisted(self):
+        self.repository.update(self.settings_payload(resultListener={
+            "host": "127.0.0.1", "port": 7765,
+            "mllpFraming": False, "autoStart": False,
+        }))
+
+        configuration = self.repository.get_result_listener_configuration()
+
+        self.assertEqual({
+            "host": "127.0.0.1", "port": 7765,
+            "mllp_framing": False, "auto_start": False,
+        }, configuration)
+        self.assertNotIn("password", configuration)
+        self.assertNotIn("base_url", configuration)
+
     def test_update_persists_and_replaces_channel_mappings(self):
         payload = self.settings_payload(
             managementApi={
