@@ -13,6 +13,7 @@ import { setSelectedOrderRecordKey } from "../state/order.js";
 import { createPatient } from "../api/patient.js";
 import { buildPatientGdtPreviewPayload, configurePatientCoordinator, createPatientRecord, initializePatientView, refreshPatientDcm4cheeResults, refreshPatientPreview, refreshPatients, renderPatientSummaryFromPayload } from "./patient.js";
 import { configureOrderCoordinator, createOrderRecord, initializeOrderView, orderListKey, orderRecordMode, orderVisitId, refreshOrderPreview, refreshOrders, refreshOrderWorkspace, renderOrderPatientOptions, retryDcm4cheeOrder, selectedOrderPatientReference, sendDcm4cheeOrder, simulateDcm4cheeApReturn, verifyDcm4cheeOrder } from "./order.js";
+import { initializeSettingsView, refreshSettings } from "./settings.js";
 
 let initialized = false;
 
@@ -260,10 +261,12 @@ export function initializeApplication() {
   registerViewActivation("dcm4chee-view", "dcm4chee", refreshDcm4cheeConsole);
   registerViewActivation("oie-view", "OIE", refreshOieInventory);
   registerViewActivation("gdt-view", "GDT", refreshGdtConsole);
+  registerViewActivation("settings-view", "Settings", refreshSettings);
   initializeNavigation();
   initializeView("lab-console-view", initializeDashboardView);
   initializeView("oie-view", initializeOieView);
   initializeView("gdt-view", () => initializeGdtView({ buildPatientPreviewPayload: buildPatientGdtPreviewPayload }));
+  initializeView("settings-view", () => initializeSettingsView(byId("settings-view")));
   initializeView("medplum-view", initializeFhirView);
   initializeView("dcm4chee-view", () => {
     configureDcm4cheeCoordinator({

@@ -56,6 +56,21 @@ class OieSettingsRepository:
             "timeout_seconds": float(profile["management_api_timeout_seconds"]),
         }
 
+    def get_result_listener_configuration(self) -> dict[str, Any]:
+        """Return the private persisted intent consumed by runtime composition."""
+        with self._connect() as connection:
+            profile = connection.execute(
+                "SELECT * FROM oie_settings_profiles WHERE profile_name = ?", (self._profile_name,)
+            ).fetchone()
+        if not profile:
+            raise KeyError(self._profile_name)
+        return {
+            "host": str(profile["result_listener_host"]),
+            "port": int(profile["result_listener_port"]),
+            "mllp_framing": bool(profile["result_listener_mllp_framing"]),
+            "auto_start": bool(profile["result_listener_auto_start"]),
+        }
+
     def update(self, payload: dict[str, Any]) -> dict[str, Any]:
         values = self._validate(payload)
         timestamp = self._timestamp()

@@ -1,3 +1,22 @@
 .settings-workspace[data-module-owner="settings"] {
   --settings-module-owner: "settings";
 }
+
+.settings-listener-panel {
+  max-width: 880px;
+}
+
+.settings-listener-grid {
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  margin-bottom: 18px;
+}
+
+.settings-runtime-reminder {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid #d9b35c;
+  border-radius: 7px;
+  background: #fff4cf;
+  color: #6d5111;
+  font-weight: 700;
+}

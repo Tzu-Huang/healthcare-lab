@@ -16,6 +16,7 @@ class DisposableAppCase(unittest.TestCase):
         temp_root = Path(self.temp_dir.name)
         app = create_app(
             str(temp_root / "app.db"),
+            activate_runtime=False,
             dependency_receiver=lambda dependencies: setattr(
                 self, "dependencies", dependencies
             ),

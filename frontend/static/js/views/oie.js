@@ -1,4 +1,4 @@
-import { fetchOieListenerStatus, fetchOieWorkbench, sendOieLocalOrder, startOieResultListener, stopOieResultListener } from "../api/oie.js";
+import { fetchOieListenerStatus, fetchOieWorkbench, retryOieResultListener, sendOieLocalOrder, startOieResultListener, stopOieResultListener } from "../api/oie.js";
 import { setStatus } from "../components/status.js";
 import { copyTextFromElement } from "../core/clipboard.js";
 import { byId, createElement, rowCell } from "../core/dom.js";
@@ -23,6 +23,7 @@ export function initializeOieView() {
     if (state.selectedOrderId) sendOieOrder(state.selectedOrderId, byId("send-selected-oie-order"));
   });
   byId("start-oie-listener").addEventListener("click", startOieListener);
+  byId("retry-oie-listener").addEventListener("click", retryOieListener);
   byId("stop-oie-listener").addEventListener("click", stopOieListener);
 }
 
@@ -424,11 +425,9 @@ export async function sendOieOrder(orderId, button) {
 }
 
 function renderOieListenerStatus(item = {}) {
-  const label = item.running ? `Running ${item.host}:${item.port}` : "Stopped";
+  const label = item.running ? `Running ${item.host}:${item.port}` : (item.state === "degraded" ? "Degraded" : "Stopped");
   setStatus("oie-listener-status", item.lastError || label, item.lastError ? "error" : (item.running ? "success" : "neutral"));
-  if (item.host) byId("oie-listener-host").value = item.host;
-  if (item.port) byId("oie-listener-port").value = item.port;
-  byId("oie-listener-mllp").checked = item.mllpFraming !== false;
+  byId("oie-listener-endpoint").textContent = `${item.host || "-"}:${item.port || "-"} / MLLP ${item.mllpFraming === false ? "off" : "on"}`;
 }
 
 async function refreshOieListenerStatus() {
@@ -439,11 +438,17 @@ async function refreshOieListenerStatus() {
 export async function startOieListener() {
   setStatus("oie-listener-status", "Starting...", "pending");
   try {
-    const result = await startOieResultListener({
-      host: byId("oie-listener-host").value.trim(),
-      port: Number(byId("oie-listener-port").value || 6665),
-      mllpFraming: byId("oie-listener-mllp").checked,
-    });
+    const result = await startOieResultListener();
+    renderOieListenerStatus(result.item || {});
+  } catch (error) {
+    setStatus("oie-listener-status", error.message, "error");
+  }
+}
+
+export async function retryOieListener() {
+  setStatus("oie-listener-status", "Retrying...", "pending");
+  try {
+    const result = await retryOieResultListener();
     renderOieListenerStatus(result.item || {});
   } catch (error) {
     setStatus("oie-listener-status", error.message, "error");
