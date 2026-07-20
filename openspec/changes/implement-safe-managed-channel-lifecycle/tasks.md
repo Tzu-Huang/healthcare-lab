@@ -1,8 +1,8 @@
 ## 1. Lifecycle Contracts and Classification
 
-- [ ] 1.1 Add persistence-neutral lifecycle classifications, identity evidence, owned-field diff, preview token, step result, operation outcome, and audit event contracts.
-- [ ] 1.2 Implement deterministic inventory reconciliation across templates, persisted mappings, and live OIE Channels with conservative conflict precedence and external/read-only projection.
-- [ ] 1.3 Add domain tests for missing, unchanged, drifted, same-name conflict, ID/marker contradiction, duplicate marker, malformed payload, and external classification.
+- [x] 1.1 Add persistence-neutral lifecycle classifications, identity evidence, owned-field diff, preview token, step result, operation outcome, and audit event contracts.
+- [x] 1.2 Implement deterministic inventory reconciliation across templates, persisted mappings, and live OIE Channels with conservative conflict precedence and external/read-only projection.
+- [x] 1.3 Add domain tests for missing, unchanged, drifted, same-name conflict, ID/marker contradiction, duplicate marker, malformed payload, and external classification.
 
 ## 2. Targeted Persistence and Audit
 
