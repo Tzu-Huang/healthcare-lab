@@ -15,15 +15,17 @@ def value(channel_id="c1", revision=7, payload=None, status="STARTED"):
 
 
 class FakeRepository:
-    def __init__(self, mapped=True):
+    def __init__(self, mapped=True, fail_audit_after=None):
         self.mapping = {"logicalType": "hlab-orm-to-ap", "channelId": "c1" if mapped else "", "channelName": "HLAB_ORM_TO_AP", "templateVersion": "1", "lastKnownRevision": "7" if mapped else ""}
-        self.audits = []
+        self.audits, self.fail_audit_after = [], fail_audit_after
     def get(self): return {"managedChannels": [self.mapping]}
     def compare_and_update_managed_channel_mapping(self, **kwargs):
         self.mapping.update(channelId=kwargs["channel_id"], lastKnownRevision=kwargs["revision"]); self.audits.append(kwargs["audit_event"]); return self.mapping
     def compare_and_clear_managed_channel_mapping(self, **kwargs):
         self.mapping.update(channelId="", lastKnownRevision=""); self.audits.append(kwargs["audit_event"]); return self.mapping
-    def append_managed_channel_lifecycle_audit(self, event): self.audits.append(event)
+    def append_managed_channel_lifecycle_audit(self, event):
+        if self.fail_audit_after is not None and len(self.audits) >= self.fail_audit_after: raise RuntimeError("audit unavailable")
+        self.audits.append(event)
 
 
 class FakeClient:
@@ -57,6 +59,7 @@ class LifecycleServiceTests(unittest.TestCase):
         result = service.execute("hlab-orm-to-ap", "create", preview["previewToken"])
         self.assertEqual("success", result["outcome"]); self.assertEqual("c1", repository.mapping["channelId"])
         self.assertEqual("create", client.calls[0][0])
+        self.assertEqual("preview-create", repository.audits[0]["operation"])
 
     def test_retry_after_uncertain_create_never_creates_duplicate(self):
         client, repository = FakeClient([value()]), FakeRepository(mapped=False); service = self.service(client, repository)
@@ -105,8 +108,28 @@ class LifecycleServiceTests(unittest.TestCase):
 
     def test_deploy_is_single_target_and_audited(self):
         client, repository = FakeClient([value(status="STOPPED")]), FakeRepository(); service = self.service(client, repository); preview = service.preview("hlab-orm-to-ap", "deploy")
-        service.execute("hlab-orm-to-ap", "deploy", preview["previewToken"])
-        self.assertEqual([("deploy", "c1"), ("status", "c1")], [call for call in client.calls if call[0] in {"deploy", "status"}]); self.assertEqual("deploy", repository.audits[0]["operation"])
+        result = service.execute("hlab-orm-to-ap", "deploy", preview["previewToken"])
+        self.assertEqual([("deploy", "c1"), ("status", "c1")], [call for call in client.calls if call[0] in {"deploy", "status"}]); self.assertEqual("deploy", repository.audits[-1]["operation"])
+        self.assertEqual("STARTED", result["status"]); self.assertEqual("unchanged", result["finalClassification"])
+
+    def test_deploy_and_undeploy_return_noop_when_state_already_holds(self):
+        for operation, status in (("deploy", "STARTED"), ("undeploy", "STOPPED")):
+            with self.subTest(operation=operation):
+                client, repository = FakeClient([value(status=status)]), FakeRepository(); service = self.service(client, repository)
+                preview = service.preview("hlab-orm-to-ap", operation); result = service.execute("hlab-orm-to-ap", operation, preview["previewToken"])
+                self.assertEqual("no-op", result["steps"][1]["status"])
+                self.assertFalse(any(call[0] == operation for call in client.calls))
+
+    def test_preview_audit_failure_withholds_token(self):
+        service = self.service(FakeClient(), FakeRepository(mapped=False, fail_audit_after=0))
+        with self.assertRaisesRegex(LifecycleGuardError, "could not be audited"):
+            service.preview("hlab-orm-to-ap", "create")
+
+    def test_deploy_audit_failure_is_partial_failure(self):
+        client, repository = FakeClient([value(status="STOPPED")]), FakeRepository(fail_audit_after=1); service = self.service(client, repository)
+        preview = service.preview("hlab-orm-to-ap", "deploy"); result = service.execute("hlab-orm-to-ap", "deploy", preview["previewToken"])
+        self.assertEqual("partial-failure", result["outcome"])
+        self.assertEqual("audit", result["steps"][-1]["name"]); self.assertEqual("failed", result["steps"][-1]["status"])
 
     def test_delete_reports_partial_failure_and_retry_refreshes(self):
         client, repository = FakeClient([value()], fail_delete=True), FakeRepository(); service = self.service(client, repository)
