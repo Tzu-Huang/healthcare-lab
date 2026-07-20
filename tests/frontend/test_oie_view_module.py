@@ -55,9 +55,8 @@ class OieViewModuleTests(unittest.TestCase):
         ):
             self.assertIn(f'byId("{element_id}").addEventListener', self.source)
 
-    def test_entrypoint_keeps_only_reviewed_oie_compatibility_boundary(self):
-        self.assertIn("function renderOieInventory()", self.entrypoint)
-        self.assertIn("return renderOieView();", self.entrypoint)
+    def test_entrypoint_has_no_oie_compatibility_boundary(self):
+        self.assertEqual('import "./js/app.js";\n', self.entrypoint)
         self.assertNotIn("function renderOieTransmission(item)", self.entrypoint)
         self.assertNotIn("async function sendOieOrder", self.entrypoint)
 

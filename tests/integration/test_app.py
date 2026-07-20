@@ -234,7 +234,7 @@ class HealthcareLabApiTests(unittest.TestCase):
 
     def test_frontend_exposes_dashboard_children_and_gdt_workspace_order_action(self):
         app_js = Path(__file__).resolve().parents[2] / "frontend" / "static" / "app.js"
-        script = app_js.read_text(encoding="utf-8")
+        script = (app_js.parent / "js" / "views" / "application.js").read_text(encoding="utf-8")
         oie_script = (app_js.parent / "js" / "views" / "oie.js").read_text(encoding="utf-8")
         dashboard_script = (app_js.parent / "js" / "views" / "dashboard.js").read_text(encoding="utf-8")
         gdt_script = (app_js.parent / "js" / "views" / "gdt.js").read_text(encoding="utf-8")
@@ -2694,7 +2694,7 @@ class HealthcareLabApiTests(unittest.TestCase):
 
     def test_patient_dcm4chee_result_ui_hooks_are_present(self):
         template = Path("frontend/templates/index.html").read_text(encoding="utf-8")
-        script = Path("frontend/static/app.js").read_text(encoding="utf-8")
+        script = Path("frontend/static/js/views/application.js").read_text(encoding="utf-8")
         order_api = Path("frontend/static/js/api/order.js").read_text(encoding="utf-8")
         dcm4chee_view = Path("frontend/static/js/views/dcm4chee.js").read_text(encoding="utf-8")
         dcm4chee_ownership = script + dcm4chee_view

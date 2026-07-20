@@ -12,7 +12,15 @@ class SelectionStateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = (ROOT / "frontend/static/js/state/selection.js").read_text(encoding="utf-8")
-        cls.bootstrap = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.bootstrap = "\n".join(
+            (ROOT / path).read_text(encoding="utf-8")
+            for path in (
+                "frontend/static/js/views/application.js",
+                "frontend/static/js/views/patient.js",
+                "frontend/static/js/views/order.js",
+                "frontend/static/js/views/dcm4chee.js",
+            )
+        )
 
     def test_patient_and_order_context_have_explicit_read_and_update_apis(self):
         for operation in (

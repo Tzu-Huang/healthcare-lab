@@ -12,7 +12,7 @@ class FhirApiModuleTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.source = (ROOT / "frontend/static/js/api/fhir.js").read_text(encoding="utf-8")
         cls.view = (ROOT / "frontend/static/js/views/fhir.js").read_text(encoding="utf-8")
-        cls.bootstrap = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.bootstrap = (ROOT / "frontend/static/js/views/application.js").read_text(encoding="utf-8")
 
     def test_fhir_adapter_owns_inventory_preview_report_and_retry_endpoints(self):
         for endpoint in (

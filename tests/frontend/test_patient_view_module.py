@@ -11,7 +11,7 @@ class PatientViewModuleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = (ROOT / "frontend/static/js/views/patient.js").read_text(encoding="utf-8")
-        cls.bootstrap = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.bootstrap = (ROOT / "frontend/static/js/views/application.js").read_text(encoding="utf-8")
 
     def test_patient_view_owns_protocol_preview_builders(self):
         for owner in (
@@ -87,7 +87,7 @@ class PatientViewModuleTests(unittest.TestCase):
             self.assertIn(contract, self.source)
 
     def test_bootstrap_consumes_named_patient_preview_exports(self):
-        self.assertIn('from "./js/views/patient.js"', self.bootstrap)
+        self.assertIn('from "./patient.js"', self.bootstrap)
         self.assertIn("initializeGdtView({ buildPatientPreviewPayload: buildPatientGdtPreviewPayload })", self.bootstrap)
 
 
