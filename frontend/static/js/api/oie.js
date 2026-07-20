@@ -1,4 +1,4 @@
-import { requestJson } from "./client.js";
+import { requestJson, requestJsonEnvelope } from "./client.js";
 
 export function fetchOieWorkbench() {
   return requestJson("/api/oie/workbench");
@@ -23,11 +23,9 @@ export function stopOieResultListener() {
 }
 
 export async function sendOieLocalOrder(orderId, payload) {
-  const response = await fetch(`/api/oie/local-orders/${orderId}/send`, {
+  const { response, payload: result } = await requestJsonEnvelope(`/api/oie/local-orders/${orderId}/send`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const result = await response.json().catch(() => ({}));
   return { response, result };
 }
