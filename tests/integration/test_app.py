@@ -355,7 +355,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertNotIn('"Task"', script)
         self.assertNotIn("item.fhir?.task", script)
 
-        template = Path(__file__).resolve().parents[2] / "frontend" / "templates" / "index.html"
+        template = Path(__file__).resolve().parents[2] / "frontend" / "templates" / "views" / "fhir.html"
         html = template.read_text(encoding="utf-8")
         self.assertIn('id="medplum-diagnostic-report-rollup"', html)
         self.assertIn('id="medplum-diagnostic-report-status"', html)
@@ -2699,7 +2699,13 @@ class HealthcareLabApiTests(unittest.TestCase):
         self.assertEqual(response.get_json()["verification"]["errorType"], "mwl_profile_invalid")
 
     def test_patient_dcm4chee_result_ui_hooks_are_present(self):
-        template = Path("frontend/templates/index.html").read_text(encoding="utf-8")
+        template = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                Path("frontend/templates/shell/sidebar.html"),
+                Path("frontend/templates/views/dcm4chee.html"),
+            )
+        )
         script = Path("frontend/static/js/views/application.js").read_text(encoding="utf-8")
         order_api = Path("frontend/static/js/api/order.js").read_text(encoding="utf-8")
         dcm4chee_view = Path("frontend/static/js/views/dcm4chee.js").read_text(encoding="utf-8")

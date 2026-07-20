@@ -12,7 +12,7 @@ class OieViewModuleTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.source = (ROOT / "frontend/static/js/views/oie.js").read_text(encoding="utf-8")
         cls.entrypoint = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
-        cls.template = (ROOT / "frontend/templates/index.html").read_text(encoding="utf-8")
+        cls.template = (ROOT / "frontend/templates/views/oie.html").read_text(encoding="utf-8")
 
     def test_oie_template_structure_has_a_focused_owner(self):
         for marker in (

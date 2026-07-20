@@ -1,0 +1,92 @@
+      <section id="dcm4chee-view" class="app-view dcm4chee-workspace" aria-label="dcm4chee Console" hidden>
+        <div class="lab-console-header">
+          <div>
+            <p class="eyebrow">dcm4chee</p>
+            <h2>Patient-Centered Console</h2>
+          </div>
+          <div class="lab-console-actions">
+            <button id="refresh-dcm4chee-console" type="button">Refresh</button>
+            <span id="dcm4chee-console-status" class="status neutral">Ready</span>
+          </div>
+        </div>
+
+        <section class="dcm4chee-console-grid patient-focused-grid">
+          <div class="lab-panel dcm4chee-patient-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">DICOM</p>
+                <h2>Patients</h2>
+              </div>
+            </div>
+            <div class="table-wrap dcm4chee-patient-table-wrap">
+              <table class="dcm4chee-patient-table">
+                <thead>
+                  <tr><th></th><th>MRN</th><th>Name</th><th>Sync</th><th>Orders</th><th>Results</th><th>Action</th></tr>
+                </thead>
+                <tbody id="dcm4chee-patient-list"></tbody>
+              </table>
+            </div>
+            <div class="section-heading compact-heading dcm4chee-patient-preview-heading">
+              <div>
+                <p class="eyebrow">Selected Patient</p>
+                <h3 id="dcm4chee-selected-patient-title">No patient selected</h3>
+              </div>
+              <button id="dcm4chee-refresh-results" type="button">Refresh PACS Results</button>
+            </div>
+            <div id="dcm4chee-selected-patient-summary" class="record-detail compact-detail dcm4chee-patient-preview">
+              <p class="muted">Select a DICOM patient.</p>
+            </div>
+          </div>
+
+          <div class="lab-panel dcm4chee-workflow-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Order Transmission</p>
+                <h2>Send to dcm4chee</h2>
+              </div>
+              <span id="dcm4chee-send-status" class="status neutral">Ready</span>
+            </div>
+            <div class="form-grid dcm4chee-send-selection-grid">
+              <label>Patient
+                <select id="dcm4chee-patient-select"></select>
+              </label>
+              <label>Order
+                <select id="dcm4chee-order-select"></select>
+              </label>
+            </div>
+            <div class="dcm4chee-selected-order-bar">
+              <div>
+                <p class="eyebrow">Selected Order</p>
+                <h3 id="dcm4chee-selected-order-title">No order selected</h3>
+              </div>
+              <button id="send-dcm4chee-order" class="primary" type="button" disabled>Send Order</button>
+            </div>
+            <div id="dcm4chee-selected-order-summary" class="record-detail compact-detail">
+              <p class="muted">Choose an order from the selected patient.</p>
+            </div>
+            <div class="section-heading compact-heading dcm4chee-preview-heading">
+              <div>
+                <p class="eyebrow">Selected Order</p>
+                <h3>DICOM MWL Payload</h3>
+              </div>
+              <button id="copy-dcm4chee-payload" type="button">Copy Payload</button>
+            </div>
+            <div id="dcm4chee-preview-summary" class="record-detail compact-detail">
+              <p class="muted">Select a DICOM MWL order to inspect its payload.</p>
+            </div>
+            <pre id="dcm4chee-payload-preview" class="compact-output dcm4chee-preview-output">Select a DICOM MWL order to preview its DICOM JSON payload.</pre>
+          </div>
+        </section>
+
+        <section class="lab-panel dcm4chee-profile-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Connection</p>
+              <h2>dcm4chee Profile Diagnostics</h2>
+            </div>
+          </div>
+          <div id="dcm4chee-profile-summary" class="record-detail compact-detail">
+            <p class="muted">Profile diagnostics load with the dcm4chee console.</p>
+          </div>
+        </section>
+      </section>

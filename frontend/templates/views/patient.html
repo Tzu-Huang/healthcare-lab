@@ -1,0 +1,115 @@
+      <section id="patient-view" class="app-view patient-workspace" aria-label="Patient Registration" hidden>
+        <div class="lab-console-header">
+          <div>
+            <p class="eyebrow">Patient</p>
+            <h2 id="patient-mode-title">HL7 v2.5.1 ADT A04</h2>
+          </div>
+          <div class="lab-console-actions">
+            <button id="load-patient-demo" type="button">Demo Preset</button>
+            <span id="patient-form-status" class="status neutral">No patient created</span>
+          </div>
+        </div>
+
+        <section class="patient-grid">
+          <div class="lab-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Local Registration</p>
+                <h2>Register Patient</h2>
+              </div>
+            </div>
+            <div class="form-grid patient-form-grid">
+              <label>Mode
+                <select id="patient-mode">
+                  <option value="hl7-v2">HL7 v2</option>
+                  <option value="fhir">FHIR</option>
+                  <option value="gdt">GDT</option>
+                  <option value="dicom">DICOM</option>
+                </select>
+              </label>
+              <label>MRN<input id="patient-mrn" placeholder="Optional; generated as MRN-000001"></label>
+              <label>First Name<input id="patient-first-name" placeholder="Avery"></label>
+              <label>Middle Name<input id="patient-middle-name" placeholder="Lee"></label>
+              <label>Last Name<input id="patient-last-name" placeholder="Morgan"></label>
+              <label>Date of Birth<input id="patient-dob" placeholder="19850412"></label>
+              <label>Sex
+                <select id="patient-sex">
+                  <option value="F">F</option>
+                  <option value="M">M</option>
+                  <option value="O">O</option>
+                  <option value="U">U</option>
+                </select>
+              </label>
+              <label data-patient-mode-field="hl7-v2 fhir gdt dicom">Visit Number<input id="patient-visit-number" placeholder="Generated if blank"></label>
+              <label data-patient-mode-field="hl7-v2 dicom">Patient Class<input id="patient-class" value="O"></label>
+              <label data-patient-mode-field="hl7-v2">Assigned Location<input id="patient-assigned-location" placeholder="CARDIOLOGY^ROOM1"></label>
+              <label data-patient-mode-field="hl7-v2">Attending Provider<input id="patient-attending-provider" placeholder="P123^Rivera^Elena"></label>
+              <label data-patient-mode-field="hl7-v2">Account Number<input id="patient-account-number" placeholder="ACC-1001"></label>
+              <label data-patient-mode-field="hl7-v2 fhir gdt dicom">Phone<input id="patient-phone" placeholder="555-0100"></label>
+              <label data-patient-mode-field="fhir">Email<input id="patient-email" placeholder="avery.morgan@example.org"></label>
+              <label data-patient-mode-field="fhir">FHIR Active
+                <select id="patient-active">
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+              </label>
+              <label class="full-width-field" data-patient-mode-field="hl7-v2 fhir gdt dicom">Address<input id="patient-address" placeholder="100 Main St^^Boston^MA^02110"></label>
+              <label data-patient-mode-field="fhir">Address Line<input id="patient-address-line" placeholder="100 Main St"></label>
+              <label data-patient-mode-field="fhir">City<input id="patient-address-city" placeholder="Boston"></label>
+              <label data-patient-mode-field="fhir">State<input id="patient-address-state" placeholder="MA"></label>
+              <label data-patient-mode-field="fhir">Postal Code<input id="patient-address-postal-code" placeholder="02110"></label>
+              <label data-patient-mode-field="fhir">Country<input id="patient-address-country" placeholder="US"></label>
+              <label data-patient-mode-field="fhir">Organization Reference<input id="patient-managing-organization-reference" placeholder="Organization/demo"></label>
+              <label data-patient-mode-field="fhir">Organization Display<input id="patient-managing-organization-display" placeholder="Healthcare Lab"></label>
+            </div>
+            <div class="button-row patient-actions">
+              <button id="refresh-patient-preview" type="button">Refresh Preview</button>
+              <button id="create-patient" class="primary" type="button">Create Local Patient</button>
+            </div>
+          </div>
+
+          <div class="lab-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Validation</p>
+                <h2>Preview Status</h2>
+              </div>
+            </div>
+            <div id="patient-validation" class="validation-panel">
+              <span class="status neutral">Waiting for input</span>
+            </div>
+            <div id="patient-summary" class="record-detail compact-detail">
+              <p class="muted">Patient summary appears after preview or creation.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="lab-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Payload Preview</p>
+              <h2 id="patient-payload-title">MSH, EVN, PID, PV1</h2>
+            </div>
+            <button id="copy-patient-payload" type="button">Copy Payload</button>
+          </div>
+          <pre id="patient-payload-preview" class="compact-output">Fill the Patient form to preview an HL7 v2.5.1 ADT A04 payload.</pre>
+        </section>
+
+        <section class="lab-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Local</p>
+              <h2>Local Patients</h2>
+            </div>
+            <button id="refresh-patients" type="button">Refresh</button>
+          </div>
+          <div class="table-wrap patient-local-table-wrap">
+            <table>
+              <thead>
+                <tr><th>ID</th><th>Mode</th><th>MRN</th><th>Name</th><th>DOB</th><th>Sex</th><th>Visit</th><th>State</th><th>Created</th></tr>
+              </thead>
+              <tbody id="patient-record-list"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
