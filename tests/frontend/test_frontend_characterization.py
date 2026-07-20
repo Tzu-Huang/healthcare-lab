@@ -14,6 +14,13 @@ STYLE_OWNERS = (
     ROOT / "frontend" / "static" / "css" / "layout.css",
     ROOT / "frontend" / "static" / "css" / "components.css",
     ROOT / "frontend" / "static" / "css" / "views" / "application.css",
+    ROOT / "frontend" / "static" / "css" / "views" / "dashboard.css",
+    ROOT / "frontend" / "static" / "css" / "views" / "patient.css",
+    ROOT / "frontend" / "static" / "css" / "views" / "order.css",
+    ROOT / "frontend" / "static" / "css" / "views" / "fhir.css",
+    ROOT / "frontend" / "static" / "css" / "views" / "dcm4chee.css",
+    ROOT / "frontend" / "static" / "css" / "views" / "oie.css",
+    ROOT / "frontend" / "static" / "css" / "views" / "gdt.css",
 )
 TEMPLATE_ROOT = ROOT / "frontend" / "templates"
 INDEX_TEMPLATE = TEMPLATE_ROOT / "index.html"
@@ -118,6 +125,13 @@ class FrontendCharacterizationTests(unittest.TestCase):
                 '@import url("./css/layout.css");',
                 '@import url("./css/components.css");',
                 '@import url("./css/views/application.css");',
+                '@import url("./css/views/dashboard.css");',
+                '@import url("./css/views/patient.css");',
+                '@import url("./css/views/order.css");',
+                '@import url("./css/views/fhir.css");',
+                '@import url("./css/views/dcm4chee.css");',
+                '@import url("./css/views/oie.css");',
+                '@import url("./css/views/gdt.css");',
                 '@import url("./css/views/settings.css");',
             ],
             self.style_loader.splitlines(),
@@ -129,6 +143,21 @@ class FrontendCharacterizationTests(unittest.TestCase):
             with self.subTest(path=path.name):
                 self.assertTrue(source.rstrip().endswith("}"))
         self.assertTrue(owners[2].lstrip().startswith("button,\n.button {"))
+
+    def test_feature_styles_are_owned_outside_the_application_catch_all(self):
+        application = STYLE_OWNERS[3].read_text(encoding="utf-8")
+        feature_markers = (
+            "#lab-console-view", ".dashboard-", ".resource-",
+            "#patient-view", ".patient-", "#order-view", ".order-",
+            "#medplum-view", ".medplum-", "#dcm4chee-view", ".dcm4chee-",
+            "#oie-view", ".oie-", "#gdt-view", ".gdt-",
+        )
+        for marker in feature_markers:
+            with self.subTest(marker=marker):
+                self.assertNotIn(marker, application)
+        for path in STYLE_OWNERS[4:]:
+            with self.subTest(path=path.name):
+                self.assertTrue(path.read_text(encoding="utf-8").strip())
 
     def test_feature_selector_families_are_scoped_to_their_workspace(self):
         scoped_families = {

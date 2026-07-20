@@ -2,4 +2,11 @@
 @import url("./css/layout.css");
 @import url("./css/components.css");
 @import url("./css/views/application.css");
+@import url("./css/views/dashboard.css");
+@import url("./css/views/patient.css");
+@import url("./css/views/order.css");
+@import url("./css/views/fhir.css");
+@import url("./css/views/dcm4chee.css");
+@import url("./css/views/oie.css");
+@import url("./css/views/gdt.css");
 @import url("./css/views/settings.css");

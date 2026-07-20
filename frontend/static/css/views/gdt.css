@@ -1,0 +1,257 @@
+#gdt-view .gdt-workflow-strip span {
+min-height: 50px;
+  display: grid;
+  place-items: center;
+}
+
+#gdt-view .gdt-primary-actions {
+display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid #c7d5d1;
+  border-radius: 8px;
+  background: #eef6f3;
+}
+
+#gdt-view .gdt-bridge-actions {
+margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+#gdt-view .gdt-config-details {
+margin-top: 14px;
+  background: #f8f6ef;
+}
+
+#gdt-view .gdt-config-details .compact-output {
+max-height: 180px;
+}
+
+#gdt-view .gdt-advanced-tools {
+background: #f0ede5;
+}
+
+.gdt-console {
+display: grid;
+  gap: 20px;
+}
+
+#gdt-view .gdt-console-grid {
+display: grid;
+  grid-template-columns: minmax(360px, 0.85fr) minmax(0, 1.6fr);
+  gap: 20px;
+  align-items: start;
+}
+
+#gdt-view .gdt-console-grid.patient-focused-grid {
+grid-template-columns: minmax(520px, 1.45fr) minmax(300px, 0.55fr);
+  align-items: stretch;
+}
+
+#gdt-view .gdt-console-grid.lower-grid {
+grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+}
+
+#gdt-view .gdt-shared-folder-panel {
+display: grid;
+  gap: 12px;
+}
+
+#gdt-view .gdt-bridge-config-grid {
+grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) auto;
+  align-items: end;
+}
+
+#gdt-view .gdt-bridge-config-grid .button-row {
+margin: 0;
+  align-self: end;
+  white-space: nowrap;
+}
+
+#gdt-bridge-config-summary p {
+overflow-wrap: anywhere;
+}
+
+#gdt-view .gdt-watcher-bar {
+display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
+#gdt-view .gdt-watcher-bar .button-row {
+margin: 0;
+  white-space: nowrap;
+}
+
+#gdt-watcher-summary p {
+overflow-wrap: anywhere;
+}
+
+#gdt-view .gdt-patient-table th:first-child,
+#gdt-view .gdt-patient-table td:first-child {
+width: 38px;
+}
+
+#gdt-view .gdt-patient-table-wrap {
+height: 560px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+#gdt-view .gdt-patient-table thead th {
+position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #ffffff;
+}
+
+#gdt-view .gdt-patient-table th:nth-child(5),
+#gdt-view .gdt-patient-table th:nth-child(6),
+#gdt-view .gdt-patient-table td:nth-child(5),
+#gdt-view .gdt-patient-table td:nth-child(6) {
+width: 74px;
+  text-align: right;
+}
+
+#gdt-view .gdt-patient-table th:last-child,
+#gdt-view .gdt-patient-table td:last-child {
+width: 86px;
+  text-align: right;
+}
+
+#gdt-view .gdt-patient-toggle {
+border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #405068;
+  min-width: 24px;
+  padding: 2px 4px;
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+#gdt-view .gdt-patient-toggle:hover {
+background: transparent;
+  color: #405068;
+}
+
+#gdt-view .gdt-patient-detail-row td {
+background: #ffffff;
+  padding: 14px;
+}
+
+#gdt-view .gdt-patient-rollup-content {
+display: grid;
+  gap: 16px;
+}
+
+#gdt-view .gdt-nested-table {
+table-layout: auto;
+  width: auto;
+  min-width: 100%;
+}
+
+#gdt-view .gdt-nested-table th,
+#gdt-view .gdt-nested-table td {
+white-space: nowrap;
+}
+
+#gdt-view .gdt-nested-table th:first-child,
+#gdt-view .gdt-nested-table td:first-child {
+width: 92px;
+}
+
+#gdt-view .gdt-nested-table th:nth-child(2),
+#gdt-view .gdt-nested-table td:nth-child(2) {
+width: 92px;
+}
+
+#gdt-view .gdt-nested-table th:nth-child(3),
+#gdt-view .gdt-nested-table td:nth-child(3) {
+width: 190px;
+}
+
+#gdt-view .gdt-nested-table th:last-child,
+#gdt-view .gdt-nested-table td:last-child {
+width: 1%;
+}
+
+#gdt-view .gdt-patient-rollup-content .compact-actions {
+display: flex;
+  flex-wrap: nowrap;
+  min-width: max-content;
+  white-space: nowrap;
+}
+
+#gdt-view .gdt-patient-section {
+display: grid;
+  gap: 8px;
+}
+
+#gdt-view .gdt-patient-section-heading {
+margin-bottom: 0;
+}
+
+#gdt-view .gdt-patient-section h3 {
+margin: 0;
+  color: #13233a;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+#gdt-view .gdt-selected-patient-raw {
+min-height: 300px;
+  max-height: 380px;
+  overflow: auto;
+  margin-top: 8px;
+}
+
+#gdt-view .gdt-selected-patient-panel {
+min-height: 560px;
+}
+
+#gdt-view .gdt-selected-patient-panel .record-detail {
+max-height: 492px;
+  overflow: auto;
+}
+
+#gdt-payload-preview {
+min-height: 360px;
+  max-height: 520px;
+}
+
+.artifact-reference-list {
+display: grid;
+  gap: 12px;
+}
+
+.artifact-reference {
+border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  background: #ffffff;
+}
+
+.artifact-reference code {
+white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+@media (max-width: 1150px) {
+#gdt-view .gdt-console-grid,
+#gdt-view .gdt-console-grid.patient-focused-grid,
+#gdt-view .gdt-console-grid.lower-grid {
+grid-template-columns: 1fr;
+}
+}

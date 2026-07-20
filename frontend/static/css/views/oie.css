@@ -1,0 +1,223 @@
+#oie-view .oie-inventory-grid {
+grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+}
+
+#oie-view .oie-connection-grid {
+grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+#oie-view .oie-connection-grid .checkbox-row {
+align-self: end;
+  min-height: 39px;
+  margin: 0;
+}
+
+.checkbox-row {
+display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.checkbox-row input {
+width: auto;
+  height: auto;
+}
+
+#oie-view .oie-console-grid {
+display: grid;
+  grid-template-columns: minmax(360px, 0.85fr) minmax(0, 1.6fr);
+  gap: 20px;
+}
+
+#oie-view .oie-console-grid.patient-focused-grid {
+grid-template-columns: minmax(560px, 1.45fr) minmax(340px, 0.55fr);
+  align-items: stretch;
+}
+
+#oie-view .oie-patient-table-wrap {
+height: 560px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+#oie-view .oie-patient-table thead th {
+position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #ffffff;
+}
+
+#oie-view .oie-patient-table th:first-child,
+#oie-view .oie-patient-table td:first-child {
+width: 38px;
+}
+
+#oie-view .oie-patient-table th:nth-child(5),
+#oie-view .oie-patient-table th:nth-child(6),
+#oie-view .oie-patient-table td:nth-child(5),
+#oie-view .oie-patient-table td:nth-child(6) {
+width: 72px;
+  text-align: right;
+}
+
+#oie-view .oie-patient-toggle {
+min-width: 24px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #405068;
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+#oie-view .oie-patient-toggle:hover {
+background: transparent;
+  color: #1d4ed8;
+}
+
+#oie-view .oie-patient-detail-row td {
+padding: 14px;
+  background: #ffffff;
+}
+
+#oie-view .oie-patient-rollup-content {
+display: grid;
+  gap: 18px;
+}
+
+#oie-view .oie-patient-section {
+display: grid;
+  gap: 8px;
+}
+
+#oie-view .oie-patient-section-heading {
+margin-bottom: 0;
+}
+
+#oie-view .oie-patient-section h3,
+#oie-view .oie-selected-order-bar h3,
+#oie-view .oie-preview-heading h3 {
+margin: 0;
+  color: #13233a;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+#oie-view .oie-nested-table {
+width: auto;
+  min-width: 100%;
+  table-layout: auto;
+}
+
+#oie-view .oie-nested-table th,
+#oie-view .oie-nested-table td {
+white-space: nowrap;
+}
+
+#oie-view .oie-nested-table th:last-child,
+#oie-view .oie-nested-table td:last-child {
+width: 1%;
+  text-align: right;
+}
+
+#oie-view .oie-transmission-panel {
+min-height: 560px;
+}
+
+#oie-view .oie-send-connection-grid {
+grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+#oie-view .oie-send-connection-grid .checkbox-row {
+align-self: end;
+  min-height: 39px;
+  margin: 0;
+}
+
+#oie-view .oie-selected-order-bar {
+display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ui-line);
+}
+
+#oie-view .oie-selected-order-bar button {
+flex: 0 0 auto;
+}
+
+#oie-view .oie-preview-heading {
+margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ui-line);
+}
+
+#oie-view .oie-preview-output {
+min-height: 132px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+#oie-view .oie-subsection-heading {
+margin-top: 22px;
+}
+
+@media (max-width: 1150px) {
+#oie-view .oie-console-grid,
+#oie-view .oie-console-grid.patient-focused-grid {
+grid-template-columns: 1fr;
+}
+}
+
+@media (max-width: 1150px) {
+#oie-view .oie-inventory-grid {
+grid-template-columns: 1fr;
+}
+}
+
+@media (max-width: 1150px) {
+#oie-view .oie-connection-grid {
+grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+}
+
+@media (max-width: 720px) {
+#oie-view .oie-patient-panel,
+#oie-view .oie-transmission-panel {
+min-width: 0;
+}
+}
+
+@media (max-width: 720px) {
+#oie-view .oie-patient-table-wrap {
+height: 440px;
+    max-height: 440px;
+}
+}
+
+@media (max-width: 720px) {
+#oie-view .oie-send-connection-grid,
+#oie-view .oie-connection-grid {
+grid-template-columns: 1fr;
+}
+}
+
+@media (max-width: 720px) {
+#oie-view .oie-selected-order-bar {
+align-items: stretch;
+    flex-direction: column;
+}
+}
+
+@media (max-width: 720px) {
+#oie-view .oie-selected-order-bar button {
+width: 100%;
+}
+}
