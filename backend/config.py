@@ -20,6 +20,132 @@ MEDPLUM_DEFAULT_AUTH_GRACE_SECONDS = 300
 DCM4CHEE_PROFILE_NAME = "local-dcm4chee"
 GDT_BRIDGE_SUCCESS_MODES = {"archive", "delete"}
 GDT_FILENAME_PROFILES = {"permissive", "gdt21", "gdt35"}
+OIE_SETTINGS_PROFILE_NAME = "local-oie"
+OIE_MANAGEMENT_API_BASE_URL = "http://oie:8080"
+OIE_MANAGEMENT_API_USERNAME = "admin"
+OIE_MANAGEMENT_API_PASSWORD = "Admin"
+OIE_MANAGEMENT_API_TIMEOUT_SECONDS = 10
+OIE_RESULT_LISTENER_HOST = "0.0.0.0"
+OIE_RESULT_LISTENER_PORT = 6665
+
+DEFAULT_LAB_SERVERS = (
+    {
+        "name": "OIE",
+        "server_type": "HL7 Engine",
+        "description": "Open Integration Engine / Mirth-style HL7 engine",
+        "host": "127.0.0.1",
+        "port": 18080,
+        "base_url": "http://127.0.0.1:18080",
+        "protocol": "MLLP",
+        "check_config": {"mllpHost": "127.0.0.1", "mllpPort": 6661},
+    },
+    {
+        "name": "Medplum",
+        "server_type": "FHIR Server",
+        "description": "FHIR R4 API server",
+        "host": "127.0.0.1",
+        "port": 8103,
+        "base_url": "http://127.0.0.1:8103/fhir/R4",
+        "protocol": "FHIR",
+    },
+    {
+        "name": "OpenEMR",
+        "server_type": "EMR",
+        "description": "OpenEMR clinical system",
+        "host": "127.0.0.1",
+        "port": 8088,
+        "base_url": "http://127.0.0.1:8088",
+        "protocol": "HTTP",
+    },
+    {
+        "name": "GDT Bridge",
+        "server_type": "GDT Bridge",
+        "description": "Shared-folder GDT exchange bridge",
+        "host": "",
+        "port": None,
+        "base_url": "",
+        "protocol": "GDT",
+    },
+    {
+        "name": "dcm4chee",
+        "server_type": "DICOM Archive",
+        "description": "DICOM archive service",
+        "host": "127.0.0.1",
+        "port": 8082,
+        "base_url": "http://127.0.0.1:8082/dcm4chee-arc/ui2",
+        "protocol": "DICOM",
+    },
+    {
+        "name": "HL7Tester",
+        "server_type": "Test Tool",
+        "description": "HL7 message generation and test tool",
+        "host": "127.0.0.1",
+        "port": 6671,
+        "base_url": "",
+        "protocol": "MLLP",
+    },
+    {
+        "name": "GDT Hospital",
+        "server_type": "Test Tool",
+        "description": "GDT hospital-side simulator",
+        "host": "",
+        "port": None,
+        "base_url": "",
+        "protocol": "GDT",
+    },
+)
+
+DEFAULT_LAB_OPERATION_METADATA = {
+    "OIE": {
+        "control_type": "docker-compose",
+        "backing_service": "oie",
+        "supported_actions": ["status", "start", "stop", "restart", "smoke", "logs"],
+        "timeout_seconds": 120,
+        "smoke_profile": "oie",
+    },
+    "Medplum": {
+        "control_type": "docker-compose",
+        "backing_service": "medplum",
+        "supported_actions": ["status", "start", "stop", "restart", "smoke", "logs"],
+        "timeout_seconds": 180,
+        "smoke_profile": "medplum",
+    },
+    "OpenEMR": {
+        "control_type": "docker-compose",
+        "backing_service": "openemr",
+        "supported_actions": ["status", "start", "stop", "restart", "smoke", "logs"],
+        "timeout_seconds": 240,
+        "smoke_profile": "openemr",
+    },
+    "GDT Bridge": {
+        "control_type": "internal-tool",
+        "backing_service": "lab-app",
+        "supported_actions": ["status", "smoke", "logs"],
+        "timeout_seconds": 60,
+        "smoke_profile": "gdt-bridge",
+    },
+    "dcm4chee": {
+        "control_type": "docker-compose",
+        "backing_service": "dcm4chee",
+        "supported_actions": ["status", "start", "stop", "restart", "smoke", "logs"],
+        "timeout_seconds": 240,
+        "smoke_profile": "dcm4chee",
+    },
+    "HL7Tester": {
+        "control_type": "internal-tool",
+        "backing_service": "lab-app",
+        "supported_actions": ["status", "smoke", "logs"],
+        "timeout_seconds": 60,
+        "smoke_profile": "hl7tester",
+    },
+    "GDT Hospital": {
+        "control_type": "internal-tool",
+        "backing_service": "lab-app",
+        "supported_actions": ["status", "smoke", "logs"],
+        "timeout_seconds": 60,
+        "smoke_profile": "gdt-hospital",
+    },
+}
 
 
 def parse_config_bool(value: Any, *, default: bool = False) -> bool:

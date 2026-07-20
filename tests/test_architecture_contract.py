@@ -1513,6 +1513,17 @@ def row_to_public_json(row):
             "backend/app_factory.py must remain a compact composition root.",
         )
 
+    def test_removed_facade_has_no_replacement_defaults_grab_bag(self):
+        replacement = BACKEND / ("application" + "_defaults.py")
+        self.assertFalse(
+            replacement.exists(),
+            "Application defaults must stay with focused configuration, domain, or protocol owners.",
+        )
+        for path in (BACKEND / "app_factory.py", BACKEND / "application_composition.py"):
+            modules = imported_modules(path)
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertNotIn("backend." + "application" + "_defaults", modules)
+
     def test_backend_catch_all_modules_match_reviewed_legacy_baseline(self):
         actual: set[tuple[str, str, str, str]] = set()
         violations: list[PlacementViolation] = []

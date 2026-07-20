@@ -64,6 +64,7 @@ class ApplicationCompositionTests(unittest.TestCase):
         forbidden = (
             "Demo" + "Store",
             "backend." + "lab_store",
+            "backend." + "application" + "_defaults",
             'extensions["' + "demo" + "_" + "store" + '"]',
             "extensions['" + "demo" + "_" + "store" + "']",
         )

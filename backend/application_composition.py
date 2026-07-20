@@ -10,7 +10,7 @@ from backend.domain import dicom as dicom_domain
 from backend.domain import order as order_domain
 from backend.domain import patient as patient_domain
 from backend.domain.dicom import DCM4CHEE_DEFAULT_UID_ROOT
-from backend.application_defaults import (
+from backend.config import (
     DEFAULT_LAB_OPERATION_METADATA,
     DEFAULT_LAB_SERVERS,
     OIE_MANAGEMENT_API_BASE_URL,
@@ -20,13 +20,12 @@ from backend.application_defaults import (
     OIE_RESULT_LISTENER_HOST,
     OIE_RESULT_LISTENER_PORT,
     OIE_SETTINGS_PROFILE_NAME,
-    ORDER_DEFAULT_TEXT,
-    ORDER_PROTOCOL_VERSION,
-    PATIENT_MODES,
-    hl7_timestamp,
-    now_iso,
-    render_gdt_message,
 )
+from backend.domain.gdt_protocol import render_gdt_message
+from backend.domain.order import DEFAULT_TEXT as ORDER_DEFAULT_TEXT, ORDER_PROTOCOL_VERSION
+from backend.domain.patient import PATIENT_MODES
+from backend.domain.statuses import DCM4CHEE_MWL_OPERATION_CREATE
+from backend.domain.timestamps import hl7_timestamp, now_iso
 from backend.repositories.database import SQLiteDatabase
 from backend.repositories.dcm4chee_mwl import Dcm4cheeMwlRepository, backfill_dcm4chee_mwl_mappings
 from backend.repositories.dcm4chee_patient_sync import Dcm4cheePatientSyncRepository
@@ -83,7 +82,7 @@ def assemble_application_dependencies(path: str | Path) -> ApplicationDependenci
             lambda connection: backfill_dcm4chee_mwl_mappings(
                 connection,
                 order_default_text=ORDER_DEFAULT_TEXT,
-                create_operation="create",
+                create_operation=DCM4CHEE_MWL_OPERATION_CREATE,
                 identifier_projector=dicom_domain.historical_mwl_identifiers,
             ),
             seed_patient_mrn_sequence,
