@@ -49,7 +49,7 @@ class FhirApiModuleTests(unittest.TestCase):
         self.assertNotIn("requestJson(", self.view)
 
     def test_bootstrap_only_initializes_and_activates_fhir_view(self):
-        self.assertIn("initializeFhirView();", self.bootstrap)
+        self.assertIn('initializeView("medplum-view", initializeFhirView);', self.bootstrap)
         self.assertIn('registerViewActivation("medplum-view", "Medplum", refreshMedplumInventory)', self.bootstrap)
         self.assertNotIn("function renderMedplumConsole()", self.bootstrap)
 
