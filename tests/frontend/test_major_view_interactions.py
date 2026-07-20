@@ -93,6 +93,7 @@ class MajorViewInteractionTests(unittest.TestCase):
 
         page.locator('[data-nav-target="patient-view"]').click()
         page.locator("#refresh-patients").wait_for(state="visible")
+        page.wait_for_timeout(50)
         calls.clear()
         page.locator("#refresh-patients").click()
         page.wait_for_timeout(50)
@@ -100,6 +101,7 @@ class MajorViewInteractionTests(unittest.TestCase):
 
         page.locator('[data-nav-target="order-view"]').click()
         page.locator("#refresh-orders").wait_for(state="visible")
+        page.wait_for_timeout(50)
         calls.clear()
         page.locator("#refresh-orders").click()
         page.wait_for_timeout(50)
