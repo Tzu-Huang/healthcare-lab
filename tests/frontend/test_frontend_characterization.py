@@ -80,6 +80,7 @@ class FrontendCharacterizationTests(unittest.TestCase):
     def test_shared_request_contract_covers_transport_and_business_failures(self):
         client = (ROOT / "frontend" / "static" / "js" / "api" / "client.js").read_text(encoding="utf-8")
         self.assertIn("export async function requestJson(", client)
+        self.assertIn("export async function requestJsonEnvelope(", client)
         self.assertIn("export async function requestJsonAllowBusinessFailure(", client)
         self.assertIn("!response.ok || payload.success === false", client)
         self.assertIn("if (!response.ok)", client)
