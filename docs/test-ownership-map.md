@@ -27,14 +27,14 @@ commit:
 
 | Source | Test methods | Responsibility covered |
 |---|---:|---|
-| `tests/integration/test_app.py` | 125 | Flask shell, feature APIs, workflows, runtime and lab-control boundaries |
-| `tests/repositories/test_lab_store.py` | 27 | persistence, mapping, protocol/domain payloads and compatibility seams |
+| pinned mainline `tests/integration/test_app.py` | 125 | Flask shell, feature APIs, workflows, runtime and lab-control boundaries |
+| pinned mainline `tests/repositories/test_lab_store.py` | 27 | persistence, mapping, protocol/domain payloads and compatibility seams |
 
 To reproduce the source counts:
 
 ```powershell
-(rg -n '^    def test_' tests\\integration\\test_app.py | Measure-Object).Count
-(rg -n '^    def test_' tests\\repositories\\test_lab_store.py | Measure-Object).Count
+(git grep -n '^    def test_' ecc21ec1bd4a7664206fd234d27149a61746b688 -- tests/integration/test_app.py | Measure-Object).Count
+(git grep -n '^    def test_' ecc21ec1bd4a7664206fd234d27149a61746b688 -- tests/repositories/test_lab_store.py | Measure-Object).Count
 ```
 
 ## Collection and ownership rules
@@ -43,9 +43,10 @@ To reproduce the source counts:
   disposable collaborators, deterministic payloads, or external doubles.
 - A test is assigned to one owner. A cross-feature owner is used only when the
   assertion verifies the boundary between two feature responsibilities.
-- The legacy broad source files remain importable as case libraries during the
-  migration, but their methods are registered only by the focused owner files.
-  This keeps the old test IDs auditable while preventing catch-all discovery.
+- Every retained assertion method is physically defined in one focused owner;
+  support modules contain only setup, deterministic factories, and fakes.
+  The ownership inventory contract compares the pinned method-ID inventory with
+  the focused owner ASTs and rejects aggregate case libraries or duplicate IDs.
 - Frontend module, CSS, template-loading, and controlled browser interaction
   tests remain under `tests/frontend` and are owned by ZAC-63.
 
@@ -92,7 +93,18 @@ python -m unittest discover -s tests/integration -t .
 python -m unittest discover -s tests/repositories -t .
 python -m unittest discover -s tests/frontend -t .
 python -m unittest discover -s tests -t .
-python -m py_compile app.py backend\\lab_store.py tests\\integration\\test_app.py tests\\repositories\\test_lab_store.py
+python -m py_compile app.py backend\\lab_store.py `
+  tests\\support\\app.py tests\\support\\fakes.py tests\\support\\test_contracts.py `
+  tests\\integration\\_case_support.py tests\\integration\\test_application_shell.py `
+  tests\\integration\\test_cross_feature_workflows.py tests\\integration\\test_dashboard_lab_api.py `
+  tests\\integration\\test_dcm4chee_api.py tests\\integration\\test_fhir_api.py `
+  tests\\integration\\test_gdt_api.py tests\\integration\\test_oie_api.py `
+  tests\\integration\\test_order_api.py tests\\integration\\test_patient_api.py `
+  tests\\repositories\\_case_support.py tests\\repositories\\test_compatibility.py `
+  tests\\repositories\\test_dcm4chee_store.py tests\\repositories\\test_fhir_store.py `
+  tests\\repositories\\test_gdt_store.py tests\\repositories\\test_oie_store.py `
+  tests\\repositories\\test_patient_order_store.py tests\\repositories\\test_template_compatibility.py `
+  tests\\test_zac64_ownership.py
 git diff --check
 openspec validate split-tests-by-feature-and-responsibility --strict
 ```
@@ -105,13 +117,14 @@ must be recorded with the resulting count and reason in the change devlog.
 
 | Collection | Baseline | ZAC-64 result | Difference | Explanation |
 |---|---:|---:|---:|---|
-| Complete discovery | 484 | 488 | +4 | Four support-contract characterization tests were added. |
+| Complete discovery | 484 | 489 | +5 | Four support-contract characterization tests and one ownership-inventory contract were added. |
 | Integration responsibility selection | 125 | 125 | 0 | All legacy integration methods retained under focused owners. |
 | Repository responsibility selection | 27 | 27 | 0 | All legacy store methods retained under focused owners. |
 
 The 125 integration and 27 repository method names are preserved while their
 module-qualified IDs now point to focused owner classes. No legacy behavior
-assertion was removed; the four-count increase is limited to support contracts.
+assertion was removed; the five-count increase is limited to support and
+ownership contracts.
 
 ## ZAC-65 compatibility handoff
 
