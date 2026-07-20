@@ -25,7 +25,7 @@
 - [x] 4.1 Extract Dashboard API, state, service/resource/event rendering, actions, and lifecycle; move its assertions and run focused Dashboard verification.
 - [x] 4.2 Extract Patient API, state, form validation, protocol previews, record rendering, dcm4chee/FHIR coordination seams, and lifecycle; move its assertions and run focused Patient verification.
 - [x] 4.3 Extract Order API, shared patient selection, mode-specific forms and previews, record rendering, dcm4chee actions, and lifecycle; move its assertions and run focused Order verification.
-- [ ] 4.4 Verify Dashboard-to-Order GDT navigation and Patient-to-Order shared selection remain compatible without direct feature-view imports.
+- [x] 4.4 Verify Dashboard-to-Order GDT navigation and Patient-to-Order shared selection remain compatible without direct feature-view imports.
 
 ## 5. FHIR, dcm4chee, and GDT extraction
 
