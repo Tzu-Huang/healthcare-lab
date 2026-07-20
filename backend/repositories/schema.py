@@ -174,6 +174,23 @@ CREATE TABLE IF NOT EXISTS oie_managed_channel_mappings (
     FOREIGN KEY(profile_id) REFERENCES oie_settings_profiles(id) ON DELETE CASCADE,
     UNIQUE(profile_id, logical_type)
 );
+CREATE TABLE IF NOT EXISTS oie_managed_channel_lifecycle_audits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL,
+    operation_id TEXT NOT NULL,
+    actor TEXT NOT NULL DEFAULT 'local-operator',
+    operation TEXT NOT NULL,
+    logical_type TEXT NOT NULL,
+    oie_channel_id TEXT NOT NULL DEFAULT '',
+    before_revision TEXT NOT NULL DEFAULT '',
+    after_revision TEXT NOT NULL DEFAULT '',
+    classification TEXT NOT NULL DEFAULT '',
+    outcome TEXT NOT NULL,
+    error_category TEXT NOT NULL DEFAULT '',
+    changed_fields_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(profile_id) REFERENCES oie_settings_profiles(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS local_gdt_order_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     local_gdt_order_number TEXT NOT NULL UNIQUE,
@@ -485,6 +502,13 @@ ON oie_result_records(message_control_id)
 WHERE message_control_id != '';
 CREATE INDEX IF NOT EXISTS idx_oie_managed_channel_profile
 ON oie_managed_channel_mappings(profile_id, logical_type);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_oie_managed_channel_profile_channel
+ON oie_managed_channel_mappings(profile_id, oie_channel_id)
+WHERE oie_channel_id != '';
+CREATE INDEX IF NOT EXISTS idx_oie_lifecycle_audit_profile_created
+ON oie_managed_channel_lifecycle_audits(profile_id, created_at, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_oie_lifecycle_audit_operation
+ON oie_managed_channel_lifecycle_audits(profile_id, operation_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fhir_record_identifier
 ON local_fhir_workflow_records(resource_type, identifier_system, identifier_value);
 CREATE INDEX IF NOT EXISTS idx_fhir_record_source
@@ -625,4 +649,5 @@ APPLICATION_MIGRATIONS = (
     Migration(1, "create-application-tables", create_application_tables),
     Migration(2, "add-legacy-columns", add_legacy_columns),
     Migration(3, "create-application-indexes", create_application_indexes),
+    Migration(4, "add-oie-managed-channel-lifecycle-audits", ensure_application_schema),
 )

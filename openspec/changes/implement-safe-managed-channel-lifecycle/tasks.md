@@ -6,10 +6,10 @@
 
 ## 2. Targeted Persistence and Audit
 
-- [ ] 2.1 Add an idempotent SQLite migration for append-only OIE managed lifecycle audits and required mapping indexes/constraints.
-- [ ] 2.2 Add targeted compare-and-update and compare-and-clear mapping repository operations that preserve unrelated settings and mappings.
-- [ ] 2.3 Add transactional mapping-plus-audit writes and standalone audit writes with an explicit secret/PHI-safe field allowlist.
-- [ ] 2.4 Add repository and migration tests for targeted updates, concurrent mapping conflicts, delete clearing, rollback behavior, audit durability, and forbidden-content absence.
+- [x] 2.1 Add an idempotent SQLite migration for append-only OIE managed lifecycle audits and required mapping indexes/constraints.
+- [x] 2.2 Add targeted compare-and-update and compare-and-clear mapping repository operations that preserve unrelated settings and mappings.
+- [x] 2.3 Add transactional mapping-plus-audit writes and standalone audit writes with an explicit secret/PHI-safe field allowlist.
+- [x] 2.4 Add repository and migration tests for targeted updates, concurrent mapping conflicts, delete clearing, rollback behavior, audit durability, and forbidden-content absence.
 
 ## 3. Preview and YOLO Safety Boundary
 
