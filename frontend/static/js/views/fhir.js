@@ -880,4 +880,3 @@ function selectMedplumPatient(patientId) {
   resetMedplumDiagnosticReportState();
   renderMedplumConsole();
 }
-

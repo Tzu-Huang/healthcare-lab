@@ -14,11 +14,18 @@ class PatientStateTests(unittest.TestCase):
         cls.path = ROOT / "frontend/static/js/state/patient.js"
         cls.source = cls.path.read_text(encoding="utf-8")
         cls.bootstrap = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.feature_owners = "\n".join(
+            (ROOT / path).read_text(encoding="utf-8")
+            for path in (
+                "frontend/static/js/views/patient.js",
+                "frontend/static/js/views/order.js",
+            )
+        )
 
     def test_patient_records_have_explicit_state_api(self):
         for operation in ("getPatientRecords", "setPatientRecords", "replacePatientRecord"):
             self.assertIn(f"export function {operation}", self.source)
-            self.assertIn(operation, self.bootstrap)
+            self.assertIn(operation, self.bootstrap + self.feature_owners)
         self.assertNotIn("let patientRecords", self.bootstrap)
 
     def test_patient_state_replaces_matching_record_without_mutating_input(self):
