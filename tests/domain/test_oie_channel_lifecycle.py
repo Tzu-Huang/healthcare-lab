@@ -8,7 +8,7 @@ from backend.domain.oie_channel_lifecycle import (
     reconcile_inventory,
 )
 from backend.domain.oie_channels import ManagedChannelType
-from backend.templates.oie_channels import compile_orm_to_ap, orm_to_ap_config
+from backend.templates.oie_channels import compile_orm_to_ap, normalized_state, normalized_state_from_payload, orm_to_ap_config
 
 
 TYPE = ManagedChannelType.ORM_TO_AP
@@ -32,7 +32,7 @@ class ReconcileManagedChannelTests(unittest.TestCase):
         self.desired = orm_to_ap_config("ap.internal")
 
     def managed(self, channels=(), mappings=()):
-        return reconcile_inventory([self.desired], mappings, channels)[0]
+        return reconcile_inventory([self.desired], mappings, channels, normalize_desired=normalized_state, normalize_payload=normalized_state_from_payload)[0]
 
     def test_missing(self):
         self.assertEqual(ChannelClassification.MISSING, self.managed().classification)
@@ -81,7 +81,7 @@ class ReconcileManagedChannelTests(unittest.TestCase):
         root = ET.fromstring(compile_orm_to_ap("ap.internal"))
         root.find("description").text = "Operator owned"
         inventory = live("external", ET.tostring(root, encoding="unicode"), "OTHER")
-        results = reconcile_inventory([self.desired], [], [inventory])
+        results = reconcile_inventory([self.desired], [], [inventory], normalize_desired=normalized_state, normalize_payload=normalized_state_from_payload)
         self.assertEqual([ChannelClassification.MISSING, ChannelClassification.EXTERNAL], [r.classification for r in results])
         self.assertEqual(("external-channel-read-only",), results[1].blocking_reasons)
 

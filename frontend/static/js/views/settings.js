@@ -1,4 +1,5 @@
 import { inspectManagedChannels, mutateManagedChannel, previewManagedChannel } from "../api/settings.js";
+import { settingsUnavailableMessage } from "../components/settings-shell.js";
 import { clearSettingsPreview, createSettingsState } from "../state/settings.js";
 
 const state = createSettingsState();
@@ -6,6 +7,7 @@ const state = createSettingsState();
 export function initializeSettingsView(root) {
   if (!root || state.initialized) return state;
   root.dataset.moduleOwner = "settings";
+  root.dataset.emptyState = settingsUnavailableMessage();
   root.querySelector("#settings-refresh").addEventListener("click", refreshSettingsChannels);
   root.querySelector("#settings-managed-list").addEventListener("click", handleAction);
   root.querySelector("#settings-preview-execute").addEventListener("click", executePreview);
