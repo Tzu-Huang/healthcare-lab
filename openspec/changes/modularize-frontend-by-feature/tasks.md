@@ -37,14 +37,14 @@
 ## 6. CSS and template ownership
 
 - [x] 6.1 Establish base, layout, component, and feature-view CSS layers while preserving the characterized cascade order and making the retained global stylesheet a thin loader.
-- [ ] 6.2 Scope feature-only selectors beneath their owning workspace and verify existing responsive behavior at representative desktop and narrow viewport widths.
+- [x] 6.2 Scope feature-only selectors beneath their owning workspace and verify existing responsive behavior at representative desktop and narrow viewport widths.
 - [x] 6.3 Move stabilized Dashboard, Patient, Order, FHIR, dcm4chee, OIE, and GDT markup into feature-owned Flask partials while preserving DOM IDs, accessibility semantics, and route rendering.
 - [x] 6.4 Keep the application shell and sidebar ownership explicit, reserve the Settings include point, and update structural tests so they follow rendered ownership rather than one physical template file.
 
 ## 7. Interaction and regression verification
 
-- [ ] 7.1 Add or extend controlled browser smoke coverage for sidebar navigation, startup without unexpected console errors, Dashboard refresh, and representative Patient and Order interactions.
-- [ ] 7.2 Add or extend controlled browser smoke coverage for representative FHIR, dcm4chee, OIE, and GDT interactions without live external infrastructure.
+- [x] 7.1 Add or extend controlled browser smoke coverage for sidebar navigation, startup without unexpected console errors, Dashboard refresh, and representative Patient and Order interactions.
+- [x] 7.2 Add or extend controlled browser smoke coverage for representative FHIR, dcm4chee, OIE, and GDT interactions without live external infrastructure.
 - [ ] 7.3 Run syntax/import validation over every JavaScript module, focused feature suites, Flask integration tests, architecture contracts, and the complete regression suite.
 - [ ] 7.4 Compare final test collection with the baseline and complete the ZAC-64 assertion-ownership audit, explaining intentional changes rather than treating count equality as sufficient evidence.
 

@@ -169,7 +169,7 @@ class HealthcareLabApiTests(unittest.TestCase):
 
         self.assertIn(b'id="lab-console-view"', response.data)
         self.assertIn(b'id="patient-mode"', response.data)
-        self.assertIn(b'class="table-wrap patient-local-table-wrap"', response.data)
+        self.assertIn(b'class="table-wrap local-record-table-wrap patient-local-table-wrap"', response.data)
         self.assertIn(b"<th>State</th><th>Created</th>", response.data)
         self.assertNotIn(b"<th>FHIR Sync</th>", response.data)
         self.assertNotIn(
@@ -179,7 +179,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         )
         self.assertIn(b'id="order-view"', response.data)
         self.assertIn(b'id="order-payload-preview"', response.data)
-        self.assertIn(b'class="table-wrap order-local-table-wrap"', response.data)
+        self.assertIn(b'class="table-wrap local-record-table-wrap order-local-table-wrap"', response.data)
         self.assertIn(
             b"<th>Order ID</th><th>Mode</th><th>MRN</th><th>Visit Number</th><th>Name</th><th>Code</th><th>Status</th><th>Created At (Taipei)</th>",
             response.data,
@@ -373,8 +373,7 @@ class HealthcareLabApiTests(unittest.TestCase):
         styles = frontend_styles()
         self.assertIn(".app-view[hidden]", styles)
         self.assertIn("display: none", styles)
-        self.assertIn(".patient-local-table-wrap", styles)
-        self.assertIn(".order-local-table-wrap", styles)
+        self.assertIn(".local-record-table-wrap", styles)
         self.assertIn("max-height: 360px", styles)
         self.assertIn("overflow: auto", styles)
 

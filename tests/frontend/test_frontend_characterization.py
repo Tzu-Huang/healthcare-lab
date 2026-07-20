@@ -130,6 +130,24 @@ class FrontendCharacterizationTests(unittest.TestCase):
                 self.assertTrue(source.rstrip().endswith("}"))
         self.assertTrue(owners[2].lstrip().startswith("button,\n.button {"))
 
+    def test_feature_selector_families_are_scoped_to_their_workspace(self):
+        scoped_families = {
+            "#lab-console-view": r"\.(?:lab-console(?![\s,{:.#\[]|$)|lab-summary|lab-server|dashboard-|resource-usage|resource-item)",
+            "#medplum-view": r"\.medplum-(?!workspace(?:[\s,{:.#\[]|$))",
+            "#order-view": r"\.order-(?!workspace(?:[\s,{:.#\[]|$))",
+            "#dcm4chee-view": r"\.dcm4chee-(?!workspace(?:[\s,{:.#\[]|$))",
+            "#oie-view": r"\.oie-(?!workspace(?:[\s,{:.#\[]|$))",
+            "#gdt-view": r"\.gdt-(?!console(?:[\s,{:.#\[]|$))",
+        }
+        for line in self.styles.splitlines():
+            selector = line.strip()
+            if not selector.startswith(('.', '#')):
+                continue
+            for workspace, family in scoped_families.items():
+                if re.match(family, selector):
+                    with self.subTest(selector=selector, workspace=workspace):
+                        self.fail(f"feature-only selector is not scoped beneath {workspace}: {selector}")
+
 
 if __name__ == "__main__":
     unittest.main()

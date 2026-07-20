@@ -181,14 +181,12 @@ button.danger:hover {
   overflow-x: auto;
 }
 
-.patient-local-table-wrap,
-.order-local-table-wrap {
+.local-record-table-wrap {
   max-height: 360px;
   overflow: auto;
 }
 
-.patient-local-table-wrap thead th,
-.order-local-table-wrap thead th {
+.local-record-table-wrap thead th {
   position: sticky;
   top: 0;
   z-index: 1;
