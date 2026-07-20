@@ -13,21 +13,21 @@
 
 ## 3. Integration test split
 
-- [ ] 3.1 Move application shell, route registration, static asset, and shared Flask rendering assertions into an application-shell suite.
-- [ ] 3.2 Move dashboard and lab control-plane API/health/operation assertions into responsibility-focused suites.
-- [ ] 3.3 Move Patient and Order API assertions, retaining only genuine Patient-to-Order boundary scenarios in a cross-feature suite.
-- [ ] 3.4 Move FHIR and dcm4chee API/workflow assertions into their feature suites, retaining only cross-context coordination at integration level.
-- [ ] 3.5 Move GDT and OIE API/runtime-facing assertions into their feature suites while preserving controlled external doubles.
-- [ ] 3.6 Verify that frontend module, CSS, template ownership, and browser interaction tests remain in `tests/frontend` under ZAC-63 ownership.
+- [x] 3.1 Move application shell, route registration, static asset, and shared Flask rendering assertions into an application-shell suite.
+- [x] 3.2 Move dashboard and lab control-plane API/health/operation assertions into responsibility-focused suites.
+- [x] 3.3 Move Patient and Order API assertions, retaining only genuine Patient-to-Order boundary scenarios in a cross-feature suite.
+- [x] 3.4 Move FHIR and dcm4chee API/workflow assertions into their feature suites, retaining only cross-context coordination at integration level.
+- [x] 3.5 Move GDT and OIE API/runtime-facing assertions into their feature suites while preserving controlled external doubles.
+- [x] 3.6 Verify that frontend module, CSS, template ownership, and browser interaction tests remain in `tests/frontend` under ZAC-63 ownership.
 
 ## 4. Repository, domain, and template test split
 
-- [ ] 4.1 Move database initialization, migration, and shared infrastructure assertions from `test_lab_store.py` to the database/schema owners.
-- [ ] 4.2 Move Patient and Order persistence assertions to their repository suites and pure validation/payload assertions to domain/template suites.
-- [ ] 4.3 Move FHIR ledger, dcm4chee patient-sync/MWL/results, and related mapping assertions to their existing responsibility owners.
-- [ ] 4.4 Move GDT workflow and OIE result/settings assertions to their repository, domain, template, or runtime owners.
-- [ ] 4.5 Isolate retained DemoStore and compatibility-import assertions in an explicitly named compatibility suite for the ZAC-65 handoff.
-- [ ] 4.6 Remove duplicate assertions only after the ownership matrix proves that the behavior remains covered by the new owner.
+- [x] 4.1 Move database initialization, migration, and shared infrastructure assertions from `test_lab_store.py` to the database/schema owners.
+- [x] 4.2 Move Patient and Order persistence assertions to their repository suites and pure validation/payload assertions to domain/template suites.
+- [x] 4.3 Move FHIR ledger, dcm4chee patient-sync/MWL/results, and related mapping assertions to their existing responsibility owners.
+- [x] 4.4 Move GDT workflow and OIE result/settings assertions to their repository, domain, template, or runtime owners.
+- [x] 4.5 Isolate retained DemoStore and compatibility-import assertions in an explicitly named compatibility suite for the ZAC-65 handoff.
+- [x] 4.6 Remove duplicate assertions only after the ownership matrix proves that the behavior remains covered by the new owner.
 
 ## 5. Independent verification and cleanup
 
