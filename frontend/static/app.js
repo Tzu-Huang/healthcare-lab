@@ -1,4 +1,3 @@
-import { requestJson } from "./js/api/client.js";
 import { setStatus } from "./js/components/status.js";
 import { copyTextFromElement as copyElementText } from "./js/core/clipboard.js";
 import { createElement, rowCell } from "./js/core/dom.js";
@@ -12,7 +11,8 @@ import { getSelectedOrderId, getSelectedPatientId, setSelectedOrderId, setSelect
 import { getPatientRecords, setPatientRecords } from "./js/state/patient.js";
 import { getOrderRecords, setOrderRecords, setSelectedOrderRecordKey } from "./js/state/order.js";
 import { createPatient, fetchPatients } from "./js/api/patient.js";
-import { fetchDcm4cheeAttempts, fetchOrders } from "./js/api/order.js";
+import { fetchOrders } from "./js/api/order.js";
+import { fetchDcm4cheeAttempts, fetchDcm4cheeProfileDiagnostics } from "./js/api/dcm4chee.js";
 import { buildPatientGdtPreviewPayload, configurePatientCoordinator, createPatientRecord, initializePatientView, patientPreviewMrn, refreshPatientDcm4cheeResults, refreshPatientPreview, refreshPatients, renderPatientSummaryFromPayload, retryPatientFhirSync } from "./js/views/patient.js";
 import { configureOrderCoordinator, createOrderRecord, currentOrderMode, initializeOrderView, orderListKey, orderRecordMode, orderVisitId, refreshOrderPreview, refreshOrders, refreshOrderWorkspace, renderOrderPatientOptions, renderOrderRecordList, retryDcm4cheeOrder, selectedOrderPatientReference, sendDcm4cheeOrder, simulateDcm4cheeApReturn, updateOrderModeFields, verifyDcm4cheeOrder } from "./js/views/order.js";
 
@@ -899,7 +899,7 @@ async function refreshDcm4cheeConsole() {
     const [patientsResult, ordersResult, diagnosticsResult] = await Promise.all([
       fetchPatients("DICOM"),
       fetchOrders(),
-      requestJson("/api/dcm4chee/profile/diagnostics"),
+      fetchDcm4cheeProfileDiagnostics(),
     ]);
     setPatientRecords(patientsResult.items || []);
     setOrderRecords(ordersResult.items || []);
