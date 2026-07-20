@@ -30,7 +30,7 @@
 ## 5. FHIR, dcm4chee, and GDT extraction
 
 - [x] 5.1 Extract FHIR/Medplum API, feature state, inventory, resource selection, DiagnosticReport rendering, preview/retry interactions, and lifecycle; move its assertions and run focused FHIR verification.
-- [ ] 5.2 Extract dcm4chee API, feature state, patient/order selection, result grouping, workflow status/actions, preview/history rendering, and lifecycle; move its assertions and run focused dcm4chee verification.
+- [x] 5.2 Extract dcm4chee API, feature state, patient/order selection, result grouping, workflow status/actions, preview/history rendering, and lifecycle; move its assertions and run focused dcm4chee verification.
 - [x] 5.3 Extract GDT API, feature state, bridge/watcher controls, patient/order/result/artifact rendering, preview/import/write interactions, and lifecycle; move its assertions and run focused GDT verification.
 - [x] 5.4 Audit shared components created during feature extraction and retain them as shared owners only where at least two feature contracts use them without feature-specific branching.
 
