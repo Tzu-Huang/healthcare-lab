@@ -31,15 +31,15 @@
 
 ## 5. Independent verification and cleanup
 
-- [ ] 5.1 Add focused unittest commands for every new integration, repository, domain, template, runtime, and compatibility suite.
-- [ ] 5.2 Run each focused suite with disposable databases and external-service doubles and record the results.
-- [ ] 5.3 Compare old and new test IDs, collection counts, and assertion ownership; explain intentional additions or removals.
-- [ ] 5.4 Remove obsolete `test_app.py` and `test_lab_store.py` responsibility locations only after all ownership and focused checks pass.
-- [ ] 5.5 Update the test ownership/baseline documentation and ZAC-65 compatibility handoff.
+- [x] 5.1 Add focused unittest commands for every new integration, repository, domain, template, runtime, and compatibility suite.
+- [x] 5.2 Run each focused suite with disposable databases and external-service doubles and record the results.
+- [x] 5.3 Compare old and new test IDs, collection counts, and assertion ownership; explain intentional additions or removals.
+- [x] 5.4 Remove obsolete `test_app.py` and `test_lab_store.py` responsibility locations only after all ownership and focused checks pass.
+- [x] 5.5 Update the test ownership/baseline documentation and ZAC-65 compatibility handoff.
 
 ## 6. Quality gate
 
-- [ ] 6.1 Run the complete unittest regression suite and architecture contracts.
-- [ ] 6.2 Run the focused frontend suites and confirm ZAC-63 ownership remains intact.
-- [ ] 6.3 Run Python compilation, diff checks, and strict OpenSpec validation.
-- [ ] 6.4 Record the final collection comparison, residual manual boundaries, and verification commands in the change devlog before review.
+- [x] 6.1 Run the complete unittest regression suite and architecture contracts.
+- [x] 6.2 Run the focused frontend suites and confirm ZAC-63 ownership remains intact.
+- [x] 6.3 Run Python compilation, diff checks, and strict OpenSpec validation.
+- [x] 6.4 Record the final collection comparison, residual manual boundaries, and verification commands in the change devlog before review.
