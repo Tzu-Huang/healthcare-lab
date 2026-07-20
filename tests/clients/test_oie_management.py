@@ -243,6 +243,18 @@ class OieManagementClientTests(unittest.TestCase):
         self.assertEqual(OieErrorCategory.VALIDATION, raised.exception.category)
         self.assertEqual(1, len(transport.requests))
 
+    def test_channel_mutations_accept_complete_xml_without_weakening_override(self):
+        client, transport = client_with(
+            Step(body={"status": "SUCCESS"}), Step(body="4.5.2"),
+            Step(body=True), Step(body=True),
+        )
+        client.login()
+        client.create_channel("<channel><id /></channel>")
+        client.update_channel("c1", "<channel><id>c1</id></channel>")
+        self.assertEqual("application/xml", transport.requests[2]["headers"]["Content-Type"])
+        self.assertEqual(b"<channel><id /></channel>", transport.requests[2]["body"])
+        self.assertIn("override=false", transport.requests[3]["url"])
+
     def test_malformed_and_unsupported_responses_are_explicit(self):
         malformed_login, malformed_transport = client_with(Step(body=b"not-json"))
         with self.assertRaises(OieManagementError) as raised:

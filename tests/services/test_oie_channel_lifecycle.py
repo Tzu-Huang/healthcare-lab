@@ -1,0 +1,103 @@
+import unittest
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from xml.etree import ElementTree as ET
+
+from backend.services.oie_channel_lifecycle import LifecycleGuardError, OieManagedChannelLifecycleService, PreviewTokenCodec, merge_owned_xml
+from backend.templates.oie_channels import compile_orm_to_ap
+
+
+def value(channel_id="c1", revision=7, payload=None, status="STARTED"):
+    payload = payload or compile_orm_to_ap("ap.internal")
+    root = ET.fromstring(payload); root.find("id").text = channel_id; root.find("revision").text = str(revision)
+    payload = ET.tostring(root, encoding="unicode")
+    return {"id": channel_id, "name": "HLAB_ORM_TO_AP", "revision": revision, "payload": payload, "status": status}
+
+
+class FakeRepository:
+    def __init__(self, mapped=True):
+        self.mapping = {"logicalType": "hlab-orm-to-ap", "channelId": "c1" if mapped else "", "channelName": "HLAB_ORM_TO_AP", "templateVersion": "1", "lastKnownRevision": "7" if mapped else ""}
+        self.audits = []
+    def get(self): return {"managedChannels": [self.mapping]}
+    def compare_and_update_managed_channel_mapping(self, **kwargs):
+        self.mapping.update(channelId=kwargs["channel_id"], lastKnownRevision=kwargs["revision"]); self.audits.append(kwargs["audit_event"]); return self.mapping
+    def compare_and_clear_managed_channel_mapping(self, **kwargs):
+        self.mapping.update(channelId="", lastKnownRevision=""); self.audits.append(kwargs["audit_event"]); return self.mapping
+    def append_managed_channel_lifecycle_audit(self, event): self.audits.append(event)
+
+
+class FakeClient:
+    def __init__(self, channels=(), fail_delete=False): self.channels, self.calls, self.fail_delete = list(channels), [], fail_delete
+    def list_channels(self): return SimpleNamespace(values={"items": tuple(self.channels)})
+    def get_channel(self, channel_id): self.calls.append(("get", channel_id)); return SimpleNamespace(values=next(v for v in self.channels if v["id"] == channel_id))
+    def create_channel(self, payload): self.calls.append(("create", payload)); self.channels.append(value())
+    def update_channel(self, channel_id, payload, *, override=False): self.calls.append(("update", channel_id, payload, override)); self.channels[0] = value(revision=8, payload=payload)
+    def deploy(self, channel_id): self.calls.append(("deploy", channel_id))
+    def undeploy(self, channel_id): self.calls.append(("undeploy", channel_id))
+    def channel_status(self, channel_id): self.calls.append(("status", channel_id)); return SimpleNamespace(status="STARTED")
+    def delete_channel(self, channel_id):
+        self.calls.append(("delete", channel_id))
+        if self.fail_delete:
+            from backend.domain.oie_management import OieErrorCategory, OieManagementError
+            raise OieManagementError(OieErrorCategory.SERVER, "delete failed")
+        self.channels = []
+
+
+class LifecycleServiceTests(unittest.TestCase):
+    def service(self, client, repository):
+        now = lambda: datetime(2026, 7, 20, tzinfo=timezone.utc)
+        return OieManagedChannelLifecycleService(client, repository, ap_host="ap.internal", token_codec=PreviewTokenCodec(b"x" * 32, now=now), operation_id=lambda: "op-1")
+
+    def test_create_requires_preview_and_persists_readback(self):
+        client, repository = FakeClient(), FakeRepository(mapped=False); service = self.service(client, repository)
+        preview = service.preview("hlab-orm-to-ap", "create")
+        result = service.execute("hlab-orm-to-ap", "create", preview["previewToken"])
+        self.assertEqual("success", result["outcome"]); self.assertEqual("c1", repository.mapping["channelId"])
+        self.assertEqual("create", client.calls[0][0])
+
+    def test_retry_after_uncertain_create_never_creates_duplicate(self):
+        client, repository = FakeClient([value()]), FakeRepository(mapped=False); service = self.service(client, repository)
+        preview = service.preview("hlab-orm-to-ap", "create")
+        self.assertFalse(preview["permitted"]); self.assertNotIn("previewToken", preview); self.assertEqual([], client.calls)
+
+    def test_update_preserves_unowned_fields_and_never_overrides(self):
+        drift = compile_orm_to_ap("ap.internal", destination_port=6672); root = ET.fromstring(drift)
+        ET.SubElement(root, "operatorOwned").text = "keep"; client = FakeClient([value(payload=ET.tostring(root, encoding="unicode"))])
+        service = self.service(client, FakeRepository()); preview = service.preview("hlab-orm-to-ap", "update")
+        result = service.execute("hlab-orm-to-ap", "update", preview["previewToken"])
+        update = next(call for call in client.calls if call[0] == "update")
+        self.assertFalse(update[3]); self.assertEqual("keep", ET.fromstring(update[2]).findtext("operatorOwned")); self.assertEqual("success", result["outcome"])
+
+    def test_stale_preview_and_target_substitution_fail_before_mutation(self):
+        client = FakeClient(); service = self.service(client, FakeRepository(mapped=False)); preview = service.preview("hlab-orm-to-ap", "create")
+        with self.assertRaises(LifecycleGuardError): service.execute("hlab-oru-to-hlab", "create", preview["previewToken"])
+        self.assertEqual([], client.calls)
+
+    def test_delete_requires_exact_confirmation_and_is_bounded(self):
+        client, repository = FakeClient([value()]), FakeRepository(); service = self.service(client, repository); preview = service.preview("hlab-orm-to-ap", "delete")
+        with self.assertRaises(LifecycleGuardError): service.execute("hlab-orm-to-ap", "delete", preview["previewToken"], confirmation="yes")
+        result = service.execute("hlab-orm-to-ap", "delete", preview["previewToken"], confirmation="hlab-orm-to-ap")
+        self.assertEqual(["undeploy", "delete"], [call[0] for call in client.calls]); self.assertEqual("success", result["outcome"])
+
+    def test_deploy_is_single_target_and_audited(self):
+        client, repository = FakeClient([value(status="STOPPED")]), FakeRepository(); service = self.service(client, repository); preview = service.preview("hlab-orm-to-ap", "deploy")
+        service.execute("hlab-orm-to-ap", "deploy", preview["previewToken"])
+        self.assertEqual([("deploy", "c1"), ("status", "c1")], client.calls); self.assertEqual("deploy", repository.audits[0]["operation"])
+
+    def test_delete_reports_partial_failure_and_retry_refreshes(self):
+        client, repository = FakeClient([value()], fail_delete=True), FakeRepository(); service = self.service(client, repository)
+        preview = service.preview("hlab-orm-to-ap", "delete")
+        result = service.execute("hlab-orm-to-ap", "delete", preview["previewToken"], confirmation="hlab-orm-to-ap")
+        self.assertEqual("partial-failure", result["outcome"]); self.assertTrue(result["requiresRefresh"])
+        self.assertEqual(["undeploy", "delete"], [call[0] for call in client.calls])
+
+    def test_force_bulk_and_redeploy_are_not_operations(self):
+        service = self.service(FakeClient(), FakeRepository(mapped=False))
+        for operation in ("force", "bulk", "redeploy-all"):
+            with self.assertRaises(LifecycleGuardError): service.preview("hlab-orm-to-ap", operation)
+
+    def test_merge_rejects_incomplete_current_payload(self):
+        with self.assertRaises(LifecycleGuardError): merge_owned_xml("<channel><name>x</name></channel>", compile_orm_to_ap("ap.internal"))
+
+
+if __name__ == "__main__": unittest.main()
