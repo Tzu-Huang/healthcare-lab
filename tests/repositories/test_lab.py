@@ -3,20 +3,20 @@ import unittest
 from pathlib import Path
 
 from backend.domain.errors import SimulatorValidationError
-from backend.lab_store import DemoStore
+from backend.application_composition import assemble_application_dependencies
 
 
 class LabRepositoryCharacterizationTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.store = DemoStore(Path(self.directory.name) / "lab.db")
-        self.repository = self.store.lab_repository
+        self.dependencies = assemble_application_dependencies(Path(self.directory.name) / "lab.db")
+        self.repository = self.dependencies.lab_repository
 
     def tearDown(self):
         self.directory.cleanup()
 
     def test_server_crud_health_and_projection(self):
-        created = self.repository.create_lab_server(
+        created = self.repository.create_server(
             {
                 "name": "Disposable Lab",
                 "serverType": "Test Tool",
@@ -26,11 +26,11 @@ class LabRepositoryCharacterizationTests(unittest.TestCase):
             }
         )
         self.assertEqual(created["checkConfig"], {"path": "/health"})
-        updated = self.repository.update_lab_server(
+        updated = self.repository.update_server(
             created["id"], {"description": "characterized", "enabled": False}
         )
         self.assertFalse(updated["enabled"])
-        healthy = self.repository.update_lab_server_health(
+        healthy = self.repository.update_health(
             created["id"],
             overall_status="Healthy",
             process_status="Healthy",
@@ -40,11 +40,11 @@ class LabRepositoryCharacterizationTests(unittest.TestCase):
         )
         self.assertEqual(healthy["overallStatus"], "Healthy")
         self.assertEqual(healthy["version"], "1.2.3")
-        self.assertEqual(self.repository.get_lab_server(created["id"]), healthy)
+        self.assertEqual(self.repository.get_server(created["id"]), healthy)
 
     def test_operation_history_and_validation_errors(self):
-        server = self.repository.list_lab_servers()[0]
-        operation = self.repository.record_lab_operation(
+        server = self.repository.list_servers()[0]
+        operation = self.repository.record_operation(
             server["id"],
             service_name=server["name"],
             action="restart",
@@ -56,47 +56,42 @@ class LabRepositoryCharacterizationTests(unittest.TestCase):
         )
         self.assertEqual(operation["durationMs"], 0)
         self.assertEqual(operation["progress"][0]["status"], "failed")
-        self.assertEqual(self.repository.list_lab_operations(server["id"])[0], operation)
+        self.assertEqual(self.repository.list_operations(server["id"])[0], operation)
         with self.assertRaisesRegex(SimulatorValidationError, "Unsupported lab operation"):
-            self.repository.record_lab_operation(
+            self.repository.record_operation(
                 server["id"], service_name=server["name"], action="purge",
                 operator="tester", result="failed"
             )
         with self.assertRaisesRegex(SimulatorValidationError, "Base URL"):
-            self.repository.create_lab_server(
+            self.repository.create_server(
                 {"name": "Bad", "serverType": "Test Tool", "protocol": "HTTP",
                  "baseUrl": "localhost:9010"}
             )
 
     def test_store_and_database_share_write_lock(self):
-        self.assertIs(self.store.lock, self.store.database.lock)
-        self.assertIs(self.repository.lock, self.store.database.lock)
-
-    def test_store_compatibility_delegates_match_direct_repository(self):
-        self.assertEqual(self.store.list_lab_servers(), self.repository.list_servers())
-        server_id = self.store.list_lab_servers()[0]["id"]
-        self.assertEqual(self.store.get_lab_server(server_id), self.repository.get_server(server_id))
+        self.assertIs(self.dependencies.database.lock, self.dependencies.database.lock)
+        self.assertIs(self.repository.lock, self.dependencies.database.lock)
 
     def test_operation_metadata_is_seeded_non_destructively(self):
-        oie = next(item for item in self.repository.list_lab_servers() if item["name"] == "OIE")
+        oie = next(item for item in self.repository.list_servers() if item["name"] == "OIE")
         self.assertEqual(oie["operation"]["controlType"], "docker-compose")
         self.assertEqual(oie["operation"]["backingService"], "oie")
         self.assertIn("restart", oie["operation"]["supportedActions"])
         self.assertEqual(oie["operation"]["smokeProfile"], "oie")
 
-        self.repository.update_lab_server(
+        self.repository.update_server(
             oie["id"],
             {"host": "10.10.10.10", "baseUrl": "http://10.10.10.10:18080"},
         )
-        reopened = DemoStore(self.store.path).lab_repository
-        updated = reopened.get_lab_server(oie["id"])
+        reopened = assemble_application_dependencies(self.dependencies.database.path).lab_repository
+        updated = reopened.get_server(oie["id"])
 
         self.assertEqual(updated["host"], "10.10.10.10")
         self.assertEqual(updated["baseUrl"], "http://10.10.10.10:18080")
         self.assertEqual(updated["operation"]["backingService"], "oie")
 
     def test_custom_operation_metadata_can_be_persisted(self):
-        created = self.repository.create_lab_server(
+        created = self.repository.create_server(
             {
                 "name": "Custom Lab Tool",
                 "serverType": "Test Tool",
@@ -119,15 +114,15 @@ class LabRepositoryCharacterizationTests(unittest.TestCase):
         self.assertEqual(created["operation"]["smokeProfile"], "custom")
 
         with self.assertRaisesRegex(SimulatorValidationError, "Unsupported lab operation action"):
-            self.repository.update_lab_server(
+            self.repository.update_server(
                 created["id"], {"operation": {"supportedActions": ["purge"]}}
             )
 
     def test_operation_history_persists_progress_and_errors(self):
         medplum = next(
-            item for item in self.repository.list_lab_servers() if item["name"] == "Medplum"
+            item for item in self.repository.list_servers() if item["name"] == "Medplum"
         )
-        operation = self.repository.record_lab_operation(
+        operation = self.repository.record_operation(
             medplum["id"],
             service_name="Medplum",
             action="restart",
@@ -148,11 +143,11 @@ class LabRepositoryCharacterizationTests(unittest.TestCase):
         self.assertEqual(operation["progress"][1]["status"], "failed")
         self.assertEqual(operation["error"], "container failed")
         self.assertEqual(
-            self.repository.list_lab_operations(medplum["id"])[0]["id"], operation["id"]
+            self.repository.list_operations(medplum["id"])[0]["id"], operation["id"]
         )
 
         with self.assertRaisesRegex(SimulatorValidationError, "Unsupported lab operation action"):
-            self.repository.record_lab_operation(
+            self.repository.record_operation(
                 medplum["id"], service_name="Medplum", action="purge",
                 operator="tester", result="failed"
             )

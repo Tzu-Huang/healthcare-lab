@@ -5,7 +5,7 @@ from ._case_support import *
 class CrossFeatureWorkflowTests(ApiCaseSupport):
     """Focused assertion owner for CrossFeatureWorkflowTests."""
 
-    @patch("app.send_hl7_mllp_message")
+    @patch("backend.app_factory.send_hl7_mllp_message")
     def test_patient_api_creates_dicom_patient_and_syncs_dcm4chee(self, send_hl7):
         send_hl7.return_value = (
             "MSH|^~\\&|DCM4CHEE|DCM4CHEE|HEALTHCARE_LAB|LAB_APP|20260709101010||ACK^A04^ACK|ACK1|P|2.5.1||||||UNICODE UTF-8"
@@ -41,7 +41,7 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
         self.assertEqual(send_hl7.call_args.kwargs["host"], "127.0.0.1")
         self.assertEqual(send_hl7.call_args.kwargs["port"], 2575)
 
-    @patch("app.send_hl7_mllp_message", side_effect=OSError("connection refused"))
+    @patch("backend.app_factory.send_hl7_mllp_message", side_effect=OSError("connection refused"))
     def test_patient_api_preserves_dicom_patient_when_dcm4chee_sync_fails(self, _send_hl7):
         response = self.client.post(
             "/api/patients",
@@ -64,7 +64,7 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
         self.assertEqual(dcm4chee_patient["lastErrorType"], "dcm4chee_hl7_unreachable")
         self.assertIn("connection refused", dcm4chee_patient["lastError"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_patient_api_creates_fhir_patient_and_syncs_medplum(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
         calls = []
@@ -127,7 +127,7 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
         listed = self.client.get("/api/patients").get_json()["items"]
         self.assertEqual(listed[0]["fhir"]["medplum"]["reference"], "Patient/patient-created")
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_patient_api_preserves_fhir_patient_when_sync_fails_and_retry_succeeds(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
         outcome = {
@@ -202,8 +202,8 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
         self.assertEqual(retried.get_json()["item"]["fhir"]["sync"]["status"], "Synced")
         self.assertEqual(retried.get_json()["item"]["fhir"]["medplum"]["reference"], "Patient/patient-existing")
 
-    @patch("app.urllib.request.urlopen")
-    @patch("app.send_hl7_mllp_message")
+    @patch("backend.app_factory.urllib.request.urlopen")
+    @patch("backend.app_factory.send_hl7_mllp_message")
     def test_order_api_creates_dcm4chee_mwl_after_dicom_patient_sync(self, send_hl7, urlopen):
         send_hl7.return_value = "MSH|^~\\&|DCM4CHEE|DCM4CHEE|HEALTHCARE_LAB|LAB_APP|20260709101010||ACK^A04^ACK|ACK1|P|2.5.1||||||UNICODE UTF-8\rMSA|AA|DCMADT1|OK"
         captured = []

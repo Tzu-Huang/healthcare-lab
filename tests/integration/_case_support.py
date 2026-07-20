@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app import (
+from backend.app_factory import (
     DockerComposeLabOperationAdapter,
     DockerSocketLabOperationAdapter,
     OpenEMRProcedureOrderSource,
@@ -29,7 +29,7 @@ from app import (
     sync_order_to_dcm4chee_mwl,
     validate_dcm4chee_profile,
 )
-from backend.lab_store import (
+from backend.domain.statuses import (
     DCM4CHEE_MWL_STATUS_CREATED,
     DCM4CHEE_MWL_STATUS_FAILED,
     DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
@@ -38,10 +38,12 @@ from backend.lab_store import (
     DCM4CHEE_RESULT_STATUS_MATCHED,
     DCM4CHEE_RESULT_STATUS_NO_RESULT,
     DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
-    DCM4CHEE_RESULT_SOURCE_SIMULATED_AP,
     DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
-    render_gdt_message,
 )
+from backend.domain.dicom import DCM4CHEE_RESULT_SOURCE_SIMULATED_AP
+from backend.domain.gdt_protocol import render_gdt_message
+from backend.domain.timestamps import hl7_timestamp
+from backend.templates import dicom as dicom_templates
 from tests.support import (
     DisposableAppCase,
     FakeDbConnection,
@@ -103,7 +105,7 @@ class ApiCaseSupport(DisposableAppCase):
             connection_factory=connection_factory,
         )
     def run_openemr_smoke(self):
-        store = self.client.application.extensions["demo_store"]
+        store = self.lab_repository_view
         openemr = next(item for item in store.list_lab_servers() if item["name"] == "OpenEMR")
         return run_lab_smoke_check(self.client.application, store, openemr)
 
@@ -150,13 +152,13 @@ class ApiCaseSupport(DisposableAppCase):
         return response.get_json()["item"]
 
     def set_medplum_base_url(self, base_url):
-        store = self.client.application.extensions["demo_store"]
-        medplum = next(item for item in store.list_lab_servers() if item["name"] == "Medplum")
-        store.update_lab_server(medplum["id"], {"baseUrl": base_url})
+        store = self.dependencies.lab_repository
+        medplum = next(item for item in store.list_servers() if item["name"] == "Medplum")
+        store.update_server(medplum["id"], {"baseUrl": base_url})
 
     def create_synced_fhir_patient(self):
-        store = self.client.application.extensions["demo_store"]
-        patient = store.create_patient_record(
+        store = self.dependencies
+        patient = store.patient_repository.create_patient_record(
             {
                 "mode": "fhir",
                 "mrn": "MRN-FHIR-ORDER-001",
@@ -166,12 +168,21 @@ class ApiCaseSupport(DisposableAppCase):
                 "sex": "F",
             }
         )
-        fhir = store.create_patient_fhir_workflow_record(patient)
-        store.mark_fhir_sync_success(
+        fhir = store.patient_fhir.create_patient_fhir_workflow_record(patient)
+        store.fhir_ledger.mark_fhir_sync_success(
             fhir["id"],
             medplum_resource_id="patient-order",
             medplum_resource_reference="Patient/patient-order",
         )
-        return store.get_patient_record(patient["id"])
+        return store.patient_repository.get_patient_record(patient["id"])
+
+
+def build_dcm4chee_mwl_payload(order, profile, *, uid_root):
+    return dicom_templates.build_mwl_payload(
+        order,
+        profile,
+        uid_root=uid_root,
+        timestamp_factory=hl7_timestamp,
+    )
 
 __all__ = [name for name in globals() if not name.startswith("_")]

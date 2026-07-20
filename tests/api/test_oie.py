@@ -3,7 +3,7 @@ import unittest
 from flask import Flask
 
 from backend.api.oie import create_oie_blueprint
-from backend.lab_store import SimulatorValidationError
+from backend.domain.errors import SimulatorValidationError
 
 
 class FakeService:

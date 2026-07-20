@@ -7,6 +7,8 @@ from typing import Any, Callable
 
 from backend.domain.errors import SimulatorValidationError
 
+ORDER_PROTOCOL_VERSION = "2.5.1"
+
 ALLOWED_PRIORITIES = ("R", "S", "A")
 DEFAULT_CODE = "ECG12"
 DEFAULT_TEXT = "12 Lead ECG"

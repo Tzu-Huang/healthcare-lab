@@ -2,10 +2,11 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from backend.domain.errors import SimulatorValidationError
-from backend.lab_store import DemoStore
+from backend.application_composition import assemble_application_dependencies
+from backend.services.coordination import OrderFhirOperations
 from backend.services.order_workflow import OrderWorkflowService
 
 
@@ -20,7 +21,7 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
         self.assertFalse(self.database_path.is_relative_to(repository_root / "instance"))
         self.assertFalse(self.database_path.is_relative_to(repository_root))
 
-        self.store = DemoStore(self.database_path)
+        self.dependencies = assemble_application_dependencies(self.database_path)
 
     def tearDown(self):
         self.directory.cleanup()
@@ -37,9 +38,9 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
         }
 
     def create_synced_patient(self):
-        patient = self.store.create_patient_record(self.patient())
-        record = self.store.create_patient_fhir_workflow_record(patient)
-        self.store.mark_fhir_sync_success(
+        patient = self.dependencies.patient_repository.create_patient_record(self.patient())
+        record = self.dependencies.patient_fhir.create_patient_fhir_workflow_record(patient)
+        self.dependencies.fhir_ledger.mark_fhir_sync_success(
             record["id"],
             medplum_resource_id="patient-characterization",
             medplum_resource_reference="Patient/patient-characterization",
@@ -47,13 +48,13 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
         return patient, record
 
     def service_request_count(self):
-        with self.store.connect() as connection:
+        with self.dependencies.database.connect() as connection:
             return connection.execute(
                 "SELECT COUNT(*) FROM local_fhir_workflow_records WHERE resource_type = 'ServiceRequest'"
             ).fetchone()[0]
 
     def test_dependency_only_change_requeues_and_clears_stale_sync_details(self):
-        item = self.store.create_fhir_workflow_record(
+        item = self.dependencies.fhir_ledger.create_fhir_workflow_record(
             {
                 "localSourceType": "local_patient_records",
                 "localSourceId": "17",
@@ -61,7 +62,7 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
                 "dependencies": [],
             }
         )
-        self.store.mark_fhir_sync_success(
+        self.dependencies.fhir_ledger.mark_fhir_sync_success(
             item["id"],
             medplum_resource_id="patient-17",
             medplum_resource_reference="Patient/patient-17",
@@ -70,16 +71,16 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
             "resourceType": "OperationOutcome",
             "issue": [{"severity": "error", "diagnostics": "stale dependency"}],
         }
-        self.store.mark_fhir_sync_failure(
+        self.dependencies.fhir_ledger.mark_fhir_sync_failure(
             item["id"], error_text="stale sync error", operation_outcome=outcome
         )
-        with self.store.connect() as connection:
+        with self.dependencies.database.connect() as connection:
             connection.execute(
                 "UPDATE local_fhir_workflow_records SET sync_started_at = ? WHERE id = ?",
                 ("2026-07-16T01:02:03+00:00", item["id"]),
             )
 
-        changed = self.store.create_fhir_workflow_record(
+        changed = self.dependencies.fhir_ledger.create_fhir_workflow_record(
             {
                 "localSourceType": "local_patient_records",
                 "localSourceId": "17",
@@ -99,7 +100,7 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
         self.assertEqual(changed["medplum"]["reference"], "Patient/patient-17")
 
     def test_multiple_sync_attempts_preserve_complete_payloads_newest_first(self):
-        record = self.store.create_fhir_workflow_record(
+        record = self.dependencies.fhir_ledger.create_fhir_workflow_record(
             {
                 "localSourceType": "local_order_records",
                 "localSourceId": "23",
@@ -114,7 +115,7 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
             "resourceType": "OperationOutcome",
             "issue": [{"severity": "error", "diagnostics": "patient missing"}],
         }
-        first = self.store.record_fhir_sync_attempt(
+        first = self.dependencies.fhir_ledger.record_fhir_sync_attempt(
             record["id"],
             method="post",
             request_url="https://example.invalid/fhir/R4/ServiceRequest",
@@ -124,7 +125,7 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
             operation_outcome=first_outcome,
             error_text="HTTP 400",
         )
-        second = self.store.record_fhir_sync_attempt(
+        second = self.dependencies.fhir_ledger.record_fhir_sync_attempt(
             record["id"],
             method="put",
             request_url="https://example.invalid/fhir/R4/ServiceRequest/sr-23",
@@ -135,7 +136,7 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
             error_text="",
         )
 
-        attempts = self.store.list_fhir_sync_attempts(record["id"])
+        attempts = self.dependencies.fhir_ledger.list_fhir_sync_attempts(record["id"])
 
         self.assertEqual([attempt["id"] for attempt in attempts], [second["id"], first["id"]])
         self.assertEqual(attempts[0], second)
@@ -147,30 +148,37 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
         self.assertEqual(attempts[1]["error"], "HTTP 400")
 
     def test_unsynced_or_wrong_protocol_patient_creates_no_order_or_service_request(self):
-        unsynced = self.store.create_patient_record(self.patient(mrn="MRN-UNSYNCED"))
+        unsynced = self.dependencies.patient_repository.create_patient_record(self.patient(mrn="MRN-UNSYNCED"))
         with self.assertRaisesRegex(SimulatorValidationError, "synced Medplum Patient"):
-            self.store.create_fhir_order_record(
+            self.dependencies.order_fhir.create_fhir_order_record(
                 {"mode": "fhir", "patientRecordId": unsynced["id"]}
             )
-        self.assertEqual(self.store.list_order_records(), [])
+        self.assertEqual(self.dependencies.order_repository.list_order_records(), [])
         self.assertEqual(self.service_request_count(), 0)
 
-        wrong_protocol = self.store.create_patient_record(
+        wrong_protocol = self.dependencies.patient_repository.create_patient_record(
             self.patient(mode="hl7-v2", mrn="MRN-HL7-WRONG-PROTOCOL")
         )
         with self.assertRaisesRegex(SimulatorValidationError, "synced Medplum Patient"):
-            self.store.create_fhir_order_record(
+            self.dependencies.order_fhir.create_fhir_order_record(
                 {"mode": "fhir", "patientRecordId": wrong_protocol["id"]}
             )
-        self.assertEqual(self.store.list_order_records(), [])
+        self.assertEqual(self.dependencies.order_repository.list_order_records(), [])
         self.assertEqual(self.service_request_count(), 0)
 
     def test_fhir_order_sync_failure_preserves_one_order_and_one_submitted_resource(self):
         patient, _ = self.create_synced_patient()
+        fhir_capability = OrderFhirOperations(
+            self.dependencies.order_fhir.create_fhir_order_record,
+            self.dependencies.order_fhir.create_order_service_request_fhir_workflow_record,
+            self.dependencies.fhir_ledger.mark_fhir_sync_failure,
+        )
         service = OrderWorkflowService(
-            self.store,
+            self.dependencies.order_repository,
             {},
-            coordination=self.store,
+            fhir_capability=fhir_capability,
+            dcm_order_capability=Mock(),
+            evidence_capability=Mock(),
             medplum_base_url=lambda: "",
             auth_manager=lambda: None,
             fhir_sync=lambda *args, **kwargs: self.fail("network sync must not be called"),
@@ -187,10 +195,10 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
             }
         )
 
-        orders = self.store.list_order_records("FHIR R4")
+        orders = self.dependencies.order_repository.list_order_records("FHIR R4")
         submitted = [
             item
-            for item in self.store.list_fhir_workflow_records()
+            for item in self.dependencies.fhir_ledger.list_fhir_workflow_records()
             if item["resourceType"] == "ServiceRequest"
         ]
         self.assertEqual([item["id"] for item in orders], [created["id"]])
@@ -209,7 +217,7 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
             side_effect=RuntimeError("numbering failed"),
         ):
             with self.assertRaisesRegex(RuntimeError, "numbering failed"):
-                self.store.create_fhir_workflow_record(
+                self.dependencies.fhir_ledger.create_fhir_workflow_record(
                     {
                         "localSourceType": "local_patient_records",
                         "localSourceId": "rollback-patient",
@@ -217,24 +225,25 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
                     }
                 )
 
-        self.assertEqual(self.store.list_fhir_workflow_records(), [])
+        self.assertEqual(self.dependencies.fhir_ledger.list_fhir_workflow_records(), [])
 
     def test_service_request_builder_failure_rolls_back_local_order(self):
         patient, _ = self.create_synced_patient()
-        with patch(
-            "backend.protocol_composition.build_service_request_resource",
+        with patch.object(
+            self.dependencies.order_fhir,
+            "_build_resource",
             side_effect=RuntimeError("service request build failed"),
         ):
             with self.assertRaisesRegex(RuntimeError, "service request build failed"):
-                self.store.create_fhir_order_record(
+                self.dependencies.order_fhir.create_fhir_order_record(
                     {"mode": "fhir", "patientRecordId": patient["id"]}
                 )
 
-        self.assertEqual(self.store.list_order_records("FHIR R4"), [])
+        self.assertEqual(self.dependencies.order_repository.list_order_records("FHIR R4"), [])
         self.assertFalse(
             any(
                 item["resourceType"] == "ServiceRequest"
-                for item in self.store.list_fhir_workflow_records()
+                for item in self.dependencies.fhir_ledger.list_fhir_workflow_records()
             )
         )
 

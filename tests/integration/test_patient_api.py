@@ -28,9 +28,9 @@ class PatientApiTests(ApiCaseSupport):
         self.assertEqual(len(self.client.get("/api/patients").get_json()["items"]), 1)
 
     def test_integration_patient_lists_filter_to_their_own_protocol(self):
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         patients = {
-            mode: store.create_patient_record(
+            mode: store.patient_repository.create_patient_record(
                 {
                     "mode": mode,
                     "mrn": f"MRN-{mode.upper()}",
@@ -42,7 +42,7 @@ class PatientApiTests(ApiCaseSupport):
             )
             for mode in ("hl7-v2", "fhir", "gdt", "dicom")
         }
-        store.create_patient_fhir_workflow_record(patients["fhir"])
+        store.patient_fhir.create_patient_fhir_workflow_record(patients["fhir"])
 
         oie = self.client.get("/api/oie/workbench").get_json()["patients"]
         oie_local = self.client.get("/api/oie/local-adt-patients").get_json()["items"]

@@ -609,7 +609,7 @@ Patient Pull lookup.
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile app.py backend\lab_store.py backend\dashboard_services.py backend\lab_operations.py backend\gdt_adapter.py tests\test_app.py tests\test_lab_store.py tests\test_b64_pdf.py tests\test_gdt_adapter.py
+python -m py_compile app.py backend\app_factory.py backend\application_composition.py backend\application_defaults.py backend\dashboard_services.py backend\lab_operations.py backend\gdt_adapter.py
 node --check frontend\static\app.js
 ```
 

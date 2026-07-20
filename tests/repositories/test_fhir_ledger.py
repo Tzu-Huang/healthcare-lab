@@ -2,17 +2,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backend.lab_store import DemoStore
+from backend.application_composition import assemble_application_dependencies
 from backend.repositories.fhir_ledger import FhirLedgerRepository
 
 
 class FhirLedgerRepositoryTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.store = DemoStore(Path(self.directory.name) / "fhir-ledger.db")
+        self.dependencies = assemble_application_dependencies(Path(self.directory.name) / "fhir-ledger.db")
         self.clock = iter(f"2026-07-16T00:00:{value:02d}+00:00" for value in range(60))
         self.repository = FhirLedgerRepository(
-            self.store.database.connect, self.store.database.lock,
+            self.dependencies.database.connect, self.dependencies.database.lock,
             timestamp_factory=lambda: next(self.clock),
         )
 
@@ -96,13 +96,13 @@ class FhirLedgerRepositoryTests(unittest.TestCase):
             raise RuntimeError("injected normalizer failure")
 
         repository = FhirLedgerRepository(
-            self.store.database.connect, self.store.database.lock,
+            self.dependencies.database.connect, self.dependencies.database.lock,
             timestamp_factory=lambda: "2026-07-16T00:00:00+00:00",
             payload_normalizer=fail_after_write_candidate,
         )
         with self.assertRaisesRegex(RuntimeError, "injected normalizer failure"):
             repository.create_fhir_workflow_record(self.payload())
-        with self.store.database.connect() as connection:
+        with self.dependencies.database.connect() as connection:
             self.assertEqual(0, connection.execute("SELECT COUNT(*) FROM local_fhir_workflow_records").fetchone()[0])
             self.assertEqual(0, connection.execute("SELECT COUNT(*) FROM local_fhir_sync_attempts").fetchone()[0])
 

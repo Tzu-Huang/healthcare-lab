@@ -56,7 +56,6 @@ PROTOCOL_CALLS = {
     "urlopen",
 }
 CATCH_ALL_BACKEND_PATHS = (
-    "backend/lab_store.py",
     "backend/gdt_adapter.py",
     "backend/dashboard_services.py",
     "backend/lab_operations.py",
@@ -66,7 +65,6 @@ COMPATIBILITY_FACADE_MODULES = frozenset(
         "backend.dashboard_services",
         "backend.gdt_adapter",
         "backend.lab_operations",
-        "backend.lab_store",
     }
 )
 PAYLOAD_NAME_PARTS = (
@@ -143,179 +141,6 @@ PROTECTED_SQL_TABLE_OWNERS = {
     "local_gdt_message_records": "backend/repositories/gdt_workflow.py",
     "local_gdt_attachment_records": "backend/repositories/gdt_workflow.py",
     "local_gdt_workflow_events": "backend/repositories/gdt_workflow.py",
-}
-DEMO_STORE_COMPATIBILITY_DELEGATES = {
-    "create_patient_fhir_workflow_record": "protocol_composition.create_patient_fhir_record",
-    "_fhir_order_values": "protocol_compat.fhir_order_values",
-    "_clean_fhir_order_text": "protocol_compat.fhir_order_clean_text",
-    "_fhir_order_list": "protocol_compat.fhir_order_list",
-    "_fhir_reference_item": "protocol_compat.fhir_reference_item",
-    "_fhir_reference_list": "protocol_compat.fhir_reference_list",
-    "_fhir_codeable_concept": "protocol_compat.fhir_codeable_concept",
-    "_fhir_order_datetime": "protocol_compat.fhir_order_datetime",
-    "_fhir_order_storage_timestamp": "protocol_compat.fhir_order_storage_timestamp",
-    "_fhir_order_storage_priority": "protocol_compat.fhir_order_storage_priority",
-    "_validate_fhir_order_payload": "protocol_compat.validate_fhir_order_payload",
-    "_build_service_request_resource": "protocol_composition.build_service_request_resource",
-    "_synced_patient_reference_for_fhir_order": "protocol_composition.synced_fhir_patient_reference",
-    "create_fhir_order_record": "protocol_composition.create_fhir_order",
-    "create_order_service_request_fhir_workflow_record": "protocol_composition.create_order_fhir_record",
-    "_gdt_order_record_number": "protocol_compat.gdt_order_number",
-    "_gdt_patient_context_number": "protocol_compat.gdt_patient_number",
-    "_validate_gdt_patient_number": "protocol_compat.validate_gdt_override",
-    "_gdt_attachment_filename": "protocol_compat.gdt_attachment_filename",
-    "_is_url_reference": "protocol_compat.is_url_reference",
-    "_gdt_artifact_status": "protocol_compat.gdt_artifact_status",
-    "_validate_gdt_8402_code": "protocol_compat.validate_gdt_code",
-    "_validate_gdt_order_payload": "protocol_compat.normalize_gdt_payload",
-    "_gdt_birth_date": "protocol_compat.gdt_birth_date",
-    "create_gdt_order_record": "protocol_composition.create_gdt_order",
-    "list_gdt_order_records": "protocol_composition.list_gdt_order_records",
-    "get_gdt_order_record": "protocol_composition.get_gdt_order",
-    "list_gdt_messages": "protocol_composition.list_gdt_messages",
-    "list_gdt_events": "protocol_composition.list_gdt_events",
-    "list_gdt_attachments": "protocol_composition.list_gdt_attachments",
-    "record_gdt_order_export": "protocol_composition.record_gdt_export",
-    "create_gdt_demo_result": "protocol_composition.create_gdt_demo",
-    "list_gdt_workbench": "protocol_composition.build_gdt_workbench",
-    "_attachment_payloads_from_result_fields": "protocol_compat.gdt_attachment_payloads",
-    "_gdt_result_measurements": "protocol_compat.gdt_result_measurements",
-    "record_gdt_result": "protocol_composition.persist_gdt_result",
-    "_json_value": "protocol_compat.json_value",
-    "_fhir_record_number": "protocol_compat.fhir_record_number",
-    "_fhir_clean_text": "protocol_compat.fhir_clean_text",
-    "_fhir_identifier_token": "protocol_compat.fhir_identifier_token",
-    "fhir_mapping_for_resource_type": "protocol_compat.fhir_mapping_for_resource_type",
-    "list_fhir_resource_mappings": "protocol_compat.list_fhir_resource_mappings",
-    "fhir_identifier_value": "protocol_compat.fhir_identifier_value",
-    "_fhir_resource_with_identifier": "protocol_compat.fhir_resource_with_identifier",
-    "_validate_fhir_record_payload": "protocol_compat.normalize_fhir_record_payload",
-    "create_fhir_workflow_record": "protocol_composition.create_fhir_record",
-    "list_fhir_workflow_records": "protocol_composition.list_fhir_records",
-    "get_fhir_workflow_record": "protocol_composition.get_fhir_record",
-    "get_fhir_workflow_record_by_identifier": "protocol_composition.get_fhir_record_by_identifier",
-    "mark_fhir_syncing": "protocol_composition.mark_fhir_record_syncing",
-    "mark_fhir_sync_success": "protocol_composition.mark_fhir_record_success",
-    "mark_fhir_sync_failure": "protocol_composition.mark_fhir_record_failure",
-    "record_fhir_sync_attempt": "protocol_composition.create_fhir_sync_attempt",
-    "list_fhir_sync_attempts": "protocol_composition.list_fhir_record_attempts",
-    "ordered_fhir_workflow_records": "protocol_composition.order_fhir_records",
-    "_fhir_workflow_record_dict": "protocol_compat.project_fhir_workflow_record",
-    "_fhir_sync_attempt_dict": "protocol_compat.project_fhir_sync_attempt",
-    "list_gdt_orders": "protocol_composition.list_gdt_inventory",
-    "get_oie_settings_profile": "self.oie_settings_repository.get",
-    "update_oie_settings_profile": "self.oie_settings_repository.update",
-    "list_oie_workbench": "compose_oie_workbench",
-    "record_oie_result": "self.oie_repository.record_oie_result",
-    "record_oie_result_error": "self.oie_repository.record_oie_result_error",
-    "list_oie_results": "self.oie_repository.list_oie_results",
-    "create_patient_record": "self.patient_repository.create_patient_record",
-    "list_patient_records": "self.patient_repository.list_patient_records",
-    "get_patient_record": "self.patient_repository.get_patient_record",
-    "create_order_record": "self.order_repository.create_order_record",
-    "list_order_records": "self.order_repository.list_order_records",
-    "get_order_record": "self.order_repository.get_order_record",
-    "update_order_send_result": "self.order_repository.update_order_send_result",
-    "_dcm4chee_local_order_number": "dicom_domain.local_order_number",
-    "_dcm4chee_accession_number": "dicom_domain.accession_number",
-    "_dcm4chee_requested_procedure_id": "dicom_domain.requested_procedure_id",
-    "_dcm4chee_scheduled_procedure_step_id": "dicom_domain.scheduled_procedure_step_id",
-    "normalize_dcm4chee_uid_root": "dicom_domain.normalize_uid_root",
-    "dcm4chee_study_instance_uid": "dicom_domain.study_instance_uid",
-    "_dicom_json_element": "dicom_templates._json_element",
-    "build_dcm4chee_mwl_payload": "dicom_templates.build_mwl_payload",
-    "dcm4chee_patient_identifiers": "dicom_domain.patient_identifiers",
-    "build_dcm4chee_patient_adt_payload": "dicom_templates.build_patient_adt_payload",
-    "upsert_dcm4chee_patient_sync": "self.dcm4chee_patient_sync_repository.upsert_dcm4chee_patient_sync",
-    "get_dcm4chee_patient_sync": "self.dcm4chee_patient_sync_repository.get_dcm4chee_patient_sync",
-    "get_dcm4chee_patient_sync_for_patient": "self.dcm4chee_patient_sync_repository.get_dcm4chee_patient_sync_for_patient",
-    "create_dcm4chee_patient_sync_attempt": "self.dcm4chee_patient_sync_repository.create_dcm4chee_patient_sync_attempt",
-    "update_dcm4chee_patient_sync_attempt_result": "self.dcm4chee_patient_sync_repository.update_dcm4chee_patient_sync_attempt_result",
-    "update_dcm4chee_patient_sync_from_attempt": "self.dcm4chee_patient_sync_repository.update_dcm4chee_patient_sync_from_attempt",
-    "get_dcm4chee_patient_sync_attempt": "self.dcm4chee_patient_sync_repository.get_dcm4chee_patient_sync_attempt",
-    "list_dcm4chee_patient_sync_attempts": "self.dcm4chee_patient_sync_repository.list_dcm4chee_patient_sync_attempts",
-    "create_dcm4chee_order_record": "self.order_repository.create_dcm4chee_order_record",
-    "_dicom_first_value": "dicom_domain.dicom_first_value",
-    "_dcm4chee_sps_payload": "dicom_domain.sps_payload",
-    "dcm4chee_identifiers_from_payload": "dicom_templates.identifiers_from_payload",
-    "dcm4chee_identifiers_from_response_body": "dicom_domain.identifiers_from_response_body",
-    "dcm4chee_datasets_from_response_body": "dicom_domain.datasets_from_response_body",
-    "dcm4chee_identifiers_from_dataset": "dicom_domain.identifiers_from_dataset",
-    "dcm4chee_mwl_verification_query_from_mapping": "dicom_domain.verification_query_from_mapping",
-    "upsert_dcm4chee_mwl_mapping": "self.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping",
-    "update_dcm4chee_mwl_mapping_from_attempt": "self.dcm4chee_mwl_repository.update_dcm4chee_mwl_mapping_from_attempt",
-    "get_dcm4chee_mwl_mapping_for_order": "self.dcm4chee_mwl_repository.get_dcm4chee_mwl_mapping_for_order",
-    "find_dcm4chee_mwl_mapping_for_reconciliation": "self.dcm4chee_mwl_repository.find_dcm4chee_mwl_mapping_for_reconciliation",
-    "dcm4chee_result_metadata_from_dataset": "dicom_domain.result_metadata_from_dataset",
-    "_dicom_sequence_first": "dicom_domain.sequence_first",
-    "_dicom_datetime": "dicom_domain.dicom_datetime",
-    "_dcm4chee_profile_identity": "dicom_domain.profile_identity",
-    "_dcm4chee_result_key": "dicom_domain.result_key",
-    "_dcm4chee_patient_matches": "dicom_domain.patient_matches",
-    "_dcm4chee_mappings_for_patient": "self.dcm4chee_mwl_repository.list_dcm4chee_mwl_mappings_for_patient",
-    "list_dcm4chee_mwl_mappings_for_patient": "self.dcm4chee_mwl_repository.list_dcm4chee_mwl_mappings_for_patient",
-    "reconcile_dcm4chee_result_metadata": "self.dcm4chee_result_repository.reconcile_dcm4chee_result_metadata",
-    "dcm4chee_result_links": "dicom_domain.result_links",
-    "upsert_dcm4chee_result_record": "self.dcm4chee_result_repository.upsert_dcm4chee_result_record",
-    "dcm4chee_e2e_demo_patient_payload": "Dcm4cheeWorkflowCoordinator.dcm4chee_e2e_demo_patient_payload",
-    "dcm4chee_e2e_demo_order_payload": "Dcm4cheeWorkflowCoordinator.dcm4chee_e2e_demo_order_payload",
-    "create_dcm4chee_e2e_demo_fixture": "self.dcm4chee_workflow_coordinator.create_dcm4chee_e2e_demo_fixture",
-    "dcm4chee_e2e_evidence_for_order": "self.dcm4chee_workflow_coordinator.dcm4chee_e2e_evidence_for_order",
-    "create_simulated_dcm4chee_ap_return": "self.dcm4chee_workflow_coordinator.create_simulated_dcm4chee_ap_return",
-    "latest_simulated_dcm4chee_ap_return_generation": "self.dcm4chee_result_repository.latest_simulated_dcm4chee_ap_return_generation",
-    "record_dcm4chee_result_refresh_diagnostic": "self.dcm4chee_result_repository.record_dcm4chee_result_refresh_diagnostic",
-    "_record_dcm4chee_result_refresh_run": "self.dcm4chee_result_repository._record_dcm4chee_result_refresh_run",
-    "_dcm4chee_result_refresh_run_id": "self.dcm4chee_result_repository._dcm4chee_result_refresh_run_id",
-    "_dcm4chee_result_row_is_newer_than_generation": "self.dcm4chee_result_repository._dcm4chee_result_row_is_newer_than_generation",
-    "begin_dcm4chee_result_refresh": "self.dcm4chee_result_repository.begin_dcm4chee_result_refresh",
-    "complete_dcm4chee_result_refresh": "self.dcm4chee_result_repository.complete_dcm4chee_result_refresh",
-    "get_dcm4chee_result_record": "self.dcm4chee_result_repository.get_dcm4chee_result_record",
-    "list_dcm4chee_results_for_patient": "self.dcm4chee_result_repository.list_dcm4chee_results_for_patient",
-    "create_dcm4chee_mwl_attempt": "self.dcm4chee_mwl_attempt_coordinator.create_dcm4chee_mwl_attempt",
-    "create_dcm4chee_mwl_profile_failure_attempt": "self.dcm4chee_mwl_repository.create_dcm4chee_mwl_profile_failure_attempt",
-    "update_dcm4chee_mwl_attempt_result": "self.dcm4chee_mwl_repository.update_dcm4chee_mwl_attempt_result",
-    "get_dcm4chee_mwl_attempt": "self.dcm4chee_mwl_repository.get_dcm4chee_mwl_attempt",
-    "list_dcm4chee_mwl_attempts": "self.dcm4chee_mwl_repository.list_dcm4chee_mwl_attempts",
-    "create_dcm4chee_mwl_verification_attempt": "self.dcm4chee_mwl_repository.create_dcm4chee_mwl_verification_attempt",
-    "update_dcm4chee_mwl_verification_result": "self.dcm4chee_mwl_repository.update_dcm4chee_mwl_verification_result",
-    "_dcm4chee_result_record_dict": "project_result_record",
-    "_dcm4chee_mwl_attempt_dict": "project_mwl_attempt",
-    "_dcm4chee_mwl_mapping_dict": "project_mwl_mapping",
-    "_dcm4chee_mwl_status_view": "dicom_domain.mwl_status_view",
-    "_dcm4chee_mwl_retryable": "dicom_domain.mwl_retryable",
-    "_dcm4chee_mwl_display_status": "dicom_domain.mwl_display_status",
-    "_dcm4chee_patient_sync_dict": "project_patient_sync",
-    "_dcm4chee_patient_sync_attempt_dict": "project_patient_sync_attempt",
-    "_normalize_requested_at": "order_domain.normalize_requested_at",
-    "_clean_order_text": "order_domain.clean_text",
-    "list_lab_servers": "self.lab_repository.list_servers",
-    "get_lab_server": "self.lab_repository.get_server",
-    "create_lab_server": "self.lab_repository.create_server",
-    "update_lab_server": "self.lab_repository.update_server",
-    "update_lab_server_health": "self.lab_repository.update_health",
-    "record_lab_operation": "self.lab_repository.record_operation",
-    "get_lab_operation": "self.lab_repository.get_operation",
-    "list_lab_operations": "self.lab_repository.list_operations",
-}
-# These fingerprints cover only the explicitly approved composition assignments.
-# They are intentionally outside the legacy baseline: changing any constructor
-# argument makes the architecture contract fail instead of refreshing an exception.
-DEMO_STORE_COMPOSITION_VALUE_FINGERPRINTS = {
-    "database": "5979162a436ce5d4",
-    "path": "015349d13b08340d",
-    "lock": "30935000bde9d350",
-    "oie_settings_repository": "5f4116db8565a374",
-    "lab_repository": "85f04e6f44d60b76",
-    "oie_repository": "ad1c97844d445ea8",
-    "dcm4chee_patient_sync_repository": "fb8720abca7159cf",
-    "dcm4chee_mwl_repository": "83a4c1060cc842df",
-    "dcm4chee_result_repository": "18dc17af50d84965",
-    "patient_enrichment_loader": "fccd49d023acd2ed",
-    "order_enrichment_loader": "93f14a62bd2a259d",
-    "patient_repository": "d00640c6f67b5a6e",
-    "order_repository": "2b69d9b81e5ec1af",
-    "dcm4chee_mwl_attempt_coordinator": "966bfd884af0c95b",
-    "dcm4chee_workflow_coordinator": "00f62904b387adde",
 }
 OIE_WORKBENCH_COMPOSITION_CALLS = (
     "self.list_oie_local_adt_inventory",
@@ -452,99 +277,6 @@ def module_statement_symbol(node: ast.stmt) -> str:
     return "<module>.statement"
 
 
-def is_repository_compatibility_delegate(
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> bool:
-    """Recognize mechanically thin facade calls without baseline exceptions."""
-    if len(node.body) != 1 or not isinstance(node.body[0], ast.Return):
-        return False
-    call = node.body[0].value
-    if not isinstance(call, ast.Call):
-        return False
-    target = call.func
-    expected_target = DEMO_STORE_COMPATIBILITY_DELEGATES.get(node.name)
-    if dotted_name(target) != expected_target:
-        return False
-    if expected_target == "compose_oie_workbench":
-        nested_calls = []
-        for argument in call.args:
-            if not isinstance(argument, ast.Call) or argument.args or argument.keywords:
-                return False
-            nested_calls.append(dotted_name(argument.func))
-        return not call.keywords and tuple(nested_calls) == OIE_WORKBENCH_COMPOSITION_CALLS
-    delegated_values = [*call.args, *(item.value for item in call.keywords)]
-    return not any(
-        isinstance(item, (ast.Call, ast.Lambda))
-        for value in delegated_values
-        for item in ast.walk(value)
-    )
-
-
-def is_demo_store_composition_initializer(
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> bool:
-    """Recognize the exact infrastructure and repository composition surface."""
-    if node.name != "__init__" or definition_has_sql_execution(node):
-        return False
-    assignments: dict[str, str] = {}
-    initialized = False
-    for statement in node.body:
-        if isinstance(statement, ast.ImportFrom):
-            if statement.module != "backend.repositories.oie_settings":
-                return False
-            if {alias.name for alias in statement.names} - {
-                "OieSettingsRepository",
-                "serialize_oie_settings_profile",
-                "validate_oie_settings_payload",
-            }:
-                return False
-            continue
-        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
-            if dotted_name(statement.value.func) != "self.initialize":
-                return False
-            initialized = True
-            continue
-        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1:
-            return False
-        target_name = dotted_name(statement.targets[0])
-        if not target_name.startswith("self."):
-            return False
-        attribute = target_name.removeprefix("self.")
-        expected_fingerprint = DEMO_STORE_COMPOSITION_VALUE_FINGERPRINTS.get(attribute)
-        if expected_fingerprint is None:
-            return False
-        actual_fingerprint = stable_fingerprint(statement.value)
-        if actual_fingerprint != expected_fingerprint:
-            return False
-        assignments[attribute] = actual_fingerprint
-    return initialized and assignments == DEMO_STORE_COMPOSITION_VALUE_FINGERPRINTS
-
-
-def is_demo_store_composition_class(node: ast.ClassDef) -> bool:
-    """Recognize only the plain DemoStore method container and its exact initializer."""
-    if (
-        node.name != "DemoStore"
-        or node.bases
-        or node.keywords
-        or node.decorator_list
-        or any(
-            not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-            for item in node.body
-        )
-    ):
-        return False
-    initializer = next(
-        (
-            item
-            for item in node.body
-            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and item.name == "__init__"
-        ),
-        None,
-    )
-    return initializer is not None and is_demo_store_composition_initializer(initializer)
-
-
 class LegacyCandidateCollector(ast.NodeVisitor):
     def __init__(self, path: str, aliases: dict[str, str]):
         self.path = path
@@ -597,13 +329,11 @@ class LegacyCandidateCollector(ast.NodeVisitor):
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self.symbols.append(node.name)
-        is_demo_store_composition = is_demo_store_composition_class(node)
-        if not is_demo_store_composition:
-            self.add("catch-all", node)
-            if definition_has_transport(node, self.aliases) or node.name.endswith(
-                ("Adapter", "Connection")
-            ):
-                self.add("transport", node)
+        self.add("catch-all", node)
+        if definition_has_transport(node, self.aliases) or node.name.endswith(
+            ("Adapter", "Connection")
+        ):
+            self.add("transport", node)
         self.generic_visit(node)
         self.symbols.pop()
 
@@ -614,12 +344,6 @@ class LegacyCandidateCollector(ast.NodeVisitor):
         self._visit_function(node)
 
     def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
-        if self.symbol == "DemoStore" and (
-            is_repository_compatibility_delegate(node)
-            or is_demo_store_composition_initializer(node)
-        ):
-            self.generic_visit(node)
-            return
         self.symbols.append(node.name)
         lowered = node.name.lower()
         self.add("catch-all", node)
@@ -1354,7 +1078,7 @@ def row_to_public_json(row):
         self.assertEqual([], definitions)
         modules = imported_modules_from_tree(tree)
         self.assertEqual(
-            {"__future__", "sys", "backend", "backend.app_factory"},
+            {"__future__", "backend.app_factory"},
             modules,
         )
         self.assertLessEqual(len(source.splitlines()), 20)
@@ -1547,7 +1271,6 @@ def row_to_public_json(row):
             "backend/services/new_gdt.py": "backend.gdt_adapter",
             "backend/clients/new_docker.py": "backend.lab_operations",
             "backend/services/new_dashboard.py": "backend.dashboard_services",
-            "backend/runtime/new_store.py": "backend.lab_store",
         }
         for relative_path, module in fixtures.items():
             with self.subTest(path=relative_path, module=module):
@@ -1565,9 +1288,9 @@ def row_to_public_json(row):
             modules = transitive_backend_imports(path)
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertNotIn(
-                    "backend.lab_store",
+                    "backend.application_composition",
                     modules,
-                    f"{path.relative_to(ROOT)} must not load DemoStore directly or through another backend module.",
+                    f"{path.relative_to(ROOT)} must not load application composition directly or through another backend module.",
                 )
 
     def test_api_modules_do_not_import_concrete_store(self):
@@ -1575,9 +1298,9 @@ def row_to_public_json(row):
             modules = imported_modules(path)
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertNotIn(
-                    "backend.lab_store",
+                    "backend.application_composition",
                     modules,
-                    f"{path.relative_to(ROOT)} must map HTTP through service ports, not DemoStore.",
+                    f"{path.relative_to(ROOT)} must map HTTP through service ports, not application composition.",
                 )
 
     def test_api_modules_do_not_import_operation_adapters(self):
@@ -1595,9 +1318,9 @@ def row_to_public_json(row):
             modules = imported_modules(path)
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertNotIn(
-                    "backend.lab_store",
+                    "backend.application_composition",
                     modules,
-                    f"{path.relative_to(ROOT)} must depend on runtime ports, not DemoStore.",
+                    f"{path.relative_to(ROOT)} must depend on runtime ports, not application composition.",
                 )
 
     def test_services_and_repositories_do_not_import_runtime(self):
@@ -1717,9 +1440,9 @@ def row_to_public_json(row):
     def test_configuration_does_not_import_concrete_store(self):
         path = BACKEND / "config.py"
         self.assertNotIn(
-            "backend.lab_store",
+            "backend.application_composition",
             imported_modules(path),
-            "backend/config.py must use domain configuration types, not DemoStore.",
+            "backend/config.py must use domain configuration types, not application composition.",
         )
 
     def test_patient_and_order_projection_modules_are_persistence_neutral(self):
@@ -1789,6 +1512,17 @@ def row_to_public_json(row):
             500,
             "backend/app_factory.py must remain a compact composition root.",
         )
+
+    def test_removed_facade_has_no_replacement_defaults_grab_bag(self):
+        replacement = BACKEND / ("application" + "_defaults.py")
+        self.assertFalse(
+            replacement.exists(),
+            "Application defaults must stay with focused configuration, domain, or protocol owners.",
+        )
+        for path in (BACKEND / "app_factory.py", BACKEND / "application_composition.py"):
+            modules = imported_modules(path)
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertNotIn("backend." + "application" + "_defaults", modules)
 
     def test_backend_catch_all_modules_match_reviewed_legacy_baseline(self):
         actual: set[tuple[str, str, str, str]] = set()
@@ -1874,7 +1608,7 @@ def row_to_public_json(row):
         for category, source in fixtures.items():
             with self.subTest(category=category):
                 violations = legacy_backend_violations(
-                    "backend/lab_store.py",
+                    "backend/obsolete_facade.py",
                     source,
                     frozenset(),
                 )
@@ -1882,119 +1616,8 @@ def row_to_public_json(row):
                 self.assertTrue(matches)
                 message = str(matches[0])
                 self.assertIn(f"[{category}]", message)
-                self.assertIn("backend/lab_store.py", message)
+                self.assertIn("backend/obsolete_facade.py", message)
                 self.assertRegex(message, r":\d+:")
-
-    def test_compatibility_delegation_and_incremental_extraction_are_allowed(self):
-        facade = "from backend.domain.patient import normalize_patient as normalize_patient\n"
-        self.assertEqual(
-            [],
-            legacy_backend_violations("backend/lab_store.py", facade, frozenset()),
-        )
-        self.assertEqual(
-            set(),
-            legacy_backend_candidates("backend/lab_store.py", ""),
-        )
-
-    def test_compatibility_delegate_exemption_rejects_lookalikes_and_nested_work(self):
-        allowed = (
-            "def get_lab_server(self, server_id):\n"
-            "    return self.lab_repository.get_server(server_id)\n"
-        )
-        allowed_node = ast.parse(allowed).body[0]
-        self.assertIsInstance(allowed_node, ast.FunctionDef)
-        self.assertTrue(is_repository_compatibility_delegate(allowed_node))
-        self.assertTrue(
-            legacy_backend_violations(
-                "backend/lab_store.py", allowed, frozenset()
-            ),
-            "Approved delegate shapes are exempt only inside DemoStore.",
-        )
-        rejected = {
-            "lookalike repository": (
-                "def get_lab_server(self, server_id):\n"
-                "    return attacker.fake_repository.get_server(server_id)\n"
-            ),
-            "new facade": (
-                "def delete_everything(self):\n"
-                "    return self.lab_repository.delete_everything()\n"
-            ),
-            "broad composer": (
-                "def workbench(values):\n"
-                "    return compose_payload_and_write(values)\n"
-            ),
-            "nested SQL": (
-                "def get_lab_server(self, connection):\n"
-                "    return self.lab_repository.get_server("
-                "connection.execute('SELECT id FROM lab_servers'))\n"
-            ),
-            "nested workflow": (
-                "def get_lab_server(self, server_id):\n"
-                "    return self.lab_repository.get_server(build_payload(server_id))\n"
-            ),
-        }
-        for label, source in rejected.items():
-            with self.subTest(label=label):
-                self.assertTrue(
-                    legacy_backend_violations(
-                        "backend/lab_store.py", source, frozenset()
-                    )
-                )
-
-    def test_demo_store_composition_is_allowed_without_aggregate_exception(self):
-        tree = ast.parse((BACKEND / "lab_store.py").read_text(encoding="utf-8"))
-        demo_store = next(
-            item
-            for item in tree.body
-            if isinstance(item, ast.ClassDef) and item.name == "DemoStore"
-        )
-        initializer = next(
-            item
-            for item in demo_store.body
-            if isinstance(item, ast.FunctionDef) and item.name == "__init__"
-        )
-        self.assertTrue(is_demo_store_composition_class(demo_store))
-        self.assertTrue(is_demo_store_composition_initializer(initializer))
-
-        lab_assignment = next(
-            item
-            for item in initializer.body
-            if isinstance(item, ast.Assign)
-            and dotted_name(item.targets[0]) == "self.lab_repository"
-        )
-        lab_assignment.value.args.append(
-            ast.Dict(keys=[ast.Constant("workflow")], values=[ast.Constant("hidden")])
-        )
-        self.assertFalse(is_demo_store_composition_initializer(initializer))
-
-    def test_demo_store_class_shell_rejects_structural_mutations(self):
-        tree = ast.parse((BACKEND / "lab_store.py").read_text(encoding="utf-8"))
-        demo_store = next(
-            item
-            for item in tree.body
-            if isinstance(item, ast.ClassDef) and item.name == "DemoStore"
-        )
-        self.assertTrue(is_demo_store_composition_class(demo_store))
-
-        mutations = (
-            lambda item: item.bases.append(ast.Name(id="InjectedBehavior")),
-            lambda item: item.decorator_list.append(ast.Name(id="instrument")),
-            lambda item: item.body.append(
-                ast.Assign(
-                    targets=[ast.Name(id="hidden_state")],
-                    value=ast.Dict(
-                        keys=[ast.Constant("workflow")],
-                        values=[ast.Constant("hidden")],
-                    ),
-                )
-            ),
-        )
-        for mutate in mutations:
-            with self.subTest(mutation=mutate):
-                candidate = ast.parse(ast.unparse(demo_store)).body[0]
-                self.assertIsInstance(candidate, ast.ClassDef)
-                mutate(candidate)
-                self.assertFalse(is_demo_store_composition_class(candidate))
 
     def test_new_frontend_globals_and_selector_families_are_rejected(self):
         function_sources = {
@@ -2131,7 +1754,7 @@ def row_to_public_json(row):
 
     def test_neutrally_named_catch_all_definition_is_rejected(self):
         violations = legacy_backend_violations(
-            "backend/lab_store.py",
+            "backend/obsolete_facade.py",
             "def helper(value):\n    return value\n",
             frozenset(),
         )
@@ -2149,13 +1772,13 @@ def row_to_public_json(row):
         for category, source in fixtures.items():
             with self.subTest(category=category):
                 violations = legacy_backend_violations(
-                    "backend/lab_store.py",
+                    "backend/obsolete_facade.py",
                     source,
                     frozenset(),
                 )
                 matches = [item for item in violations if item.category == category]
                 self.assertTrue(matches)
-                self.assertRegex(str(matches[0]), r"backend/lab_store\.py:\d+:")
+                self.assertRegex(str(matches[0]), r"backend/obsolete_facade\.py:\d+:")
 
 
 if __name__ == "__main__":

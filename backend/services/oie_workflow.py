@@ -35,9 +35,45 @@ class OieCoordinationPort(Protocol):
 
     def list_oie_local_order_inventory(self) -> list[dict[str, Any]]: ...
 
-    def get_order_record(self, order_id: int) -> dict[str, Any]: ...
 
-    def update_order_send_result(self, order_id: int, **values: Any) -> dict[str, Any]: ...
+class OieInventoryCoordination:
+    """Narrow patient/order inventory capability consumed by OIE workflows."""
+
+    def __init__(self, patients, orders, *, patient_protocol: str, order_protocol: str):
+        self._patients = patients
+        self._orders = orders
+        self._patient_protocol = patient_protocol
+        self._order_protocol = order_protocol
+
+    def list_oie_local_adt_inventory(self) -> list[dict[str, Any]]:
+        return self._patients.list_patient_records(self._patient_protocol)
+
+    def list_oie_local_order_inventory(self) -> list[dict[str, Any]]:
+        return self._orders.list_order_records(self._order_protocol)
+
+    def get_order_record(self, order_id: int) -> dict[str, Any]:
+        return self._orders.get_order_record(order_id)
+
+    def update_order_send_result(
+        self,
+        order_id: int,
+        *,
+        order_status: str,
+        ack_code: str = "",
+        ack_control_id: str = "",
+        ack_text: str = "",
+        ack_payload: str = "",
+        transport_error: str = "",
+    ) -> dict[str, Any]:
+        return self._orders.update_order_send_result(
+            order_id,
+            order_status=order_status,
+            ack_code=ack_code,
+            ack_control_id=ack_control_id,
+            ack_text=ack_text,
+            ack_payload=ack_payload,
+            transport_error=transport_error,
+        )
 
 
 class OieListenerPort(Protocol):

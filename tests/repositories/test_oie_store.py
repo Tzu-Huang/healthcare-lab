@@ -6,7 +6,7 @@ class OieStoreTests(StoreCaseSupport):
     """Focused assertion owner for OieStoreTests."""
 
     def test_order_send_result_persists_ack_and_transport_error(self):
-        patient = self.store.create_patient_record(
+        patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mrn": "MRN-A04-002",
                 "firstName": "Jordan",
@@ -15,9 +15,9 @@ class OieStoreTests(StoreCaseSupport):
                 "sex": "M",
             }
         )
-        order = self.store.create_order_record({"patientRecordId": patient["id"]})
+        order = self.dependencies.order_repository.create_order_record({"patientRecordId": patient["id"]})
 
-        accepted = self.store.update_order_send_result(
+        accepted = self.dependencies.order_repository.update_order_send_result(
             order["id"],
             order_status="Accepted",
             ack_code="AA",
@@ -28,7 +28,7 @@ class OieStoreTests(StoreCaseSupport):
         self.assertEqual(accepted["ack"]["code"], "AA")
         self.assertEqual(accepted["status"], "Accepted")
 
-        failed = self.store.update_order_send_result(
+        failed = self.dependencies.order_repository.update_order_send_result(
             order["id"],
             order_status="Transport error",
             transport_error="connection refused",
