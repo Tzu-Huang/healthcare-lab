@@ -987,9 +987,14 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertEqual(failed["transportError"], "connection refused")
 
     def test_healthcare_lab_template_excludes_ap_simulator_views(self):
-        template = (
-            Path(__file__).parents[2] / "frontend" / "templates" / "index.html"
-        ).read_text(encoding="utf-8")
+        template_root = Path(__file__).parents[2] / "frontend" / "templates"
+        template = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                template_root / "shell" / "sidebar.html",
+                template_root / "views" / "dashboard.html",
+            )
+        )
 
         self.assertIn('id="lab-console-view"', template)
         self.assertIn("Server Health Dashboard", template)
