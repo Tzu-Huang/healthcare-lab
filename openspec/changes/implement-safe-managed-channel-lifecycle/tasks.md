@@ -29,10 +29,10 @@
 
 ## 5. API and Application Composition
 
-- [ ] 5.1 Wire lifecycle ports to the existing management-client factory, template compiler, OIE settings repository, clock, and operation/actor providers.
-- [ ] 5.2 Add inspection and preview endpoints that return classifications, safe owned-field diffs, permitted actions, blocking reasons, and bounded mutation tokens.
-- [ ] 5.3 Add explicit single-target mutation endpoints with stable status mapping, destructive delete confirmation, and no force, bulk, wildcard, adoption, or redeploy-all surface.
-- [ ] 5.4 Add API and composition tests covering safe response projection, error categories, stale-preview responses, partial failures, and absence of secrets/PHI.
+- [x] 5.1 Wire lifecycle ports to the existing management-client factory, template compiler, OIE settings repository, clock, and operation/actor providers.
+- [x] 5.2 Add inspection and preview endpoints that return classifications, safe owned-field diffs, permitted actions, blocking reasons, and bounded mutation tokens.
+- [x] 5.3 Add explicit single-target mutation endpoints with stable status mapping, destructive delete confirmation, and no force, bulk, wildcard, adoption, or redeploy-all surface.
+- [x] 5.4 Add API and composition tests covering safe response projection, error categories, stale-preview responses, partial failures, and absence of secrets/PHI.
 
 ## 6. Settings UI Safety Surface
 
