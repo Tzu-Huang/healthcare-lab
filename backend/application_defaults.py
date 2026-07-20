@@ -367,5 +367,3 @@ def parse_gdt_message(payload: str) -> dict[str, list[str]]:
 
 def first_gdt_field(fields: dict[str, list[str]], code: str) -> str:
     return adapter_first_gdt_field(fields, code)
-
-
