@@ -1,0 +1,104 @@
+      <section id="oie-view" class="app-view oie-workspace" aria-label="OIE Console" hidden>
+        <div class="lab-console-header">
+          <div>
+            <p class="eyebrow">OIE</p>
+            <h2>Patient-Centered Console</h2>
+          </div>
+          <div class="lab-console-actions">
+            <button id="refresh-oie-inventory" type="button">Refresh</button>
+            <span id="oie-inventory-status" class="status neutral">Ready</span>
+          </div>
+        </div>
+        <section class="oie-console-grid patient-focused-grid">
+          <div class="lab-panel oie-patient-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">ADT</p>
+                <h2>Patients</h2>
+              </div>
+            </div>
+            <div class="table-wrap oie-patient-table-wrap">
+              <table class="oie-patient-table">
+                <thead>
+                  <tr><th></th><th>MRN</th><th>Name</th><th>Created</th><th>Orders</th><th>Results</th></tr>
+                </thead>
+                <tbody id="oie-inventory-list"></tbody>
+              </table>
+            </div>
+            <div class="section-heading compact-heading oie-preview-heading">
+              <div>
+                <p class="eyebrow">Selected Message</p>
+                <h3>HL7 Preview</h3>
+              </div>
+              <button id="copy-oie-payload" type="button">Copy Payload</button>
+            </div>
+            <div id="oie-preview-summary" class="record-detail compact-detail">
+              <p class="muted">Select an ADT, ORM, or ORU row.</p>
+            </div>
+            <pre id="oie-payload-preview" class="compact-output oie-preview-output">Select a patient, order, or result to inspect its payload.</pre>
+            <pre id="oie-ack-preview" class="compact-output oie-preview-output">ACK and send details appear here.</pre>
+          </div>
+          <div class="lab-panel oie-transmission-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Order Transmission</p>
+                <h2 id="oie-selected-patient-title">No patient selected</h2>
+              </div>
+              <span id="oie-send-status" class="status neutral">Ready</span>
+            </div>
+            <div id="oie-selected-patient-summary" class="record-detail compact-detail">
+              <p class="muted">Select a patient and expand Orders or Results.</p>
+            </div>
+            <div class="form-grid oie-send-connection-grid">
+              <label>Host / IP<input id="oie-send-host" value="{{ oie_order_host }}"></label>
+              <label>Port<input id="oie-send-port" value="{{ oie_order_port }}"></label>
+              <label>Timeout<input id="oie-send-timeout" value="5"></label>
+              <label class="checkbox-row"><input id="oie-send-mllp" type="checkbox" checked>MLLP</label>
+            </div>
+            <div class="oie-selected-order-bar">
+              <div>
+                <p class="eyebrow">Selected Order</p>
+                <h3 id="oie-selected-order-title">No order selected</h3>
+              </div>
+              <button id="send-selected-oie-order" class="primary" type="button" disabled>Send Order</button>
+            </div>
+            <div id="oie-selected-order-summary" class="record-detail compact-detail">
+              <p class="muted">Choose an order from an expanded patient row.</p>
+            </div>
+          </div>
+        </section>
+        <section class="lab-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Listener</p>
+              <h2>OIE to Lab-App Results</h2>
+            </div>
+            <span id="oie-listener-status" class="status neutral">Stopped</span>
+          </div>
+          <div class="form-grid oie-connection-grid">
+            <label>Host<input id="oie-listener-host" value="{{ oie_result_host }}"></label>
+            <label>Port<input id="oie-listener-port" value="{{ oie_result_port }}"></label>
+            <label class="checkbox-row"><input id="oie-listener-mllp" type="checkbox" checked>MLLP</label>
+            <div class="button-row">
+              <button id="start-oie-listener" type="button">Start</button>
+              <button id="stop-oie-listener" type="button">Stop</button>
+            </div>
+          </div>
+        </section>
+        <section class="lab-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Unmatched</p>
+              <h2>Results</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Type</th><th>MRN</th><th>Status</th><th>Received</th><th>Action</th></tr>
+              </thead>
+              <tbody id="oie-unmatched-result-list"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>

@@ -15,7 +15,8 @@ STYLE_OWNERS = (
     ROOT / "frontend" / "static" / "css" / "components.css",
     ROOT / "frontend" / "static" / "css" / "views" / "application.css",
 )
-TEMPLATE = ROOT / "frontend" / "templates" / "index.html"
+TEMPLATE_ROOT = ROOT / "frontend" / "templates"
+INDEX_TEMPLATE = TEMPLATE_ROOT / "index.html"
 
 FEATURES = {
     "dashboard": "lab-console-view",
@@ -35,7 +36,10 @@ class FrontendCharacterizationTests(unittest.TestCase):
         cls.bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
         cls.style_loader = STYLE_LOADER.read_text(encoding="utf-8")
         cls.styles = "\n".join(path.read_text(encoding="utf-8") for path in STYLE_OWNERS)
-        cls.template = TEMPLATE.read_text(encoding="utf-8")
+        cls.template = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted(TEMPLATE_ROOT.rglob("*.html"))
+        )
 
     def test_every_current_feature_has_navigation_and_a_view_root(self):
         for feature, view_id in FEATURES.items():
@@ -43,6 +47,28 @@ class FrontendCharacterizationTests(unittest.TestCase):
                 self.assertIn(f'id="{view_id}"', self.template)
                 self.assertIn(f'data-nav-target="{view_id}"', self.template)
                 self.assertIn(f'"{view_id}"', self.script)
+
+    def test_application_shell_delegates_sidebar_and_workspaces_to_owned_partials(self):
+        index = INDEX_TEMPLATE.read_text(encoding="utf-8")
+        expected_partials = {
+            "shell/sidebar.html",
+            "views/dashboard.html",
+            "views/patient.html",
+            "views/fhir.html",
+            "views/order.html",
+            "views/dcm4chee.html",
+            "views/oie.html",
+            "views/gdt.html",
+            "views/settings.html",
+        }
+        for partial in expected_partials:
+            with self.subTest(partial=partial):
+                self.assertIn(f"{{% include '{partial}' %}}", index)
+                self.assertTrue((TEMPLATE_ROOT / partial).is_file())
+        for view_id in FEATURES.values():
+            with self.subTest(view=view_id):
+                self.assertNotIn(f'id="{view_id}"', index)
+        self.assertNotIn('class="app-sidebar"', index)
 
     def test_shared_request_contract_covers_transport_and_business_failures(self):
         client = (ROOT / "frontend" / "static" / "js" / "api" / "client.js").read_text(encoding="utf-8")
