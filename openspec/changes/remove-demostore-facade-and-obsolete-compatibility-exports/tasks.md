@@ -1,14 +1,14 @@
 ## 1. Inventory and Guardrails
 
-- [ ] 1.1 Inventory every `DemoStore` field/delegate, `backend.lab_store` import/re-export, `app.extensions["demo_store"]` access, root-entrypoint patch seam, architecture exception, baseline entry, documentation reference, and verification command; map each retained behavior to its named owner.
+- [x] 1.1 Inventory every `DemoStore` field/delegate, `backend.lab_store` import/re-export, `app.extensions["demo_store"]` access, root-entrypoint patch seam, architecture exception, baseline entry, documentation reference, and verification command; map each retained behavior to its named owner.
 - [ ] 1.2 Add failing architecture/source-contract coverage that forbids `DemoStore`, `backend.lab_store`, the `demo_store` extension key, broad replacement containers, arbitrary forwarding, and production consumers of the composition result without expanding baselines or allowlists.
-- [ ] 1.3 Characterize the existing database initialization/maintenance order, shared connection/lock identities, repository/coordinator wiring, root process entrypoint, runtime registrations, and disposable application startup before movement.
+- [x] 1.3 Characterize the existing database initialization/maintenance order, shared connection/lock identities, repository/coordinator wiring, root process entrypoint, runtime registrations, and disposable application startup before movement.
 
 ## 2. Explicit Application Composition
 
-- [ ] 2.1 Add a dedicated application-composition module with explicit typed dependency groups for the shared `SQLiteDatabase`, maintenance lifecycle, repositories, enrichment loaders, coordinators, and narrow capabilities.
-- [ ] 2.2 Preserve migration and maintenance ordering, one shared reentrant lock, repository callbacks, timestamp/payload collaborators, and coordinator construction semantics with focused composition tests.
-- [ ] 2.3 Prove the composition outputs contain only declared data fields, no business delegates, `__getattr__`, generic lookup, or arbitrary forwarding, and are not accepted as broad service/API/runtime dependencies.
+- [x] 2.1 Add a dedicated application-composition module with explicit typed dependency groups for the shared `SQLiteDatabase`, maintenance lifecycle, repositories, enrichment loaders, coordinators, and narrow capabilities.
+- [x] 2.2 Preserve migration and maintenance ordering, one shared reentrant lock, repository callbacks, timestamp/payload collaborators, and coordinator construction semantics with focused composition tests.
+- [x] 2.3 Prove the composition outputs contain only declared data fields, no business delegates, `__getattr__`, generic lookup, or arbitrary forwarding, and are not accepted as broad service/API/runtime dependencies.
 
 ## 3. Production Rewiring
 
