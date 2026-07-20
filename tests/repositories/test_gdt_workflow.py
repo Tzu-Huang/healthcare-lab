@@ -4,14 +4,14 @@ from pathlib import Path
 
 from backend.domain.gdt_protocol import parse_gdt_6310_result, render_gdt_message
 from backend.templates.gdt import build_gdt_6302_request
-from backend.lab_store import DemoStore
+from backend.application_composition import assemble_application_dependencies
 from backend.repositories.gdt_workflow import GdtWorkflowRepository
 
 
 class GdtWorkflowRepositoryTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.store = DemoStore(Path(self.directory.name) / "gdt-repository.db")
+        self.dependencies = assemble_application_dependencies(Path(self.directory.name) / "gdt-repository.db")
         self.clock = iter(f"2026-07-16T00:00:{index:02d}+00:00" for index in range(60))
         self.repository = self.make_repository()
 
@@ -20,16 +20,16 @@ class GdtWorkflowRepositoryTest(unittest.TestCase):
 
     def make_repository(self, repository_type=GdtWorkflowRepository, *, builder=build_gdt_6302_request):
         return repository_type(
-            self.store.database.connect,
-            self.store.database.lock,
+            self.dependencies.database.connect,
+            self.dependencies.database.lock,
             timestamp_factory=lambda: next(self.clock),
-            patient_loader=self.store.patient_repository.get_patient_record,
-            patient_list_loader=self.store.patient_repository.list_patient_records,
+            patient_loader=self.dependencies.patient_repository.get_patient_record,
+            patient_list_loader=self.dependencies.patient_repository.list_patient_records,
             order_builder=builder,
         )
 
     def patient(self, mrn="MRN-GDT-REPO"):
-        return self.store.patient_repository.create_patient_record({
+        return self.dependencies.patient_repository.create_patient_record({
             "mode": "gdt", "mrn": mrn, "firstName": "Avery", "lastName": "Morgan",
             "dob": "19850412", "sex": "F",
         })
@@ -45,7 +45,7 @@ class GdtWorkflowRepositoryTest(unittest.TestCase):
             "local_gdt_patient_contexts", "local_gdt_order_records", "local_gdt_message_records",
             "local_gdt_attachment_records", "local_gdt_workflow_events",
         )
-        with self.store.database.connect() as connection:
+        with self.dependencies.database.connect() as connection:
             return {name: connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in names}
 
     def test_order_projection_snapshots_message_attachment_and_scoped_events(self):

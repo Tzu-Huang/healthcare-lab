@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.lab_store import DemoStore, render_gdt_message
+from backend.application_composition import assemble_application_dependencies
+from backend.domain.gdt_protocol import render_gdt_message
 from backend.repositories.gdt_workflow import GdtWorkflowRepository
 from backend.services.gdt_coordination import GdtWorkflowCoordinator
 
@@ -14,8 +15,8 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
         temporary_root = Path(self.directory.name).resolve()
         self.path = (temporary_root / "gdt-workflow-characterization.db").resolve()
         self.assertTrue(self.path.is_relative_to(temporary_root))
-        self.store = DemoStore(self.path)
-        self.assertEqual(Path(self.store.path).resolve(), self.path)
+        self.dependencies = assemble_application_dependencies(self.path)
+        self.assertEqual(Path(self.dependencies.database.path).resolve(), self.path)
 
     def tearDown(self):
         self.directory.cleanup()
@@ -45,7 +46,7 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
             "local_gdt_workflow_events",
             "local_gdt_attachment_records",
         )
-        with self.store.connect() as connection:
+        with self.dependencies.database.connect() as connection:
             return {
                 table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                 for table in tables
@@ -53,22 +54,22 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
 
     def workflow(self, *, order_builder=render_gdt_message):
         repository = GdtWorkflowRepository(
-            self.store.database.connect,
-            self.store.database.lock,
+            self.dependencies.database.connect,
+            self.dependencies.database.lock,
             timestamp_factory=lambda: "2026-07-16T09:00:00+00:00",
-            patient_loader=self.store.patient_repository.get_patient_record,
-            patient_list_loader=self.store.patient_repository.list_patient_records,
+            patient_loader=self.dependencies.patient_repository.get_patient_record,
+            patient_list_loader=self.dependencies.patient_repository.list_patient_records,
             order_builder=order_builder,
         )
         return GdtWorkflowCoordinator(repository), repository
 
     def test_conflicting_exact_identifiers_choose_newest_matching_order_id(self):
-        patient = self.store.create_patient_record(self.patient("MRN-GDT-CONFLICT"))
-        first = self.store.create_gdt_order_record({"patientRecordId": patient["id"]})
-        second = self.store.create_gdt_order_record({"patientRecordId": patient["id"]})
-        newest = self.store.create_gdt_order_record({"patientRecordId": patient["id"]})
+        patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-GDT-CONFLICT"))
+        first = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"]})
+        second = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"]})
+        newest = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"]})
 
-        result = self.store.record_gdt_result(
+        result = self.dependencies.gdt_workflow.record_gdt_result(
             {
                 "rawGdtText": self.result_message(
                     [
@@ -89,19 +90,19 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
             result["canonical"]["order"]["localGdtOrderNumber"],
             newest["localGdtOrderNumber"],
         )
-        self.assertEqual(self.store.get_gdt_order_record(newest["id"])["status"], "Result received")
-        self.assertEqual(self.store.get_gdt_order_record(first["id"])["status"], "Created")
-        self.assertEqual(self.store.get_gdt_order_record(second["id"])["status"], "Created")
+        self.assertEqual(self.dependencies.gdt_workflow.get_gdt_order_record(newest["id"])["status"], "Result received")
+        self.assertEqual(self.dependencies.gdt_workflow.get_gdt_order_record(first["id"])["status"], "Created")
+        self.assertEqual(self.dependencies.gdt_workflow.get_gdt_order_record(second["id"])["status"], "Created")
 
     def test_exact_order_match_overrides_contradictory_patient_number(self):
-        matched_patient = self.store.create_patient_record(self.patient("MRN-GDT-MATCHED"))
-        contradictory_patient = self.store.create_patient_record(self.patient("MRN-GDT-CONTRADICT"))
-        matched_order = self.store.create_gdt_order_record({"patientRecordId": matched_patient["id"]})
-        contradictory_order = self.store.create_gdt_order_record(
+        matched_patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-GDT-MATCHED"))
+        contradictory_patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-GDT-CONTRADICT"))
+        matched_order = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": matched_patient["id"]})
+        contradictory_order = self.dependencies.gdt_workflow.create_gdt_order_record(
             {"patientRecordId": contradictory_patient["id"]}
         )
 
-        result = self.store.record_gdt_result(
+        result = self.dependencies.gdt_workflow.record_gdt_result(
             {
                 "rawGdtText": self.result_message(
                     [
@@ -117,7 +118,7 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
         self.assertEqual(result["orderRecordId"], matched_order["id"])
         self.assertEqual(result["patientContextId"], matched_order["gdtPatientContextId"])
         workbench_by_patient = {
-            patient["id"]: patient for patient in self.store.list_gdt_workbench()["patients"]
+            patient["id"]: patient for patient in self.dependencies.gdt_workflow.list_gdt_workbench()["patients"]
         }
         self.assertEqual(
             [item["id"] for item in workbench_by_patient[matched_patient["id"]]["results"]],
@@ -126,9 +127,9 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
         self.assertEqual(workbench_by_patient[contradictory_patient["id"]]["results"], [])
 
     def test_context_only_and_fully_unbound_results_use_current_workbench_buckets(self):
-        patient = self.store.create_patient_record(self.patient("MRN-GDT-BUCKETS"))
-        order = self.store.create_gdt_order_record({"patientRecordId": patient["id"]})
-        context_only = self.store.record_gdt_result(
+        patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-GDT-BUCKETS"))
+        order = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"]})
+        context_only = self.dependencies.gdt_workflow.record_gdt_result(
             {
                 "rawGdtText": self.result_message(
                     [
@@ -139,7 +140,7 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
                 )
             }
         )
-        fully_unbound = self.store.record_gdt_result(
+        fully_unbound = self.dependencies.gdt_workflow.record_gdt_result(
             {
                 "rawGdtText": self.result_message(
                     [
@@ -151,7 +152,7 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
             }
         )
 
-        workbench = self.store.list_gdt_workbench()
+        workbench = self.dependencies.gdt_workflow.list_gdt_workbench()
         patient_bucket = next(item for item in workbench["patients"] if item["id"] == patient["id"])
         self.assertEqual(context_only["matchStatus"], "unmatched")
         self.assertIsNone(context_only["orderRecordId"])
@@ -162,7 +163,7 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
         self.assertEqual(workbench["resultsByOrder"], {})
 
     def test_6302_builder_failure_rolls_back_all_gdt_workflow_rows(self):
-        patient = self.store.create_patient_record(self.patient("MRN-GDT-ORDER-ROLLBACK"))
+        patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-GDT-ORDER-ROLLBACK"))
 
         workflow, _ = self.workflow(
             order_builder=lambda _payload: (_ for _ in ()).throw(RuntimeError("6302 failed"))
@@ -178,8 +179,8 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
         self.assertEqual(self.table_counts(), {table: 0 for table in self.table_counts()})
 
     def test_result_side_failure_rolls_back_message_attachments_events_and_status(self):
-        patient = self.store.create_patient_record(self.patient("MRN-GDT-RESULT-ROLLBACK"))
-        order = self.store.create_gdt_order_record({"patientRecordId": patient["id"]})
+        patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-GDT-RESULT-ROLLBACK"))
+        order = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"]})
         before = self.table_counts()
         workflow, repository = self.workflow()
         original_record_event = repository._event
@@ -217,11 +218,11 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
 
         self.assertEqual(event_calls, 2)
         self.assertEqual(self.table_counts(), before)
-        self.assertEqual(self.store.get_gdt_order_record(order["id"])["status"], "Created")
+        self.assertEqual(self.dependencies.gdt_workflow.get_gdt_order_record(order["id"])["status"], "Created")
         self.assertFalse(
             any(
                 message["direction"] == "inbound"
-                for message in self.store.list_gdt_messages(order["id"])
+                for message in self.dependencies.gdt_workflow.list_gdt_messages(order["id"])
             )
         )
 

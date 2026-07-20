@@ -10,7 +10,7 @@ from backend.domain import dicom as dicom_domain
 from backend.domain import order as order_domain
 from backend.domain import patient as patient_domain
 from backend.domain.dicom import DCM4CHEE_DEFAULT_UID_ROOT
-from backend.lab_store import (
+from backend.application_defaults import (
     DEFAULT_LAB_OPERATION_METADATA,
     DEFAULT_LAB_SERVERS,
     OIE_MANAGEMENT_API_BASE_URL,

@@ -33,7 +33,7 @@ class DashboardLabApiTests(ApiCaseSupport):
         action = self.client.post("/api/dashboard/services/raw-container/restart", json={})
         self.assertEqual(action.status_code, 404)
 
-    @patch("app.run_lab_operation")
+    @patch("backend.app_factory.run_lab_operation")
     def test_dashboard_action_mapping_and_restart_preview(self, run_operation):
         run_operation.return_value = {
             "operation": {"action": "start", "result": "success"},
@@ -76,15 +76,15 @@ class DashboardLabApiTests(ApiCaseSupport):
         with self.assertRaises(SimulatorValidationError):
             dashboard_action_for_group({}, "logs")
 
-    @patch("app.run_lab_operation")
-    @patch("app.run_lab_server_health_check")
+    @patch("backend.app_factory.run_lab_operation")
+    @patch("backend.app_factory.run_lab_server_health_check")
     def test_dashboard_check_runs_health_check_for_primary_service(
         self, run_health_check, run_operation
     ):
-        store = self.client.application.extensions["demo_store"]
+        store = self.lab_repository_view
 
         def mark_healthy(store_arg, server_id):
-            self.assertIs(store_arg, store)
+            self.assertIs(store_arg._repository, self.dependencies.lab_repository)
             return store_arg.update_lab_server_health(
                 server_id,
                 overall_status="Healthy",
@@ -108,7 +108,7 @@ class DashboardLabApiTests(ApiCaseSupport):
             ["dcm4chee"],
         )
 
-    @patch("app.run_lab_operation")
+    @patch("backend.app_factory.run_lab_operation")
     def test_dashboard_child_action_targets_only_allowlisted_child(self, run_operation):
         run_operation.return_value = {
             "operation": {"action": "stop", "result": "success"},
@@ -302,12 +302,12 @@ class DashboardLabApiTests(ApiCaseSupport):
         self.assertEqual(messages["security.tlsEnabled"], "TLS enabled must be true or false.")
         self.assertEqual(messages["security.tlsVerify"], "TLS verify must be true or false.")
 
-    @patch("app.socket.create_connection")
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.socket.create_connection")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_smoke_reports_out_of_range_dimse_port(self, urlopen, create_connection):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
         self.client.application.config["DCM4CHEE_DIMSE_PORT"] = "99999"
-        store = self.client.application.extensions["demo_store"]
+        store = self.lab_repository_view
         dcm4chee = next(item for item in store.list_lab_servers() if item["name"] == "dcm4chee")
 
         result = run_lab_smoke_check(self.client.application, store, dcm4chee)
@@ -370,7 +370,7 @@ class DashboardLabApiTests(ApiCaseSupport):
         self.assertEqual(response.status_code, 200)
         self.assertIn("No internal operation adapter", response.get_json()["output"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_lab_application_check_uses_tcp_when_host_and_port_are_configured(self, urlopen):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
         result = run_lab_application_check(
@@ -393,12 +393,12 @@ class DashboardLabApiTests(ApiCaseSupport):
         self.assertEqual(result[0], "Healthy")
         self.assertIn("lab-app", result[1])
 
-    @patch("app.socket.create_connection")
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.socket.create_connection")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_oie_smoke_uses_compose_network_endpoints(self, urlopen, create_connection):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
         create_connection.return_value.__enter__.return_value = object()
-        store = self.client.application.extensions["demo_store"]
+        store = self.lab_repository_view
         oie = next(item for item in store.list_lab_servers() if item["name"] == "OIE")
 
         result = run_lab_smoke_check(self.client.application, store, oie)
@@ -408,7 +408,7 @@ class DashboardLabApiTests(ApiCaseSupport):
         self.assertEqual(request.full_url, "http://oie:8080")
         create_connection.assert_called_with(("oie", 6661), 3)
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_medplum_smoke_distinguishes_service_request_unauthorized(self, urlopen):
         def fake_urlopen(request, timeout):
             if request.full_url.endswith("/oauth2/token"):
@@ -433,7 +433,7 @@ class DashboardLabApiTests(ApiCaseSupport):
             return FakeHttpResponse(b"{}", status=200)
 
         urlopen.side_effect = fake_urlopen
-        store = self.client.application.extensions["demo_store"]
+        store = self.lab_repository_view
         medplum = next(item for item in store.list_lab_servers() if item["name"] == "Medplum")
 
         result = run_lab_smoke_check(self.client.application, store, medplum)
@@ -444,7 +444,7 @@ class DashboardLabApiTests(ApiCaseSupport):
         )
         self.assertIn("FHIR data fetch unauthorized", service_request_step["message"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_medplum_smoke_treats_empty_diagnostic_report_bundle_as_healthy(self, urlopen):
         def fake_urlopen(request, timeout):
             if request.full_url.endswith("/oauth2/token"):
@@ -471,7 +471,7 @@ class DashboardLabApiTests(ApiCaseSupport):
             return FakeHttpResponse(b"{}", status=200)
 
         urlopen.side_effect = fake_urlopen
-        store = self.client.application.extensions["demo_store"]
+        store = self.lab_repository_view
         medplum = next(item for item in store.list_lab_servers() if item["name"] == "Medplum")
 
         result = run_lab_smoke_check(self.client.application, store, medplum)
@@ -482,7 +482,7 @@ class DashboardLabApiTests(ApiCaseSupport):
         self.assertEqual(diagnostic_step["status"], "Healthy")
         self.assertIn("0 report(s)", diagnostic_step["message"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_openemr_gdt_backend_verify_reports_healthy_steps(self, urlopen):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
         self.install_openemr_source(lambda: FakeDbConnection(rows=[{"procedure_order_id": 1}]))
@@ -501,7 +501,7 @@ class DashboardLabApiTests(ApiCaseSupport):
         self.assertFalse(by_name["openemr_ecg_orders"]["required"])
         self.assertEqual(by_name["gdt_folder_contract"]["status"], "Healthy")
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_openemr_gdt_backend_verify_reports_mariadb_connection_failure(self, urlopen):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
 
@@ -518,7 +518,7 @@ class DashboardLabApiTests(ApiCaseSupport):
         self.assertIn("mariadb unavailable", by_name["openemr_db_connection"]["message"])
         self.assertIn(by_name["openemr_db_connection"], result["requiredFailures"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_openemr_gdt_backend_verify_reports_missing_order_schema_failure(self, urlopen):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
         missing_schema = Exception(1146, "Table 'openemr.procedure_order' doesn't exist")
@@ -533,7 +533,7 @@ class DashboardLabApiTests(ApiCaseSupport):
         self.assertIn("Required OpenEMR procedure-order schema", by_name["openemr_order_schema"]["message"])
         self.assertIn(by_name["openemr_order_schema"], result["requiredFailures"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_openemr_gdt_backend_verify_degrades_when_no_ecg_orders_exist(self, urlopen):
         urlopen.return_value = FakeHttpResponse(b"ok", status=200)
         self.install_openemr_source(lambda: FakeDbConnection(rows=[]))

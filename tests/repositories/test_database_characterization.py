@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backend.lab_store import DemoStore
+from backend.application_composition import assemble_application_dependencies
 
 
 class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
@@ -15,9 +15,9 @@ class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
         self.directory.cleanup()
 
     def test_connection_configuration_and_close_behavior(self):
-        store = DemoStore(self.database_path)
+        store = assemble_application_dependencies(self.database_path)
 
-        with store.connect() as connection:
+        with store.database.connect() as connection:
             self.assertIs(connection.row_factory, sqlite3.Row)
             self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
             self.assertEqual(connection.execute("PRAGMA busy_timeout").fetchone()[0], 5000)
@@ -27,23 +27,23 @@ class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
             connection.execute("SELECT 1")
 
     def test_connection_commits_success_and_rolls_back_exception(self):
-        store = DemoStore(self.database_path)
+        store = assemble_application_dependencies(self.database_path)
 
-        with store.connect() as connection:
+        with store.database.connect() as connection:
             connection.execute(
                 "INSERT INTO local_identifier_sequences (name, next_value) VALUES (?, ?)",
                 ("committed", 7),
             )
 
         with self.assertRaisesRegex(RuntimeError, "abort transaction"):
-            with store.connect() as connection:
+            with store.database.connect() as connection:
                 connection.execute(
                     "INSERT INTO local_identifier_sequences (name, next_value) VALUES (?, ?)",
                     ("rolled_back", 8),
                 )
                 raise RuntimeError("abort transaction")
 
-        with store.connect() as connection:
+        with store.database.connect() as connection:
             rows = connection.execute(
                 "SELECT name, next_value FROM local_identifier_sequences "
                 "WHERE name IN ('committed', 'rolled_back') ORDER BY name"
@@ -51,14 +51,14 @@ class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
         self.assertEqual([(row["name"], row["next_value"]) for row in rows], [("committed", 7)])
 
     def test_store_and_extracted_repository_share_one_write_lock(self):
-        store = DemoStore(self.database_path)
+        store = assemble_application_dependencies(self.database_path)
 
-        self.assertIs(store.oie_settings_repository._lock, store.lock)
+        self.assertIs(store.oie_settings_repository._lock, store.database.lock)
         self.assertIs(store.oie_settings_repository._connect.__self__, store.database)
 
     def test_unversioned_reopen_preserves_rows_and_user_managed_seed_values(self):
-        store = DemoStore(self.database_path)
-        patient = store.create_patient_record(
+        store = assemble_application_dependencies(self.database_path)
+        patient = store.patient_repository.create_patient_record(
             {
                 "mrn": "MRN-LEGACY-900001",
                 "firstName": "Legacy",
@@ -67,9 +67,9 @@ class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
                 "sex": "F",
             }
         )
-        oie = next(item for item in store.list_lab_servers() if item["name"] == "OIE")
-        store.update_lab_server(oie["id"], {"host": "legacy-oie.example.test"})
-        settings = store.get_oie_settings_profile()
+        oie = next(item for item in store.lab_repository.list_servers() if item["name"] == "OIE")
+        store.lab_repository.update_server(oie["id"], {"host": "legacy-oie.example.test"})
+        settings = store.oie_settings_repository.get()
         settings["managementApi"].update(
             {
                 "baseUrl": "https://legacy-oie.example.test/api",
@@ -77,14 +77,14 @@ class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
                 "password": "legacy-secret",
             }
         )
-        store.update_oie_settings_profile(settings)
+        store.oie_settings_repository.update(settings)
 
-        reopened = DemoStore(self.database_path)
+        reopened = assemble_application_dependencies(self.database_path)
 
-        self.assertEqual(reopened.get_patient_record(patient["id"])["summary"]["mrn"], "MRN-LEGACY-900001")
-        reopened_oie = next(item for item in reopened.list_lab_servers() if item["name"] == "OIE")
+        self.assertEqual(reopened.patient_repository.get_patient_record(patient["id"])["summary"]["mrn"], "MRN-LEGACY-900001")
+        reopened_oie = next(item for item in reopened.lab_repository.list_servers() if item["name"] == "OIE")
         self.assertEqual(reopened_oie["host"], "legacy-oie.example.test")
-        reopened_settings = reopened.get_oie_settings_profile()
+        reopened_settings = reopened.oie_settings_repository.get()
         self.assertEqual(reopened_settings["managementApi"]["baseUrl"], "https://legacy-oie.example.test/api")
         self.assertEqual(reopened_settings["managementApi"]["username"], "legacy-operator")
 
@@ -126,9 +126,9 @@ class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
         connection.commit()
         connection.close()
 
-        store = DemoStore(self.database_path)
+        store = assemble_application_dependencies(self.database_path)
 
-        with store.connect() as connection:
+        with store.database.connect() as connection:
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(lab_servers)")}
         self.assertTrue(
             {
@@ -139,5 +139,5 @@ class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
                 "smoke_profile",
             }.issubset(columns)
         )
-        oie = next(item for item in store.list_lab_servers() if item["name"] == "OIE")
+        oie = next(item for item in store.lab_repository.list_servers() if item["name"] == "OIE")
         self.assertEqual(oie["host"], "legacy-host")

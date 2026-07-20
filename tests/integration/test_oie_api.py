@@ -112,8 +112,8 @@ class OieApiTests(ApiCaseSupport):
         omitted = self.oie_settings_payload()
         omitted["managementApi"]["username"] = "updated-user"
         self.assertEqual(self.client.put("/api/oie/settings", json=omitted).status_code, 200)
-        store = self.client.application.extensions["demo_store"]
-        with store.connect() as connection:
+        store = self.dependencies
+        with store.database.connect() as connection:
             stored_password = connection.execute(
                 "SELECT management_api_password FROM oie_settings_profiles"
             ).fetchone()[0]
@@ -127,7 +127,7 @@ class OieApiTests(ApiCaseSupport):
                 self.assertEqual(rejected.status_code, 400)
                 self.assertIn("non-empty string", rejected.get_json()["error"])
                 self.assertNotIn(secret, rejected.get_data(as_text=True))
-        with store.connect() as connection:
+        with store.database.connect() as connection:
             preserved_password = connection.execute(
                 "SELECT management_api_password FROM oie_settings_profiles"
             ).fetchone()[0]
@@ -189,7 +189,7 @@ class OieApiTests(ApiCaseSupport):
         status = self.client.get("/api/oie/result-listener/status").get_json()["item"]
         self.assertFalse(status["running"])
 
-    @patch("app.send_hl7_mllp_message")
+    @patch("backend.app_factory.send_hl7_mllp_message")
     def test_oie_send_order_records_ack_acceptance(self, send_message):
         patient = self.create_local_patient()
         order = self.client.post("/api/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
@@ -210,7 +210,7 @@ class OieApiTests(ApiCaseSupport):
         self.assertEqual(item["ack"]["text"], "OK")
         send_message.assert_called_once()
 
-    @patch("app.send_hl7_mllp_message")
+    @patch("backend.app_factory.send_hl7_mllp_message")
     def test_oie_send_order_uses_configured_default_endpoint(self, send_message):
         self.client.application.config.update(
             OIE_MLLP_ORDER_HOST="oie",
@@ -233,7 +233,7 @@ class OieApiTests(ApiCaseSupport):
         self.assertEqual(send_message.call_args.kwargs["host"], "oie")
         self.assertEqual(send_message.call_args.kwargs["port"], 6600)
 
-    @patch("app.send_hl7_mllp_message", side_effect=OSError("connection refused"))
+    @patch("backend.app_factory.send_hl7_mllp_message", side_effect=OSError("connection refused"))
     def test_oie_send_order_records_transport_error(self, _send_message):
         patient = self.create_local_patient()
         order = self.client.post("/api/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]

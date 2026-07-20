@@ -7,8 +7,8 @@ class Dcm4cheeApiTests(ApiCaseSupport):
 
     def test_dcm4chee_mwl_payload_uses_profile_and_generated_identifiers(self):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
-        order = store.create_dcm4chee_order_record(
+        store = self.dependencies
+        order = store.order_repository.create_dcm4chee_order_record(
             {
                 "patientRecordId": patient["id"],
                 "requestedAt": "20260708103000",
@@ -16,7 +16,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
                 "clinicalIndication": "Chest pain evaluation",
             }
         )
-        payload = store.build_dcm4chee_mwl_payload(
+        payload = build_dcm4chee_mwl_payload(
             order,
             dcm4chee_profile_from_config(self.client.application.config),
             uid_root="1.2.826.0.1.3680043.10.543",
@@ -33,7 +33,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(sps["00400009"]["Value"], ["SPS-000001"])
         self.assertEqual(sps["00400020"]["Value"], ["SCHEDULED"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_order_api_creates_dcm4chee_mwl_attempt(self, urlopen):
         patient = self.create_local_patient()
         captured = []
@@ -128,8 +128,8 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(captured[2]["method"], "GET")
         self.assertIn("AccessionNumber=ACC-000001", captured[2]["url"])
 
-    @patch("app.urllib.request.urlopen")
-    @patch("app.send_hl7_mllp_message", side_effect=OSError("connection refused"))
+    @patch("backend.app_factory.urllib.request.urlopen")
+    @patch("backend.app_factory.send_hl7_mllp_message", side_effect=OSError("connection refused"))
     def test_order_api_blocks_dcm4chee_mwl_when_dicom_patient_sync_fails(self, send_hl7, urlopen):
         patient = self.client.post(
             "/api/patients",
@@ -156,11 +156,11 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(send_hl7.call_count, 2)
         urlopen.assert_not_called()
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_sync_reuses_successful_mapping_without_duplicate_post(self, urlopen):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        store = self.dependencies
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
 
         def fake_urlopen(request, timeout):
             if "/patients?" in request.full_url:
@@ -197,7 +197,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         urlopen.side_effect = fake_urlopen
 
         sync_order_to_dcm4chee_mwl(
-            store,
+            self.order_coordination,
             order,
             dcm4chee_profile_from_config(self.client.application.config),
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -206,8 +206,8 @@ class Dcm4cheeApiTests(ApiCaseSupport):
 
         urlopen.reset_mock()
         mapping = sync_order_to_dcm4chee_mwl(
-            store,
-            store.get_order_record(int(order["id"])),
+            self.order_coordination,
+            store.order_repository.get_order_record(int(order["id"])),
             dcm4chee_profile_from_config(self.client.application.config),
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
@@ -215,7 +215,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
         urlopen.assert_not_called()
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_sync_endpoint_retries_failed_order_and_reuses_successful_mapping(self, urlopen):
         patient = self.create_local_patient()
         phase = {"name": "fail-create"}
@@ -277,7 +277,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertTrue(duplicate_retry.get_json()["success"])
         self.assertEqual(calls, [])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_sync_endpoint_preserves_order_when_retry_fails(self, urlopen):
         patient = self.create_local_patient()
         urlopen.side_effect = urllib.error.URLError("connection refused")
@@ -309,7 +309,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(retry.status_code, 400)
         self.assertIn("not DICOM", retry.get_json()["error"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_attempt_history_endpoint_lists_newest_first(self, urlopen):
         patient = self.create_local_patient()
         urlopen.side_effect = urllib.error.URLError("connection refused")
@@ -327,23 +327,23 @@ class Dcm4cheeApiTests(ApiCaseSupport):
 
     def test_dcm4chee_mapping_retry_reuses_stable_identifiers(self):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
 
-        first = store.upsert_dcm4chee_mwl_mapping(
+        first = store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
             request_payload=payload,
             sync_status=DCM4CHEE_MWL_STATUS_FAILED,
         )
-        second = store.upsert_dcm4chee_mwl_mapping(
+        second = store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -361,15 +361,15 @@ class Dcm4cheeApiTests(ApiCaseSupport):
 
     def test_dcm4chee_mapping_lookup_uses_reconciliation_identifiers(self):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        mapping = store.upsert_dcm4chee_mwl_mapping(
+        mapping = store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -377,15 +377,15 @@ class Dcm4cheeApiTests(ApiCaseSupport):
             sync_status=DCM4CHEE_MWL_STATUS_CREATED,
         )
 
-        by_study = store.find_dcm4chee_mwl_mapping_for_reconciliation(
+        by_study = store.dcm4chee_mwl_repository.find_dcm4chee_mwl_mapping_for_reconciliation(
             study_instance_uid=mapping["studyInstanceUid"]
         )
-        by_accession = store.find_dcm4chee_mwl_mapping_for_reconciliation(
+        by_accession = store.dcm4chee_mwl_repository.find_dcm4chee_mwl_mapping_for_reconciliation(
             accession_number=mapping["accessionNumber"],
             profile_name=mapping["profileName"],
             server_identity=mapping["serverIdentity"],
         )
-        by_procedure = store.find_dcm4chee_mwl_mapping_for_reconciliation(
+        by_procedure = store.dcm4chee_mwl_repository.find_dcm4chee_mwl_mapping_for_reconciliation(
             requested_procedure_id=mapping["requestedProcedureId"],
             scheduled_procedure_step_id=mapping["scheduledProcedureStepId"],
             profile_name=mapping["profileName"],
@@ -396,18 +396,18 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(by_accession["orderRecordId"], order["id"])
         self.assertEqual(by_procedure["orderRecordId"], order["id"])
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_failed_retry_reads_back_before_duplicate_post(self, urlopen):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        store.upsert_dcm4chee_mwl_mapping(
+        store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -451,21 +451,21 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         urlopen.side_effect = fake_urlopen
 
         result = sync_order_to_dcm4chee_mwl(
-            store,
-            store.get_order_record(int(order["id"])),
+            self.order_coordination,
+            store.order_repository.get_order_record(int(order["id"])),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
 
         self.assertEqual(result["operationType"], "read-back")
         self.assertEqual(methods, ["GET", "GET"])
-        mapping = store.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
+        mapping = store.dcm4chee_mwl_repository.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_create_with_readback_failure_retries_readback_without_post(self, urlopen):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         methods = []
 
         def first_urlopen(request, timeout):
@@ -532,21 +532,21 @@ class Dcm4cheeApiTests(ApiCaseSupport):
 
         urlopen.side_effect = retry_urlopen
         result = sync_order_to_dcm4chee_mwl(
-            store,
-            store.get_order_record(int(item["id"])),
+            self.order_coordination,
+            store.order_repository.get_order_record(int(item["id"])),
             dcm4chee_profile_from_config(self.client.application.config),
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
 
         self.assertEqual(result["operationType"], "read-back")
         self.assertEqual(methods, ["GET", "GET"])
-        mapping = store.get_dcm4chee_mwl_mapping_for_order(int(item["id"]))
+        mapping = store.dcm4chee_mwl_repository.get_dcm4chee_mwl_mapping_for_order(int(item["id"]))
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_create_with_empty_readback_retries_readback_without_post(self, urlopen):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         methods = []
 
         def first_urlopen(request, timeout):
@@ -613,18 +613,18 @@ class Dcm4cheeApiTests(ApiCaseSupport):
 
         urlopen.side_effect = retry_urlopen
         result = sync_order_to_dcm4chee_mwl(
-            store,
-            store.get_order_record(int(item["id"])),
+            self.order_coordination,
+            store.order_repository.get_order_record(int(item["id"])),
             dcm4chee_profile_from_config(self.client.application.config),
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
 
         self.assertEqual(result["operationType"], "read-back")
         self.assertEqual(methods, ["GET", "GET"])
-        mapping = store.get_dcm4chee_mwl_mapping_for_order(int(item["id"]))
+        mapping = store.dcm4chee_mwl_repository.get_dcm4chee_mwl_mapping_for_order(int(item["id"]))
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_order_api_records_dcm4chee_patient_missing_without_deleting_order(self, urlopen):
         patient = self.create_local_patient()
 
@@ -657,7 +657,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(detail["id"], item["id"])
         self.assertEqual(detail["dcm4chee"]["mwl"]["status"], DCM4CHEE_MWL_STATUS_PATIENT_MISSING)
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_order_api_records_dcm4chee_profile_validation_failure(self, urlopen):
         patient = self.create_local_patient()
         self.client.application.config["DCM4CHEE_DICOMWEB_BASE_URL"] = "not-a-url"
@@ -674,7 +674,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertIn("profile is incomplete", mwl["error"])
         urlopen.assert_not_called()
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_order_api_records_dcm4chee_missing_station_profile_failure(self, urlopen):
         patient = self.create_local_patient()
         self.client.application.config["DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE"] = ""
@@ -697,18 +697,18 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(detail["dcm4chee"]["mwl"]["errorType"], "profile_invalid")
         urlopen.assert_not_called()
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_mwl_verify_endpoint_records_matching_order(self, urlopen):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        mapping = store.upsert_dcm4chee_mwl_mapping(
+        mapping = store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -754,18 +754,18 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         attempts = self.client.get(f"/api/orders/{order['id']}/dcm4chee-attempts").get_json()["items"]
         self.assertEqual(attempts[0]["operationType"], "verify-mwl")
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_mwl_verify_endpoint_records_empty_response(self, urlopen):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        store.upsert_dcm4chee_mwl_mapping(
+        store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -784,25 +784,25 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(verification["errorType"], "mwl_empty")
         self.assertEqual(body["latestAttempt"]["errorType"], "mwl_empty")
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_mwl_verify_keeps_patient_missing_precondition(self, urlopen):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        store.upsert_dcm4chee_mwl_mapping(
+        store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
             request_payload=payload,
             sync_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
         )
-        store.update_dcm4chee_mwl_mapping_from_attempt(
+        store.dcm4chee_mwl_repository.update_dcm4chee_mwl_mapping_from_attempt(
             int(order["id"]),
             attempt_id=None,
             sync_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
@@ -821,18 +821,18 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(body["latestAttempt"]["status"], DCM4CHEE_MWL_STATUS_PATIENT_MISSING)
         urlopen.assert_not_called()
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_mwl_verify_endpoint_records_mismatch_and_ambiguity(self, urlopen):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        mapping = store.upsert_dcm4chee_mwl_mapping(
+        mapping = store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -870,18 +870,18 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(verification["status"], "verification_ambiguous")
         self.assertEqual(verification["errorType"], "mwl_ambiguous")
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_dcm4chee_mwl_verify_endpoint_records_patient_missing_and_profile_failure(self, urlopen):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        store.upsert_dcm4chee_mwl_mapping(
+        store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -1036,15 +1036,15 @@ class Dcm4cheeApiTests(ApiCaseSupport):
 
     def test_dcm4chee_simulated_ap_return_records_pdf_and_dicom_results(self):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        mapping = store.upsert_dcm4chee_mwl_mapping(
+        mapping = store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -1084,15 +1084,15 @@ class Dcm4cheeApiTests(ApiCaseSupport):
 
     def test_dcm4chee_simulated_ap_return_sequence_keeps_pdf_and_dicom_visible(self):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        store.upsert_dcm4chee_mwl_mapping(
+        store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -1104,14 +1104,14 @@ class Dcm4cheeApiTests(ApiCaseSupport):
             f"/api/orders/{order['id']}/dcm4chee-simulated-ap-return",
             json={"type": "pdf", "artifactUrl": "http://localhost/reports/zac-42.pdf"},
         )
-        store.begin_dcm4chee_result_refresh(patient["id"], "intervening-refresh")
-        store.record_dcm4chee_result_refresh_diagnostic(
+        store.dcm4chee_result_repository.begin_dcm4chee_result_refresh(patient["id"], "intervening-refresh")
+        store.dcm4chee_result_repository.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient["id"],
             profile=profile,
             status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
             refresh_generation="intervening-refresh",
         )
-        store.complete_dcm4chee_result_refresh(patient["id"], "intervening-refresh")
+        store.dcm4chee_result_repository.complete_dcm4chee_result_refresh(patient["id"], "intervening-refresh")
         dicom = self.client.post(
             f"/api/orders/{order['id']}/dcm4chee-simulated-ap-return",
             json={"type": "dicom"},
@@ -1126,7 +1126,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual({item["sourceType"] for item in results}, {"pdf", "dicom"})
         self.assertTrue(any(item["artifact"].get("mediaType") == "application/pdf" for item in results))
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_patient_dcm4chee_result_refresh_reconciles_study_series_and_instance(self, urlopen):
         patient = self.create_local_patient()
         self.client.application.config["DCM4CHEE_QIDO_RS_URL"] = (
@@ -1135,15 +1135,15 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.client.application.config["DCM4CHEE_WADO_RS_URL"] = (
             "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"
         )
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        mapping = store.upsert_dcm4chee_mwl_mapping(
+        mapping = store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -1220,21 +1220,21 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         patient_detail = self.client.get("/api/patients").get_json()["items"][0]
         self.assertGreaterEqual(patient_detail["dcm4chee"]["resultCount"], 3)
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_patient_dcm4chee_result_refresh_records_diagnostics(self, urlopen):
         patient = self.create_local_patient()
         self.client.application.config["DCM4CHEE_QIDO_RS_URL"] = (
             "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"
         )
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        mapping = store.upsert_dcm4chee_mwl_mapping(
+        mapping = store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -1281,8 +1281,8 @@ class Dcm4cheeApiTests(ApiCaseSupport):
             {item["reconciliationStatus"] for item in failed.get_json()["items"]},
         )
 
-    @patch("app.uuid.uuid4")
-    @patch("app.datetime")
+    @patch("backend.app_factory.uuid.uuid4")
+    @patch("backend.app_factory.datetime")
     def test_dcm4chee_result_refresh_generation_is_unique_when_clock_does_not_advance(
         self,
         datetime_mock,
@@ -1301,36 +1301,36 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(second, "2026-07-13T06:44:12.000000+00:00-generation-b")
         self.assertNotEqual(first, second)
 
-    @patch("backend.lab_store.now_iso", return_value="2026-07-13T15:30:00+08:00")
-    def test_dcm4chee_result_refresh_run_order_supersedes_updated_lower_id_row(self, _now_iso):
+    def test_dcm4chee_result_refresh_run_order_supersedes_updated_lower_id_row(self):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
+        store.dcm4chee_result_repository._timestamp = lambda: "2026-07-13T15:30:00+08:00"
         profile = dcm4chee_profile_from_config(self.client.application.config)
 
-        store.record_dcm4chee_result_refresh_diagnostic(
+        store.dcm4chee_result_repository.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient["id"],
             profile=profile,
             status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
             refresh_generation="generation-1",
         )
-        store.complete_dcm4chee_result_refresh(patient["id"], "generation-1")
-        store.record_dcm4chee_result_refresh_diagnostic(
+        store.dcm4chee_result_repository.complete_dcm4chee_result_refresh(patient["id"], "generation-1")
+        store.dcm4chee_result_repository.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient["id"],
             profile=profile,
             status=DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
             refresh_generation="generation-2",
         )
-        store.complete_dcm4chee_result_refresh(patient["id"], "generation-2")
-        store.record_dcm4chee_result_refresh_diagnostic(
+        store.dcm4chee_result_repository.complete_dcm4chee_result_refresh(patient["id"], "generation-2")
+        store.dcm4chee_result_repository.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient["id"],
             profile=profile,
             status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
             refresh_generation="generation-3",
         )
-        store.complete_dcm4chee_result_refresh(patient["id"], "generation-3")
+        store.dcm4chee_result_repository.complete_dcm4chee_result_refresh(patient["id"], "generation-3")
 
-        direct_results = store.list_dcm4chee_results_for_patient(patient["id"])
-        aggregated_results = store.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"]
+        direct_results = store.dcm4chee_result_repository.list_dcm4chee_results_for_patient(patient["id"])
+        aggregated_results = store.patient_repository.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"]
 
         for results in (direct_results, aggregated_results):
             self.assertEqual(
@@ -1340,71 +1340,71 @@ class Dcm4cheeApiTests(ApiCaseSupport):
 
     def test_dcm4chee_result_refresh_publishes_only_completed_snapshots(self):
         patient = self.create_local_patient()
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
 
-        store.begin_dcm4chee_result_refresh(patient["id"], "generation-0")
-        store.record_dcm4chee_result_refresh_diagnostic(
+        store.dcm4chee_result_repository.begin_dcm4chee_result_refresh(patient["id"], "generation-0")
+        store.dcm4chee_result_repository.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient["id"],
             profile=profile,
             status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
             refresh_generation="generation-0",
         )
-        store.complete_dcm4chee_result_refresh(patient["id"], "generation-0")
+        store.dcm4chee_result_repository.complete_dcm4chee_result_refresh(patient["id"], "generation-0")
 
-        store.begin_dcm4chee_result_refresh(patient["id"], "generation-1")
+        store.dcm4chee_result_repository.begin_dcm4chee_result_refresh(patient["id"], "generation-1")
         for results in (
-            store.list_dcm4chee_results_for_patient(patient["id"]),
-            store.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"],
+            store.dcm4chee_result_repository.list_dcm4chee_results_for_patient(patient["id"]),
+            store.patient_repository.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"],
         ):
             self.assertEqual([item["refreshGeneration"] for item in results], ["generation-0"])
 
-        store.begin_dcm4chee_result_refresh(patient["id"], "generation-2")
-        store.record_dcm4chee_result_refresh_diagnostic(
+        store.dcm4chee_result_repository.begin_dcm4chee_result_refresh(patient["id"], "generation-2")
+        store.dcm4chee_result_repository.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient["id"],
             profile=profile,
             status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
             refresh_generation="generation-2",
         )
-        store.record_dcm4chee_result_refresh_diagnostic(
+        store.dcm4chee_result_repository.record_dcm4chee_result_refresh_diagnostic(
             patient_record_id=patient["id"],
             profile=profile,
             status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
             refresh_generation="generation-1",
         )
-        store.complete_dcm4chee_result_refresh(patient["id"], "generation-1")
+        store.dcm4chee_result_repository.complete_dcm4chee_result_refresh(patient["id"], "generation-1")
 
         self.assertEqual(
-            [item["refreshGeneration"] for item in store.list_dcm4chee_results_for_patient(patient["id"])],
+            [item["refreshGeneration"] for item in store.dcm4chee_result_repository.list_dcm4chee_results_for_patient(patient["id"])],
             ["generation-0"],
         )
 
-        store.complete_dcm4chee_result_refresh(patient["id"], "generation-2")
+        store.dcm4chee_result_repository.complete_dcm4chee_result_refresh(patient["id"], "generation-2")
 
         for results in (
-            store.list_dcm4chee_results_for_patient(patient["id"]),
-            store.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"],
+            store.dcm4chee_result_repository.list_dcm4chee_results_for_patient(patient["id"]),
+            store.patient_repository.get_patient_record(patient["id"])["dcm4chee"]["dicomResults"],
         ):
             self.assertEqual(
                 [(item["reconciliationStatus"], item["refreshGeneration"]) for item in results],
                 [(DCM4CHEE_RESULT_STATUS_NO_RESULT, "generation-2")],
             )
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_patient_dcm4chee_result_refresh_supersedes_stale_diagnostics(self, urlopen):
         patient = self.create_local_patient()
         self.client.application.config["DCM4CHEE_QIDO_RS_URL"] = (
             "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"
         )
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        mapping = store.upsert_dcm4chee_mwl_mapping(
+        mapping = store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
@@ -1441,21 +1441,21 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertIn(DCM4CHEE_RESULT_STATUS_MATCHED, statuses)
         self.assertNotIn(DCM4CHEE_RESULT_STATUS_NO_RESULT, statuses)
 
-    @patch("app.urllib.request.urlopen")
+    @patch("backend.app_factory.urllib.request.urlopen")
     def test_patient_dcm4chee_result_refresh_records_duplicate_study_candidates(self, urlopen):
         patient = self.create_local_patient()
         self.client.application.config["DCM4CHEE_QIDO_RS_URL"] = (
             "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"
         )
-        store = self.client.application.extensions["demo_store"]
+        store = self.dependencies
         profile = dcm4chee_profile_from_config(self.client.application.config)
-        order = store.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
-        payload = store.build_dcm4chee_mwl_payload(
+        order = store.order_repository.create_dcm4chee_order_record({"patientRecordId": patient["id"]})
+        payload = build_dcm4chee_mwl_payload(
             order,
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],
         )
-        mapping = store.upsert_dcm4chee_mwl_mapping(
+        mapping = store.dcm4chee_mwl_repository.upsert_dcm4chee_mwl_mapping(
             int(order["id"]),
             profile,
             uid_root=self.client.application.config["DCM4CHEE_UID_ROOT"],

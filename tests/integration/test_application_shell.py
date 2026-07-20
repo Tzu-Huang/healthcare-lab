@@ -87,7 +87,7 @@ class ApplicationShellTests(ApiCaseSupport):
         response.close()
 
     def test_frontend_exposes_dashboard_children_and_gdt_workspace_order_action(self):
-        app_js = Path(__file__).resolve().parents[2] / "frontend" / "static" / "app.js"
+        app_js = Path(__file__).resolve().parents[2] / "frontend" / "static" / "backend.app_factory.js"
         script = (app_js.parent / "js" / "views" / "application.js").read_text(encoding="utf-8")
         oie_script = (app_js.parent / "js" / "views" / "oie.js").read_text(encoding="utf-8")
         dashboard_script = (app_js.parent / "js" / "views" / "dashboard.js").read_text(encoding="utf-8")

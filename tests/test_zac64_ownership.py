@@ -150,9 +150,6 @@ INTEGRATION_OWNER_INVENTORY = {
 }
 
 REPOSITORY_OWNER_INVENTORY = {
-    "repositories/test_compatibility.py": (
-        "test_oie_settings_profile_migration_preserves_existing_workflow_records",
-    ),
     "repositories/test_dcm4chee_store.py": (
         "test_dcm4chee_mapping_backfills_from_existing_attempts",
         "test_dcm4chee_patient_sync_mapping_attempt_and_patient_view",
@@ -235,8 +232,8 @@ class Zac64OwnershipContractTests(unittest.TestCase):
             actual = _test_method_names(tests_root / relative)
             self.assertEqual(actual, expected, relative)
             repository_names.extend(actual)
-        self.assertEqual(len(repository_names), 27)
-        self.assertEqual(len(set(repository_names)), 27)
+        self.assertEqual(len(repository_names), 26)
+        self.assertEqual(len(set(repository_names)), 26)
 
 
 if __name__ == "__main__":

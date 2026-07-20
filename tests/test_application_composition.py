@@ -59,6 +59,25 @@ class ApplicationCompositionTests(unittest.TestCase):
         }
         self.assertEqual(declared_methods, set())
 
+    def test_production_source_has_no_removed_facade_or_broad_extension(self):
+        project_root = Path(__file__).resolve().parents[1]
+        forbidden = (
+            "Demo" + "Store",
+            "backend." + "lab_store",
+            'extensions["' + "demo" + "_" + "store" + '"]',
+            "extensions['" + "demo" + "_" + "store" + "']",
+        )
+        production_files = [project_root / "app.py", *project_root.glob("backend/**/*.py")]
+
+        violations = {
+            str(path.relative_to(project_root)): token
+            for path in production_files
+            for token in forbidden
+            if token in path.read_text(encoding="utf-8")
+        }
+
+        self.assertEqual(violations, {})
+
 
 if __name__ == "__main__":
     unittest.main()
