@@ -10,10 +10,15 @@ export function createSettingsState() {
 
 export function listenerSettingsMatchStatus(profile, status) {
   const listener = profile?.resultListener;
-  return Boolean(
+  const runningConfigurationMatches = Boolean(
     listener && status?.running
     && listener.host === status.host
     && Number(listener.port) === Number(status.port)
     && Boolean(listener.mllpFraming) === Boolean(status.mllpFraming)
   );
+  const intendedDisabledStateMatches = Boolean(
+    listener && listener.autoStart === false
+    && !status?.running && status?.state === "stopped"
+  );
+  return runningConfigurationMatches || intendedDisabledStateMatches;
 }

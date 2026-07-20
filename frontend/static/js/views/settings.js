@@ -38,9 +38,7 @@ export async function refreshSettings() {
   const result = await fetchSettings();
   renderProfile(result.item);
   const status = await fetchSettingsListenerStatus();
-  if (listenerSettingsMatchStatus(state.profile, status.item)) {
-    state.runtimeReloadRequired = false;
-  }
+  state.runtimeReloadRequired = !listenerSettingsMatchStatus(state.profile, status.item);
   renderReminder();
   return state;
 }
