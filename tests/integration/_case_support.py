@@ -29,7 +29,7 @@ from backend.app_factory import (
     sync_order_to_dcm4chee_mwl,
     validate_dcm4chee_profile,
 )
-from backend.application_defaults import (
+from backend.domain.statuses import (
     DCM4CHEE_MWL_STATUS_CREATED,
     DCM4CHEE_MWL_STATUS_FAILED,
     DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
@@ -38,11 +38,11 @@ from backend.application_defaults import (
     DCM4CHEE_RESULT_STATUS_MATCHED,
     DCM4CHEE_RESULT_STATUS_NO_RESULT,
     DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
-    DCM4CHEE_RESULT_SOURCE_SIMULATED_AP,
     DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
-    hl7_timestamp,
-    render_gdt_message,
 )
+from backend.domain.dicom import DCM4CHEE_RESULT_SOURCE_SIMULATED_AP
+from backend.domain.gdt_protocol import render_gdt_message
+from backend.domain.timestamps import hl7_timestamp
 from backend.templates import dicom as dicom_templates
 from tests.support import (
     DisposableAppCase,

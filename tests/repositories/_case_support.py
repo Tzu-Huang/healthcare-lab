@@ -4,15 +4,15 @@ from pathlib import Path
 
 from backend.application_composition import assemble_application_dependencies
 
-from backend.application_defaults import (
+from backend.domain.statuses import (
     DCM4CHEE_MWL_STATUS_CREATED,
     DCM4CHEE_PATIENT_SYNC_OPERATION_ADT_CREATE,
     DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
     DCM4CHEE_PATIENT_SYNC_STATUS_PENDING,
     DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
-    SimulatorValidationError,
-    render_gdt_message,
 )
+from backend.domain.errors import SimulatorValidationError
+from backend.domain.gdt_protocol import render_gdt_message
 from backend.services.oie_workflow import compose_oie_workbench
 from backend.services.protocol_compatibility import list_fhir_resource_mappings
 from backend.templates import dicom as dicom_templates

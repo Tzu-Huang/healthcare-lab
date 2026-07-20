@@ -117,7 +117,7 @@ from backend.services.fhir_workflow import (
     medplum_update_resource_url,
     sync_fhir_workflow_record_to_medplum,
 )
-from backend.domain.errors import UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
+from backend.domain.errors import SimulatorValidationError, UpstreamDcm4cheeError, UpstreamFhirError, ValidationError
 from backend.domain.validation import require_http_url
 from backend.domain.dicom import validate_dcm4chee_profile
 from backend.domain import dicom as dicom_domain
@@ -139,7 +139,7 @@ from backend.services.lab_workflow import (
     run_lab_operation,
     run_lab_server_health_check,
 )
-from backend.application_defaults import (
+from backend.domain.statuses import (
     DCM4CHEE_MWL_OPERATION_CREATE,
     DCM4CHEE_MWL_OPERATION_VERIFY,
     DCM4CHEE_MWL_STATUS_CREATED,
@@ -157,28 +157,22 @@ from backend.application_defaults import (
     DCM4CHEE_RESULT_STATUS_DUPLICATE,
     DCM4CHEE_RESULT_STATUS_NO_RESULT,
     DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
-    LAB_OPERATION_ACTIONS,
-    LAB_HEALTH_STATUSES,
-    LAB_SERVER_PROTOCOLS,
-    LAB_SERVER_TYPES,
-    HL7_V2_MSH_SUFFIX,
     FHIR_SYNC_STATUS_FAILED,
     FHIR_SYNC_STATUS_PENDING,
     FHIR_SYNC_STATUS_SYNCED,
-    OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES,
-    ORDER_PROTOCOL_VERSION,
     ORDER_STATUS_ACCEPTED,
     ORDER_STATUS_ERROR,
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_TRANSPORT_ERROR,
-    PATIENT_MODES,
-    SimulatorValidationError,
-    hl7_timestamp,
-    now_iso,
-    ensure_gdt_bridge_dirs,
-    parse_openemr_allowed_procedure_codes,
-    validate_gdt_bridge_dirs,
 )
+from backend.domain.gdt import ensure_gdt_bridge_dirs
+from backend.domain.lab import LAB_HEALTH_STATUSES, LAB_OPERATION_ACTIONS, LAB_SERVER_PROTOCOLS, LAB_SERVER_TYPES
+from backend.domain.openemr import OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES, parse_openemr_allowed_procedure_codes
+from backend.domain.order import ORDER_PROTOCOL_VERSION
+from backend.domain.patient import PATIENT_MODES
+from backend.domain.timestamps import hl7_timestamp, now_iso
+from backend.repositories.gdt_bridge_health import validate_gdt_bridge_dirs
+from backend.templates.hl7 import HL7_V2_MSH_SUFFIX
 from backend.lab_operations import (
     DockerComposeLabOperationAdapter,
     DockerSocketLabOperationAdapter,
