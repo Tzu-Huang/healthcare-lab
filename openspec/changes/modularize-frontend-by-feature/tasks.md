@@ -46,11 +46,11 @@
 - [x] 7.1 Add or extend controlled browser smoke coverage for sidebar navigation, startup without unexpected console errors, Dashboard refresh, and representative Patient and Order interactions.
 - [x] 7.2 Add or extend controlled browser smoke coverage for representative FHIR, dcm4chee, OIE, and GDT interactions without live external infrastructure.
 - [ ] 7.3 Run syntax/import validation over every JavaScript module, focused feature suites, Flask integration tests, architecture contracts, and the complete regression suite.
-- [ ] 7.4 Compare final test collection with the baseline and complete the ZAC-64 assertion-ownership audit, explaining intentional changes rather than treating count equality as sufficient evidence.
+- [x] 7.4 Compare final test collection with the baseline and complete the ZAC-64 assertion-ownership audit, explaining intentional changes rather than treating count equality as sufficient evidence.
 
 ## 8. Compatibility cleanup and documentation
 
 - [x] 8.1 Remove remaining business logic, writable feature globals, and obsolete selectors/markup from compatibility entrypoints only after their production and assertion owners are verified.
-- [ ] 8.2 Confirm `app.js` and the global stylesheet are thin bootstrap/loaders, no old test location retains unowned assertions, and architecture baselines shrank without new exceptions.
-- [ ] 8.3 Update frontend placement, dependency, lifecycle, caching, feature verification, and ZAC-50/ZAC-64 coordination guidance in project documentation.
+- [x] 8.2 Confirm `app.js` and the global stylesheet are thin bootstrap/loaders, no old test location retains unowned assertions, and architecture baselines shrank without new exceptions.
+- [x] 8.3 Update frontend placement, dependency, lifecycle, caching, feature verification, and ZAC-50/ZAC-64 coordination guidance in project documentation.
 - [ ] 8.4 Run the complete quality gate and strict OpenSpec validation, recording any external-runtime browser scenarios that remain explicitly manual.

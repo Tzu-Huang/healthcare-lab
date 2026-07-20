@@ -22,14 +22,14 @@ their old read path is removed.
 
 | Owner | Current JavaScript area | View root | Target JavaScript | Target CSS | Template owner |
 |---|---|---|---|---|---|
-| core | DOM, status, request, navigation, formatting, clipboard | application shell | `js/core`, `js/api/client.js`, `js/state` | `css/base`, `css/layout`, `css/components` | `index.html`, `partials/sidebar.html` |
-| dashboard | service/resource/event state and actions | `lab-console-view` | `js/api/dashboard.js`, `js/views/dashboard.js` | `css/views/dashboard.css` | `views/dashboard.html` |
-| patient | forms, validation, protocol previews and inventory | `patient-view` | `js/api/patients.js`, `js/views/patient.js` | `css/views/patient.css` | `views/patient.html` |
-| order | protocol modes, previews, creation and record inventory | `order-view` | `js/api/orders.js`, `js/views/order.js` | `css/views/order.css` | `views/order.html` |
-| fhir | Medplum inventory, selections, reports, preview and retry | `medplum-view` | `js/api/fhir.js`, `js/views/fhir.js` | `css/views/fhir.css` | `views/fhir.html` |
-| dcm4chee | profile, selections, MWL actions, results and attempts | `dcm4chee-view` | `js/api/dcm4chee.js`, `js/views/dcm4chee.js` | `css/views/dcm4chee.css` | `views/dcm4chee.html` |
-| oie | inventory, selection, payloads, send and listener controls | `oie-view` | `js/api/oie.js`, `js/views/oie.js` | `css/views/oie.css` | `views/oie.html` |
-| gdt | bridge settings/watcher, patients, orders, results and artifacts | `gdt-view` | `js/api/gdt.js`, `js/views/gdt.js` | `css/views/gdt.css` | `views/gdt.html` |
+| core | DOM, status, request, navigation, formatting, clipboard | application shell | `js/core`, `js/api/client.js`, `js/state` | `css/base.css`, `css/layout.css`, `css/components.css` | `index.html`, `shell/sidebar.html` |
+| dashboard | service/resource/event state and actions | `lab-console-view` | `js/api/dashboard.js`, `js/views/dashboard.js` | `css/views/application.css` under `#lab-console-view` | `views/dashboard.html` |
+| patient | forms, validation, protocol previews and inventory | `patient-view` | `js/api/patient.js`, `js/state/patient.js`, `js/views/patient.js` | shared contracts plus scoped view rules | `views/patient.html` |
+| order | protocol modes, previews, creation and record inventory | `order-view` | `js/api/order.js`, `js/state/order.js`, `js/views/order.js` | `css/views/application.css` under `#order-view` | `views/order.html` |
+| fhir | Medplum inventory, selections, reports, preview and retry | `medplum-view` | `js/api/fhir.js`, `js/views/fhir.js` | `css/views/application.css` under `#medplum-view` | `views/fhir.html` |
+| dcm4chee | profile, selections, MWL actions, results and attempts | `dcm4chee-view` | `js/api/dcm4chee.js`, `js/state/dcm4chee.js`, `js/views/dcm4chee.js` | `css/views/application.css` under `#dcm4chee-view` | `views/dcm4chee.html` |
+| oie | inventory, selection, payloads, send and listener controls | `oie-view` | `js/api/oie.js`, `js/views/oie.js` | `css/views/application.css` under `#oie-view` | `views/oie.html` |
+| gdt | bridge settings/watcher, patients, orders, results and artifacts | `gdt-view` | `js/api/gdt.js`, `js/views/gdt.js` | `css/views/application.css` under `#gdt-view` | `views/gdt.html` |
 | settings | reserved for ZAC-50; no product behavior in ZAC-63 | `settings-view` | `js/api/settings.js`, `js/views/settings.js` | `css/views/settings.css` | `views/settings.html` |
 
 Shared component ownership is earned by use from at least two feature contracts;
@@ -64,33 +64,48 @@ js/app.js -> views -> api / state / components -> core
 - Views do not import another view's private implementation.
 - Compatibility entrypoints receive no new business logic.
 
-## Assertion ownership
+## Final assertion ownership audit
 
-| Existing location | Current assertion type | Migration owner |
+| Assertion family | Final owner | Audit result |
 |---|---|---|
-| `tests/test_architecture_contract.py` | global-definition and selector fingerprints | shared architecture contract |
-| `tests/integration/test_app.py:230` | static application script contract | core bootstrap/modules |
-| `tests/integration/test_app.py:334` | shell/template navigation contract | core navigation/template |
-| `tests/integration/test_app.py:2680` | dcm4chee template and script interaction structure | dcm4chee |
-| `tests/integration/test_app.py:2758` | dcm4chee responsive/style structure | dcm4chee |
-| `tests/repositories/test_lab_store.py:991` | rendered GDT template contract | gdt |
+| Entrypoint growth, dependency direction, and legacy baselines | `tests/test_architecture_contract.py` | Retained as a cross-feature architecture contract; function and selector legacy baselines are empty. |
+| Shell navigation, template includes, CSS loading, caching, and selector scope | `tests/frontend/test_frontend_characterization.py` | Moved to the focused frontend owner and follows all template partials rather than one physical file. |
+| Dashboard module behavior | `tests/frontend/test_dashboard_view_module.py` and controlled major-view smoke | Focused owner present. |
+| Patient API/state/view behavior | `tests/frontend/test_patient_*` and controlled major-view smoke | Focused owners present; integration tests retain only rendered/cross-workspace contracts. |
+| Order API/state/view behavior | `tests/frontend/test_order_*` and controlled major-view smoke | Focused owners present; integration tests retain only rendered/cross-workspace contracts. |
+| FHIR API/view behavior | `tests/frontend/test_fhir_api_module.py` and controlled major-view smoke | Focused owner present. |
+| dcm4chee API/state/view behavior | `tests/frontend/test_dcm4chee_*` and controlled major-view smoke | Focused owners present. |
+| OIE view and end-to-end controlled interactions | `tests/frontend/test_oie_view_module.py`, `test_oie_interactions.py` | Focused owner present; no live OIE dependency. |
+| GDT view and controlled interactions | `tests/frontend/test_gdt_view_module.py` and controlled major-view smoke | Focused owner present; no live filesystem watcher dependency. |
+| Shared selection, formatting, navigation, and component contracts | matching modules under `tests/frontend/` | Focused owners present and shared consumers are documented above. |
 
 ZAC-63 owns new module-direction, lifecycle, static-loading, and browser
-interaction checks. ZAC-64 owns broad test-file relocation, reusable backend
-fixtures/fakes, independent responsibility suites, final collected-test count,
-and assertion-ownership audit.
+interaction checks. ZAC-64 may continue broad backend test-file relocation,
+fixture/fake reuse, and responsibility-suite independence without moving these
+frontend-focused owners back into a catch-all suite.
+
+### Final collection comparison
+
+- Baseline at `9264dae`: 403 tests.
+- Final ZAC-63 discovery inventory before `/dev-test`: 478 tests.
+- Net change: +75 tests.
+
+The increase is intentional: it adds API/state/view module contracts,
+cross-view coordination, template/CSS ownership, cache/loading checks, and
+controlled browser interactions. No assertion was removed to force count
+equality. The audit above traces each frontend responsibility to a focused or
+explicitly cross-boundary owner.
 
 ## Focused verification commands
 
-Until individual feature suites are extracted, each feature uses the matching
-integration selection plus the shared architecture contract:
+Use the focused frontend suites during implementation and reserve the complete
+suite for `/dev-test`:
 
 ```powershell
 python -m unittest tests.test_architecture_contract
 python -m unittest tests.frontend.test_frontend_characterization
-python -m unittest tests.integration.test_app
-python -m unittest tests.repositories.test_lab_store
-node --check frontend\static\app.js
+python -m unittest discover -s tests/frontend -t .
+python -m unittest tests.frontend.test_major_view_interactions tests.frontend.test_oie_interactions
 ```
 
 Every extraction commit must narrow this to its new module tests while retaining
@@ -100,6 +115,9 @@ the relevant legacy integration selection. The completion gate is:
 python -m unittest discover -s tests -t .
 openspec validate modularize-frontend-by-feature --strict
 ```
+
+JavaScript syntax verification must recurse over every `frontend/static/**/*.js`
+file rather than checking only the compatibility entrypoint.
 
 ## Static module caching contract
 
@@ -119,3 +137,12 @@ owns the operational OIE workbench state, rendering, send, and listener lifecycl
 API/view/state/component/style/template destinations remain free of product
 behavior. ZAC-50 may build its Settings workspace on those owners and MUST NOT
 add OIE or Settings business behavior back to `frontend/static/app.js`.
+
+## External-runtime boundary
+
+The controlled Chromium suites cover application startup, navigation,
+responsive layout, and representative interactions without live services.
+Real Medplum authentication, dcm4chee DICOMweb/MWL traffic, OIE MLLP sockets,
+and GDT watcher filesystem interoperability remain environment-specific manual
+or deployment verification. They are not hidden browser-test skips and are
+covered by their existing integration/deployment runbooks.
