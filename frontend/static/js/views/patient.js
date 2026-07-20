@@ -19,6 +19,7 @@ import { getSelectedPatientId, setSelectedOrderId, setSelectedPatientId } from "
 
 const GENERATED_PATIENT_MRN_LABEL = "Generated on create";
 let patientCoordinator = {};
+let initialized = false;
 
 export const PATIENT_MODE_CONFIG = {
   "hl7-v2": {
@@ -251,6 +252,8 @@ export function refreshPatientPreview() {
 }
 
 export function initializePatientView({ onCreate, onRefresh, onCopy }) {
+  if (initialized) return;
+  initialized = true;
   byId("load-patient-demo").addEventListener("click", () => {
     setPatientForm(patientDemoPresetForMode(byId("patient-mode").value));
     refreshPatientPreview();

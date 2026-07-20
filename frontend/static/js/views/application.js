@@ -1,7 +1,7 @@
 import { setStatus } from "../components/status.js";
 import { copyTextFromElement as copyElementText } from "../core/clipboard.js";
 import { byId, createElement } from "../core/dom.js";
-import { activateView, initializeNavigation, registerViewActivation } from "../core/navigation.js";
+import { activateView, initializeNavigation, initializeView, registerViewActivation } from "../core/navigation.js";
 import { initializeOieView, refreshOieInventory } from "./oie.js";
 import { initializeDashboardView, refreshDashboard } from "./dashboard.js";
 import { initializeGdtView, refreshGdtConsole } from "./gdt.js";
@@ -13,6 +13,8 @@ import { setSelectedOrderRecordKey } from "../state/order.js";
 import { createPatient } from "../api/patient.js";
 import { buildPatientGdtPreviewPayload, configurePatientCoordinator, createPatientRecord, initializePatientView, refreshPatientDcm4cheeResults, refreshPatientPreview, refreshPatients, renderPatientSummaryFromPayload } from "./patient.js";
 import { configureOrderCoordinator, createOrderRecord, initializeOrderView, orderListKey, orderRecordMode, orderVisitId, refreshOrderPreview, refreshOrders, refreshOrderWorkspace, renderOrderPatientOptions, retryDcm4cheeOrder, selectedOrderPatientReference, sendDcm4cheeOrder, simulateDcm4cheeApReturn, verifyDcm4cheeOrder } from "./order.js";
+
+let initialized = false;
 
 function setActiveView(viewId) {
   return activateView(viewId);
@@ -246,6 +248,8 @@ async function copyTextFromElement(elementId) {
 }
 
 export function initializeApplication() {
+  if (initialized) return;
+  initialized = true;
   registerViewActivation("lab-console-view", "Service Health", refreshDashboard);
   registerViewActivation("patient-view", "Patient", () => {
     refreshPatientPreview();
@@ -257,45 +261,51 @@ export function initializeApplication() {
   registerViewActivation("oie-view", "OIE", refreshOieInventory);
   registerViewActivation("gdt-view", "GDT", refreshGdtConsole);
   initializeNavigation();
-  initializeDashboardView();
-  initializeOieView();
-  initializeGdtView({ buildPatientPreviewPayload: buildPatientGdtPreviewPayload });
-  initializeFhirView();
-  configureDcm4cheeCoordinator({
-    refreshPatientDcm4cheeResults,
-    retryDcm4cheeOrder,
-    sendDcm4cheeOrder,
-    simulateDcm4cheeApReturn,
-    verifyDcm4cheeOrder,
+  initializeView("lab-console-view", initializeDashboardView);
+  initializeView("oie-view", initializeOieView);
+  initializeView("gdt-view", () => initializeGdtView({ buildPatientPreviewPayload: buildPatientGdtPreviewPayload }));
+  initializeView("medplum-view", initializeFhirView);
+  initializeView("dcm4chee-view", () => {
+    configureDcm4cheeCoordinator({
+      refreshPatientDcm4cheeResults,
+      retryDcm4cheeOrder,
+      sendDcm4cheeOrder,
+      simulateDcm4cheeApReturn,
+      verifyDcm4cheeOrder,
+    });
+    initializeDcm4cheeView();
   });
-  initializeDcm4cheeView();
-  configurePatientCoordinator({
-    onSelectRecord: (item) => {
-      byId("patient-payload-preview").textContent = item.payload || "";
-      renderPatientSummaryFromRecord(item);
-    },
-    renderOrderPatientOptions,
-    renderDetailBlock: dcm4cheeDetailBlock,
-    renderDcm4cheeConsole,
-    refreshOrders,
+  initializeView("patient-view", () => {
+    configurePatientCoordinator({
+      onSelectRecord: (item) => {
+        byId("patient-payload-preview").textContent = item.payload || "";
+        renderPatientSummaryFromRecord(item);
+      },
+      renderOrderPatientOptions,
+      renderDetailBlock: dcm4cheeDetailBlock,
+      renderDcm4cheeConsole,
+      refreshOrders,
+    });
+    initializePatientView({
+      onCreate: createPatientRecord,
+      onRefresh: refreshPatients,
+      onCopy: () => copyTextFromElement("patient-payload-preview"),
+    });
   });
-  initializePatientView({
-    onCreate: createPatientRecord,
-    onRefresh: refreshPatients,
-    onCopy: () => copyTextFromElement("patient-payload-preview"),
-  });
-  configureOrderCoordinator({
-    renderSummary: renderOrderSummary,
-    selectRecord: selectOrderRecord,
-    refreshPatients,
-    refreshDcm4cheeConsole,
-    selectedDcm4cheeOrder,
-  });
-  initializeOrderView({
-    onCreate: createOrderRecord,
-    onRefresh: refreshOrders,
-    onCopy: () => copyTextFromElement("order-payload-preview"),
-    onCreateGdtPatient: createGdtPatientFromOrderFlow,
+  initializeView("order-view", () => {
+    configureOrderCoordinator({
+      renderSummary: renderOrderSummary,
+      selectRecord: selectOrderRecord,
+      refreshPatients,
+      refreshDcm4cheeConsole,
+      selectedDcm4cheeOrder,
+    });
+    initializeOrderView({
+      onCreate: createOrderRecord,
+      onRefresh: refreshOrders,
+      onCopy: () => copyTextFromElement("order-payload-preview"),
+      onCreateGdtPatient: createGdtPatientFromOrderFlow,
+    });
   });
   byId("create-gdt-ecg-order").addEventListener("click", openGdtOrderFlow);
   setActiveView("lab-console-view");

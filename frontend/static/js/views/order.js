@@ -16,6 +16,7 @@ export const ORDER_MODE_CONFIG = {
 const ORDER_PATIENT_PROTOCOL_BY_MODE = { "hl7-v251": "HL7 v2.5.1", fhir: "FHIR R4", gdt: "GDT 2.1", dicom: "DICOM" };
 const ORDER_PATIENT_LABEL_BY_MODE = { "hl7-v251": "HL7 v2", fhir: "FHIR R4", gdt: "GDT", dicom: "DICOM" };
 let orderCoordinator = {};
+let initialized = false;
 
 export const orderDemoPreset = {
   priority: "R", orderingProvider: "1001^WANG^AMY", clinicalIndication: "Chest pain evaluation",
@@ -195,6 +196,8 @@ export function refreshOrderPreview() {
 }
 
 export function initializeOrderView({ onCreate, onRefresh, onCopy, onCreateGdtPatient }) {
+  if (initialized) return;
+  initialized = true;
   byId("load-order-demo").addEventListener("click", () => {
     setOrderForm(orderDemoPreset);
     refreshOrderPreview();

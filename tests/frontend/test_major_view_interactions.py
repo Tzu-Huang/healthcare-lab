@@ -40,11 +40,17 @@ class MajorViewInteractionTests(unittest.TestCase):
         cls.server_thread.join(timeout=5)
         cls.temp_dir.cleanup()
 
-    def open_controlled_page(self, viewport: dict[str, int] | None = None):
+    def open_controlled_page(
+        self,
+        viewport: dict[str, int] | None = None,
+        init_script: str | None = None,
+    ):
         calls: list[tuple[str, str]] = []
         browser_errors: list[str] = []
         page = self.browser.new_page(viewport=viewport or {"width": 1440, "height": 1000})
         self.addCleanup(page.close)
+        if init_script:
+            page.add_init_script(init_script)
         page.on("console", lambda message: browser_errors.append(message.text) if message.type == "error" else None)
         page.on("pageerror", lambda error: browser_errors.append(str(error)))
 
@@ -80,6 +86,58 @@ class MajorViewInteractionTests(unittest.TestCase):
         page.route("**/api/**", handle_api)
         page.goto(self.base_url, wait_until="networkidle")
         return page, calls, browser_errors
+
+    def test_repeated_application_initialization_registers_actions_once(self):
+        page, calls, browser_errors = self.open_controlled_page()
+        page.evaluate("import('/static/js/views/application.js').then(module => module.initializeApplication())")
+
+        page.locator('[data-nav-target="patient-view"]').click()
+        page.locator("#refresh-patients").wait_for(state="visible")
+        calls.clear()
+        page.locator("#refresh-patients").click()
+        page.wait_for_timeout(50)
+        self.assertEqual(1, [path for _method, path in calls].count("/api/patients"))
+
+        page.locator('[data-nav-target="order-view"]').click()
+        page.locator("#refresh-orders").wait_for(state="visible")
+        calls.clear()
+        page.locator("#refresh-orders").click()
+        page.wait_for_timeout(50)
+        paths = [path for _method, path in calls]
+        self.assertEqual(1, paths.count("/api/orders"))
+        self.assertEqual(1, paths.count("/api/gdt/orders"))
+
+        page.evaluate("""
+          window.orderActivations = 0;
+          document.addEventListener('healthcare-lab:view-activated', event => {
+            if (event.detail.viewId === 'order-view') window.orderActivations += 1;
+          });
+        """)
+        page.locator('[data-nav-target="gdt-view"]').click()
+        page.locator("#create-gdt-ecg-order").click()
+        self.assertEqual(1, page.evaluate("window.orderActivations"))
+        self.assertEqual([], browser_errors)
+
+    def test_feature_initialization_failure_is_diagnosed_and_isolated(self):
+        init_script = """
+          window.initializationErrors = [];
+          document.addEventListener('healthcare-lab:view-error', event => {
+            if (event.detail.phase === 'initialization') {
+              window.initializationErrors.push(event.detail.viewId);
+            }
+          });
+          document.addEventListener('DOMContentLoaded', () => {
+            document.querySelector('#refresh-dashboard')?.remove();
+          });
+        """
+        page, _calls, browser_errors = self.open_controlled_page(init_script=init_script)
+        self.assertEqual(["lab-console-view"], page.evaluate("window.initializationErrors"))
+        self.assertTrue(page.locator("#lab-console-view").get_attribute("data-initialization-error"))
+
+        page.locator('[data-nav-target="patient-view"]').click()
+        page.locator("#load-patient-demo").click()
+        self.assertIn("MSH|", page.locator("#patient-payload-preview").inner_text())
+        self.assertEqual([], browser_errors)
 
     def test_navigation_startup_and_representative_major_view_interactions(self):
         page, calls, browser_errors = self.open_controlled_page()
