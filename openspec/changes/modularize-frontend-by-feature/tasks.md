@@ -7,7 +7,7 @@
 
 ## 2. Native-module foundation
 
-- [ ] 2.1 Create the categorized `js/core`, `js/api`, `js/state`, `js/components`, and `js/views` structure plus the thin native-module bootstrap without changing current startup behavior.
+- [x] 2.1 Create the categorized `js/core`, `js/api`, `js/state`, `js/components`, and `js/views` structure plus the thin native-module bootstrap without changing current startup behavior.
 - [x] 2.2 Extract shared DOM, clipboard, formatting, status, navigation, JSON request, and normalized error behavior with focused tests and declared dependency direction.
 - [x] 2.3 Replace writable cross-view globals with explicit shared navigation/selection state while leaving feature inventory, preview, expansion, and request state in its owning view.
 - [x] 2.4 Introduce idempotent feature initialization and activation seams, isolate initialization diagnostics, and verify repeated navigation does not duplicate handlers or requests.
@@ -50,7 +50,7 @@
 
 ## 8. Compatibility cleanup and documentation
 
-- [ ] 8.1 Remove remaining business logic, writable feature globals, and obsolete selectors/markup from compatibility entrypoints only after their production and assertion owners are verified.
+- [x] 8.1 Remove remaining business logic, writable feature globals, and obsolete selectors/markup from compatibility entrypoints only after their production and assertion owners are verified.
 - [ ] 8.2 Confirm `app.js` and the global stylesheet are thin bootstrap/loaders, no old test location retains unowned assertions, and architecture baselines shrank without new exceptions.
 - [ ] 8.3 Update frontend placement, dependency, lifecycle, caching, feature verification, and ZAC-50/ZAC-64 coordination guidance in project documentation.
 - [ ] 8.4 Run the complete quality gate and strict OpenSpec validation, recording any external-runtime browser scenarios that remain explicitly manual.

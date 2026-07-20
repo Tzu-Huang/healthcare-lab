@@ -153,26 +153,12 @@ workflow|backend/dashboard_services.py|<module>._RESOURCE_SNAPSHOT_CACHE_LOCK|c3
 """.strip().splitlines()
 )
 
-FRONTEND_FUNCTION_NAME_INVENTORY: frozenset[str] = frozenset("""
-createGdtPatientFromOrderFlow fhirSyncStatusClass gdtPatientFormPayload
-openGdtOrderFlow renderGdtMessage renderGdtRecord renderOrderSummary
-renderPatientSummaryFromRecord selectOrderRecord selectedOrderPayloadPreview
-""".split())
+FRONTEND_FUNCTION_NAME_INVENTORY: frozenset[str] = frozenset()
 
 FRONTEND_FUNCTION_BASELINE: frozenset[tuple[str, str]] = frozenset(
     tuple(line.split("|", 1))
     for line in """
 <module-prefix>|e3b0c44298fc1c14
-createGdtPatientFromOrderFlow|86197c052f7ec659
-fhirSyncStatusClass|d8f2fca5e3492941
-gdtPatientFormPayload|c64195a464e6f026
-openGdtOrderFlow|9d2a252ce82f8051
-renderGdtMessage|3c00507446576905
-renderGdtRecord|1b9f17ffdfa1c5fc
-renderOrderSummary|97f03a710b8a6181
-renderPatientSummaryFromRecord|2bd38af1fb047a06
-selectOrderRecord|3a9316c56c6814ed
-selectedOrderPayloadPreview|05d63ddcf629ccc1
 """.strip().splitlines()
 )
 

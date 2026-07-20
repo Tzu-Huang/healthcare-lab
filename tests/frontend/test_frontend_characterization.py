@@ -6,7 +6,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "frontend" / "static" / "app.js"
+SCRIPT = ROOT / "frontend" / "static" / "js" / "views" / "application.js"
+BOOTSTRAP = ROOT / "frontend" / "static" / "js" / "app.js"
 STYLES = ROOT / "frontend" / "static" / "styles.css"
 TEMPLATE = ROOT / "frontend" / "templates" / "index.html"
 
@@ -25,6 +26,7 @@ class FrontendCharacterizationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.script = SCRIPT.read_text(encoding="utf-8")
+        cls.bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
         cls.styles = STYLES.read_text(encoding="utf-8")
         cls.template = TEMPLATE.read_text(encoding="utf-8")
 
@@ -67,7 +69,7 @@ class FrontendCharacterizationTests(unittest.TestCase):
     def test_startup_registers_one_dom_content_loaded_boundary(self):
         self.assertEqual(
             1,
-            self.script.count('document.addEventListener("DOMContentLoaded", initializeApplication)'),
+            self.bootstrap.count('document.addEventListener("DOMContentLoaded", initializeApplication)'),
         )
 
     def test_responsive_layout_contract_is_present(self):

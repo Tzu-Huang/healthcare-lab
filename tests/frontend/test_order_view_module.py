@@ -11,7 +11,7 @@ class OrderViewModuleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = (ROOT / "frontend/static/js/views/order.js").read_text(encoding="utf-8")
-        cls.bootstrap = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.bootstrap = (ROOT / "frontend/static/js/views/application.js").read_text(encoding="utf-8")
 
     def test_order_view_owns_mode_and_patient_selection_behavior(self):
         self.assertIn("export const ORDER_MODE_CONFIG", self.source)

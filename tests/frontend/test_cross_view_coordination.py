@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class CrossViewCoordinationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.bootstrap = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.bootstrap = (ROOT / "frontend/static/js/views/application.js").read_text(encoding="utf-8")
         cls.dashboard = (ROOT / "frontend/static/js/views/dashboard.js").read_text(encoding="utf-8")
         cls.patient = (ROOT / "frontend/static/js/views/patient.js").read_text(encoding="utf-8")
         cls.order = (ROOT / "frontend/static/js/views/order.js").read_text(encoding="utf-8")

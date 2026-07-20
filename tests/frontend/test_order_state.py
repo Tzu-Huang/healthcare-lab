@@ -13,7 +13,7 @@ class OrderStateTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.path = ROOT / "frontend/static/js/state/order.js"
         cls.source = cls.path.read_text(encoding="utf-8")
-        cls.bootstrap = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.bootstrap = (ROOT / "frontend/static/js/views/application.js").read_text(encoding="utf-8")
         cls.view = (ROOT / "frontend/static/js/views/order.js").read_text(encoding="utf-8")
 
     def test_order_collections_and_record_selection_have_explicit_apis(self):

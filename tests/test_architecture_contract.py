@@ -124,6 +124,7 @@ CSS_FAMILY_PATTERN = re.compile(r"[.#][A-Za-z_-][\w-]*")
 FRONTEND_MODULE_PREFIX_NAME = "<module-prefix>"
 FRONTEND_JS_ROOT = ROOT / "frontend" / "static" / "js"
 FRONTEND_LAYER_DEPENDENCIES = {
+    "app.js": frozenset({"views"}),
     "core": frozenset({"core"}),
     "api": frozenset({"api", "core"}),
     "state": frozenset({"state", "core"}),

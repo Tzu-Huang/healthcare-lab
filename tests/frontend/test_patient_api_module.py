@@ -11,7 +11,13 @@ class PatientApiModuleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = (ROOT / "frontend/static/js/api/patient.js").read_text(encoding="utf-8")
-        cls.bootstrap = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.bootstrap = "\n".join(
+            (ROOT / path).read_text(encoding="utf-8")
+            for path in (
+                "frontend/static/js/views/application.js",
+                "frontend/static/js/views/patient.js",
+            )
+        )
 
     def test_patient_adapter_owns_list_create_fhir_retry_and_dcm4chee_refresh(self):
         for operation in (
