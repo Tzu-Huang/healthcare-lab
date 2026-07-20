@@ -23,13 +23,13 @@ their old read path is removed.
 | Owner | Current JavaScript area | View root | Target JavaScript | Target CSS | Template owner |
 |---|---|---|---|---|---|
 | core | DOM, status, request, navigation, formatting, clipboard | application shell | `js/core`, `js/api/client.js`, `js/state` | `css/base.css`, `css/layout.css`, `css/components.css` | `index.html`, `shell/sidebar.html` |
-| dashboard | service/resource/event state and actions | `lab-console-view` | `js/api/dashboard.js`, `js/views/dashboard.js` | `css/views/application.css` under `#lab-console-view` | `views/dashboard.html` |
-| patient | forms, validation, protocol previews and inventory | `patient-view` | `js/api/patient.js`, `js/state/patient.js`, `js/views/patient.js` | shared contracts plus scoped view rules | `views/patient.html` |
-| order | protocol modes, previews, creation and record inventory | `order-view` | `js/api/order.js`, `js/state/order.js`, `js/views/order.js` | `css/views/application.css` under `#order-view` | `views/order.html` |
-| fhir | Medplum inventory, selections, reports, preview and retry | `medplum-view` | `js/api/fhir.js`, `js/views/fhir.js` | `css/views/application.css` under `#medplum-view` | `views/fhir.html` |
-| dcm4chee | profile, selections, MWL actions, results and attempts | `dcm4chee-view` | `js/api/dcm4chee.js`, `js/state/dcm4chee.js`, `js/views/dcm4chee.js` | `css/views/application.css` under `#dcm4chee-view` | `views/dcm4chee.html` |
-| oie | inventory, selection, payloads, send and listener controls | `oie-view` | `js/api/oie.js`, `js/views/oie.js` | `css/views/application.css` under `#oie-view` | `views/oie.html` |
-| gdt | bridge settings/watcher, patients, orders, results and artifacts | `gdt-view` | `js/api/gdt.js`, `js/views/gdt.js` | `css/views/application.css` under `#gdt-view` | `views/gdt.html` |
+| dashboard | service/resource/event state and actions | `lab-console-view` | `js/api/dashboard.js`, `js/views/dashboard.js` | `css/views/dashboard.css` | `views/dashboard.html` |
+| patient | forms, validation, protocol previews and inventory | `patient-view` | `js/api/patient.js`, `js/state/patient.js`, `js/views/patient.js` | `css/views/patient.css` | `views/patient.html` |
+| order | protocol modes, previews, creation and record inventory | `order-view` | `js/api/order.js`, `js/state/order.js`, `js/views/order.js` | `css/views/order.css` | `views/order.html` |
+| fhir | Medplum inventory, selections, reports, preview and retry | `medplum-view` | `js/api/fhir.js`, `js/views/fhir.js` | `css/views/fhir.css` | `views/fhir.html` |
+| dcm4chee | profile, selections, MWL actions, results and attempts | `dcm4chee-view` | `js/api/dcm4chee.js`, `js/state/dcm4chee.js`, `js/views/dcm4chee.js` | `css/views/dcm4chee.css` | `views/dcm4chee.html` |
+| oie | inventory, selection, payloads, send and listener controls | `oie-view` | `js/api/oie.js`, `js/views/oie.js` | `css/views/oie.css` | `views/oie.html` |
+| gdt | bridge settings/watcher, patients, orders, results and artifacts | `gdt-view` | `js/api/gdt.js`, `js/views/gdt.js` | `css/views/gdt.css` | `views/gdt.html` |
 | settings | reserved for ZAC-50; no product behavior in ZAC-63 | `settings-view` | `js/api/settings.js`, `js/views/settings.js` | `css/views/settings.css` | `views/settings.html` |
 
 Shared component ownership is earned by use from at least two feature contracts;
