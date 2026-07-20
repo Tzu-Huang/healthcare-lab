@@ -15,6 +15,7 @@ from typing import Any, Mapping, Protocol
 
 from backend.domain.oie_management import (
     OieErrorCategory,
+    OieChannelDocument,
     OieManagementConfig,
     OieManagementError,
     OieResult,
@@ -216,6 +217,31 @@ class OieManagementClient:
         value = self._json_mapping(self._send("GET", f"/channels/{self._quote(channel_id)}"))
         self._require_fields(value, "channel", {"id": str, "revision": int})
         return self._mapping_value_result("get-channel", value, channel_id)
+
+    def get_channel_complete(self, channel_id: str) -> OieChannelDocument:
+        """Return complete Channel XML through a payload-hiding internal contract."""
+        channel_id = self._identifier(channel_id)
+        value = self._json(self._send("GET", f"/channels/{self._quote(channel_id)}"))
+        if not isinstance(value, Mapping):
+            raise OieManagementError(
+                OieErrorCategory.UNEXPECTED_RESPONSE, "OIE Channel response was not an object."
+            )
+        self._require_fields(value, "channel", {"id": str, "revision": int})
+        payload = next(
+            (value.get(key) for key in ("payload", "xml", "channelXml")
+             if isinstance(value.get(key), str) and value.get(key).strip()),
+            None,
+        )
+        if payload is None:
+            raise OieManagementError(
+                OieErrorCategory.UNEXPECTED_RESPONSE,
+                "OIE Channel response did not contain complete XML.",
+            )
+        return OieChannelDocument(
+            identifier=str(value["id"]), name=str(value.get("name", "")),
+            revision=int(value["revision"]), payload=payload,
+            status=str(value.get("status", "")),
+        )
 
     def channel_status(self, channel_id: str) -> OieResult:
         channel_id = self._identifier(channel_id)

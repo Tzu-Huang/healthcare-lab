@@ -255,6 +255,17 @@ class OieManagementClientTests(unittest.TestCase):
         self.assertEqual(b"<channel><id /></channel>", transport.requests[2]["body"])
         self.assertIn("override=false", transport.requests[3]["url"])
 
+    def test_complete_channel_document_preserves_long_xml_without_repr_leak(self):
+        payload = "<channel>" + ("x" * 2000) + "</channel>"
+        client, _ = client_with(
+            Step(body={"status": "SUCCESS"}),
+            Step(body={"id": "c1", "name": "Managed", "revision": 7, "payload": payload}),
+        )
+        client.login()
+        document = client.get_channel_complete("c1")
+        self.assertEqual(payload, document.payload)
+        self.assertNotIn("x" * 100, repr(document))
+
     def test_malformed_and_unsupported_responses_are_explicit(self):
         malformed_login, malformed_transport = client_with(Step(body=b"not-json"))
         with self.assertRaises(OieManagementError) as raised:

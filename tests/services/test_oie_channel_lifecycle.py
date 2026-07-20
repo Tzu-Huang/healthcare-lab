@@ -30,6 +30,9 @@ class FakeClient:
     def __init__(self, channels=(), fail_delete=False): self.channels, self.calls, self.fail_delete = list(channels), [], fail_delete
     def list_channels(self): return SimpleNamespace(values={"items": tuple(self.channels)})
     def get_channel(self, channel_id): self.calls.append(("get", channel_id)); return SimpleNamespace(values=next(v for v in self.channels if v["id"] == channel_id))
+    def get_channel_complete(self, channel_id):
+        self.calls.append(("get-complete", channel_id)); item = next(v for v in self.channels if v["id"] == channel_id)
+        return SimpleNamespace(identifier=item["id"], name=item["name"], revision=item["revision"], payload=item["payload"], status=item["status"])
     def create_channel(self, payload): self.calls.append(("create", payload)); self.channels.append(value())
     def update_channel(self, channel_id, payload, *, override=False): self.calls.append(("update", channel_id, payload, override)); self.channels[0] = value(revision=8, payload=payload)
     def deploy(self, channel_id): self.calls.append(("deploy", channel_id))
@@ -58,7 +61,8 @@ class LifecycleServiceTests(unittest.TestCase):
     def test_retry_after_uncertain_create_never_creates_duplicate(self):
         client, repository = FakeClient([value()]), FakeRepository(mapped=False); service = self.service(client, repository)
         preview = service.preview("hlab-orm-to-ap", "create")
-        self.assertFalse(preview["permitted"]); self.assertNotIn("previewToken", preview); self.assertEqual([], client.calls)
+        self.assertFalse(preview["permitted"]); self.assertNotIn("previewToken", preview)
+        self.assertFalse(any(call[0] == "create" for call in client.calls))
 
     def test_update_preserves_unowned_fields_and_never_overrides(self):
         drift = compile_orm_to_ap("ap.internal", destination_port=6672); root = ET.fromstring(drift)
@@ -67,6 +71,26 @@ class LifecycleServiceTests(unittest.TestCase):
         result = service.execute("hlab-orm-to-ap", "update", preview["previewToken"])
         update = next(call for call in client.calls if call[0] == "update")
         self.assertFalse(update[3]); self.assertEqual("keep", ET.fromstring(update[2]).findtext("operatorOwned")); self.assertEqual("success", result["outcome"])
+
+    def test_post_preview_revision_race_fails_before_update(self):
+        drift = value(payload=compile_orm_to_ap("ap.internal", destination_port=6672))
+        client, repository = FakeClient([drift]), FakeRepository(); service = self.service(client, repository)
+        preview = service.preview("hlab-orm-to-ap", "update")
+        client.channels[0] = value(revision=8, payload=drift["payload"])
+        with self.assertRaises(LifecycleGuardError):
+            service.execute("hlab-orm-to-ap", "update", preview["previewToken"])
+        self.assertFalse(any(call[0] == "update" for call in client.calls))
+
+    def test_post_preview_identity_race_blocks_deploy_and_delete(self):
+        for operation in ("deploy", "delete"):
+            with self.subTest(operation=operation):
+                client, repository = FakeClient([value()]), FakeRepository(); service = self.service(client, repository)
+                preview = service.preview("hlab-orm-to-ap", operation)
+                root = ET.fromstring(client.channels[0]["payload"]); root.find("description").text = "Operator owned"
+                client.channels[0]["payload"] = ET.tostring(root, encoding="unicode")
+                with self.assertRaises(LifecycleGuardError):
+                    service.execute("hlab-orm-to-ap", operation, preview["previewToken"], confirmation="hlab-orm-to-ap" if operation == "delete" else "")
+                self.assertFalse(any(call[0] in {"deploy", "undeploy", "delete"} for call in client.calls))
 
     def test_stale_preview_and_target_substitution_fail_before_mutation(self):
         client = FakeClient(); service = self.service(client, FakeRepository(mapped=False)); preview = service.preview("hlab-orm-to-ap", "create")
@@ -77,19 +101,19 @@ class LifecycleServiceTests(unittest.TestCase):
         client, repository = FakeClient([value()]), FakeRepository(); service = self.service(client, repository); preview = service.preview("hlab-orm-to-ap", "delete")
         with self.assertRaises(LifecycleGuardError): service.execute("hlab-orm-to-ap", "delete", preview["previewToken"], confirmation="yes")
         result = service.execute("hlab-orm-to-ap", "delete", preview["previewToken"], confirmation="hlab-orm-to-ap")
-        self.assertEqual(["undeploy", "delete"], [call[0] for call in client.calls]); self.assertEqual("success", result["outcome"])
+        self.assertEqual(["undeploy", "delete"], [call[0] for call in client.calls if call[0] in {"undeploy", "delete"}]); self.assertEqual("success", result["outcome"])
 
     def test_deploy_is_single_target_and_audited(self):
         client, repository = FakeClient([value(status="STOPPED")]), FakeRepository(); service = self.service(client, repository); preview = service.preview("hlab-orm-to-ap", "deploy")
         service.execute("hlab-orm-to-ap", "deploy", preview["previewToken"])
-        self.assertEqual([("deploy", "c1"), ("status", "c1")], client.calls); self.assertEqual("deploy", repository.audits[0]["operation"])
+        self.assertEqual([("deploy", "c1"), ("status", "c1")], [call for call in client.calls if call[0] in {"deploy", "status"}]); self.assertEqual("deploy", repository.audits[0]["operation"])
 
     def test_delete_reports_partial_failure_and_retry_refreshes(self):
         client, repository = FakeClient([value()], fail_delete=True), FakeRepository(); service = self.service(client, repository)
         preview = service.preview("hlab-orm-to-ap", "delete")
         result = service.execute("hlab-orm-to-ap", "delete", preview["previewToken"], confirmation="hlab-orm-to-ap")
         self.assertEqual("partial-failure", result["outcome"]); self.assertTrue(result["requiresRefresh"])
-        self.assertEqual(["undeploy", "delete"], [call[0] for call in client.calls])
+        self.assertEqual(["undeploy", "delete"], [call[0] for call in client.calls if call[0] in {"undeploy", "delete"}])
 
     def test_force_bulk_and_redeploy_are_not_operations(self):
         service = self.service(FakeClient(), FakeRepository(mapped=False))
