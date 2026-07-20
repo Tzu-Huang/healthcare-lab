@@ -62,6 +62,8 @@ class OrderViewModuleTests(unittest.TestCase):
             self.assertIn(f"export function {owner}", self.source)
             self.assertNotIn(f"function {owner}", self.bootstrap)
         self.assertIn("initializeOrderView({", self.bootstrap)
+        self.assertIn("let initialized = false", self.source)
+        self.assertIn("if (initialized) return", self.source)
 
     def test_order_view_owns_record_table(self):
         for owner in (

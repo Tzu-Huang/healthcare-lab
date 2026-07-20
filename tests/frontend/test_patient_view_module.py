@@ -60,6 +60,8 @@ class PatientViewModuleTests(unittest.TestCase):
         ):
             self.assertIn(control, self.source)
         self.assertIn("initializePatientView({", self.bootstrap)
+        self.assertIn("let initialized = false", self.source)
+        self.assertIn("if (initialized) return", self.source)
 
     def test_patient_view_owns_async_coordination(self):
         for owner in (

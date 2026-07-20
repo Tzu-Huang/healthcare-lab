@@ -24,6 +24,23 @@ export function activateView(viewId) {
       detail: { viewId, error },
     }));
   });
+  document.dispatchEvent(new CustomEvent("healthcare-lab:view-activated", {
+    detail: { viewId },
+  }));
+}
+
+export function initializeView(viewId, initialize) {
+  try {
+    initialize();
+    return true;
+  } catch (error) {
+    const view = byId(viewId);
+    if (view) view.dataset.initializationError = error?.message || "View initialization failed";
+    document.dispatchEvent(new CustomEvent("healthcare-lab:view-error", {
+      detail: { viewId, phase: "initialization", error },
+    }));
+    return false;
+  }
 }
 
 export function initializeNavigation() {

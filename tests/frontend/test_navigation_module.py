@@ -25,6 +25,11 @@ class NavigationModuleTests(unittest.TestCase):
         self.assertIn("healthcare-lab:view-error", self.source)
         self.assertIn("initializationError", self.source)
 
+    def test_feature_initialization_failure_has_an_isolated_diagnostic_boundary(self):
+        self.assertIn("export function initializeView(viewId, initialize)", self.source)
+        self.assertIn('phase: "initialization"', self.source)
+        self.assertIn("return false", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
