@@ -1,15 +1,15 @@
 ## 1. Baseline and ownership inventory
 
-- [ ] 1.1 Pin the current mainline commit and capture the complete unittest test-ID and collection baseline.
-- [ ] 1.2 Reconcile the existing ZAC-63 records of 478 and 484 tests and document the authoritative baseline and counting command.
-- [ ] 1.3 Enumerate all 125 `tests/integration/test_app.py` tests and 27 `tests/repositories/test_lab_store.py` tests by feature and responsibility.
-- [ ] 1.4 Create the assertion-ownership matrix mapping each old test or assertion family to its new focused owner and verification command.
+- [x] 1.1 Pin the current mainline commit and capture the complete unittest test-ID and collection baseline.
+- [x] 1.2 Reconcile the existing ZAC-63 records of 478 and 484 tests and document the authoritative baseline and counting command.
+- [x] 1.3 Enumerate all 125 `tests/integration/test_app.py` tests and 27 `tests/repositories/test_lab_store.py` tests by feature and responsibility.
+- [x] 1.4 Create the assertion-ownership matrix mapping each old test or assertion family to its new focused owner and verification command.
 
 ## 2. Shared test support
 
-- [ ] 2.1 Add unittest-compatible disposable database, Flask app/client, and deterministic payload factories under a focused test-support package.
-- [ ] 2.2 Centralize reusable HTTP, database, protocol, runtime, and external-service fakes without moving behavior assertions into helpers.
-- [ ] 2.3 Add focused support-contract coverage or characterization where a shared fake replaces duplicated setup behavior.
+- [x] 2.1 Add unittest-compatible disposable database, Flask app/client, and deterministic payload factories under a focused test-support package.
+- [x] 2.2 Centralize reusable HTTP, database, protocol, runtime, and external-service fakes without moving behavior assertions into helpers.
+- [x] 2.3 Add focused support-contract coverage or characterization where a shared fake replaces duplicated setup behavior.
 
 ## 3. Integration test split
 

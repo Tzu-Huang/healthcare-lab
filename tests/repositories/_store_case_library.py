@@ -1,4 +1,3 @@
-import tempfile
 import unittest
 import json
 from pathlib import Path
@@ -13,6 +12,7 @@ from backend.lab_store import (
     SimulatorValidationError,
     render_gdt_message,
 )
+from tests.support import DisposableStoreCase
 
 
 def parse_gdt_records(payload):
@@ -32,13 +32,7 @@ def parse_gdt_records(payload):
     return records
 
 
-class HealthcareLabStoreTests(unittest.TestCase):
-    def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.store = DemoStore(Path(self.directory.name) / "lab.db")
-
-    def tearDown(self):
-        self.directory.cleanup()
+class HealthcareLabStoreTests(DisposableStoreCase):
 
     @staticmethod
     def patient_payload(**overrides):
@@ -1002,6 +996,19 @@ class HealthcareLabStoreTests(unittest.TestCase):
         self.assertNotIn('id="gdt-ap-view"', template)
         self.assertNotIn("GDT AP Simulator", template)
         self.assertNotIn('id="ap-gdt-order-list"', template)
+
+# This file remains an auditable case library while focused repository owner
+# modules register selected methods. Discovery must not collect this broad
+# class directly.
+for _method_name in tuple(
+    name for name in vars(HealthcareLabStoreTests) if name.startswith("test_")
+):
+    setattr(
+        HealthcareLabStoreTests,
+        "_case_" + _method_name[5:],
+        getattr(HealthcareLabStoreTests, _method_name),
+    )
+    delattr(HealthcareLabStoreTests, _method_name)
 
 
 if __name__ == "__main__":
