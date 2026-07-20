@@ -14,6 +14,7 @@ class Dcm4cheeStateTests(unittest.TestCase):
         cls.path = ROOT / "frontend/static/js/state/dcm4chee.js"
         cls.source = cls.path.read_text(encoding="utf-8")
         cls.bootstrap = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.view = (ROOT / "frontend/static/js/views/dcm4chee.js").read_text(encoding="utf-8")
 
     def test_diagnostics_and_expansion_have_feature_state_apis(self):
         for operation in (
@@ -23,7 +24,7 @@ class Dcm4cheeStateTests(unittest.TestCase):
             "toggleDcm4cheePatientExpanded",
         ):
             self.assertIn(f"export function {operation}", self.source)
-            self.assertIn(operation, self.bootstrap)
+            self.assertIn(operation, self.view)
         self.assertNotIn("let dcm4cheeProfileDiagnostics", self.bootstrap)
         self.assertNotIn("let expandedDcm4cheePatientIds", self.bootstrap)
 
