@@ -1,0 +1,38 @@
+:root {
+  color-scheme: light;
+  --ink: #172528;
+  --muted: #647174;
+  --paper: #f5f1e8;
+  --card: #fffdf8;
+  --line: #d8d4cb;
+  --accent: #0f6b63;
+  --accent-dark: #0a4c47;
+  --console-ink: #18211f;
+  --console-panel: #f7fbf8;
+  --console-rail: #23312e;
+  --steel: #263238;
+  --blue: #315c87;
+  --error: #a2382d;
+  --pending: #9a6a16;
+  --code: #112729;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  min-width: 0;
+  background:
+    linear-gradient(90deg, rgb(35 49 46 / 4%) 1px, transparent 1px),
+    linear-gradient(0deg, rgb(35 49 46 / 4%) 1px, transparent 1px),
+    var(--paper);
+  background-size: 28px 28px;
+  color: var(--ink);
+  font-family: "Segoe UI", Arial, sans-serif;
+}

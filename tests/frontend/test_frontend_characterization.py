@@ -8,7 +8,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "frontend" / "static" / "js" / "views" / "application.js"
 BOOTSTRAP = ROOT / "frontend" / "static" / "js" / "app.js"
-STYLES = ROOT / "frontend" / "static" / "styles.css"
+STYLE_LOADER = ROOT / "frontend" / "static" / "styles.css"
+STYLE_OWNERS = (
+    ROOT / "frontend" / "static" / "css" / "base.css",
+    ROOT / "frontend" / "static" / "css" / "layout.css",
+    ROOT / "frontend" / "static" / "css" / "components.css",
+    ROOT / "frontend" / "static" / "css" / "views" / "application.css",
+)
 TEMPLATE = ROOT / "frontend" / "templates" / "index.html"
 
 FEATURES = {
@@ -27,7 +33,8 @@ class FrontendCharacterizationTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.script = SCRIPT.read_text(encoding="utf-8")
         cls.bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
-        cls.styles = STYLES.read_text(encoding="utf-8")
+        cls.style_loader = STYLE_LOADER.read_text(encoding="utf-8")
+        cls.styles = "\n".join(path.read_text(encoding="utf-8") for path in STYLE_OWNERS)
         cls.template = TEMPLATE.read_text(encoding="utf-8")
 
     def test_every_current_feature_has_navigation_and_a_view_root(self):
@@ -77,6 +84,18 @@ class FrontendCharacterizationTests(unittest.TestCase):
         for selector in (".app-shell", ".app-sidebar", ".patient-grid"):
             with self.subTest(selector=selector):
                 self.assertIn(selector, self.styles)
+
+    def test_global_stylesheet_is_an_ordered_thin_loader(self):
+        self.assertEqual(
+            [
+                '@import url("./css/base.css");',
+                '@import url("./css/layout.css");',
+                '@import url("./css/components.css");',
+                '@import url("./css/views/application.css");',
+                '@import url("./css/views/settings.css");',
+            ],
+            self.style_loader.splitlines(),
+        )
 
 
 if __name__ == "__main__":
