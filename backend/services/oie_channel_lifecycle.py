@@ -69,6 +69,7 @@ class OieManagedChannelLifecycleService:
             if action is LifecycleOperation.CREATE: return self._create(kind, snapshot, operation_id, steps)
             if action is LifecycleOperation.UPDATE: return self._update(kind, snapshot, operation_id, steps)
             if action in {LifecycleOperation.DEPLOY, LifecycleOperation.UNDEPLOY}:
+                self._guard_current(snapshot, kind)
                 getattr(self.client, action.value)(snapshot.channel_id); steps.append({"name": action.value, "status": "succeeded"})
                 self.client.channel_status(snapshot.channel_id); steps.append({"name": "status-readback", "status": "succeeded"})
                 self._audit(self._event(operation_id, action, kind, snapshot, "success"))
@@ -89,13 +90,14 @@ class OieManagedChannelLifecycleService:
         steps.append({"name": "persist", "status": "succeeded"}); return self._success(kind, LifecycleOperation.CREATE, operation_id, steps)
 
     def _update(self, kind, before, operation_id, steps):
-        current = self._live(self.client.get_channel(before.channel_id).values)
+        current = self._guard_current(before, kind)
         self.client.update_channel(before.channel_id, merge_owned_xml(current.payload, self._payload(kind)), override=False)
         steps.append({"name": "update", "status": "succeeded"}); refreshed = self._live(self.client.get_channel(before.channel_id).values)
         self.repository.compare_and_update_managed_channel_mapping(logical_type=kind.value, expected_channel_id=before.channel_id or "", expected_revision=str(before.revision or ""), channel_id=refreshed.channel_id, channel_name=refreshed.name, template_version="1", revision=str(refreshed.revision or ""), audit_event=self._event(operation_id, LifecycleOperation.UPDATE, kind, refreshed, "success", before=before))
         steps.extend(({"name": "readback", "status": "succeeded"}, {"name": "persist", "status": "succeeded"})); return self._success(kind, LifecycleOperation.UPDATE, operation_id, steps)
 
     def _delete(self, kind, before, operation_id, steps):
+        self._guard_current(before, kind)
         if before.status.upper() not in {"", "STOPPED", "UNDEPLOYED"}:
             self.client.undeploy(before.channel_id); steps.append({"name": "undeploy", "status": "succeeded"})
         self.client.delete_channel(before.channel_id); steps.append({"name": "delete", "status": "succeeded"})
@@ -106,7 +108,7 @@ class OieManagedChannelLifecycleService:
         if not getattr(self.client, "_authenticated", True):
             self.client.login()
         items = self.client.list_channels().values.get("items", ())
-        live = [self._live(item) for item in items]
+        live = [self._complete(str(item["id"])) for item in items]
         allowed = {kind.value for kind in ManagedChannelType}; mappings = []
         for item in self.repository.get()["managedChannels"]:
             if item["logicalType"] in allowed:
@@ -126,6 +128,22 @@ class OieManagedChannelLifecycleService:
         payload = value.get("payload") or value.get("xml") or value.get("channelXml")
         if not isinstance(payload, str): raise LifecycleGuardError("unexpected-response", "OIE Channel payload was not complete XML.")
         return LiveChannel(str(value["id"]), str(value.get("name", "")), int(value["revision"]), payload, str(value.get("status", "")))
+    def _complete(self, channel_id):
+        if hasattr(self.client, "get_channel_complete"):
+            item = self.client.get_channel_complete(channel_id)
+            return LiveChannel(item.identifier, item.name, item.revision, item.payload, item.status)
+        return self._live(self.client.get_channel(channel_id).values)
+    def _guard_current(self, expected, kind):
+        current = self._complete(expected.channel_id)
+        try:
+            state = normalized_state_from_payload(current.payload)
+        except (ValueError, TypeError, ET.ParseError) as exc:
+            raise LifecycleGuardError("stale-preview", "Managed Channel identity is no longer valid.", fresh=True) from exc
+        desired = normalized_state(orm_to_ap_config(self.ap_host) if kind is ManagedChannelType.ORM_TO_AP else oru_to_hlab_config())
+        if (current.channel_id != expected.channel_id or current.revision != expected.revision
+                or state["logical_type"] != kind.value or state["marker"] != desired["marker"]):
+            raise LifecycleGuardError("stale-preview", "Managed Channel identity or revision changed after preview.", fresh=True)
+        return current
     def _payload(self, kind): return compile_orm_to_ap(self.ap_host) if kind is ManagedChannelType.ORM_TO_AP else compile_oru_to_hlab()
     @staticmethod
     def _types(logical_type, operation):
