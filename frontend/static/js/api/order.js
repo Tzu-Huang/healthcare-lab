@@ -35,7 +35,3 @@ export function simulateDcm4cheeApReturn(orderId, type) {
     body: JSON.stringify({ type }),
   });
 }
-
-export function fetchDcm4cheeAttempts(orderId) {
-  return requestJson(`/api/orders/${orderId}/dcm4chee-attempts`);
-}
