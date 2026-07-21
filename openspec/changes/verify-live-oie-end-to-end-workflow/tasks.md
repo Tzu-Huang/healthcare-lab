@@ -16,7 +16,7 @@
 
 - [x] 3.1 Start the documented clean OIE and HLAB environment and record OIE 4.5.2, container/runtime, listener auto-start, and port-preflight evidence.
 - [x] 3.2 Connect Settings with the local-lab profile, preview, create, and deploy `HLAB_ORM_TO_AP` and `HLAB_ORU_TO_HLAB`, recording exact route and started-state evidence.
-- [ ] 3.3 Create and send a uniquely correlated HLAB ORM through OIE `6600`, then record exactly one AP `6671` receipt, ACK, and successful OIE/HLAB transmission status.
+- [x] 3.3 Create and send a uniquely correlated HLAB ORM through OIE `6600`, then record exactly one AP `6671` receipt, ACK, and successful OIE/HLAB transmission status.
 
 ## 4. ORU Matching and Lifecycle Isolation
 

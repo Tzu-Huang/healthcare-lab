@@ -294,7 +294,7 @@ after restart was running on `0.0.0.0:6665` with MLLP framing enabled.
 | CH-02 | PASS | ORM Channel recreated as `e779f4c2-c6d7-4284-a664-116a37fa8d36`, revision 2, `STARTED`, route `OIE:6600 -> 192.168.65.254:6671`. |
 | CH-03 | PASS | ORU Channel `5e7bef8d-19c1-4214-8f34-f02eed8cef26`, revision 1, `STARTED`, route `OIE:6661 -> lab-app:6665`. |
 | ORM-01..02 | PASS | Synthetic patient 79 / order 51 / `ORM20260721052758000051`; HLAB ACK `AA`; OIE statistics received 1, sent 1, error 0, queued 0. |
-| ORM-03 | BLOCKED | OIE proves one successful destination transaction, but QHeart-AP exposes no stable receipt query and no witnessed UI capture was collected. Do not infer exact AP inventory from upstream ACK/status. |
+| ORM-03 | PASS | On 2026-07-21 (Asia/Taipei), the operator manually witnessed the complete QHeart-AP flow and confirmed exactly one correlated ORM receipt; this complements OIE's received 1 / sent 1 / error 0 evidence. Operator attestation was provided in the ZAC-52 implementation session; no AP API or screenshot artifact was claimed. |
 | ORU-01..02 | PASS | `ZAC52-MATCH-001` received `AA`, persisted once as result 15 with raw payload, patient 79 and order 51 (`order-matched`). |
 | ORU-03..04 | PASS | `ZAC52-UNMATCH-001` received `AA`, persisted once as result 16 (`unmatched-patient`, no patient/order IDs); matched result 15 remained associated. |
 | LIFE-01 | PASS | Managed ORM destination preview/read-back changed `host.docker.internal:6671` to `192.168.65.254:6671`; live revision advanced to 2. |
@@ -305,9 +305,9 @@ after restart was running on `0.0.0.0:6665` with MLLP framing enabled.
 | OPS-01 | PASS | Management status/statistics and listener read-back exercised; API projections were bounded and queue visibility was immediate. |
 | OPS-02 | PASS | Focused 51 tests and full 580-test regression suite passed; compileall, strict OpenSpec validation, diff check, and bounded evidence review passed. |
 
-Overall gate: **BLOCKED**. Open blocker: obtain direct, correlation-specific
-QHeart-AP receipt evidence for `ORM20260721052758000051` (or repeat with a new
-ORM `MSH-10`) before marking task 3.3 or the ZAC-52 gate passed.
+Overall gate: **PASS**. On 2026-07-21 (Asia/Taipei), the operator confirmed the
+complete manual workflow, including the QHeart-AP receipt observation that had
+been the only open blocker. All ZAC-52 tasks and ledger rows are resolved.
 
 ## Repeatable non-destructive smoke check
 
