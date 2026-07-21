@@ -44,14 +44,14 @@ class OrderRepository:
                     local_order_number, patient_record_id, protocol_version, message_type, order_status,
                     mrn, first_name, last_name, middle_name, dob, sex, visit_id, patient_class,
                     assigned_location, account_number, placer_order_number, filler_order_number,
-                    priority, requested_at, ordering_provider, clinical_indication, order_code,
+                    priority, requested_at, scheduled_at, ordering_provider, clinical_indication, order_code,
                     order_code_text, alternate_code, alternate_code_text, alternate_code_system,
                     validation_status, validation_messages_json, payload_hl7, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 ("", values["patient_record_id"], "2.5.1", "ORM^O01", "Ready to send", patient["mrn"],
                  patient["first_name"], patient["last_name"], patient["middle_name"], patient["dob"], patient["sex"],
                  patient["visit_number"], patient["patient_class"], patient["assigned_location"], patient["account_number"],
-                 "", "", values["priority"], values["requested_at"], values["ordering_provider"], values["clinical_indication"],
+                 "", "", values["priority"], values["requested_at"], values["scheduled_at"], values["ordering_provider"], values["clinical_indication"],
                  values["order_code"], values["order_code_text"], values["alternate_code"], values["alternate_code_text"],
                  values["alternate_code_system"], "valid", "[]", "", timestamp, timestamp),
             )

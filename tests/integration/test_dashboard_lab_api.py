@@ -13,8 +13,23 @@ class DashboardLabApiTests(ApiCaseSupport):
             [item["id"] for item in body["items"]],
             ["hl7-v2-oie", "fhir-medplum", "dicom-dcm4chee"],
         )
-        self.assertEqual(body["summary"]["total"], 3)
+        self.assertEqual(body["summary"]["total"], 7)
         by_id = {item["id"]: item for item in body["items"]}
+        self.assertEqual(
+            by_id["hl7-v2-oie"]["ports"],
+            [{"label": "localhost:18080", "url": "http://localhost:18080"}],
+        )
+        self.assertEqual(
+            by_id["fhir-medplum"]["ports"],
+            [{"label": "localhost:3000", "url": "http://localhost:3000"}],
+        )
+        self.assertEqual(
+            by_id["dicom-dcm4chee"]["ports"],
+            [{
+                "label": "8082:8080",
+                "url": "http://localhost:8082/dcm4chee-arc/ui2/en/study/patient",
+            }],
+        )
         self.assertEqual(by_id["hl7-v2-oie"]["children"], [])
         self.assertEqual(
             [child["name"] for child in by_id["fhir-medplum"]["children"]],

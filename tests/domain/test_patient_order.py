@@ -14,8 +14,9 @@ class PatientOrderDomainTests(unittest.TestCase):
             validate_patient({"lastName": "Morgan", "dob": "19850412", "sex": "F"})
 
     def test_order_validation_normalizes_and_formats_identifiers(self):
-        values = validate_order({"patientRecordId": "9", "priority": "s", "requestedAt": "2026-07-15 10:30"}, timestamp_factory=lambda: "unused")
+        values = validate_order({"patientRecordId": "9", "priority": "s", "requestedAt": "2026-07-15 10:30", "scheduledAt": "2026-07-15 11:00"}, timestamp_factory=lambda: "unused")
         self.assertEqual((values["patient_record_id"], values["priority"], values["requested_at"]), (9, "S", "202607151030"))
+        self.assertEqual(values["scheduled_at"], "202607151100")
         self.assertEqual(order_number(7), "ORD-000007")
         self.assertEqual(account_number(7), "ACC-ORD-000007")
 

@@ -17,10 +17,15 @@ def build_orm(values: dict[str, Any], *, record_id: int, timestamp: str) -> str:
     name = "^".join(hl7_escape(part) for part in (values["last_name"], values["first_name"], values["middle_name"])).rstrip("^")
     service = "^".join(hl7_escape(part) for part in (values["order_code"], values["order_code_text"], "L", values["alternate_code"], values["alternate_code_text"], values["alternate_code_system"]))
     control_id = f"ORM{timestamp}{record_id:06d}"
+    scheduled_at = hl7_escape(values.get("scheduled_at") or values["requested_at"])
+    obr = ("OBR|1|" + f"{hl7_escape(number)}|{hl7_escape(values['filler_order_number'])}|{service}|{hl7_escape(values['priority'])}|{hl7_escape(values['requested_at'])}||||||||{hl7_escape(values['clinical_indication'])}|||{hl7_escape_composite(values['ordering_provider'])}").split("|")
+    obr.extend([""] * (37 - len(obr)))
+    obr[36] = scheduled_at
     return "\r".join([
         f"MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|{timestamp}||ORM^O01^ORM_O01|{control_id}|P|{HL7_MSH_SUFFIX}",
         "PID|1||" + f"{hl7_escape(values['mrn'])}^^^HEALTHCARE_LAB^MR||{name}||{hl7_escape(values['dob'])}|{hl7_escape(values['sex'])}|||||||||||{hl7_escape(account)}",
         "PV1|1|" + f"{hl7_escape(values['patient_class'])}|{hl7_escape_composite(values['assigned_location'])}||||{hl7_escape_composite(values['ordering_provider'])}||||||||||||{hl7_escape(visit)}",
         "ORC|NW|" + f"{hl7_escape(number)}||{hl7_escape(values['filler_order_number'])}|||^^^{hl7_escape(values['requested_at'])}^{hl7_escape(values['priority'])}||{timestamp}|||{hl7_escape_composite(values['ordering_provider'])}",
-        "OBR|1|" + f"{hl7_escape(number)}|{hl7_escape(values['filler_order_number'])}|{service}|{hl7_escape(values['priority'])}|{hl7_escape(values['requested_at'])}||||||||{hl7_escape(values['clinical_indication'])}|||{hl7_escape_composite(values['ordering_provider'])}",
+        f"TQ1|1||||||{scheduled_at}",
+        "|".join(obr),
     ])

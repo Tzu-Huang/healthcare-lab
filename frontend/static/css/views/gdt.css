@@ -62,36 +62,24 @@ display: grid;
 }
 
 #gdt-view .gdt-bridge-config-grid {
-grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) auto;
-  align-items: end;
+grid-template-columns: repeat(2, minmax(260px, 1fr));
+  align-items: stretch;
 }
 
-#gdt-view .gdt-bridge-config-grid .button-row {
-margin: 0;
-  align-self: end;
-  white-space: nowrap;
-}
-
-#gdt-bridge-config-summary p {
-overflow-wrap: anywhere;
-}
-
-#gdt-view .gdt-watcher-bar {
-display: flex;
-  align-items: center;
-  justify-content: space-between;
+#gdt-view .gdt-folder-card {
+display: grid;
   gap: 12px;
-  border-top: 1px solid #e2e8f0;
-  padding-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
 }
 
-#gdt-view .gdt-watcher-bar .button-row {
+#gdt-view .gdt-folder-card h3 {
 margin: 0;
-  white-space: nowrap;
 }
 
-#gdt-watcher-summary p {
-overflow-wrap: anywhere;
+#gdt-view .gdt-bridge-actions {
+margin: 0;
 }
 
 #gdt-view .gdt-patient-table th:first-child,

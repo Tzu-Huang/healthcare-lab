@@ -7,7 +7,7 @@ import { setStatus } from "../components/status.js";
 import { createOrder, fetchGdtOrders, fetchOrders, simulateDcm4cheeApReturn as simulateDcm4cheeApReturnRequest, syncDcm4cheeOrder, verifyDcm4cheeMwl } from "../api/order.js";
 
 export const ORDER_MODE_CONFIG = {
-  "hl7-v251": { title: "HL7 v2.5.1 ORM O01", payloadTitle: "MSH, PID, PV1, ORC, OBR", emptyPreview: "Select a local patient to preview an HL7 v2.5.1 ORM O01 payload.", createLabel: "Create Order" },
+  "hl7-v251": { title: "HL7 v2.5.1 ORM O01", payloadTitle: "MSH, PID, PV1, ORC, TQ1, OBR", emptyPreview: "Select a local patient to preview an HL7 v2.5.1 ORM O01 payload.", createLabel: "Create Order" },
   fhir: { title: "FHIR R4 ServiceRequest", payloadTitle: "ServiceRequest resource JSON", emptyPreview: "Select a synced FHIR Patient to preview a ServiceRequest resource.", createLabel: "Create FHIR Order" },
   gdt: { title: "GDT ECG Order", payloadTitle: "GDT-OUT with 8402=EKG01", emptyPreview: "Select or create a local patient to preview a GDT ECG order payload.", createLabel: "Create GDT Order" },
   dicom: { title: "DICOM MWL Order", payloadTitle: "DICOM JSON MWL item", emptyPreview: "Select a local patient to preview a DICOM MWL payload.", createLabel: "Create DICOM MWL Order" },
@@ -128,7 +128,7 @@ export function orderFormPayload() {
     const fhir = fhirOrderPayload();
     return { mode, patientRecordId, priority: fhir.priority, requestedAt: fhir.occurrenceDateTime, orderingProvider: fhir.requester, clinicalIndication: fhir.reasonCodeText, orderCode: fhir.codeCode, orderCodeText: fhir.codeDisplay, alternateCode: orderDemoPreset.alternateCode, alternateCodeText: orderDemoPreset.alternateCodeText, alternateCodeSystem: orderDemoPreset.alternateCodeSystem, fhir };
   }
-  return { mode, patientRecordId, priority: byId("order-priority").value, requestedAt: byId("order-requested-at").value.trim(), orderingProvider: byId("order-provider").value.trim(), clinicalIndication: byId("order-indication").value.trim(), orderCode: byId("order-code").value.trim(), orderCodeText: orderDemoPreset.orderCodeText, alternateCode: byId("order-alternate-code").value.trim(), alternateCodeText: orderDemoPreset.alternateCodeText, alternateCodeSystem: orderDemoPreset.alternateCodeSystem };
+  return { mode, patientRecordId, priority: byId("order-priority").value, requestedAt: byId("order-requested-at").value.trim(), scheduledAt: byId("order-scheduled-at").value.trim(), orderingProvider: byId("order-provider").value.trim(), clinicalIndication: byId("order-indication").value.trim(), orderCode: byId("order-code").value.trim(), orderCodeText: orderDemoPreset.orderCodeText, alternateCode: byId("order-alternate-code").value.trim(), alternateCodeText: orderDemoPreset.alternateCodeText, alternateCodeSystem: orderDemoPreset.alternateCodeSystem };
 }
 
 export function setFhirOrderForm(payload) {
@@ -147,6 +147,7 @@ export function setOrderForm(payload) {
   byId("order-code").value = payload.orderCode || orderDemoPreset.orderCode;
   byId("order-alternate-code").value = payload.alternateCode || orderDemoPreset.alternateCode;
   if (!byId("order-requested-at").value.trim()) byId("order-requested-at").value = hl7Timestamp();
+  if (!byId("order-scheduled-at").value.trim()) byId("order-scheduled-at").value = byId("order-requested-at").value;
 }
 
 export function validateOrderPayload(payload) {
@@ -165,6 +166,7 @@ export function validateOrderPayload(payload) {
     if (!payload.alternateCode) messages.push("Alternate code is required.");
   }
   if (payload.mode !== "fhir" && payload.requestedAt && !/^\d{8}(\d{4})?(\d{2})?$/.test(payload.requestedAt)) messages.push("Requested time must be YYYYMMDD, YYYYMMDDHHMM, or YYYYMMDDHHMMSS.");
+  if (payload.mode === "hl7-v251" && payload.scheduledAt && !/^\d{8}(\d{4})?(\d{2})?$/.test(payload.scheduledAt)) messages.push("Scheduled time must be YYYYMMDD, YYYYMMDDHHMM, or YYYYMMDDHHMMSS.");
   return messages;
 }
 
@@ -298,7 +300,7 @@ export function buildFhirOrderPreviewPayload(payload) {
     identifier: [
       {
         system: fhir.identifierSystem || "https://healthcare-lab.local/fhir/identifier/service-request",
-        value: fhir.identifierValue || "local-order-records-generated",
+        value: fhir.identifierValue || "ORD-(generated on create)",
       },
     ],
     code: fhirConcept(
@@ -380,6 +382,7 @@ export function buildOrderPreviewPayload(payload, patient) {
   }
   const timestamp = hl7Timestamp();
   const requestedAt = payload.requestedAt || timestamp;
+  const scheduledAt = payload.scheduledAt || requestedAt;
   const orderNumber = "ORD-GENERATED";
   const patientData = patient?.patient || {};
   const summary = patient?.summary || {};
@@ -396,12 +399,16 @@ export function buildOrderPreviewPayload(payload, patient) {
     orderDemoPreset.alternateCodeText,
     orderDemoPreset.alternateCodeSystem,
   ].map(hl7Escape).join("^");
+  const obr = `OBR|1|${orderNumber}||${serviceId}|${hl7Escape(payload.priority)}|${hl7Escape(requestedAt)}||||||||${hl7Escape(payload.clinicalIndication)}|||${hl7EscapeComposite(payload.orderingProvider)}`.split("|");
+  while (obr.length < 37) obr.push("");
+  obr[36] = hl7Escape(scheduledAt);
   return [
     `MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|${timestamp}||ORM^O01^ORM_O01|ORMPREVIEW${timestamp}|P|2.5.1||||||UNICODE UTF-8`,
     `PID|1||${hl7Escape(summary.mrn)}^^^HEALTHCARE_LAB^MR||${patientName}||${hl7Escape(summary.dob)}|${hl7Escape(summary.sex)}|||||||||||${hl7Escape(orderAccountNumber(patient))}`,
     `PV1|1|${hl7Escape(patient?.patientClass || "O")}|${hl7EscapeComposite(patient?.assignedLocation || "")}||||${hl7EscapeComposite(payload.orderingProvider)}||||||||||||${hl7Escape(orderVisitId(patient))}`,
     `ORC|NW|${orderNumber}|||||^^^${hl7Escape(requestedAt)}^${hl7Escape(payload.priority)}||${timestamp}|||${hl7EscapeComposite(payload.orderingProvider)}`,
-    `OBR|1|${orderNumber}||${serviceId}|${hl7Escape(payload.priority)}|${hl7Escape(requestedAt)}||||||||${hl7Escape(payload.clinicalIndication)}|||${hl7EscapeComposite(payload.orderingProvider)}`,
+    `TQ1|1||||||${hl7Escape(scheduledAt)}`,
+    obr.join("|"),
   ].join("\r");
 }
 

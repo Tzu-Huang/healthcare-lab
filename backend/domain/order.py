@@ -32,13 +32,13 @@ def normalize_priority(value: Any) -> str:
     return normalized
 
 
-def normalize_requested_at(value: Any, *, default_factory: Callable[[], str]) -> str:
+def normalize_requested_at(value: Any, *, default_factory: Callable[[], str], field_label: str = "requested") -> str:
     raw = str(value or "").strip()
     if not raw:
         return default_factory()
     digits = "".join(character for character in raw if character.isdigit())
     if len(digits) not in {8, 12, 14}:
-        raise SimulatorValidationError("Order requested time must be YYYYMMDD, YYYYMMDDHHMM, or YYYYMMDDHHMMSS.")
+        raise SimulatorValidationError(f"Order {field_label} time must be YYYYMMDD, YYYYMMDDHHMM, or YYYYMMDDHHMMSS.")
     try:
         datetime.strptime(digits[:8], "%Y%m%d")
         if len(digits) >= 12:
@@ -46,7 +46,7 @@ def normalize_requested_at(value: Any, *, default_factory: Callable[[], str]) ->
         if len(digits) == 14:
             datetime.strptime(digits, "%Y%m%d%H%M%S")
     except ValueError as exc:
-        raise SimulatorValidationError("Order requested time is not a valid HL7 timestamp.") from exc
+        raise SimulatorValidationError(f"Order {field_label} time is not a valid HL7 timestamp.") from exc
     return digits
 
 
@@ -68,6 +68,11 @@ def validate_payload(
         "priority": normalize_priority(payload.get("priority")),
         "requested_at": normalize_requested_at(
             payload.get("requestedAt"), default_factory=timestamp_factory or _current_hl7_timestamp
+        ),
+        "scheduled_at": normalize_requested_at(
+            payload.get("scheduledAt") or payload.get("requestedAt"),
+            default_factory=timestamp_factory or _current_hl7_timestamp,
+            field_label="scheduled",
         ),
         "ordering_provider": clean_text(payload.get("orderingProvider", DEFAULT_PROVIDER), "orderingProvider") or DEFAULT_PROVIDER,
         "clinical_indication": clean_text(payload.get("clinicalIndication"), "clinicalIndication"),

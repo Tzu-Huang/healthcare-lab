@@ -21,7 +21,7 @@
             <div class="form-grid">
               <label>Mode
                 <select id="order-protocol">
-                  <option value="hl7-v251">HL7 v2.5.1</option>
+                  <option value="hl7-v251">HL7 v2</option>
                   <option value="fhir">FHIR</option>
                   <option value="gdt">GDT ECG</option>
                   <option value="dicom">DICOM MWL</option>
@@ -38,6 +38,7 @@
                 </select>
               </label>
               <label>Requested Time<input id="order-requested-at" placeholder="YYYYMMDDHHMMSS"></label>
+              <label data-order-mode-field="hl7-v251">Scheduled Time<input id="order-scheduled-at" placeholder="YYYYMMDDHHMMSS (TQ1-7 / OBR-36)"></label>
               <label>Ordering Provider<input id="order-provider" value="1001^WANG^AMY"></label>
               <label data-order-mode-field="hl7-v251">Order Code<input id="order-code" value="ECG12"></label>
               <label data-order-mode-field="hl7-v251">Alternate Code<input id="order-alternate-code" value="93000"></label>
@@ -165,7 +166,7 @@
           <div class="section-heading compact-heading">
             <div>
               <p class="eyebrow">Payload Preview</p>
-              <h2 id="order-payload-title">MSH, PID, PV1, ORC, OBR</h2>
+              <h2 id="order-payload-title">MSH, PID, PV1, ORC, TQ1, OBR</h2>
             </div>
             <button id="copy-order-payload" type="button">Copy Payload</button>
           </div>

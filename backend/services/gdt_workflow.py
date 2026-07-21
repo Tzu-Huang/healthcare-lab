@@ -71,6 +71,7 @@ class GdtWatcherPort(Protocol):
         filename_profile: str | None = None,
         receiver_id: str | None = None,
         sender_id: str | None = None,
+        poll_seconds: float | None = None,
     ) -> dict[str, Any]: ...
 
     def start(self) -> dict[str, Any]: ...
@@ -177,6 +178,10 @@ class GdtBridgeService:
             "receiverId": self._configuration["GDT_BRIDGE_RECEIVER_ID"],
             "senderId": self._configuration["GDT_BRIDGE_SENDER_ID"],
             "watcher": self._watcher.status(),
+            "inboxPollSeconds": self._configuration.get(
+                "GDT_BRIDGE_INBOX_POLL_SECONDS",
+                self._watcher.status().get("pollSeconds", 2),
+            ),
             "dockerHint": (
                 "When running in Docker, set GDT_BRIDGE_HOST_PATH in .env and restart "
                 "lab-app to map a Windows folder to /data/gdt-bridge."
@@ -184,20 +189,36 @@ class GdtBridgeService:
         }
 
     def update_bridge_config(self, payload: dict[str, Any]) -> dict[str, Any]:
-        bridge_path = str(payload.get("bridgePath") or "").strip()
-        if not bridge_path:
-            raise ValueError("GDT shared folder path is required.")
         if self._watcher.status()["running"]:
             raise GdtConfigurationConflict(
                 "Stop automatic GDT import before changing the shared folder path."
             )
+        raw_gdt_in_path = str(payload.get("gdtInPath") or "").strip()
+        raw_gdt_out_path = str(payload.get("gdtOutPath") or "").strip()
+        if not raw_gdt_in_path or not raw_gdt_out_path:
+            raise ValueError("Both GDT-IN and GDT-OUT folder paths are required.")
+        gdt_in_path = Path(raw_gdt_in_path)
+        gdt_out_path = Path(raw_gdt_out_path)
+        if gdt_in_path.name.lower() != "inbox" or gdt_out_path.name.lower() != "outbox" or gdt_in_path.parent != gdt_out_path.parent:
+            raise ValueError("GDT-IN and GDT-OUT must be the inbox and outbox folders under the same bridge folder.")
+        for label, folder in (("GDT-IN", gdt_in_path), ("GDT-OUT", gdt_out_path)):
+            if not folder.is_dir():
+                raise ValueError(f"{label} folder does not exist: {folder}")
+        try:
+            inbox_poll_seconds = max(0.25, float(payload.get("inboxPollSeconds", 2)))
+            poll_seconds = max(0.25, float(payload.get("pollSeconds", 2)))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Polling intervals must be valid numbers.") from exc
+        bridge_path = str(gdt_in_path.parent)
         if os.name != "nt" and re.match(r"^[A-Za-z]:[\\/]", bridge_path):
             raise ValueError(
                 "Windows paths must be mounted into Docker first. Set GDT_BRIDGE_HOST_PATH "
                 "in .env, restart lab-app, then use /data/gdt-bridge here."
             )
         self._configuration["GDT_BRIDGE_PATH"] = bridge_path
-        self._watcher.configure(bridge_root=bridge_path)
+        self._configuration["GDT_BRIDGE_INBOX_POLL_SECONDS"] = inbox_poll_seconds
+        self._configuration["GDT_BRIDGE_WATCH_POLL_SECONDS"] = poll_seconds
+        self._watcher.configure(bridge_root=bridge_path, poll_seconds=poll_seconds)
         return self.bridge_config()
 
     def write_6302(self, order_id: int) -> tuple[dict[str, Any], str]:
