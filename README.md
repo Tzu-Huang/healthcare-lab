@@ -269,12 +269,16 @@ The first Docker Desktop runtime scaffold for the Lab Console lives in
 Use **Patient** to create local virtual patient records for the supported
 workflow modes:
 
-- Leave MRN blank to allocate the next persistent demo identifier in sequence,
-  starting at `MRN-000001`. The preview shows `Generated on create` until the
-  Patient is saved; the browser does not predict or reserve an identifier.
-- Enter an MRN explicitly when an integration test needs an upstream identifier.
-  New Patient records cannot reuse an exact MRN already present in the local
-  demo database.
+- Leave MRN blank to allocate the next persistent identifier from one global
+  sequence shared by HL7 v2, FHIR, GDT, and DICOM Patients, starting at
+  `MRN-000001`. A server-specific list can therefore contain sequence gaps when
+  intervening values belong to other Patient modes. The preview shows
+  `Generated on create` until the Patient is saved; the browser does not predict
+  or reserve an identifier.
+- Enter an MRN explicitly only when an integration test needs a deterministic
+  value. New explicit values are trimmed, uppercased, and must use `MRN-`
+  followed by at least six decimal digits. Normalized MRNs are unique across all
+  Patient modes and enforced by SQLite.
 - The automatic sequence survives application restarts and does not reuse an
   identifier after Patient deletion. Recreating the demo database resets the
   sequence.
@@ -283,7 +287,8 @@ workflow modes:
 - **FHIR R4:** previews a FHIR `Patient`, stores the local Patient first, then
   creates or updates the paired FHIR workflow ledger record and attempts Medplum
   sync.
-- **GDT 2.1:** stores patient context used by the GDT order/export workflow.
+- **GDT 2.1:** emits the canonical MRN in field `3000`; any `GDT-PAT-*`
+  workflow identifier is retained only as internal legacy correlation metadata.
 - **DICOM:** previews patient module attributes for future DICOM-oriented
   workflow work.
 
@@ -291,6 +296,12 @@ FHIR Patient rows show sync status, Medplum `Patient/<id>` reference, last sync
 metadata, and sync errors when available. `Pending sync` and `Sync failed` rows
 remain visible locally and can be retried without creating duplicate Medplum
 Patients because sync uses deterministic identifiers.
+
+The canonical MRN maps to HL7 `PID-3`, the FHIR identifier system
+`urn:healthcare-lab:mrn`, GDT field `3000`, and DICOM Patient ID `(0010,0020)`.
+Medplum resource references, GDT workflow identifiers, DICOM Patient ID issuers,
+accession numbers, and DICOM UIDs remain separate identifiers and are labelled
+accordingly in the server consoles.
 
 ## Order Page
 

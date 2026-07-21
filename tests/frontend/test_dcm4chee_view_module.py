@@ -52,6 +52,8 @@ class Dcm4cheeViewModuleTests(unittest.TestCase):
         self.assertIn("if (initialized) return", self.source)
         self.assertNotIn('/views/patient.js', self.source)
         self.assertNotIn('/views/order.js', self.source)
+        self.assertIn('"DICOM Patient ID"', self.source)
+        self.assertIn('"Patient ID Issuer"', self.source)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from typing import Any
 from backend.domain.errors import SimulatorValidationError
 
 PATIENT_CLASS_DEFAULT = "O"
+MRN_IDENTIFIER_SYSTEM = "urn:healthcare-lab:mrn"
 CANONICAL_MRN_PATTERN = re.compile(r"^MRN-[0-9]{6,}$")
 PATIENT_MODES = {
     "hl7-v2": {"protocol": "HL7 v2.5.1", "message_type": "ADT^A04"},
@@ -119,6 +120,7 @@ def mrn(value: int) -> str:
 
 __all__ = [
     "CANONICAL_MRN_PATTERN",
+    "MRN_IDENTIFIER_SYSTEM",
     "mrn",
     "normalize_mrn",
     "record_number",
