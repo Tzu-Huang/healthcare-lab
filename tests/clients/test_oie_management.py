@@ -265,8 +265,12 @@ class OieManagementClientTests(unittest.TestCase):
         self.assertTrue(transport.requests[1]["url"].endswith("/server/version"))
         requests = transport.requests[2:]
         self.assertEqual(["POST", "PUT", "PUT", "DELETE", "POST", "POST", "POST"], [r["method"] for r in requests])
-        self.assertTrue(requests[1]["url"].endswith("/channels/c1?override=false"))
-        self.assertTrue(requests[2]["url"].endswith("/channels/c1?override=true"))
+        for request, expected_override in ((requests[1], "false"), (requests[2], "true")):
+            parsed = urllib.parse.urlsplit(request["url"])
+            query = urllib.parse.parse_qs(parsed.query)
+            self.assertTrue(parsed.path.endswith("/channels/c1"))
+            self.assertEqual([expected_override], query["override"])
+            self.assertRegex(query["startEdit"][0], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+0000$")
         self.assertEqual("application/json", requests[0]["headers"]["Content-Type"])
         self.assertTrue(requests[4]["url"].endswith("/channels/c1/_deploy"))
         self.assertTrue(requests[5]["url"].endswith("/channels/_redeployAll"))
@@ -319,13 +323,22 @@ class OieManagementClientTests(unittest.TestCase):
             Step(body={"boolean": True}), Step(body=True),
         )
         client.login()
-        created = client.create_channel("<channel><id /></channel>")
-        client.update_channel("c1", "<channel><id>c1</id></channel>")
+        created = client.create_channel(
+            "<channel><id /><exportData><metadata /></exportData></channel>"
+        )
+        client.update_channel(
+            "c1", "<channel><id>c1</id><exportData><metadata /></exportData></channel>"
+        )
         self.assertEqual("application/xml", transport.requests[2]["headers"]["Content-Type"])
         created_xml = ET.fromstring(transport.requests[2]["body"])
         self.assertEqual(created.identifier, created_xml.findtext("id"))
         self.assertTrue(created.identifier)
+        self.assertEqual("UTC", created_xml.findtext("exportData/metadata/lastModified/timezone"))
+        self.assertTrue(created_xml.findtext("exportData/metadata/lastModified/time").isdigit())
         self.assertIn("override=false", transport.requests[3]["url"])
+        self.assertIn("startEdit=", transport.requests[3]["url"])
+        updated_xml = ET.fromstring(transport.requests[3]["body"])
+        self.assertEqual("UTC", updated_xml.findtext("exportData/metadata/lastModified/timezone"))
 
     def test_complete_channel_document_preserves_long_xml_without_repr_leak(self):
         payload = (
