@@ -138,7 +138,7 @@ class ApiCaseSupport(DisposableAppCase):
         response = self.client.post(
             "/api/patients",
             json={
-                "mrn": "MRN-A04-001",
+                "mrn": "MRN-100001",
                 "firstName": "Avery",
                 "middleName": "Lee",
                 "lastName": "Morgan",
@@ -161,7 +161,7 @@ class ApiCaseSupport(DisposableAppCase):
         patient = store.patient_repository.create_patient_record(
             {
                 "mode": "fhir",
-                "mrn": "MRN-FHIR-ORDER-001",
+                "mrn": "MRN-100002",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",

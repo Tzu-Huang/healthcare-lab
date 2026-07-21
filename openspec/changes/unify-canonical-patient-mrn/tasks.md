@@ -18,7 +18,7 @@
 
 ## 4. Verify the unified contract
 
-- [ ] 4.1 Add repository and migration tests for database-enforced uniqueness, legacy database behavior, sequence monotonicity, and concurrent or collision writes.
-- [ ] 4.2 Add API/template/service tests covering all four Patient modes plus GDT new/legacy matching and FHIR identifier selection.
-- [ ] 4.3 Add frontend tests that distinguish canonical MRN from Medplum, GDT, and DICOM identifiers in every affected console.
+- [x] 4.1 Add repository and migration tests for database-enforced uniqueness, legacy database behavior, sequence monotonicity, and concurrent or collision writes.
+- [x] 4.2 Add API/template/service tests covering all four Patient modes plus GDT new/legacy matching and FHIR identifier selection.
+- [x] 4.3 Add frontend tests that distinguish canonical MRN from Medplum, GDT, and DICOM identifiers in every affected console.
 - [ ] 4.4 Run focused suites, the full automated test suite, syntax/format checks, and strict OpenSpec validation; record any live OIE, Medplum, GDT, or dcm4chee verification deferred to `/dev-test`.

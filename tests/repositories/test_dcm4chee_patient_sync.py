@@ -21,7 +21,7 @@ class Dcm4cheePatientSyncRepositoryTests(unittest.TestCase):
         self.patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "hl7-v2",
-                "mrn": "MRN-DCM-001",
+                "mrn": "MRN-300001",
                 "firstName": "Ada",
                 "lastName": "Lovelace",
                 "dob": "18151210",

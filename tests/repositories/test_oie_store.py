@@ -8,7 +8,7 @@ class OieStoreTests(StoreCaseSupport):
     def test_order_send_result_persists_ack_and_transport_error(self):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
-                "mrn": "MRN-A04-002",
+                "mrn": "MRN-400001",
                 "firstName": "Jordan",
                 "lastName": "Case",
                 "dob": "19770102",

@@ -22,7 +22,7 @@ class Dcm4cheeResultRepositoryTests(unittest.TestCase):
         self.path = Path(self.temp_dir.name) / "results.db"
         self.dependencies = assemble_application_dependencies(self.path)
         self.patient = self.dependencies.patient_repository.create_patient_record(
-            {"mrn": "MRN-RESULT-001", "firstName": "Katherine", "lastName": "Johnson", "dob": "19180826", "sex": "F"}
+            {"mrn": "MRN-300201", "firstName": "Katherine", "lastName": "Johnson", "dob": "19180826", "sex": "F"}
         )
         self.order = self.dependencies.order_repository.create_dcm4chee_order_record({"patientRecordId": self.patient["id"]})
         self.profile = {

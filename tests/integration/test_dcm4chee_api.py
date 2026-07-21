@@ -23,7 +23,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         )
 
         self.assertEqual(payload["00100010"]["Value"][0]["Alphabetic"], "Morgan^Avery^Lee")
-        self.assertEqual(payload["00100020"]["Value"], ["MRN-A04-001"])
+        self.assertEqual(payload["00100020"]["Value"], ["MRN-100001"])
         self.assertEqual(payload["00100021"]["Value"], ["local-dcm4chee"])
         self.assertEqual(payload["00080050"]["Value"], ["ACC-000001"])
         self.assertEqual(payload["00401001"]["Value"], ["RP-000001"])
@@ -53,7 +53,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
                     json.dumps(
                         [
                             {
-                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100020": {"vr": "LO", "Value": ["MRN-100001"]},
                                 "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
                             }
                         ]
@@ -65,7 +65,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
                     json.dumps(
                         [
                             {
-                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100020": {"vr": "LO", "Value": ["MRN-100001"]},
                                 "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
                                 "00080050": {"vr": "SH", "Value": ["ACC-DCM-000001"]},
                                 "00401001": {"vr": "SH", "Value": ["RP-DCM-000001"]},
@@ -115,7 +115,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(mwl["mapping"]["accessionNumber"], "ACC-DCM-000001")
         self.assertEqual(mwl["mapping"]["requestedProcedureId"], "RP-DCM-000001")
         self.assertEqual(mwl["mapping"]["scheduledProcedureStepId"], "SPS-DCM-000001")
-        self.assertEqual(mwl["mapping"]["patientId"], "MRN-A04-001")
+        self.assertEqual(mwl["mapping"]["patientId"], "MRN-100001")
         self.assertEqual(captured[0]["method"], "GET")
         self.assertIn("/aets/DCM4CHEE/rs/patients?", captured[0]["url"])
         self.assertEqual(captured[1]["method"], "POST")
@@ -135,7 +135,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
             "/api/patients",
             json={
                 "mode": "dicom",
-                "mrn": "MRN-DCM-MWL-002",
+                "mrn": "MRN-300301",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",
@@ -168,7 +168,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
                     json.dumps(
                         [
                             {
-                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100020": {"vr": "LO", "Value": ["MRN-100001"]},
                                 "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
                             }
                         ]
@@ -230,7 +230,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
                 if "/patients?" in request.full_url:
                     return FakeHttpResponse(b"", status=204)
                 if request.full_url.endswith("/patients"):
-                    return FakeHttpResponse(b'{"PatientIdentifiers":"[MRN-A04-001^^^local-dcm4chee]"}', status=200)
+                    return FakeHttpResponse(b'{"PatientIdentifiers":"[MRN-100001^^^local-dcm4chee]"}', status=200)
                 if request.get_method() == "GET":
                     mwl_gets["count"] += 1
                     body = [] if mwl_gets["count"] == 1 else [
@@ -424,7 +424,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
                     json.dumps(
                         [
                             {
-                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100020": {"vr": "LO", "Value": ["MRN-100001"]},
                                 "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
                             }
                         ]
@@ -475,7 +475,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
                     json.dumps(
                         [
                             {
-                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100020": {"vr": "LO", "Value": ["MRN-100001"]},
                                 "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
                             }
                         ]
@@ -506,7 +506,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
                     json.dumps(
                         [
                             {
-                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100020": {"vr": "LO", "Value": ["MRN-100001"]},
                                 "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
                             }
                         ]
@@ -556,7 +556,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
                     json.dumps(
                         [
                             {
-                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100020": {"vr": "LO", "Value": ["MRN-100001"]},
                                 "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
                             }
                         ]
@@ -587,7 +587,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
                     json.dumps(
                         [
                             {
-                                "00100020": {"vr": "LO", "Value": ["MRN-A04-001"]},
+                                "00100020": {"vr": "LO", "Value": ["MRN-100001"]},
                                 "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
                             }
                         ]
@@ -632,7 +632,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
             if "/patients?" in request.full_url:
                 return FakeHttpResponse(b"", status=204)
             if request.full_url.endswith("/patients"):
-                return FakeHttpResponse(b'{"PatientIdentifiers":"[MRN-A04-001^^^local-dcm4chee]"}', status=200)
+                return FakeHttpResponse(b'{"PatientIdentifiers":"[MRN-100001^^^local-dcm4chee]"}', status=200)
             raise urllib.error.HTTPError(
                 request.full_url,
                 404,
@@ -807,7 +807,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
             attempt_id=None,
             sync_status=DCM4CHEE_MWL_STATUS_PATIENT_MISSING,
             http_status=404,
-            response_body='{"errorMessage":"Patient[id=MRN-A04-001] does not exist."}',
+            response_body='{"errorMessage":"Patient[id=MRN-100001] does not exist."}',
             error_type="patient_missing",
             error_text="dcm4chee returned HTTP 404: Patient does not exist.",
         )
@@ -840,7 +840,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
             sync_status=DCM4CHEE_MWL_STATUS_CREATED,
         )
 
-        def item(accession, patient_id="MRN-A04-001"):
+        def item(accession, patient_id="MRN-100001"):
             return {
                 "00100020": {"vr": "LO", "Value": [patient_id]},
                 "00100021": {"vr": "LO", "Value": [mapping["issuerOfPatientId"]]},
@@ -895,7 +895,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
                 404,
                 "Not Found",
                 hdrs=None,
-                fp=FakeHttpResponse(b'{"errorMessage":"Patient[id=MRN-A04-001] does not exist."}', status=404),
+                fp=FakeHttpResponse(b'{"errorMessage":"Patient[id=MRN-100001] does not exist."}', status=404),
             )
 
         urlopen.side_effect = missing_patient
@@ -1024,11 +1024,11 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertEqual(response.status_code, 201)
         body = response.get_json()
         self.assertTrue(body["success"])
-        self.assertEqual(body["patient"]["summary"]["mrn"], "MRN-DCM-E2E-001")
+        self.assertEqual(body["patient"]["summary"]["mrn"], "MRN-000001")
         self.assertEqual(body["order"]["protocolVersion"], "DICOM")
         evidence = body["evidence"]
         self.assertEqual(evidence["mode"], "dcm4chee-production-like-e2e")
-        self.assertEqual(evidence["identifiers"]["patientId"], "MRN-DCM-E2E-001")
+        self.assertEqual(evidence["identifiers"]["patientId"], "MRN-000001")
         self.assertEqual(evidence["identifiers"]["issuerOfPatientId"], "local-dcm4chee")
         self.assertEqual(evidence["aeTitles"]["mwlAETitle"], "WORKLIST")
         self.assertIn("/mwlitems", evidence["endpoints"]["mwlRestUrl"])

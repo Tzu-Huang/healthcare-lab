@@ -37,18 +37,18 @@ class OieRepositoryCharacterizationTests(unittest.TestCase):
 
     def test_patient_and_order_matching(self):
         patient = self.dependencies.patient_repository.create_patient_record(
-            {"mrn": "MRN-OIE", "firstName": "Avery", "lastName": "Morgan",
+            {"mrn": "MRN-400002", "firstName": "Avery", "lastName": "Morgan",
              "dob": "19850412", "sex": "F", "mode": "hl7-v2"}
         )
         order = self.dependencies.order_repository.create_order_record({"patientRecordId": patient["id"]})
         patient_only = self.repository.record_oie_result(
             "patient", {"messageControlId": "ORU-P", "messageType": "ORU^R01",
-                        "patientMrn": "MRN-OIE", "placerOrderNumber": "missing",
+                        "patientMrn": "MRN-400002", "placerOrderNumber": "missing",
                         "fillerOrderNumber": ""}
         )
         matched = self.repository.record_oie_result(
             "matched", {"messageControlId": "ORU-O", "messageType": "ORU^R01",
-                        "patientMrn": "MRN-OIE",
+                        "patientMrn": "MRN-400002",
                         "placerOrderNumber": order["placerOrderNumber"],
                         "fillerOrderNumber": ""}
         )

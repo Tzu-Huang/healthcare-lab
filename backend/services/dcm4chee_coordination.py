@@ -97,7 +97,7 @@ class Dcm4cheeWorkflowCoordinator:
     def dcm4chee_e2e_demo_patient_payload() -> dict[str, Any]:
         return {
             "mode": "dicom",
-            "mrn": "MRN-DCM-E2E-001",
+            "mrn": "",
             "firstName": "Avery",
             "middleName": "Lee",
             "lastName": "Morgan",

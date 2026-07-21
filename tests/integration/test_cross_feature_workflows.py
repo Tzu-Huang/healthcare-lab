@@ -16,7 +16,7 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
             "/api/patients",
             json={
                 "mode": "dicom",
-                "mrn": "MRN-DCM-001",
+                "mrn": "MRN-600001",
                 "firstName": "Avery",
                 "middleName": "Lee",
                 "lastName": "Morgan",
@@ -31,13 +31,13 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
         item = response.get_json()["item"]
         dcm4chee_patient = item["dcm4chee"]["patient"]
         self.assertEqual(dcm4chee_patient["status"], "Synced")
-        self.assertEqual(dcm4chee_patient["patientId"], "MRN-DCM-001")
+        self.assertEqual(dcm4chee_patient["patientId"], "MRN-600001")
         self.assertEqual(dcm4chee_patient["issuerOfPatientId"], "local-dcm4chee")
         self.assertEqual(dcm4chee_patient["ack"]["code"], "AA")
         sent_payload = send_hl7.call_args.args[0]
         self.assertIn("ADT^A04^ADT_A01", sent_payload)
         self.assertIn("|P|2.5.1||||||UNICODE UTF-8", sent_payload)
-        self.assertIn("PID|1||MRN-DCM-001^^^local-dcm4chee^MR", sent_payload)
+        self.assertIn("PID|1||MRN-600001^^^local-dcm4chee^MR", sent_payload)
         self.assertEqual(send_hl7.call_args.kwargs["host"], "127.0.0.1")
         self.assertEqual(send_hl7.call_args.kwargs["port"], 2575)
 
@@ -47,7 +47,7 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
             "/api/patients",
             json={
                 "mode": "dicom",
-                "mrn": "MRN-DCM-002",
+                "mrn": "MRN-600002",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",
@@ -101,7 +101,7 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
             "/api/patients",
             json={
                 "mode": "fhir",
-                "mrn": "MRN-FHIR-002",
+                "mrn": "MRN-600003",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",
@@ -180,7 +180,7 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
             "/api/patients",
             json={
                 "mode": "fhir",
-                "mrn": "MRN-FHIR-003",
+                "mrn": "MRN-600004",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",
@@ -215,7 +215,7 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
                     json.dumps(
                         [
                             {
-                                "00100020": {"vr": "LO", "Value": ["MRN-DCM-MWL-001"]},
+                                "00100020": {"vr": "LO", "Value": ["MRN-600005"]},
                                 "00100021": {"vr": "LO", "Value": ["local-dcm4chee"]},
                                 "00080050": {"vr": "SH", "Value": ["ACC-000001"]},
                                 "00401001": {"vr": "SH", "Value": ["RP-000001"]},
@@ -236,7 +236,7 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
             "/api/patients",
             json={
                 "mode": "dicom",
-                "mrn": "MRN-DCM-MWL-001",
+                "mrn": "MRN-600005",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",
@@ -297,7 +297,7 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
         order = self.client.post("/api/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
         payload = (
             "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^R01^ORU_R01|ORU1|P|2.5.1||||||UNICODE UTF-8\r"
-            "PID|1||MRN-A04-001^^^HEALTHCARE_LAB^MR||Morgan^Avery\r"
+            "PID|1||MRN-100001^^^HEALTHCARE_LAB^MR||Morgan^Avery\r"
             f"OBR|1|{order['localOrderNumber']}||ECG12^12 Lead ECG"
         )
 
