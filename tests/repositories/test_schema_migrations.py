@@ -53,7 +53,7 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
         legacy = self._schema_inventory(legacy_path)
         migrated = self._schema_inventory(migrated_path)
         self.assertEqual(migrated, legacy)
-        self.assertEqual(len(migrated[0]), 22)
+        self.assertEqual(len(migrated[0]), 23)
         self.assertEqual(len(migrated[1]), 20)
 
     def test_current_unversioned_database_is_recorded_without_data_loss(self):
