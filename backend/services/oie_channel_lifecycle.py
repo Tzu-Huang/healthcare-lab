@@ -70,7 +70,9 @@ class OieManagedChannelLifecycleService:
             client.close()
 
     def inspect(self):
-        with self._client_scope(): return [self._project_with_config(item) for item in self._snapshots()]
+        with self._client_scope():
+            latest = self._latest_operations()
+            return [self._project_with_config(item, latest.get(item.logical_type.value) if item.logical_type else None) for item in self._snapshots()]
 
     def preview(self, logical_type: str, operation: str):
         with self._client_scope(): return self._preview(logical_type, operation)
@@ -270,7 +272,7 @@ class OieManagedChannelLifecycleService:
         differences = [{"path": d.path, "desired": d.desired, "observed": d.observed} for d in item.differences]
         return {"logicalType": item.logical_type.value if item.logical_type else None, "classification": item.classification.value, "name": item.name, "channelName": item.name, "channelId": item.channel_id, "revision": item.revision, "status": item.status, "differences": differences, "blockingReasons": list(item.blocking_reasons), "permittedActions": [a.value for a in LifecycleOperation if OieManagedChannelLifecycleService._permitted(item, a)]}
 
-    def _project_with_config(self, item):
+    def _project_with_config(self, item, last_operation=None):
         result = self._project(item)
         if item.logical_type is None:
             return result
@@ -291,7 +293,23 @@ class OieManagedChannelLifecycleService:
                 "retryIntervalMs": config.queue.retry_interval_ms,
             },
         })
+        if last_operation is not None:
+            result["lastOperation"] = last_operation
         return result
+
+    def _latest_operations(self):
+        latest = {}
+        for audit in self.repository.list_managed_channel_lifecycle_audits():
+            logical_type, operation = audit.get("logical_type"), str(audit.get("operation", ""))
+            if logical_type in latest or operation.startswith("preview-"):
+                continue
+            latest[logical_type] = {
+                "operation": operation,
+                "outcome": audit.get("outcome", ""),
+                "errorCategory": audit.get("error_category", ""),
+                "createdAt": audit.get("created_at", ""),
+            }
+        return latest
 
     @staticmethod
     def _expected_steps(action):

@@ -26,6 +26,7 @@ class FakeRepository:
     def append_managed_channel_lifecycle_audit(self, event):
         if self.fail_audit_after is not None and len(self.audits) >= self.fail_audit_after: raise RuntimeError("audit unavailable")
         self.audits.append(event)
+    def list_managed_channel_lifecycle_audits(self): return list(reversed(self.audits))
 
 
 class FakeClient:
@@ -89,6 +90,21 @@ class LifecycleServiceTests(unittest.TestCase):
 
         self.assertEqual(["old", "new"], [marker for marker, _ in clients])
         self.assertTrue(all(client.closed for _, client in clients))
+
+    def test_inventory_projects_latest_completed_operation_and_skips_previews(self):
+        repository = FakeRepository()
+        repository.audits.extend([
+            {"logical_type": "hlab-orm-to-ap", "operation": "update", "outcome": "success", "created_at": "2026-07-20T10:00:00Z"},
+            {"logical_type": "hlab-orm-to-ap", "operation": "preview-delete", "outcome": "previewed", "created_at": "2026-07-20T10:01:00Z"},
+            {"logical_type": "hlab-orm-to-ap", "operation": "redeploy", "outcome": "partial-failure", "error_category": "server", "created_at": "2026-07-20T10:02:00Z"},
+        ])
+
+        inventory = self.service(FakeClient([value()]), repository).inspect()[0]
+
+        self.assertEqual({
+            "operation": "redeploy", "outcome": "partial-failure", "errorCategory": "server",
+            "createdAt": "2026-07-20T10:02:00Z",
+        }, inventory["lastOperation"])
 
     def test_retry_after_uncertain_create_never_creates_duplicate(self):
         client, repository = FakeClient([value()]), FakeRepository(mapped=False); service = self.service(client, repository)

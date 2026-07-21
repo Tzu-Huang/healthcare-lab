@@ -141,7 +141,8 @@ function channelCard(item) {
   const title = document.createElement("h4"); title.textContent = displayedChannelName(item); card.append(title);
   appendFact(card, "Route", channelRoute(item)); appendFact(card, "Ownership", item.classification || "managed");
   appendFact(card, "Lifecycle", item.lifecycleState || item.state || item.drift || "-"); appendFact(card, "Deployment", item.deploymentState || (item.deployed === true ? "deployed" : item.deployed === false ? "undeployed" : "-"));
-  appendFact(card, "Revision", item.revision); appendFact(card, "Last operation", item.lastOperation?.status || item.lastOperation || "-");
+  const lastOperation = item.lastOperation ? `${item.lastOperation.operation}: ${item.lastOperation.outcome}` : "-";
+  appendFact(card, "Revision", item.revision); appendFact(card, "Last operation", lastOperation);
   const reasons = item.blockingReasons || item.blockers || []; if (reasons.length) appendFact(card, "Blocked", reasons.join("; "));
   if (item.classification === "external") return card;
   const editable = item.editableFields || item.desired || {};
