@@ -180,6 +180,66 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
         )
         self.assertEqual(workbench["resultsByOrder"], {})
 
+    def test_canonical_mrn_precedes_legacy_alias_and_ambiguous_alias_is_unmatched(self):
+        canonical_patient = self.dependencies.patient_repository.create_patient_record(
+            self.patient("MRN-000617")
+        )
+        canonical_order = self.dependencies.gdt_workflow.create_gdt_order_record(
+            {
+                "patientRecordId": canonical_patient["id"],
+                "gdtPatientNumberOverride": "LEGACY-CANONICAL-PATIENT",
+            }
+        )
+        alias_patient = self.dependencies.patient_repository.create_patient_record(
+            self.patient("MRN-000618")
+        )
+        self.dependencies.gdt_workflow.create_gdt_order_record(
+            {
+                "patientRecordId": alias_patient["id"],
+                "gdtPatientNumberOverride": canonical_patient["summary"]["mrn"],
+            }
+        )
+
+        canonical_result = self.dependencies.gdt_workflow.record_gdt_result(
+            {
+                "rawGdtText": self.result_message(
+                    [
+                        ("3000", canonical_patient["summary"]["mrn"]),
+                        ("8402", "EKG01"),
+                        ("6220", "Canonical MRN wins over legacy alias"),
+                    ]
+                )
+            }
+        )
+
+        self.assertEqual(
+            canonical_result["patientContextId"],
+            canonical_order["gdtPatientContextId"],
+        )
+
+        ambiguous_patient = self.dependencies.patient_repository.create_patient_record(
+            self.patient("MRN-000619")
+        )
+        self.dependencies.gdt_workflow.create_gdt_order_record(
+            {
+                "patientRecordId": ambiguous_patient["id"],
+                "gdtPatientNumberOverride": f"GDT-PAT-{canonical_patient['id']:06d}",
+            }
+        )
+        ambiguous_result = self.dependencies.gdt_workflow.record_gdt_result(
+            {
+                "rawGdtText": self.result_message(
+                    [
+                        ("3000", f"GDT-PAT-{canonical_patient['id']:06d}"),
+                        ("8402", "EKG01"),
+                        ("6220", "Ambiguous legacy alias"),
+                    ]
+                )
+            }
+        )
+
+        self.assertIsNone(ambiguous_result["patientContextId"])
+
     def test_6302_builder_failure_rolls_back_all_gdt_workflow_rows(self):
         patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-000615"))
 
