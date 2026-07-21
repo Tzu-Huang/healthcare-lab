@@ -27,6 +27,7 @@ class LifecycleOperation(StrEnum):
     CREATE = "create"
     UPDATE = "update"
     DEPLOY = "deploy"
+    REDEPLOY = "redeploy"
     UNDEPLOY = "undeploy"
     DELETE = "delete"
 

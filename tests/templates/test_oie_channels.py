@@ -93,10 +93,16 @@ class ManagedOieChannelTemplateTests(unittest.TestCase):
             self.assertNotIn("config", parameters)
         with self.assertRaises(TypeError):
             compile_orm_to_ap("ap.internal", scripts=["return true"])
-        with self.assertRaises(TypeError):
-            compile_oru_to_hlab(destination_host="attacker.internal")
-        with self.assertRaises(TypeError):
-            compile_oru_to_hlab(queue_enabled=False)
+        rendered = compile_oru_to_hlab(destination_host="hlab.internal", queue_enabled=False)
+        root = ET.fromstring(rendered)
+        self.assertEqual(
+            "hlab.internal",
+            root.findtext("destinationConnectors/connector/properties/remoteAddress"),
+        )
+        self.assertEqual(
+            "false",
+            root.findtext("destinationConnectors/connector/properties/destinationConnectorProperties/queueEnabled"),
+        )
 
     def test_route_pair_compilation_checks_listener_conflicts(self):
         with self.assertRaisesRegex(ValueError, "listener.port conflict"):

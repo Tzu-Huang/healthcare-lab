@@ -81,7 +81,7 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
             preserved = connection.execute(
                 "SELECT mrn FROM local_patient_records WHERE id = ?", (patient["id"],)
             ).fetchone()
-        self.assertEqual(versions, [1, 2, 3, 4])
+        self.assertEqual(versions, [1, 2, 3, 4, 5])
         self.assertEqual(preserved["mrn"], "MRN-UNVERSIONED-1")
 
     def test_partial_legacy_columns_are_added_before_indexes(self):

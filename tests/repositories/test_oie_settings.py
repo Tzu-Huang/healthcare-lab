@@ -113,6 +113,14 @@ class OieSettingsRepositoryTest(unittest.TestCase):
                     "channelName": "HLAB Result",
                     "templateVersion": "1.2.0",
                     "lastKnownRevision": "42",
+                    "sourceHost": "0.0.0.0",
+                    "sourcePort": 6600,
+                    "destinationHost": "ap.internal",
+                    "destinationPort": 6671,
+                    "timeoutSeconds": 7.5,
+                    "queueEnabled": False,
+                    "retryCount": 2,
+                    "retryIntervalMs": 12000,
                 }
             ],
         )
@@ -125,6 +133,9 @@ class OieSettingsRepositoryTest(unittest.TestCase):
         self.assertEqual(persisted["managementApi"]["timeoutSeconds"], 12.5)
         self.assertEqual(persisted["managedChannels"][0]["logicalType"], "hlab-result")
         self.assertEqual(persisted["managedChannels"][0]["channelId"], "channel-1")
+        self.assertEqual(persisted["managedChannels"][0]["destinationHost"], "ap.internal")
+        self.assertEqual(persisted["managedChannels"][0]["timeoutSeconds"], 7.5)
+        self.assertEqual(persisted["managedChannels"][0]["retryIntervalMs"], 12000)
         self.assertNotIn("replacement-secret", json.dumps(persisted))
 
         replacement = self.settings_payload(

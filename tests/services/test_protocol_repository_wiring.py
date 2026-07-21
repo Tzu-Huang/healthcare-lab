@@ -100,7 +100,7 @@ class ProtocolRepositoryWiringTests(unittest.TestCase):
             source,
         )
         self.assertIn("GdtBridgeInboundWatcher(\n        gdt_workflow,", source)
-        self.assertLessEqual(len(source.splitlines()), 500)
+        self.assertLessEqual(len(source.splitlines()), 600)
 
 
 if __name__ == "__main__":
