@@ -359,7 +359,16 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
             conflicts.append("managed-listener-port-conflict")
         if oru.get("destinationPort") and int(oru["destinationPort"]) != listener_port:
             conflicts.append("oru-destination-listener-mismatch")
-        return {"valid": not conflicts, "conflicts": conflicts}
+        defaults = {"hlab-orm-to-ap": 6600, "hlab-oru-to-hlab": 6661}
+        expected_ports = []
+        for logical_type, default_port in defaults.items():
+            item = next((value for value in mappings if value.get("logicalType") == logical_type), {})
+            expected_ports.append({
+                "logicalType": logical_type,
+                "port": int(item.get("sourcePort") or default_port),
+                "channelId": str(item.get("channelId") or ""),
+            })
+        return {"valid": not conflicts, "conflicts": conflicts, "expectedPorts": expected_ports}
 
     app.extensions["oie_runtime_diagnostics_service"] = OieRuntimeDiagnosticService(
         management_client=lambda: create_oie_management_client(dependencies.oie_settings_repository),
