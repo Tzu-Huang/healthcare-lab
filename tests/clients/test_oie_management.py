@@ -8,6 +8,7 @@ import urllib.request
 from collections import deque
 from dataclasses import dataclass
 from unittest.mock import patch
+from xml.etree import ElementTree as ET
 
 from backend.clients.oie_management import HttpResponse, OieManagementClient, UrllibOieTransport
 from backend.domain.oie_management import (
@@ -66,7 +67,12 @@ def client_with(*steps: Step):
 
 class OieManagementClientTests(unittest.TestCase):
     def test_login_uses_form_header_and_bounded_transport_without_live_socket(self):
-        client, transport = client_with(Step(body={"status": "SUCCESS"}))
+        client, transport = client_with(Step(body={
+            "com.mirth.connect.model.LoginStatus": {
+                "status": "SUCCESS",
+                "message": None,
+            }
+        }))
         with (
             patch.object(urllib.request, "urlopen", side_effect=AssertionError("live network")),
             patch.object(socket, "create_connection", side_effect=AssertionError("live network")),
@@ -85,6 +91,13 @@ class OieManagementClientTests(unittest.TestCase):
         self.assertEqual((2, 9), (request["connect_timeout"], request["read_timeout"]))
         self.assertNotIn("password-canary", repr(client))
         self.assertNotIn("password-canary", repr(result))
+
+    def test_login_accepts_unwrapped_status_for_compatible_servers(self):
+        client, _ = client_with(Step(body={"status": "SUCCESS"}))
+
+        client.login()
+
+        self.assertIn("authenticated=True", repr(client))
 
     def test_operations_require_login_and_logout_always_clears_session(self):
         client, transport = client_with()
@@ -156,13 +169,15 @@ class OieManagementClientTests(unittest.TestCase):
 
     def test_read_operations_use_verified_paths_and_normalized_results(self):
         client, transport = client_with(
-            Step(body={"status": "SUCCESS"}), Step(body={"id": "u1", "username": "admin"}),
+            Step(body={"status": "SUCCESS"}), Step(body={"user": {"id": "u1", "username": "admin"}}),
             Step(body={"jvmVersion": "17", "osName": "Linux", "dbName": "PostgreSQL"}),
             Step(body="4.5.2"),
-            Step(body=[{"id": "c1", "revision": 3}]),
-            Step(body={"id": "c/1", "revision": 3}),
-            Step(body={"channelId": "c/1", "state": "STARTED"}),
-            Step(body=[{"id": "c1", "name": "Source", "port": "6661"}]),
+            Step(body={"list": {"channel": [{"id": "c1", "revision": 3}]}}),
+            Step(body={"channel": {"id": "c/1", "revision": 3}}),
+            Step(body={"dashboardStatus": {"channelId": "c/1", "state": "STARTED"}}),
+            Step(body={"list": {"com.mirth.connect.donkey.model.channel.Ports": [
+                {"id": "c1", "name": "Source", "port": 6661}
+            ]}}),
         )
         client.login()
         self.assertEqual("u1", client.current_user().identifier)
@@ -171,12 +186,24 @@ class OieManagementClientTests(unittest.TestCase):
         self.assertEqual("c1", client.list_channels().values["items"][0]["id"])
         self.assertEqual(3, client.get_channel("c/1").revision)
         self.assertEqual("STARTED", client.channel_status("c/1").status)
-        self.assertEqual("6661", client.ports_in_use().values["items"][0]["port"])
+        self.assertEqual(6661, client.ports_in_use().values["items"][0]["port"])
+        self.assertEqual("text/plain", transport.requests[3]["headers"]["Accept"])
         paths = [item["url"].removeprefix("https://oie.test/api") for item in transport.requests]
         self.assertEqual(
             ["/users/_login", "/users/current", "/system/info", "/server/version", "/channels",
              "/channels/c%2F1", "/channels/c%2F1/status", "/channels/portsInUse"], paths,
         )
+
+    def test_list_channels_accepts_singleton_oie_wrapper(self):
+        client, _ = client_with(
+            Step(body={"status": "SUCCESS"}),
+            Step(body={"list": {"channel": {"id": "only", "revision": 1, "name": "Only"}}}),
+        )
+        client.login()
+
+        result = client.list_channels()
+
+        self.assertEqual("only", result.values["items"][0]["id"])
 
     def test_destination_statistics_normalizes_totals_without_exposing_payload(self):
         client, transport = client_with(
@@ -200,6 +227,17 @@ class OieManagementClientTests(unittest.TestCase):
                 result = client.destination_statistics("c1")
                 self.assertEqual("unsupported", result.status)
                 self.assertEqual({"availability": "unsupported"}, result.values)
+
+    def test_missing_channel_status_represents_an_undeployed_channel(self):
+        client, _ = client_with(
+            Step(body={"status": "SUCCESS"}),
+            Step(status=404),
+        )
+        client.login()
+
+        result = client.channel_status("c1")
+
+        self.assertEqual("UNDEPLOYED", result.status)
 
     def test_destination_statistics_rejects_ambiguous_or_incomplete_shape(self):
         client, _ = client_with(
@@ -227,8 +265,12 @@ class OieManagementClientTests(unittest.TestCase):
         self.assertTrue(transport.requests[1]["url"].endswith("/server/version"))
         requests = transport.requests[2:]
         self.assertEqual(["POST", "PUT", "PUT", "DELETE", "POST", "POST", "POST"], [r["method"] for r in requests])
-        self.assertTrue(requests[1]["url"].endswith("/channels/c1?override=false"))
-        self.assertTrue(requests[2]["url"].endswith("/channels/c1?override=true"))
+        for request, expected_override in ((requests[1], "false"), (requests[2], "true")):
+            parsed = urllib.parse.urlsplit(request["url"])
+            query = urllib.parse.parse_qs(parsed.query)
+            self.assertTrue(parsed.path.endswith("/channels/c1"))
+            self.assertEqual([expected_override], query["override"])
+            self.assertRegex(query["startEdit"][0], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+0000$")
         self.assertEqual("application/json", requests[0]["headers"]["Content-Type"])
         self.assertTrue(requests[4]["url"].endswith("/channels/c1/_deploy"))
         self.assertTrue(requests[5]["url"].endswith("/channels/_redeployAll"))
@@ -278,24 +320,41 @@ class OieManagementClientTests(unittest.TestCase):
     def test_channel_mutations_accept_complete_xml_without_weakening_override(self):
         client, transport = client_with(
             Step(body={"status": "SUCCESS"}), Step(body="4.5.2"),
-            Step(body=True), Step(body=True),
+            Step(body={"boolean": True}), Step(body=True),
         )
         client.login()
-        client.create_channel("<channel><id /></channel>")
-        client.update_channel("c1", "<channel><id>c1</id></channel>")
+        created = client.create_channel(
+            "<channel><id /><exportData><metadata /></exportData></channel>"
+        )
+        client.update_channel(
+            "c1", "<channel><id>c1</id><exportData><metadata /></exportData></channel>"
+        )
         self.assertEqual("application/xml", transport.requests[2]["headers"]["Content-Type"])
-        self.assertEqual(b"<channel><id /></channel>", transport.requests[2]["body"])
+        created_xml = ET.fromstring(transport.requests[2]["body"])
+        self.assertEqual(created.identifier, created_xml.findtext("id"))
+        self.assertTrue(created.identifier)
+        self.assertEqual("UTC", created_xml.findtext("exportData/metadata/lastModified/timezone"))
+        self.assertTrue(created_xml.findtext("exportData/metadata/lastModified/time").isdigit())
         self.assertIn("override=false", transport.requests[3]["url"])
+        self.assertIn("startEdit=", transport.requests[3]["url"])
+        updated_xml = ET.fromstring(transport.requests[3]["body"])
+        self.assertEqual("UTC", updated_xml.findtext("exportData/metadata/lastModified/timezone"))
 
     def test_complete_channel_document_preserves_long_xml_without_repr_leak(self):
-        payload = "<channel>" + ("x" * 2000) + "</channel>"
+        payload = (
+            "<channel><id>c1</id><name>Managed</name><revision>7</revision><description>"
+            + ("x" * 2000)
+            + "</description></channel>"
+        )
         client, _ = client_with(
             Step(body={"status": "SUCCESS"}),
-            Step(body={"id": "c1", "name": "Managed", "revision": 7, "payload": payload}),
+            Step(body=payload),
+            Step(body={"dashboardStatus": {"channelId": "c1", "state": "STARTED"}}),
         )
         client.login()
         document = client.get_channel_complete("c1")
         self.assertEqual(payload, document.payload)
+        self.assertEqual("STARTED", document.status)
         self.assertNotIn("x" * 100, repr(document))
 
     def test_malformed_and_unsupported_responses_are_explicit(self):
