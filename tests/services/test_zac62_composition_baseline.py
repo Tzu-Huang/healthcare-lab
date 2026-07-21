@@ -15,10 +15,7 @@ class Zac62CompositionBaselineTests(unittest.TestCase):
     def test_zac46_oie_management_wiring_is_retained(self):
         source = APP_FACTORY.read_text(encoding="utf-8")
 
-        self.assertIn(
-            'app.extensions["oie_management_client"] = create_oie_management_client(',
-            source,
-        )
+        self.assertIn("client_provider=lambda: create_oie_management_client(", source)
         self.assertIn("dependencies.oie_settings_repository", source)
 
     def test_workflow_extensions_are_registered_before_blueprint_composition(self):
@@ -35,7 +32,7 @@ class Zac62CompositionBaselineTests(unittest.TestCase):
             'app.extensions["oie_result_listener"]',
             'app.extensions["gdt_bridge_watcher"]',
             'app.extensions["oie_settings_service"]',
-            'app.extensions["oie_management_client"]',
+            'app.extensions["oie_channel_lifecycle_service"]',
             'app.extensions["oie_workflow_service"]',
         )
         positions = [function_source.index(seam) for seam in required_seams]

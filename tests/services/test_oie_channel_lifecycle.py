@@ -29,7 +29,8 @@ class FakeRepository:
 
 
 class FakeClient:
-    def __init__(self, channels=(), fail_delete=False, fail_deploy=False): self.channels, self.calls, self.fail_delete, self.fail_deploy = list(channels), [], fail_delete, fail_deploy
+    def __init__(self, channels=(), fail_delete=False, fail_deploy=False): self.channels, self.calls, self.fail_delete, self.fail_deploy, self.closed = list(channels), [], fail_delete, fail_deploy, False
+    def close(self): self.closed = True
     def list_channels(self): return SimpleNamespace(values={"items": tuple(self.channels)})
     def get_channel(self, channel_id): self.calls.append(("get", channel_id)); return SimpleNamespace(values=next(v for v in self.channels if v["id"] == channel_id))
     def get_channel_complete(self, channel_id):
@@ -64,6 +65,30 @@ class LifecycleServiceTests(unittest.TestCase):
         self.assertEqual("success", result["outcome"]); self.assertEqual("c1", repository.mapping["channelId"])
         self.assertEqual("create", client.calls[0][0])
         self.assertEqual("preview-create", repository.audits[0]["operation"])
+
+    def test_each_operation_uses_latest_client_configuration_and_closes_session(self):
+        repository = FakeRepository()
+        repository.connection_marker = "old"
+        clients = []
+
+        def provide_client():
+            client = FakeClient([value(channel_id=repository.connection_marker)])
+            clients.append((repository.connection_marker, client))
+            return client
+
+        now = lambda: datetime(2026, 7, 20, tzinfo=timezone.utc)
+        service = OieManagedChannelLifecycleService(
+            None, repository, ap_host="ap.internal",
+            token_codec=PreviewTokenCodec(b"x" * 32, now=now),
+            client_provider=provide_client,
+        )
+
+        service.inspect()
+        repository.connection_marker = "new"
+        service.inspect()
+
+        self.assertEqual(["old", "new"], [marker for marker, _ in clients])
+        self.assertTrue(all(client.closed for _, client in clients))
 
     def test_retry_after_uncertain_create_never_creates_duplicate(self):
         client, repository = FakeClient([value()]), FakeRepository(mapped=False); service = self.service(client, repository)
