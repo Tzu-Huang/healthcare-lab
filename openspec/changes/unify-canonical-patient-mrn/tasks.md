@@ -6,9 +6,9 @@
 
 ## 2. Propagate canonical MRN through protocols
 
-- [ ] 2.1 Verify and pin HL7 `PID-3`, FHIR `urn:healthcare-lab:mrn`, and DICOM Patient ID/MWL mappings to the Patient's canonical MRN while preserving their separate assigning authority, workflow, Medplum, issuer, accession, and UID identities.
-- [ ] 2.2 Change new GDT Patient and Order field `3000` payloads and snapshots to use canonical MRN while retaining any required `GDT-PAT-*` value only as internal correlation metadata.
-- [ ] 2.3 Update GDT result matching so exact Order identifiers retain precedence, canonical MRN supports Patient matching, and previously persisted `GDT-PAT-*` aliases remain compatible.
+- [x] 2.1 Verify and pin HL7 `PID-3`, FHIR `urn:healthcare-lab:mrn`, and DICOM Patient ID/MWL mappings to the Patient's canonical MRN while preserving their separate assigning authority, workflow, Medplum, issuer, accession, and UID identities.
+- [x] 2.2 Change new GDT Patient and Order field `3000` payloads and snapshots to use canonical MRN while retaining any required `GDT-PAT-*` value only as internal correlation metadata.
+- [x] 2.3 Update GDT result matching so exact Order identifiers retain precedence, canonical MRN supports Patient matching, and previously persisted `GDT-PAT-*` aliases remain compatible.
 
 ## 3. Correct API projections and console labels
 

@@ -184,8 +184,10 @@ class GdtWorkflowRepository:
         timestamp = self._timestamp()
         with self._lock, self._connect() as connection:
             context = self._ensure_context(connection, patient, override=override, timestamp=timestamp)
-            gdt_patient_number = context["effective_gdt_patient_number"]
-            patient_snapshot = gdt_mapper.patient_snapshot(patient, gdt_patient_number)
+            workflow_patient_id = context["effective_gdt_patient_number"]
+            canonical_mrn = str(demographics.get("mrn", summary.get("mrn", "")) or "").strip()
+            patient_snapshot = gdt_mapper.patient_snapshot(patient, canonical_mrn)
+            patient_snapshot["gdtWorkflowPatientId"] = workflow_patient_id
             order_snapshot = {
                 "requestedAt": requested_at, "orderingProvider": provider,
                 "clinicalIndication": indication, "gdtTestField": GDT_ORDER_TEST_CODE_FIELD,
@@ -200,8 +202,8 @@ class GdtWorkflowRepository:
                     order_snapshot_json, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 ("", patient_id, context["id"], GDT_ORDER_PROTOCOL_VERSION, GDT_ORDER_MESSAGE_TYPE,
-                 GDT_ORDER_STATUS_CREATED, demographics.get("mrn", summary.get("mrn", "")),
-                 gdt_patient_number, demographics.get("firstName", ""), demographics.get("lastName", ""),
+                 GDT_ORDER_STATUS_CREATED, canonical_mrn,
+                 canonical_mrn, demographics.get("firstName", ""), demographics.get("lastName", ""),
                  demographics.get("middleName", ""), demographics.get("dob", summary.get("dob", "")),
                  demographics.get("sex", summary.get("sex", "")),
                  patient.get("visitNumber", summary.get("visitNumber", "")), test_code, GDT_ORDER_TEST_LABEL,
@@ -213,7 +215,7 @@ class GdtWorkflowRepository:
             order_number = gdt_domain.order_number(record_id)
             order_snapshot["localGdtOrderNumber"] = order_number
             adapter_result = self._build_order(gdt_domain.prepare_order_payload(
-                demographics=demographics, summary=summary, gdt_patient_number=gdt_patient_number,
+                demographics=demographics, summary=summary, gdt_patient_number=canonical_mrn,
                 local_order_number=order_number, requested_at=requested_at,
                 ordering_provider=provider, clinical_indication=indication,
                 patient_snapshot=patient_snapshot, order_snapshot=order_snapshot,
@@ -264,9 +266,16 @@ class GdtWorkflowRepository:
             patient_context_id = order_row["gdt_patient_context_id"] if order_row else None
             if not patient_context_id and patient_number:
                 context = connection.execute(
-                    """SELECT * FROM local_gdt_patient_contexts
-                       WHERE effective_gdt_patient_number = ? ORDER BY id DESC LIMIT 1""",
-                    (patient_number,),
+                    """SELECT context.*
+                       FROM local_gdt_patient_contexts AS context
+                       JOIN local_patient_records AS patient
+                         ON patient.id = context.patient_record_id
+                       WHERE UPPER(TRIM(patient.mrn)) = UPPER(TRIM(?))
+                          OR context.effective_gdt_patient_number = ?
+                          OR context.generated_gdt_patient_number = ?
+                          OR context.gdt_patient_number_override = ?
+                       ORDER BY context.id DESC LIMIT 1""",
+                    (patient_number, patient_number, patient_number, patient_number),
                 ).fetchone()
                 patient_context_id = context["id"] if context else None
             match_status = "order-matched" if order_row else "unmatched"
