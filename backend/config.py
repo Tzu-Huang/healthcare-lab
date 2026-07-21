@@ -260,8 +260,14 @@ def load_application_config(
         ),
         "OIE_MLLP_ORDER_HOST": env.get("OIE_MLLP_ORDER_HOST", "localhost").strip() or "localhost",
         "OIE_MLLP_ORDER_PORT": int(env.get("OIE_MLLP_ORDER_PORT", "6600")),
-        "OIE_MLLP_RESULT_HOST": env.get("OIE_MLLP_RESULT_HOST", "0.0.0.0").strip() or "0.0.0.0",
-        "OIE_MLLP_RESULT_PORT": int(env.get("OIE_MLLP_RESULT_PORT", "6665")),
+        "HLAB_RESULT_LISTENER_HOST": env.get("HLAB_RESULT_LISTENER_HOST", env.get("OIE_MLLP_RESULT_HOST", "0.0.0.0")).strip() or "0.0.0.0",
+        "HLAB_RESULT_LISTENER_PORT": int(env.get("HLAB_RESULT_LISTENER_PORT", env.get("OIE_MLLP_RESULT_PORT", "6665"))),
+        # Compatibility projection for existing application callers. The legacy
+        # names now refer only to the HLAB listener, never OIE host publication.
+        "OIE_MLLP_RESULT_HOST": env.get("HLAB_RESULT_LISTENER_HOST", env.get("OIE_MLLP_RESULT_HOST", "0.0.0.0")).strip() or "0.0.0.0",
+        "OIE_MLLP_RESULT_PORT": int(env.get("HLAB_RESULT_LISTENER_PORT", env.get("OIE_MLLP_RESULT_PORT", "6665"))),
+        "OIE_AP_RESULT_INGRESS_HOST_PORT": int(env.get("OIE_AP_RESULT_INGRESS_HOST_PORT", "6661")),
+        "OIE_ORDER_INGRESS_HOST_PORT": int(env.get("OIE_ORDER_INGRESS_HOST_PORT", "6600")),
         "OIE_MANAGED_AP_HOST": env.get("OIE_MANAGED_AP_HOST", "hl7tester").strip() or "hl7tester",
         "DCM4CHEE_PROFILE_NAME": profile_name,
         "DCM4CHEE_DISPLAY_NAME": env.get("DCM4CHEE_DISPLAY_NAME", "dcm4chee Local Archive").strip(),

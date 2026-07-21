@@ -192,6 +192,16 @@ CREATE TABLE IF NOT EXISTS oie_managed_channel_lifecycle_audits (
     created_at TEXT NOT NULL,
     FOREIGN KEY(profile_id) REFERENCES oie_settings_profiles(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS oie_settings_mutation_audits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL,
+    actor TEXT NOT NULL DEFAULT 'local-operator',
+    operation TEXT NOT NULL,
+    changed_fields_json TEXT NOT NULL DEFAULT '[]',
+    outcome TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(profile_id) REFERENCES oie_settings_profiles(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS local_gdt_order_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     local_gdt_order_number TEXT NOT NULL UNIQUE,
