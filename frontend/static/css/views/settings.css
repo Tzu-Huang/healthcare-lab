@@ -1,3 +1,12 @@
 .settings-workspace[data-module-owner="settings"] {
   --settings-module-owner: "settings";
 }
+.settings-workspace > header { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+.settings-channel-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin-bottom:1.5rem; }
+.settings-channel { border:1px solid var(--border-color,#ccd4dc); border-radius:12px; padding:1rem; }
+.settings-conflict { border-color:#b42318; background:#fff4f2; }
+.settings-drifted { border-color:#b54708; background:#fffaeb; }
+.settings-channel[data-read-only="true"] { opacity:.75; }
+.settings-channel button { margin:.35rem .35rem 0 0; }
+.settings-preview { border:2px solid #175cd3; border-radius:12px; padding:1rem; }
+.settings-preview label { display:grid; gap:.35rem; margin:1rem 0; }
