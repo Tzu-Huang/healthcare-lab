@@ -78,6 +78,14 @@ class OieRepository:
         self.updated = {"id": order_id, **values}
         return self.updated
 
+    def get_result_listener_configuration(self):
+        return {
+            "host": "0.0.0.0",
+            "port": 6665,
+            "mllp_framing": True,
+            "auto_start": True,
+        }
+
 
 class Listener:
     def status(self):
@@ -481,6 +489,7 @@ class WorkflowServiceTest(unittest.TestCase):
                 "OIE_MLLP_RESULT_PORT": 6665,
             },
             Listener(),
+            listener_configuration_source=repository,
             result_handler=lambda *_args: ("ACK", {}, 200),
             ack_parser=lambda _payload: {"code": "AA", "controlId": "1", "text": "ok"},
             order_sender_provider=lambda: sender,

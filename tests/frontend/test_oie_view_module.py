@@ -23,7 +23,8 @@ class OieViewModuleTests(unittest.TestCase):
             'id="send-selected-oie-order"',
             'Host / IP<input id="oie-send-host"',
             'id="oie-send-host" value="{{ oie_order_host }}"',
-            'id="oie-listener-port" value="{{ oie_result_port }}"',
+            'id="oie-listener-endpoint"',
+            'id="retry-oie-listener"',
             'id="oie-unmatched-result-list"',
         ):
             self.assertIn(marker, self.template)
@@ -39,7 +40,7 @@ class OieViewModuleTests(unittest.TestCase):
     def test_oie_uses_feature_api_adapters(self):
         api = (ROOT / "frontend/static/js/api/oie.js").read_text(encoding="utf-8")
         for name in (
-            "fetchOieWorkbench", "fetchOieListenerStatus", "startOieResultListener",
+            "fetchOieWorkbench", "fetchOieListenerStatus", "startOieResultListener", "retryOieResultListener",
             "stopOieResultListener", "sendOieLocalOrder",
         ):
             self.assertIn(f"function {name}(", api)
@@ -51,9 +52,12 @@ class OieViewModuleTests(unittest.TestCase):
         self.assertIn("if (initialized) return", self.source)
         for element_id in (
             "refresh-oie-inventory", "copy-oie-payload", "send-selected-oie-order",
-            "start-oie-listener", "stop-oie-listener",
+            "start-oie-listener", "retry-oie-listener", "stop-oie-listener",
         ):
             self.assertIn(f'byId("{element_id}").addEventListener', self.source)
+
+        self.assertNotIn('id="oie-listener-host"', self.template)
+        self.assertNotIn('id="oie-listener-port"', self.template)
 
     def test_entrypoint_has_no_oie_compatibility_boundary(self):
         self.assertEqual('import "./js/app.js";\n', self.entrypoint)

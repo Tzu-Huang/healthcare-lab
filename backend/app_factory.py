@@ -220,7 +220,7 @@ request_dcm4chee_patient_create = dcm4chee_client.request_dcm4chee_patient_creat
 request_dcm4chee_mwl_readback = dcm4chee_client.request_dcm4chee_mwl_readback
 request_dcm4chee_mwl_verification = dcm4chee_client.request_dcm4chee_mwl_verification
 request_dcm4chee_qido = dcm4chee_client.request_dcm4chee_qido
-def create_app(database_path: str | None = None, *, dependency_receiver: Callable[[object], None] | None = None, order_coordination_receiver: Callable[[object], None] | None = None) -> Flask:
+def create_app(database_path: str | None = None, *, dependency_receiver: Callable[[object], None] | None = None, order_coordination_receiver: Callable[[object], None] | None = None, activate_runtime: bool = True) -> Flask:
     app = Flask(
         __name__,
         template_folder=str(PROJECT_ROOT / "frontend" / "templates"),
@@ -337,6 +337,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         oie_coordination,
         app.config,
         app.extensions["oie_result_listener"],
+        listener_configuration_source=dependencies.oie_settings_repository,
         result_handler=accept_oie_result_payload,
         ack_parser=parse_hl7_ack,
         order_sender_provider=lambda: send_hl7_mllp_message,
@@ -348,6 +349,8 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
             app.extensions["oie_channel_lifecycle_service"],
         )
     )
+    if activate_runtime:
+        app.extensions["oie_workflow_service"].auto_start_listener()
     app.register_blueprint(
         create_lab_servers_blueprint(
             *lab_server_services(

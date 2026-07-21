@@ -1,6 +1,25 @@
 .settings-workspace[data-module-owner="settings"] {
   --settings-module-owner: "settings";
 }
+
+.settings-listener-panel {
+  max-width: 880px;
+}
+
+.settings-listener-grid {
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  margin-bottom: 18px;
+}
+
+.settings-runtime-reminder {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid #d9b35c;
+  border-radius: 7px;
+  background: #fff4cf;
+  color: #6d5111;
+  font-weight: 700;
+}
 .settings-workspace > header { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
 .settings-channel-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin-bottom:1.5rem; }
 .settings-channel { border:1px solid var(--border-color,#ccd4dc); border-radius:12px; padding:1rem; }

@@ -8,11 +8,14 @@ export function fetchOieListenerStatus() {
   return requestJson("/api/oie/result-listener/status");
 }
 
-export function startOieResultListener(payload) {
+export function startOieResultListener() {
   return requestJson("/api/oie/result-listener/start", {
     method: "POST",
-    body: JSON.stringify(payload),
   });
+}
+
+export function retryOieResultListener() {
+  return requestJson("/api/oie/result-listener/retry", { method: "POST" });
 }
 
 export function stopOieResultListener() {

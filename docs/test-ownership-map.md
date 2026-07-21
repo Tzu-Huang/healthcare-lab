@@ -61,6 +61,7 @@ To reproduce the source counts:
 | dcm4chee profile, MWL, sync and result workflows | `tests/integration/test_dcm4chee_api.py` | `python -m unittest tests.integration.test_dcm4chee_api` |
 | GDT order/result and bridge/watcher API | `tests/integration/test_gdt_api.py` | `python -m unittest tests.integration.test_gdt_api` |
 | OIE settings, results, listener and send operations | `tests/integration/test_oie_api.py` | `python -m unittest tests.integration.test_oie_api` |
+| OIE listener auto-start, degradation and retry composition | `tests/integration/test_oie_listener_lifecycle.py` | `python -m unittest tests.integration.test_oie_listener_lifecycle` |
 | dashboard, lab server, health and controlled runtime operations | `tests/integration/test_dashboard_lab_api.py` | `python -m unittest tests.integration.test_dashboard_lab_api` |
 
 The old integration test IDs are preserved as method names in these focused

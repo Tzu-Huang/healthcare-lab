@@ -1,4 +1,20 @@
 <section id="settings-view" class="app-view settings-workspace" aria-label="Settings" hidden>
+  <div class="lab-console-header">
+    <div><p class="eyebrow">OIE Settings</p><h2>Result Listener</h2></div>
+  </div>
+  <section class="lab-panel settings-listener-panel">
+    <p id="settings-listener-reload-reminder" class="settings-runtime-reminder" role="alert" hidden></p>
+    <div class="form-grid settings-listener-grid">
+      <label>Host<input id="settings-listener-host" autocomplete="off"></label>
+      <label>Port<input id="settings-listener-port" type="number" min="1" max="65535"></label>
+      <label class="checkbox-row"><input id="settings-listener-mllp" type="checkbox">MLLP framing</label>
+      <label class="checkbox-row"><input id="settings-listener-auto-start" type="checkbox">Auto-start with lab-app</label>
+    </div>
+    <div class="button-row">
+      <button id="save-listener-settings" class="primary" type="button">Save Listener Settings</button>
+      <button id="retry-settings-listener" type="button">Retry Listener</button>
+    </div>
+    <p class="muted">Saving does not interrupt the running listener. Retry after stopping it, or restart lab-app, to apply changed settings.</p>
   <header><div><p class="eyebrow">OIE Settings</p><h2>Managed Channels</h2></div><button id="settings-refresh" type="button">Refresh</button></header>
   <p id="settings-status" role="status">Review live OIE state before every operation.</p>
   <section><h3>Healthcare Lab managed</h3><div id="settings-managed-list" class="settings-channel-grid"></div></section>

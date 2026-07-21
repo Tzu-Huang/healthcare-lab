@@ -49,7 +49,9 @@ class OieApiTests(ApiCaseSupport):
         response = self.client.put("/api/oie/settings", json=payload)
 
         self.assertEqual(response.status_code, 200)
-        item = response.get_json()["item"]
+        body = response.get_json()
+        self.assertTrue(body["runtimeReloadRequired"])
+        item = body["item"]
         self.assertEqual(item["managementApi"]["baseUrl"], "https://oie.example.test/api")
         self.assertEqual(item["resultListener"]["port"], 7777)
         self.assertEqual(item["managedChannels"][0]["channelId"], "channel-result")
@@ -108,6 +110,7 @@ class OieApiTests(ApiCaseSupport):
         self.assertNotIn(secret, response.get_data(as_text=True))
         self.assertNotIn(secret, str(log_call.call_args_list))
         self.assertNotIn("password", response.get_json()["item"]["managementApi"])
+        self.assertFalse(response.get_json()["runtimeReloadRequired"])
 
         omitted = self.oie_settings_payload()
         omitted["managementApi"]["username"] = "updated-user"
@@ -177,10 +180,14 @@ class OieApiTests(ApiCaseSupport):
         occupied.listen(1)
         port = occupied.getsockname()[1]
         try:
-            response = self.client.post(
-                "/api/oie/result-listener/start",
-                json={"host": "127.0.0.1", "port": port, "mllpFraming": True},
-            )
+            payload = self.oie_settings_payload(resultListener={
+                "host": "127.0.0.1", "port": port,
+                "mllpFraming": True, "autoStart": True,
+            })
+            self.assertEqual(200, self.client.put("/api/oie/settings", json=payload).status_code)
+            response = self.client.post("/api/oie/result-listener/start", json={
+                "host": "ignored.example", "port": 1, "mllpFraming": False,
+            })
         finally:
             occupied.close()
 
@@ -188,6 +195,8 @@ class OieApiTests(ApiCaseSupport):
         self.assertIn("Listener could not start", response.get_json()["error"])
         status = self.client.get("/api/oie/result-listener/status").get_json()["item"]
         self.assertFalse(status["running"])
+        self.assertEqual("degraded", status["state"])
+        self.assertEqual(port, status["port"])
 
     @patch("backend.app_factory.send_hl7_mllp_message")
     def test_oie_send_order_records_ack_acceptance(self, send_message):
