@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class SettingsFoundationTests(unittest.TestCase):
+    def test_settings_destinations_own_listener_controls_without_managed_channels(self):
     def test_managed_channel_settings_surface_is_owned_and_safe(self):
         expected = (
             "frontend/static/js/api/settings.js",
@@ -23,6 +24,9 @@ class SettingsFoundationTests(unittest.TestCase):
 
         template = (ROOT / "frontend/templates/views/settings.html").read_text(encoding="utf-8")
         self.assertIn('id="settings-view"', template)
+        self.assertIn('id="settings-listener-host"', template)
+        self.assertIn('id="settings-listener-reload-reminder"', template)
+        self.assertIn('id="retry-settings-listener"', template)
         self.assertNotIn("password", template.lower())
         self.assertIn("managed channels", template.lower())
         self.assertIn("external — read only", template.lower())
@@ -36,6 +40,19 @@ class SettingsFoundationTests(unittest.TestCase):
         self.assertIn("state.initialized", source)
         self.assertNotIn("fetch(", source)
 
+    def test_listener_save_reminder_is_driven_by_api_and_runtime_status(self):
+        source = (ROOT / "frontend/static/js/views/settings.js").read_text(encoding="utf-8")
+        state = (ROOT / "frontend/static/js/state/settings.js").read_text(encoding="utf-8")
+        api = (ROOT / "frontend/static/js/api/settings.js").read_text(encoding="utf-8")
+        component = (ROOT / "frontend/static/js/components/settings-shell.js").read_text(encoding="utf-8")
+
+        self.assertIn("runtimeReloadRequired", source)
+        self.assertIn("!listenerSettingsMatchStatus(state.profile, status.item)", source)
+        self.assertIn("listenerSettingsMatchStatus", state)
+        self.assertIn("intendedDisabledStateMatches", state)
+        self.assertIn("function saveSettings(", api)
+        self.assertIn("function retrySettingsListener(", api)
+        self.assertIn("Stop and Retry", component)
     def test_api_and_view_require_preview_before_single_target_mutation(self):
         api = (ROOT / "frontend/static/js/api/settings.js").read_text(encoding="utf-8")
         view = (ROOT / "frontend/static/js/views/settings.js").read_text(encoding="utf-8")

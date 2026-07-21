@@ -75,12 +75,11 @@
             </div>
             <span id="oie-listener-status" class="status neutral">Stopped</span>
           </div>
-          <div class="form-grid oie-connection-grid">
-            <label>Host<input id="oie-listener-host" value="{{ oie_result_host }}"></label>
-            <label>Port<input id="oie-listener-port" value="{{ oie_result_port }}"></label>
-            <label class="checkbox-row"><input id="oie-listener-mllp" type="checkbox" checked>MLLP</label>
+          <div class="oie-listener-runtime-controls">
+            <p id="oie-listener-endpoint" class="muted">Loading persisted listener settings...</p>
             <div class="button-row">
               <button id="start-oie-listener" type="button">Start</button>
+              <button id="retry-oie-listener" type="button">Retry</button>
               <button id="stop-oie-listener" type="button">Stop</button>
             </div>
           </div>

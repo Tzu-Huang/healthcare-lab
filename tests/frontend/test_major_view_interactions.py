@@ -23,7 +23,7 @@ class MajorViewInteractionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.temp_dir = tempfile.TemporaryDirectory()
-        app = create_app(str(Path(cls.temp_dir.name) / "major-views.db"))
+        app = create_app(str(Path(cls.temp_dir.name) / "major-views.db"), activate_runtime=False)
         app.config.update(TESTING=True)
         cls.server = make_server("127.0.0.1", 0, app)
         cls.server_thread = threading.Thread(target=cls.server.serve_forever, daemon=True)

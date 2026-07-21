@@ -84,6 +84,10 @@ class OieListenerPort(Protocol):
     def stop(self) -> dict[str, Any]: ...
 
 
+class OieListenerConfigurationSource(Protocol):
+    def get_result_listener_configuration(self) -> Mapping[str, Any]: ...
+
+
 class OieTransportError(Exception):
     def __init__(self, message: str, item: dict[str, Any]) -> None:
         super().__init__(message)
@@ -132,6 +136,7 @@ class OieWorkflowService:
         configuration: Mapping[str, Any],
         listener: OieListenerPort,
         *,
+        listener_configuration_source: OieListenerConfigurationSource,
         result_handler: Callable[[OieResultRepositoryPort, str], tuple[str, dict[str, Any], int]],
         ack_parser: Callable[[str], dict[str, str]],
         order_sender_provider: Callable[[], Callable[..., str]],
@@ -140,6 +145,7 @@ class OieWorkflowService:
         self._coordination = coordination
         self._configuration = configuration
         self._listener = listener
+        self._listener_configuration_source = listener_configuration_source
         self._result_handler = result_handler
         self._ack_parser = ack_parser
         self._order_sender_provider = order_sender_provider
@@ -166,17 +172,31 @@ class OieWorkflowService:
     def listener_status(self) -> dict[str, Any]:
         return self._listener.status()
 
-    def start_listener(self, payload: dict[str, Any]) -> dict[str, Any]:
-        host = str(
-            payload.get("host", self._configuration["OIE_MLLP_RESULT_HOST"]) or ""
-        ).strip()
-        try:
-            port = int(payload.get("port", self._configuration["OIE_MLLP_RESULT_PORT"]))
-        except (TypeError, ValueError) as exc:
-            raise ValueError("Listener port must be numeric.") from exc
+    def _listener_configuration(self) -> tuple[str, int, bool, bool]:
+        values = self._listener_configuration_source.get_result_listener_configuration()
+        host = str(values["host"]).strip()
+        port = int(values["port"])
+        framing = bool(values["mllp_framing"])
+        auto_start = bool(values["auto_start"])
+        return host, port, framing, auto_start
+
+    def start_listener(self) -> dict[str, Any]:
+        host, port, framing, _auto_start = self._listener_configuration()
         return self._listener.start(
-            host=host, port=port, framing=bool(payload.get("mllpFraming", True))
+            host=host, port=port, framing=framing
         )
+
+    def retry_listener(self) -> dict[str, Any]:
+        return self.start_listener()
+
+    def auto_start_listener(self) -> dict[str, Any]:
+        _host, _port, _framing, auto_start = self._listener_configuration()
+        if not auto_start:
+            return self._listener.status()
+        try:
+            return self.start_listener()
+        except ValidationError:
+            return self._listener.status()
 
     def stop_listener(self) -> dict[str, Any]:
         return self._listener.stop()

@@ -283,7 +283,7 @@ class DashboardLabApiTests(ApiCaseSupport):
                     "DCM4CHEE_TLS_VERIFY": "sometimes",
                 },
             ):
-                app = create_app(str(Path(temp_dir) / "malformed.db"))
+                app = create_app(str(Path(temp_dir) / "malformed.db"), activate_runtime=False)
             app.config.update(TESTING=True, GDT_BRIDGE_PATH=str(Path(temp_dir) / "gdt-bridge"))
             response = app.test_client().get("/api/dcm4chee/profile/diagnostics")
 

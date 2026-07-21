@@ -59,7 +59,7 @@ class OieInteractionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.temp_dir = tempfile.TemporaryDirectory()
-        app = create_app(str(Path(cls.temp_dir.name) / "oie-browser.db"))
+        app = create_app(str(Path(cls.temp_dir.name) / "oie-browser.db"), activate_runtime=False)
         app.config.update(TESTING=True)
         cls.server = make_server("127.0.0.1", 0, app)
         cls.server_thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -141,6 +141,124 @@ class OieInteractionTests(unittest.TestCase):
         self.assertIn(("POST", f"{self.base_url}/api/oie/result-listener/start"), calls)
         self.assertIn(("POST", f"{self.base_url}/api/oie/result-listener/stop"), calls)
         self.assertEqual([], browser_errors)
+
+    def test_settings_save_shows_reminder_until_retry_applies_listener(self):
+        page = self.browser.new_page()
+        self.addCleanup(page.close)
+        profile = {
+            "profileName": "local-oie",
+            "managementApi": {
+                "baseUrl": "http://oie:8080", "username": "admin",
+                "tlsVerify": False, "timeoutSeconds": 10,
+                "passwordConfigured": True,
+            },
+            "resultListener": {
+                "host": "127.0.0.1", "port": 6665,
+                "mllpFraming": True, "autoStart": True,
+            },
+            "managedChannels": [],
+        }
+        listener_status = {
+            "state": "running", "running": True,
+            "host": "127.0.0.1", "port": 6665, "mllpFraming": True,
+        }
+
+        def handle_api(route: Route) -> None:
+            request = route.request
+            path = urlparse(request.url).path
+            if path == "/api/oie/settings" and request.method == "GET":
+                payload = {"success": True, "item": profile}
+            elif path == "/api/oie/settings" and request.method == "PUT":
+                saved = json.loads(request.post_data or "{}")
+                profile["resultListener"] = saved["resultListener"]
+                payload = {"success": True, "item": profile, "runtimeReloadRequired": True}
+            elif path == "/api/oie/result-listener/status":
+                payload = {"success": True, "item": listener_status}
+            elif path == "/api/oie/result-listener/retry":
+                listener_status.update({
+                    "state": "running", "running": True,
+                    "host": profile["resultListener"]["host"],
+                    "port": profile["resultListener"]["port"],
+                    "mllpFraming": profile["resultListener"]["mllpFraming"],
+                })
+                payload = {"success": True, "item": listener_status}
+            else:
+                route.continue_()
+                return
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+        page.route("**/api/**", handle_api)
+        page.goto(self.base_url, wait_until="networkidle")
+        page.locator('#settings-view[data-module-owner="settings"]').wait_for(
+            state="attached"
+        )
+        page.locator("#settings-view").evaluate("element => { element.hidden = false; }")
+        page.evaluate(
+            "() => import('/static/js/views/settings.js')"
+            ".then(({ refreshSettings }) => refreshSettings())"
+        )
+        page.locator("#settings-listener-host").fill("127.0.0.2")
+        page.locator("#save-listener-settings").click()
+        reminder = page.locator("#settings-listener-reload-reminder")
+        reminder.wait_for(state="visible")
+        self.assertIn("not active", reminder.inner_text())
+
+        page.close()
+        reloaded_page = self.browser.new_page()
+        self.addCleanup(reloaded_page.close)
+        reloaded_page.route("**/api/**", handle_api)
+        reloaded_page.goto(self.base_url, wait_until="networkidle")
+        reloaded_page.locator('#settings-view[data-module-owner="settings"]').wait_for(
+            state="attached"
+        )
+        reloaded_page.evaluate(
+            "() => import('/static/js/views/settings.js')"
+            ".then(({ refreshSettings }) => refreshSettings())"
+        )
+        self.assertEqual(
+            reloaded_page.locator("#settings-listener-host").input_value(),
+            "127.0.0.2",
+        )
+        reminder = reloaded_page.locator("#settings-listener-reload-reminder")
+        self.assertFalse(reminder.evaluate("element => element.hidden"))
+        self.assertIn("not active", reminder.inner_text())
+
+        reloaded_page.evaluate(
+            "() => import('/static/js/views/settings.js')"
+            ".then(({ retryListenerFromSettings }) => retryListenerFromSettings())"
+        )
+        self.assertTrue(reminder.evaluate("element => element.hidden"))
+
+        reloaded_page.locator("#settings-listener-auto-start").evaluate(
+            "element => { element.checked = false; }"
+        )
+        reloaded_page.evaluate(
+            "() => import('/static/js/views/settings.js')"
+            ".then(({ saveListenerSettings }) => saveListenerSettings())"
+        )
+        self.assertFalse(reminder.evaluate("element => element.hidden"))
+
+        reloaded_page.close()
+        disabled_page = self.browser.new_page()
+        self.addCleanup(disabled_page.close)
+        disabled_page.route("**/api/**", handle_api)
+        disabled_page.goto(self.base_url, wait_until="networkidle")
+        disabled_page.locator('#settings-view[data-module-owner="settings"]').wait_for(
+            state="attached"
+        )
+        disabled_page.evaluate(
+            "() => import('/static/js/views/settings.js')"
+            ".then(({ refreshSettings }) => refreshSettings())"
+        )
+        reminder = disabled_page.locator("#settings-listener-reload-reminder")
+        self.assertFalse(reminder.evaluate("element => element.hidden"))
+
+        listener_status.update({"state": "stopped", "running": False})
+        disabled_page.evaluate(
+            "() => import('/static/js/views/settings.js')"
+            ".then(({ refreshSettings }) => refreshSettings())"
+        )
+        self.assertTrue(reminder.evaluate("element => element.hidden"))
 
 
 if __name__ == "__main__":

@@ -191,6 +191,18 @@ Future OIE work has preassigned destinations:
 
 New OIE persistence must use a named OIE repository and be exposed through a focused workflow port.
 
+The HLAB ORU result listener reads host, port, MLLP framing, and auto-start intent
+only from the persisted OIE Settings profile. Application composition performs
+one best-effort auto-start attempt per process. A bind failure degrades listener
+status but does not fail web application creation. Start and Retry reload the
+persisted intent; Stop is process-local and does not disable the next startup.
+Saving changed listener Settings never rebinds a running socket and must surface
+an unapplied-settings reminder until the persisted configuration is running.
+
+Listener ownership is intentionally single-process. Deploy exactly one lab-app
+process for an endpoint; multiple WSGI workers or replicas are not coordinated,
+and additional processes report a degraded port-conflict state.
+
 ## Frontend placement
 
 ZAC-50 must introduce categorized modules instead of extending only `frontend/static/app.js` and `styles.css`:

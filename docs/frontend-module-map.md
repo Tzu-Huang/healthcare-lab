@@ -131,12 +131,12 @@ positive static `max-age` unless a transitive versioning strategy is introduced.
 
 ## OIE and Settings integration milestone
 
-The ZAC-50 integration milestone is complete when `frontend/static/js/views/oie.js`
-owns the operational OIE workbench state, rendering, send, and listener lifecycle;
-`frontend/static/js/api/oie.js` owns OIE endpoint access; and the reserved Settings
-API/view/state/component/style/template destinations remain free of product
-behavior. ZAC-50 may build its Settings workspace on those owners and MUST NOT
-add OIE or Settings business behavior back to `frontend/static/app.js`.
+`frontend/static/js/views/oie.js` owns the operational OIE workbench state,
+rendering, send, and process-local listener controls; it does not edit listener
+endpoints. The Settings API/view/state/component/style/template owners provide
+the persisted listener configuration surface and the unapplied-runtime reminder.
+Later ZAC-50 managed-Channel behavior must extend those categorized owners and
+MUST NOT add OIE or Settings business behavior back to `frontend/static/app.js`.
 
 ## External-runtime boundary
 

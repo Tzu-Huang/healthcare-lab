@@ -6,7 +6,10 @@ from backend.services.oie_settings import OieSettingsService, create_oie_managem
 
 class FakeRepository:
     def __init__(self):
-        self.profile = {"profileName": "local-oie"}
+        self.profile = {
+            "profileName": "local-oie",
+            "resultListener": {"host": "0.0.0.0", "port": 6665},
+        }
         self.updated_with = None
 
     def get(self):
@@ -14,7 +17,7 @@ class FakeRepository:
 
     def update(self, payload):
         self.updated_with = payload
-        return {**self.profile, "updated": True}
+        return {**self.profile, "updated": True, "resultListener": payload.get("resultListener", self.profile["resultListener"])}
 
 
 class OieSettingsServiceTest(unittest.TestCase):
@@ -23,8 +26,19 @@ class OieSettingsServiceTest(unittest.TestCase):
         service = OieSettingsService(repository)
 
         self.assertEqual(repository.profile, service.get_profile())
-        self.assertTrue(service.update_profile({"managementApi": {}})["updated"])
+        result = service.update_profile({"managementApi": {}})
+        self.assertTrue(result.profile["updated"])
+        self.assertFalse(result.runtime_reload_required)
         self.assertEqual({"managementApi": {}}, repository.updated_with)
+
+    def test_update_reports_changed_listener_intent_without_applying_runtime(self):
+        repository = FakeRepository()
+        service = OieSettingsService(repository)
+
+        result = service.update_profile({"resultListener": {"host": "127.0.0.1", "port": 7777}})
+
+        self.assertTrue(result.runtime_reload_required)
+        self.assertEqual(7777, result.profile["resultListener"]["port"])
 
     def test_private_settings_are_adapted_only_at_client_construction(self):
         password = "composition-password-canary"
