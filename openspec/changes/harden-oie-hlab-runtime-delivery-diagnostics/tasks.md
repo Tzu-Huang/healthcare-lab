@@ -19,10 +19,10 @@
 
 ## 4. Settings Audit and Workspace
 
-- [ ] 4.1 Add append-only bounded Settings mutation audit persistence in the same transaction as successful profile updates.
-- [ ] 4.2 Add audit tests proving changed field paths are recorded while values, credentials, PHI, HL7, and arbitrary payloads are excluded.
-- [ ] 4.3 Add the layered diagnostic presentation to Settings, including distinct zero/unavailable delivery state and per-layer recovery guidance.
-- [ ] 4.4 Add frontend coverage for diagnostics, safe errors, and Apply/Redeploy versus Retry/restart versus container-recreation guidance.
+- [x] 4.1 Add append-only bounded Settings mutation audit persistence in the same transaction as successful profile updates.
+- [x] 4.2 Add audit tests proving changed field paths are recorded while values, credentials, PHI, HL7, and arbitrary payloads are excluded.
+- [x] 4.3 Add the layered diagnostic presentation to Settings, including distinct zero/unavailable delivery state and per-layer recovery guidance.
+- [x] 4.4 Add frontend coverage for diagnostics, safe errors, and Apply/Redeploy versus Retry/restart versus container-recreation guidance.
 
 ## 5. Documentation and End-to-End Verification
 

@@ -45,6 +45,15 @@ class SettingsFoundationTests(unittest.TestCase):
         for phrase in ("managed ORU route", "Docker/runtime", "firewall", "Retry or restart"):
             self.assertIn(phrase, warning)
 
+    def test_layered_diagnostics_are_safe_and_distinguish_recovery_actions(self):
+        for element_id in ("settings-diagnostics-summary", "settings-diagnostics-list", "settings-refresh-diagnostics"):
+            self.assertIn(f'id="{element_id}"', self.template)
+        self.assertIn("fetchRuntimeDiagnostics", self.api)
+        self.assertIn("refreshRuntimeDiagnostics", self.view)
+        for phrase in ("Apply/Redeploy", "Retry or lab-app restart", "container recreation"):
+            self.assertIn(phrase, self.template)
+        self.assertIn('check.state || "unknown"', self.view)
+
     def test_preview_is_required_and_delete_matches_display_name(self):
         self.assertIn("state.preview?.previewToken", self.view)
         self.assertIn("state.confirmation !== expectedName", self.view)

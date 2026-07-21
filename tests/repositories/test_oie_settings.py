@@ -154,6 +154,39 @@ class OieSettingsRepositoryTest(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(password, "replacement-secret")
 
+    def test_settings_updates_append_bounded_value_free_audits(self):
+        payload = self.settings_payload(
+            managementApi={
+                "baseUrl": "http://oie:8080", "username": "sensitive-user",
+                "password": "never-store-this-in-audit", "tlsVerify": False,
+                "timeoutSeconds": 10,
+            },
+            resultListener={
+                "host": "127.0.0.1", "port": 7765,
+                "mllpFraming": True, "autoStart": True,
+            },
+        )
+
+        self.repository.update(payload)
+
+        audits = self.repository.list_settings_mutation_audits()
+        self.assertEqual(1, len(audits))
+        self.assertEqual("success", audits[0]["outcome"])
+        self.assertEqual(
+            ["managementApi.username", "resultListener.host", "resultListener.port", "managementApi.password"],
+            audits[0]["changed_fields"],
+        )
+        serialized = json.dumps(audits)
+        for forbidden in ("never-store-this-in-audit", "sensitive-user", "127.0.0.1", "7765", "MSH|", "patient"):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_invalid_settings_do_not_append_success_audit(self):
+        payload = self.settings_payload()
+        payload["resultListener"]["port"] = 70000
+        with self.assertRaises(SimulatorValidationError):
+            self.repository.update(payload)
+        self.assertEqual([], self.repository.list_settings_mutation_audits())
+
     def test_rejects_duplicate_logical_types_atomically(self):
         original = self.repository.update(
             self.settings_payload(
