@@ -1,9 +1,9 @@
 ## 1. Live Environment and Evidence Contract
 
 - [ ] 1.1 Identify and document the authoritative OIE 4.5.2 image/runtime, AP simulator build and endpoint, HLAB revision, network topology, and safe synthetic-data assumptions.
-- [ ] 1.2 Define the exact clean-state and rerun procedures, including verified Compose project/volume targets, external sentinel Channel setup, and recovery from an interrupted run.
-- [ ] 1.3 Add a pass/fail/blocked evidence ledger covering every ZAC-52 verification step with run metadata, correlation identifiers, timestamps, safe evidence references, and blocker tracking.
-- [ ] 1.4 Reconcile prerequisites and legacy OIE channel/port documentation before execution so the live procedure has one unambiguous route contract.
+- [x] 1.2 Define the exact clean-state and rerun procedures, including verified Compose project/volume targets, external sentinel Channel setup, and recovery from an interrupted run.
+- [x] 1.3 Add a pass/fail/blocked evidence ledger covering every ZAC-52 verification step with run metadata, correlation identifiers, timestamps, safe evidence references, and blocker tracking.
+- [x] 1.4 Reconcile prerequisites and legacy OIE channel/port documentation before execution so the live procedure has one unambiguous route contract.
 
 ## 2. Repeatable Live Smoke Support
 
