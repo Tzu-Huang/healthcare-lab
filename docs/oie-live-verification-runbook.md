@@ -276,6 +276,39 @@ to every row; expand rows for retries or defects without deleting failures.
 Overall gate: **BLOCKED / NOT RUN**. Gate owner: `NOT RECORDED`. Open blockers:
 `NOT RECORDED`.
 
+### ZAC-52 acceptance run: 2026-07-21
+
+Run token `Z52-20260721-A`, revision `25cc8f251788b138d90ed0f8fefd52baef9e6db6`,
+Windows/Docker Engine `29.5.2`, Compose `5.1.3`, project
+`interoperability-lab`. OIE reported `4.5.2`; its image digest was
+`sha256:4afa295cfe7c5ffd596efee69594157fea87202e33d66bb4a98a52db4598f836`
+and its verified appdata volume was `interoperability-lab_oie-appdata`. The
+native QHeart-AP build was `1.5.3` on host `6671`. HLAB's listener read-back
+after restart was running on `0.0.0.0:6665` with MLLP framing enabled.
+
+| ID | Result | Bounded evidence |
+| --- | --- | --- |
+| ENV-01..04 | PASS | Clean OIE `4.5.2`; host publications `6600`/`6661`; internal `lab-app:6665`; AP `6671` reachable; runtime identities recorded above. |
+| ENV-05 | PASS | External sentinel `3275d94d-a065-4c6c-9719-15ca98c7d23f`, revision 1, `UNDEPLOYED`, baseline SHA-256 `50d3ce409aa3fdba2367894c829cefb682185eace28c6a9f294d8c3ba47124f1`. |
+| CH-01 | PASS | Saved local-lab Settings connection reported OIE `4.5.2`. |
+| CH-02 | PASS | ORM Channel recreated as `e779f4c2-c6d7-4284-a664-116a37fa8d36`, revision 2, `STARTED`, route `OIE:6600 -> 192.168.65.254:6671`. |
+| CH-03 | PASS | ORU Channel `5e7bef8d-19c1-4214-8f34-f02eed8cef26`, revision 1, `STARTED`, route `OIE:6661 -> lab-app:6665`. |
+| ORM-01..02 | PASS | Synthetic patient 79 / order 51 / `ORM20260721052758000051`; HLAB ACK `AA`; OIE statistics received 1, sent 1, error 0, queued 0. |
+| ORM-03 | BLOCKED | OIE proves one successful destination transaction, but QHeart-AP exposes no stable receipt query and no witnessed UI capture was collected. Do not infer exact AP inventory from upstream ACK/status. |
+| ORU-01..02 | PASS | `ZAC52-MATCH-001` received `AA`, persisted once as result 15 with raw payload, patient 79 and order 51 (`order-matched`). |
+| ORU-03..04 | PASS | `ZAC52-UNMATCH-001` received `AA`, persisted once as result 16 (`unmatched-patient`, no patient/order IDs); matched result 15 remained associated. |
+| LIFE-01 | PASS | Managed ORM destination preview/read-back changed `host.docker.internal:6671` to `192.168.65.254:6671`; live revision advanced to 2. |
+| LIFE-02..03 | PASS | Original managed ORM was guarded undeployed/deleted and recreated/deployed with new Channel ID shown in CH-02. |
+| LIFE-04 | PASS | Sentinel ID, revision, status, and configuration hash remained equal to ENV-05 after managed lifecycle operations. |
+| REC-01..02 | PASS | With `lab-app` stopped, `ZAC52-RECOVERY-001` received `AA`; ORU statistics became received 3, sent 2, error 0, queued 1. |
+| REC-03..04 | PASS | After `lab-app` restart, listener auto-started on `6665`; result 17 persisted exactly once and matched order 51. |
+| OPS-01 | PASS | Management status/statistics and listener read-back exercised; API projections were bounded and queue visibility was immediate. |
+| OPS-02 | BLOCKED | Final automated/full-suite validation and evidence review remain task 6.4; exact AP receipt remains blocked as ORM-03. |
+
+Overall gate: **BLOCKED**. Open blocker: obtain direct, correlation-specific
+QHeart-AP receipt evidence for `ORM20260721052758000051` (or repeat with a new
+ORM `MSH-10`) before marking task 3.3 or the ZAC-52 gate passed.
+
 ## Repeatable non-destructive smoke check
 
 Use a fresh run token. This smoke check never resets volumes, deletes Channels,
