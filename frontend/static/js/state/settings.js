@@ -3,6 +3,7 @@ const initialSettingsState = Object.freeze({
   profile: null,
   runtimeReloadRequired: false,
 });
+const initialSettingsState = Object.freeze({ initialized: false, items: [], selected: null, operation: "", preview: null, confirmation: "", busy: false, refreshRequired: false });
 
 export function createSettingsState() {
   return { ...initialSettingsState };
@@ -21,4 +22,6 @@ export function listenerSettingsMatchStatus(profile, status) {
     && !status?.running && status?.state === "stopped"
   );
   return runningConfigurationMatches || intendedDisabledStateMatches;
+export function clearSettingsPreview(state) {
+  state.preview = null; state.confirmation = ""; state.refreshRequired = false;
 }

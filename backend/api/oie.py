@@ -6,11 +6,12 @@ from flask import Blueprint, jsonify, request
 
 from backend.domain.errors import SimulatorValidationError, ValidationError
 from backend.services.oie_settings import OieSettingsService
+from backend.services.oie_channel_lifecycle import LifecycleGuardError
 from backend.services.oie_workflow import OieTransportError, OieWorkflowService
 
 
 def create_oie_blueprint(
-    settings: OieSettingsService, workflow: OieWorkflowService
+    settings: OieSettingsService, workflow: OieWorkflowService, lifecycle=None
 ) -> Blueprint:
     blueprint = Blueprint("oie", __name__)
 
@@ -105,5 +106,39 @@ def create_oie_blueprint(
         except OieTransportError as exc:
             return jsonify({"success": False, "item": exc.item, "error": str(exc)}), 502
         return jsonify({"success": True, "item": item})
+
+    if lifecycle is not None:
+        @blueprint.get("/api/oie/managed-channels")
+        def managed_channels():
+            try:
+                return jsonify({"success": True, "items": lifecycle.inspect()})
+            except Exception as exc:
+                category = getattr(getattr(exc, "category", None), "value", None) or getattr(exc, "category", "upstream")
+                return jsonify({"success": False, "errorCategory": category, "error": "Managed Channel inspection failed."}), 502
+
+        @blueprint.post("/api/oie/managed-channels/<logical_type>/previews/<operation>")
+        def preview_managed_channel(logical_type: str, operation: str):
+            body = request.get_json(silent=True)
+            if body not in (None, {}):
+                return error("Preview request does not accept mutation options.", 400)
+            try:
+                return jsonify({"success": True, "item": lifecycle.preview(logical_type, operation)})
+            except LifecycleGuardError as exc:
+                return jsonify({"success": False, "errorCategory": exc.category, "error": exc.detail}), 400
+
+        @blueprint.post("/api/oie/managed-channels/<logical_type>/<operation>")
+        def mutate_managed_channel(logical_type: str, operation: str):
+            body = request.get_json(silent=True)
+            if not isinstance(body, dict) or set(body) - {"previewToken", "confirmation"} or not isinstance(body.get("previewToken"), str):
+                return error("Mutation requires only previewToken and optional confirmation.", 400)
+            if operation != "delete" and "confirmation" in body:
+                return error("Confirmation is accepted only for delete.", 400)
+            try:
+                item = lifecycle.execute(logical_type, operation, body["previewToken"], confirmation=body.get("confirmation", ""))
+                return jsonify({"success": item["outcome"] == "success", "item": item})
+            except LifecycleGuardError as exc:
+                status = 409 if exc.requires_fresh_preview else 400
+                return jsonify({"success": False, "errorCategory": exc.category, "error": exc.detail,
+                                "requiresFreshPreview": exc.requires_fresh_preview}), status
 
     return blueprint

@@ -15,5 +15,14 @@
       <button id="retry-settings-listener" type="button">Retry Listener</button>
     </div>
     <p class="muted">Saving does not interrupt the running listener. Retry after stopping it, or restart lab-app, to apply changed settings.</p>
+  <header><div><p class="eyebrow">OIE Settings</p><h2>Managed Channels</h2></div><button id="settings-refresh" type="button">Refresh</button></header>
+  <p id="settings-status" role="status">Review live OIE state before every operation.</p>
+  <section><h3>Healthcare Lab managed</h3><div id="settings-managed-list" class="settings-channel-grid"></div></section>
+  <section><h3>External — read only</h3><div id="settings-external-list" class="settings-channel-grid"></div></section>
+  <section id="settings-preview" class="settings-preview" hidden>
+    <h3>Operation preview</h3><p id="settings-preview-summary"></p><p id="settings-preview-diff"></p>
+    <label id="settings-delete-confirmation-wrap" hidden>Type the exact logical type to confirm deletion<input id="settings-delete-confirmation" autocomplete="off"></label>
+    <button id="settings-preview-execute" type="button" disabled>Execute reviewed operation</button>
+    <pre id="settings-operation-steps"></pre>
   </section>
 </section>
