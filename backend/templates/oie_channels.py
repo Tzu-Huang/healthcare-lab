@@ -40,21 +40,26 @@ __all__ = [
 def orm_to_ap_config(
     ap_host: str,
     *,
+    listener_host: str = "0.0.0.0",
     listener_port: int = 6600,
+    destination_host: str | None = None,
     destination_port: int = 6671,
     send_timeout_ms: int = 5000,
     response_timeout_ms: int = 5000,
     enabled: bool = True,
     initial_state: InitialState = InitialState.STARTED,
+    queue_enabled: bool = False,
+    retry_count: int = 0,
+    retry_interval_ms: int = 10_000,
 ) -> ManagedChannelConfig:
     return ManagedChannelConfig(
         logical_type=ManagedChannelType.ORM_TO_AP,
         display_name="HLAB_ORM_TO_AP",
-        listener=Endpoint("0.0.0.0", listener_port),
-        destination=Endpoint(ap_host, destination_port),
+        listener=Endpoint(listener_host, listener_port),
+        destination=Endpoint(destination_host or ap_host, destination_port),
         send_timeout_ms=send_timeout_ms,
         response_timeout_ms=response_timeout_ms,
-        queue=QueuePolicy(enabled=False),
+        queue=QueuePolicy(enabled=queue_enabled, retry_count=retry_count, retry_interval_ms=retry_interval_ms),
         enabled=enabled,
         initial_state=initial_state,
     )
@@ -62,20 +67,26 @@ def orm_to_ap_config(
 
 def oru_to_hlab_config(
     *,
+    listener_host: str = "0.0.0.0",
     listener_port: int = 6661,
+    destination_host: str = "lab-app",
+    destination_port: int = 6665,
     send_timeout_ms: int = 5000,
     response_timeout_ms: int = 5000,
     enabled: bool = True,
     initial_state: InitialState = InitialState.STARTED,
+    queue_enabled: bool = True,
+    retry_count: int = 0,
+    retry_interval_ms: int = 10_000,
 ) -> ManagedChannelConfig:
     return ManagedChannelConfig(
         logical_type=ManagedChannelType.ORU_TO_HLAB,
         display_name="HLAB_ORU_TO_HLAB",
-        listener=Endpoint("0.0.0.0", listener_port),
-        destination=Endpoint("lab-app", 6665),
+        listener=Endpoint(listener_host, listener_port),
+        destination=Endpoint(destination_host, destination_port),
         send_timeout_ms=send_timeout_ms,
         response_timeout_ms=response_timeout_ms,
-        queue=QueuePolicy(enabled=True),
+        queue=QueuePolicy(enabled=queue_enabled, retry_count=retry_count, retry_interval_ms=retry_interval_ms),
         enabled=enabled,
         initial_state=initial_state,
     )
@@ -91,41 +102,63 @@ def compile_managed_routes(ap_host: str, **orm_overrides: Any) -> tuple[str, str
 def compile_orm_to_ap(
     ap_host: str,
     *,
+    listener_host: str = "0.0.0.0",
     listener_port: int = 6600,
+    destination_host: str | None = None,
     destination_port: int = 6671,
     send_timeout_ms: int = 5000,
     response_timeout_ms: int = 5000,
     enabled: bool = True,
     initial_state: InitialState = InitialState.STARTED,
+    queue_enabled: bool = False,
+    retry_count: int = 0,
+    retry_interval_ms: int = 10_000,
 ) -> str:
     return _render_channel(
         orm_to_ap_config(
             ap_host,
+            listener_host=listener_host,
             listener_port=listener_port,
+            destination_host=destination_host,
             destination_port=destination_port,
             send_timeout_ms=send_timeout_ms,
             response_timeout_ms=response_timeout_ms,
             enabled=enabled,
             initial_state=initial_state,
+            queue_enabled=queue_enabled,
+            retry_count=retry_count,
+            retry_interval_ms=retry_interval_ms,
         )
     )
 
 
 def compile_oru_to_hlab(
     *,
+    listener_host: str = "0.0.0.0",
     listener_port: int = 6661,
+    destination_host: str = "lab-app",
+    destination_port: int = 6665,
     send_timeout_ms: int = 5000,
     response_timeout_ms: int = 5000,
     enabled: bool = True,
     initial_state: InitialState = InitialState.STARTED,
+    queue_enabled: bool = True,
+    retry_count: int = 0,
+    retry_interval_ms: int = 10_000,
 ) -> str:
     return _render_channel(
         oru_to_hlab_config(
+            listener_host=listener_host,
             listener_port=listener_port,
+            destination_host=destination_host,
+            destination_port=destination_port,
             send_timeout_ms=send_timeout_ms,
             response_timeout_ms=response_timeout_ms,
             enabled=enabled,
             initial_state=initial_state,
+            queue_enabled=queue_enabled,
+            retry_count=retry_count,
+            retry_interval_ms=retry_interval_ms,
         )
     )
 

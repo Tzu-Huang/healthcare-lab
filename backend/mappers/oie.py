@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+import json
 
 from backend.mappers.types import RowMapping
 
@@ -20,9 +21,18 @@ def project_settings_profile(profile: RowMapping, mappings: list[RowMapping]) ->
             "autoStart": bool(profile["result_listener_auto_start"])},
         "managedChannels": [{"logicalType": item["logical_type"], "channelId": item["oie_channel_id"],
             "channelName": item["channel_name"], "templateVersion": item["template_version"],
-            "lastKnownRevision": item["last_known_revision"]} for item in mappings],
+            "lastKnownRevision": item["last_known_revision"],
+            **_desired_config(item)} for item in mappings],
         "createdAt": profile["created_at"], "updatedAt": profile["updated_at"],
     }
+
+
+def _desired_config(item: RowMapping) -> dict[str, Any]:
+    try:
+        value = json.loads(item["desired_config_json"] or "{}")
+    except (KeyError, TypeError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def project_result(row: RowMapping) -> dict[str, Any]:

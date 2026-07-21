@@ -326,11 +326,11 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
     )
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
     app.extensions["oie_settings_service"] = OieSettingsService(dependencies.oie_settings_repository)
-    app.extensions["oie_management_client"] = create_oie_management_client(dependencies.oie_settings_repository)
     app.extensions["oie_channel_lifecycle_service"] = OieManagedChannelLifecycleService(
-        app.extensions["oie_management_client"], dependencies.oie_settings_repository,
+        None, dependencies.oie_settings_repository,
         ap_host=app.config["OIE_MANAGED_AP_HOST"],
         token_codec=PreviewTokenCodec(secrets.token_bytes(32)),
+        client_provider=lambda: create_oie_management_client(dependencies.oie_settings_repository),
     )
     app.extensions["oie_workflow_service"] = OieWorkflowService(
         dependencies.oie_repository,

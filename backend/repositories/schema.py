@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS oie_managed_channel_mappings (
     channel_name TEXT NOT NULL,
     template_version TEXT NOT NULL DEFAULT '',
     last_known_revision TEXT NOT NULL DEFAULT '',
+    desired_config_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY(profile_id) REFERENCES oie_settings_profiles(id) ON DELETE CASCADE,
@@ -548,6 +549,7 @@ ON local_dcm4chee_patient_sync_attempts(patient_record_id, attempted_at);
 """
 
 ADDITIVE_COLUMNS = (
+    ("oie_managed_channel_mappings", "desired_config_json", "TEXT NOT NULL DEFAULT '{}'"),
     ("lab_servers", "control_type", "TEXT NOT NULL DEFAULT ''"),
     ("lab_servers", "backing_service", "TEXT NOT NULL DEFAULT ''"),
     ("lab_servers", "supported_actions_json", "TEXT NOT NULL DEFAULT '[]'"),
@@ -650,4 +652,5 @@ APPLICATION_MIGRATIONS = (
     Migration(2, "add-legacy-columns", add_legacy_columns),
     Migration(3, "create-application-indexes", create_application_indexes),
     Migration(4, "add-oie-managed-channel-lifecycle-audits", ensure_application_schema),
+    Migration(5, "add-oie-managed-channel-desired-config", ensure_application_schema),
 )

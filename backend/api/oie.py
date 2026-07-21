@@ -5,6 +5,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 from backend.domain.errors import SimulatorValidationError, ValidationError
+from backend.domain.oie_management import OieManagementError
 from backend.services.oie_settings import OieSettingsService
 from backend.services.oie_channel_lifecycle import LifecycleGuardError
 from backend.services.oie_workflow import OieTransportError, OieWorkflowService
@@ -33,6 +34,21 @@ def create_oie_blueprint(
             "item": result.profile,
             "runtimeReloadRequired": result.runtime_reload_required,
         })
+
+    @blueprint.post("/api/oie/settings/test-connection")
+    def test_oie_settings_connection():
+        body = request.get_json(silent=True)
+        if body not in (None, {}):
+            return error("Connection test uses saved Settings and accepts no overrides.", 400)
+        try:
+            item = settings.test_connection()
+        except OieManagementError as exc:
+            return jsonify({
+                "success": False,
+                "errorCategory": exc.category.value,
+                "error": exc.detail,
+            }), 502
+        return jsonify({"success": True, "item": item})
 
     @blueprint.get("/api/oie/local-adt-patients")
     def list_oie_local_adt_patients():
