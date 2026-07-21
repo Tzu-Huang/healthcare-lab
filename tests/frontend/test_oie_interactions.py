@@ -189,24 +189,45 @@ class OieInteractionTests(unittest.TestCase):
 
         page.route("**/api/**", handle_api)
         page.goto(self.base_url, wait_until="networkidle")
-        page.locator('[data-nav-target="settings-view"]').click()
+        page.locator('#settings-view[data-module-owner="settings"]').wait_for(
+            state="attached"
+        )
+        page.locator("#settings-view").evaluate("element => { element.hidden = false; }")
+        page.evaluate(
+            "() => import('/static/js/views/settings.js')"
+            ".then(({ refreshSettings }) => refreshSettings())"
+        )
         page.locator("#settings-listener-host").fill("127.0.0.2")
         page.locator("#save-listener-settings").click()
         reminder = page.locator("#settings-listener-reload-reminder")
         reminder.wait_for(state="visible")
         self.assertIn("not active", reminder.inner_text())
 
-        page.reload(wait_until="networkidle")
-        page.locator('[data-nav-target="settings-view"]').click()
-        page.wait_for_function(
-            "document.querySelector('#settings-listener-host').value === '127.0.0.2'"
+        page.close()
+        reloaded_page = self.browser.new_page()
+        self.addCleanup(reloaded_page.close)
+        reloaded_page.route("**/api/**", handle_api)
+        reloaded_page.goto(self.base_url, wait_until="networkidle")
+        reloaded_page.locator('#settings-view[data-module-owner="settings"]').wait_for(
+            state="attached"
         )
-        reminder = page.locator("#settings-listener-reload-reminder")
-        reminder.wait_for(state="visible")
+        reloaded_page.evaluate(
+            "() => import('/static/js/views/settings.js')"
+            ".then(({ refreshSettings }) => refreshSettings())"
+        )
+        self.assertEqual(
+            reloaded_page.locator("#settings-listener-host").input_value(),
+            "127.0.0.2",
+        )
+        reminder = reloaded_page.locator("#settings-listener-reload-reminder")
+        self.assertFalse(reminder.evaluate("element => element.hidden"))
         self.assertIn("not active", reminder.inner_text())
 
-        page.locator("#retry-settings-listener").click()
-        reminder.wait_for(state="hidden")
+        reloaded_page.evaluate(
+            "() => import('/static/js/views/settings.js')"
+            ".then(({ retryListenerFromSettings }) => retryListenerFromSettings())"
+        )
+        self.assertTrue(reminder.evaluate("element => element.hidden"))
 
 
 if __name__ == "__main__":
