@@ -271,12 +271,20 @@ class GdtWorkflowRepository:
                        JOIN local_patient_records AS patient
                          ON patient.id = context.patient_record_id
                        WHERE UPPER(TRIM(patient.mrn)) = UPPER(TRIM(?))
-                          OR context.effective_gdt_patient_number = ?
-                          OR context.generated_gdt_patient_number = ?
-                          OR context.gdt_patient_number_override = ?
-                       ORDER BY context.id DESC LIMIT 1""",
-                    (patient_number, patient_number, patient_number, patient_number),
+                       LIMIT 1""",
+                    (patient_number,),
                 ).fetchone()
+                if context is None:
+                    legacy_contexts = connection.execute(
+                        """SELECT context.*
+                           FROM local_gdt_patient_contexts AS context
+                           WHERE context.effective_gdt_patient_number = ?
+                              OR context.generated_gdt_patient_number = ?
+                              OR context.gdt_patient_number_override = ?
+                           ORDER BY context.id DESC LIMIT 2""",
+                        (patient_number, patient_number, patient_number),
+                    ).fetchall()
+                    context = legacy_contexts[0] if len(legacy_contexts) == 1 else None
                 patient_context_id = context["id"] if context else None
             match_status = "order-matched" if order_row else "unmatched"
             canonical["order"] = {**canonical.get("order", {}),
