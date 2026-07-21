@@ -545,6 +545,8 @@ class OieManagementClient:
                 value = next(iter(value.values()))
             else:
                 break
+        if isinstance(value, Mapping) and all(key in value for key in required):
+            value = [value]
         if not isinstance(value, list):
             raise OieManagementError(
                 OieErrorCategory.UNEXPECTED_RESPONSE, "OIE response was not a list."
@@ -591,7 +593,10 @@ class OieManagementClient:
         if text in {"true", '"true"'}:
             return
         try:
-            if json.loads(text) is True:
+            value = json.loads(text)
+            if value is True or (
+                isinstance(value, Mapping) and value.get("boolean") is True
+            ):
                 return
         except (json.JSONDecodeError, ValueError):
             pass

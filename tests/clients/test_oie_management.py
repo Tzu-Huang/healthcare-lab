@@ -193,6 +193,17 @@ class OieManagementClientTests(unittest.TestCase):
              "/channels/c%2F1", "/channels/c%2F1/status", "/channels/portsInUse"], paths,
         )
 
+    def test_list_channels_accepts_singleton_oie_wrapper(self):
+        client, _ = client_with(
+            Step(body={"status": "SUCCESS"}),
+            Step(body={"list": {"channel": {"id": "only", "revision": 1, "name": "Only"}}}),
+        )
+        client.login()
+
+        result = client.list_channels()
+
+        self.assertEqual("only", result.values["items"][0]["id"])
+
     def test_destination_statistics_normalizes_totals_without_exposing_payload(self):
         client, transport = client_with(
             Step(body={"status": "SUCCESS"}),
@@ -304,7 +315,7 @@ class OieManagementClientTests(unittest.TestCase):
     def test_channel_mutations_accept_complete_xml_without_weakening_override(self):
         client, transport = client_with(
             Step(body={"status": "SUCCESS"}), Step(body="4.5.2"),
-            Step(body=True), Step(body=True),
+            Step(body={"boolean": True}), Step(body=True),
         )
         client.login()
         client.create_channel("<channel><id /></channel>")
