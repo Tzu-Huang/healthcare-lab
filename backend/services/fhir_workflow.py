@@ -10,6 +10,7 @@ from typing import Any, Protocol
 
 from backend.domain.errors import SimulatorValidationError, UpstreamFhirError, ValidationError
 from backend.domain import fhir as fhir_domain
+from backend.domain.patient import MRN_IDENTIFIER_SYSTEM
 from backend.domain.statuses import (
     FHIR_SYNC_STATUS_FAILED,
     FHIR_SYNC_STATUS_PENDING,
@@ -869,7 +870,11 @@ def fhir_resource_summary(resource: dict[str, Any], reference: str) -> dict[str,
         identifiers = resource.get("identifier") if isinstance(resource.get("identifier"), list) else []
         mrn = ""
         for item in identifiers:
-            if isinstance(item, dict) and str(item.get("value") or "").strip():
+            if (
+                isinstance(item, dict)
+                and str(item.get("system") or "").strip() == MRN_IDENTIFIER_SYSTEM
+                and str(item.get("value") or "").strip()
+            ):
                 mrn = str(item.get("value")).strip()
                 break
         return {"primary": name or mrn or reference or "Patient", "secondary": mrn, "status": status}

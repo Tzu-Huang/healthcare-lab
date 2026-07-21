@@ -1,8 +1,5 @@
-# healthcare-lab-patient-mrn-allocation Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change auto-increment-mrn-order-identifiers. Update Purpose after archive.
-## Requirements
 ### Requirement: Patient creation allocates a sequential demo MRN
 
 Healthcare Lab SHALL allocate one globally unique, persistent canonical MRN from a shared sequence when Patient creation does not provide one, regardless of Patient mode.
@@ -91,20 +88,7 @@ Healthcare Lab SHALL use the canonical Patient MRN in each protocol's patient-id
 - **THEN** the Order snapshots that same canonical MRN
 - **AND** Healthcare Lab does not allocate a new MRN for the Order
 
-### Requirement: Patient preview does not predict automatic MRNs
-
-Healthcare Lab SHALL distinguish an unallocated automatic MRN from a persisted identifier.
-
-#### Scenario: User applies the Patient demo preset
-
-- **WHEN** the demo preset leaves the MRN input blank
-- **THEN** the Patient preview displays `Generated on create` for MRN
-- **AND** the browser does not predict or reserve the next sequential value
-
-#### Scenario: Automatically numbered Patient is created
-
-- **WHEN** Patient creation succeeds with an automatically allocated MRN
-- **THEN** the created Patient summary and persisted payload display the allocated MRN
+## ADDED Requirements
 
 ### Requirement: Canonical MRN uniqueness is enforced by persistence
 
@@ -139,3 +123,4 @@ Healthcare Lab SHALL use the label `MRN` only for the Patient's canonical MRN in
 - **THEN** the canonical value is displayed under `MRN`
 - **AND** each other identifier is displayed under a protocol-accurate label
 - **AND** the MRN display does not fall back to a Medplum reference, GDT workflow identifier, DICOM issuer, or DICOM UID
+

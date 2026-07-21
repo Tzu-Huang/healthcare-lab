@@ -28,7 +28,7 @@ class GdtWorkflowRepositoryTest(unittest.TestCase):
             order_builder=builder,
         )
 
-    def patient(self, mrn="MRN-GDT-REPO"):
+    def patient(self, mrn="MRN-000601"):
         return self.dependencies.patient_repository.create_patient_record({
             "mode": "gdt", "mrn": mrn, "firstName": "Avery", "lastName": "Morgan",
             "dob": "19850412", "sex": "F",
@@ -57,7 +57,9 @@ class GdtWorkflowRepositoryTest(unittest.TestCase):
             "gdtPatientNumberOverride": "MANUAL-3000-01", "gdtTestCode": "EKG01",
         })
         self.assertEqual(order["localGdtOrderNumber"], "GDT-ORD-000001")
-        self.assertEqual(order["patientSnapshot"]["gdtPatientNumber"], "MANUAL-3000-01")
+        self.assertEqual(order["patientSnapshot"]["gdtPatientNumber"], "MRN-000601")
+        self.assertEqual(order["patientSnapshot"]["gdtWorkflowPatientId"], "MANUAL-3000-01")
+        self.assertEqual(order["messages"][0]["parsedFields"]["3000"], ["MRN-000601"])
         self.assertEqual(order["messages"][0]["parsedFields"]["6330"], ["GDT-ORD-000001"])
         self.assertEqual(order["attachments"][0]["role"], "order-attachment")
         self.assertEqual(
@@ -79,7 +81,11 @@ class GdtWorkflowRepositoryTest(unittest.TestCase):
         self.assertEqual(matched["matchStatus"], "order-matched")
 
         context_only = self.repository.record_gdt_result(self.normalized_result([
-            ("3000", older["gdtPatientNumber"]), ("8402", "EKG01"), ("8410", "HR"),
+            ("3000", older["summary"]["mrn"]), ("8402", "EKG01"), ("8410", "HR"),
+        ]))
+        legacy_context_only = self.repository.record_gdt_result(self.normalized_result([
+            ("3000", older["patientSnapshot"]["gdtWorkflowPatientId"]),
+            ("8402", "EKG01"), ("8410", "HR"),
         ]))
         fully_unmatched = self.repository.record_gdt_result(self.normalized_result([
             ("3000", "UNKNOWN-PATIENT"), ("8402", "EKG01"), ("8410", "HR"),
@@ -87,8 +93,12 @@ class GdtWorkflowRepositoryTest(unittest.TestCase):
         self.assertIsNone(context_only["orderRecordId"])
         self.assertEqual(context_only["patientContextId"], older["gdtPatientContextId"])
         self.assertEqual(context_only["matchStatus"], "unmatched")
+        self.assertEqual(legacy_context_only["patientContextId"], older["gdtPatientContextId"])
         workbench = self.repository.list_gdt_workbench(bridge_inbox=[{"name": "pending.gdt"}])
-        self.assertIn(context_only["id"], {item["id"] for item in workbench["patients"][0]["results"]})
+        self.assertTrue(
+            {context_only["id"], legacy_context_only["id"]}
+            <= {item["id"] for item in workbench["patients"][0]["results"]}
+        )
         self.assertEqual([item["id"] for item in workbench["unmatchedResults"]], [fully_unmatched["id"]])
         self.assertEqual(workbench["bridgeInbox"], [{"name": "pending.gdt"}])
 

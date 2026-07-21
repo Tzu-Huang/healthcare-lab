@@ -135,6 +135,9 @@ export function validatePatientPayload(payload) {
     .forEach(([label, value]) => { if (!String(value || "").trim()) messages.push(`${label} is required.`); });
   if (payload.dob && !/^\d{8}$/.test(payload.dob)) messages.push("DOB must be YYYYMMDD.");
   if (payload.sex && !["M", "F", "O", "U"].includes(payload.sex)) messages.push("Sex must be M, F, O, or U.");
+  if (payload.mrn && !/^MRN-\d{6,}$/i.test(payload.mrn.trim())) {
+    messages.push("MRN must use canonical format MRN- followed by at least six digits.");
+  }
   return messages;
 }
 

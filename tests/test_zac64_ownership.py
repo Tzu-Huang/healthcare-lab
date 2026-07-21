@@ -108,6 +108,7 @@ INTEGRATION_OWNER_INVENTORY = {
     ),
     "integration/test_gdt_api.py": (
         "test_gdt_bridge_config_api_updates_shared_folder_path",
+        "test_gdt_bridge_config_rejects_missing_folders_without_creating_them",
         "test_gdt_order_api_creates_and_lists_local_ecg_order_without_openemr",
         "test_gdt_bridge_write_import_demo_and_workbench",
         "test_gdt_bridge_batch_import_delete_mode_removes_successful_exchange_file",
@@ -182,6 +183,8 @@ REPOSITORY_OWNER_INVENTORY = {
         "test_patient_mrn_sequence_allocates_persists_and_does_not_reuse_deleted_values",
         "test_patient_mrn_sequence_skips_explicit_collision",
         "test_duplicate_explicit_mrn_is_rejected_without_patient_side_effects",
+        "test_noncanonical_explicit_mrn_is_rejected_without_side_effects",
+        "test_database_enforces_normalized_mrn_uniqueness",
         "test_patient_protocol_filter_and_workbenches_keep_protocol_boundaries",
         "test_local_order_record_persists_orm_payload",
         "test_local_patient_modes_generate_protocol_specific_payloads",
@@ -226,16 +229,16 @@ class Zac64OwnershipContractTests(unittest.TestCase):
             actual = _test_method_names(tests_root / relative)
             self.assertEqual(actual, expected, relative)
             integration_names.extend(actual)
-        self.assertEqual(len(integration_names), 127)
-        self.assertEqual(len(set(integration_names)), 127)
+        self.assertEqual(len(integration_names), 128)
+        self.assertEqual(len(set(integration_names)), 128)
 
         repository_names = []
         for relative, expected in REPOSITORY_OWNER_INVENTORY.items():
             actual = _test_method_names(tests_root / relative)
             self.assertEqual(actual, expected, relative)
             repository_names.extend(actual)
-        self.assertEqual(len(repository_names), 26)
-        self.assertEqual(len(set(repository_names)), 26)
+        self.assertEqual(len(repository_names), 28)
+        self.assertEqual(len(set(repository_names)), 28)
 
 
 if __name__ == "__main__":

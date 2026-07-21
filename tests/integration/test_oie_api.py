@@ -154,7 +154,7 @@ class OieApiTests(ApiCaseSupport):
     def test_oie_result_api_rejects_unsupported_message_with_failure_ack(self):
         payload = (
             "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ADT^A04^ADT_A01|BAD1|P|2.5.1||||||UNICODE UTF-8\r"
-            "PID|1||MRN-A04-001^^^HEALTHCARE_LAB^MR"
+            "PID|1||MRN-100001^^^HEALTHCARE_LAB^MR"
         )
 
         response = self.client.post("/api/oie/results", json={"payload": payload})

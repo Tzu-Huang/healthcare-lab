@@ -9,7 +9,7 @@ class GdtStoreTests(StoreCaseSupport):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "gdt",
-                "mrn": "MRN-GDT-001",
+                "mrn": "MRN-000621",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",
@@ -37,19 +37,20 @@ class GdtStoreTests(StoreCaseSupport):
         records = parse_gdt_records(order["payload"])
         self.assertEqual(records["8000"], "6302")
         self.assertEqual(records["8402"], "EKG01")
-        self.assertEqual(records["3000"], "GDT-PAT-000001")
+        self.assertEqual(records["3000"], "MRN-000621")
         self.assertEqual(records["6200"], "06072026")
         self.assertEqual(records["6330"], "GDT-ORD-000001")
         self.assertEqual(records["6227"], "1001^WANG^AMY | Resting ECG baseline")
         self.assertNotIn("6220", records)
         self.assertNotIn("6228", records)
         self.assertEqual(records["8100"], f"{len(order['payload'].encode('cp1252')):05d}")
-        self.assertEqual(order["gdtPatientNumber"], "GDT-PAT-000001")
-        self.assertEqual(order["summary"]["mrn"], "MRN-GDT-001")
-        self.assertEqual(order["summary"]["gdtPatientNumber"], "GDT-PAT-000001")
+        self.assertEqual(order["gdtPatientNumber"], "MRN-000621")
+        self.assertEqual(order["summary"]["mrn"], "MRN-000621")
+        self.assertEqual(order["summary"]["gdtPatientNumber"], "MRN-000621")
+        self.assertEqual(order["patientSnapshot"]["gdtWorkflowPatientId"], "GDT-PAT-000001")
         self.assertEqual(order["messages"][0]["messageType"], "6302")
         self.assertEqual(order["messages"][0]["parsedFields"]["8402"], ["EKG01"])
-        self.assertEqual(order["messages"][0]["canonical"]["patient"]["mrn"], "MRN-GDT-001")
+        self.assertEqual(order["messages"][0]["canonical"]["patient"]["mrn"], "MRN-000621")
         self.assertEqual(order["attachments"][0]["url"], "http://localhost/reports/demo.pdf")
         self.assertEqual(order["attachments"][0]["role"], "order-attachment")
         self.assertIn("order-created", {event["eventType"] for event in order["events"]})
@@ -60,7 +61,7 @@ class GdtStoreTests(StoreCaseSupport):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "gdt",
-                "mrn": "MRN-GDT-OVERRIDE",
+                "mrn": "MRN-000622",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",
@@ -76,16 +77,17 @@ class GdtStoreTests(StoreCaseSupport):
         )
 
         records = parse_gdt_records(order["payload"])
-        self.assertEqual(records["3000"], "MANUAL-3000-01")
-        self.assertEqual(order["gdtPatientNumber"], "MANUAL-3000-01")
-        self.assertEqual(order["patientSnapshot"]["gdtPatientNumber"], "MANUAL-3000-01")
+        self.assertEqual(records["3000"], "MRN-000622")
+        self.assertEqual(order["gdtPatientNumber"], "MRN-000622")
+        self.assertEqual(order["patientSnapshot"]["gdtPatientNumber"], "MRN-000622")
+        self.assertEqual(order["patientSnapshot"]["gdtWorkflowPatientId"], "MANUAL-3000-01")
         self.assertIn("patient-number-overridden", {event["eventType"] for event in order["events"]})
 
     def test_gdt_result_import_persists_canonical_message_attachments_and_events(self):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "gdt",
-                "mrn": "MRN-GDT-RESULT",
+                "mrn": "MRN-000623",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",
@@ -164,7 +166,7 @@ class GdtStoreTests(StoreCaseSupport):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "gdt",
-                "mrn": "MRN-GDT-MULTI",
+                "mrn": "MRN-000624",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",
@@ -197,7 +199,7 @@ class GdtStoreTests(StoreCaseSupport):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "gdt",
-                "mrn": "MRN-GDT-EVENTS",
+                "mrn": "MRN-000625",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",
@@ -232,7 +234,7 @@ class GdtStoreTests(StoreCaseSupport):
     def test_gdt_order_creation_rejects_non_mvp_8402_codes(self):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
-                "mrn": "MRN-GDT-002",
+                "mrn": "MRN-000626",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",

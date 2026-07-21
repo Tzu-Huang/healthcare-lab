@@ -17,7 +17,7 @@ catch-all|backend/dashboard_services.py|dashboard_health_rank|f52d8c617d08b482
 catch-all|backend/dashboard_services.py|dashboard_operation_services|eeb8a4e762de6843
 catch-all|backend/dashboard_services.py|dashboard_resource_fallback|b10e912b7158a34f
 catch-all|backend/dashboard_services.py|dashboard_servers_for_group|eed4c6f1d63de146
-catch-all|backend/dashboard_services.py|dashboard_summary|5252ce23fd250e67
+catch-all|backend/dashboard_services.py|dashboard_summary|fea1b55fb0f165d8
 catch-all|backend/dashboard_services.py|derive_dashboard_group_status|bd2f38a640196eb6
 catch-all|backend/dashboard_services.py|docker_socket_available|7c917b803c455f42
 catch-all|backend/dashboard_services.py|docker_socket_json_request|de36d1301bfb75c8
@@ -69,7 +69,7 @@ workflow|backend/dashboard_services.py|collect_dashboard_resource_snapshot_from_
 workflow|backend/dashboard_services.py|collect_docker_socket_container_stats|951ca6bf0005af7f
 catch-all|backend/dashboard_services.py|<module>.DOCKER_COMPOSE_PROJECT|8aae4c1613a1fbc1
 catch-all|backend/dashboard_services.py|<module>.DOCKER_SOCKET_PATH|ff29a28315e0502b
-catch-all|backend/dashboard_services.py|<module>.LAB_DASHBOARD_SERVICE_GROUPS|5613527314933370
+catch-all|backend/dashboard_services.py|<module>.LAB_DASHBOARD_SERVICE_GROUPS|6ba77c159a8abf39
 catch-all|backend/dashboard_services.py|<module>.RESOURCE_SNAPSHOT_CACHE_SECONDS|58f5db5da0fd94ed
 catch-all|backend/dashboard_services.py|<module>.RESOURCE_SNAPSHOT_MAX_WORKERS|2d8aa4e8726094ba
 catch-all|backend/dashboard_services.py|<module>._RESOURCE_SNAPSHOT_CACHE|8c4e05c60f5f19ed
@@ -77,7 +77,7 @@ catch-all|backend/dashboard_services.py|<module>._RESOURCE_SNAPSHOT_CACHE_LOCK|c
 catch-all|backend/lab_operations.py|<module>.DOCKER_COMPOSE_PROJECT|8aae4c1613a1fbc1
 catch-all|backend/lab_operations.py|<module>.DOCKER_SOCKET_PATH|ff29a28315e0502b
 catch-all|backend/lab_operations.py|<module>.DOCKER_SOCKET_STOP_GRACE_SECONDS|2e843a750486e0e9
-payload|backend/dashboard_services.py|<module>.LAB_DASHBOARD_SERVICE_GROUPS|5613527314933370
+payload|backend/dashboard_services.py|<module>.LAB_DASHBOARD_SERVICE_GROUPS|6ba77c159a8abf39
 payload|backend/dashboard_services.py|<module>._RESOURCE_SNAPSHOT_CACHE|8c4e05c60f5f19ed
 workflow|backend/dashboard_services.py|<module>._RESOURCE_SNAPSHOT_CACHE_LOCK|c3b68e86eddd30a8
 """.strip().splitlines()

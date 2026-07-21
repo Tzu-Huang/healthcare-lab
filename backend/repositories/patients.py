@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from sqlite3 import Connection, Row
+from sqlite3 import Connection, IntegrityError, Row
 from threading import RLock
 from typing import Any
 
@@ -38,25 +38,35 @@ class PatientRepository:
         timestamp = self._timestamp()
         with self._lock, self._connect() as connection:
             values["mrn"] = values["mrn"] or self._identifiers.allocate(connection)
-            if connection.execute("SELECT 1 FROM local_patient_records WHERE mrn = ? LIMIT 1", (values["mrn"],)).fetchone():
+            if connection.execute(
+                "SELECT 1 FROM local_patient_records WHERE UPPER(TRIM(mrn)) = ? LIMIT 1",
+                (values["mrn"],),
+            ).fetchone():
                 raise SimulatorValidationError(f"Patient MRN {values['mrn']} already exists.")
-            cursor = connection.execute(
-                """INSERT INTO local_patient_records (
+            try:
+                cursor = connection.execute(
+                    """INSERT INTO local_patient_records (
                     local_patient_number, protocol_version, message_type, mrn, first_name, last_name,
                     middle_name, dob, sex, address, phone, email, fhir_active, address_line,
                     address_city, address_state, address_postal_code, address_country,
                     managing_organization_reference, managing_organization_display, visit_number,
                     patient_class, assigned_location, attending_provider, account_number,
                     validation_status, validation_messages_json, payload_hl7, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                ("", patient_domain.PATIENT_MODES[values["mode"]]["protocol"], patient_domain.PATIENT_MODES[values["mode"]]["message_type"],
-                 values["mrn"], values["first_name"], values["last_name"], values["middle_name"], values["dob"], values["sex"],
-                 values["address"], values["phone"], values["email"], int(values["fhir_active"]), values["address_line"],
-                 values["address_city"], values["address_state"], values["address_postal_code"], values["address_country"],
-                 values["managing_organization_reference"], values["managing_organization_display"], values["visit_number"],
-                 values["patient_class"], values["assigned_location"], values["attending_provider"], values["account_number"],
-                 "valid", "[]", "", timestamp, timestamp),
-            )
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    ("", patient_domain.PATIENT_MODES[values["mode"]]["protocol"], patient_domain.PATIENT_MODES[values["mode"]]["message_type"],
+                     values["mrn"], values["first_name"], values["last_name"], values["middle_name"], values["dob"], values["sex"],
+                     values["address"], values["phone"], values["email"], int(values["fhir_active"]), values["address_line"],
+                     values["address_city"], values["address_state"], values["address_postal_code"], values["address_country"],
+                     values["managing_organization_reference"], values["managing_organization_display"], values["visit_number"],
+                     values["patient_class"], values["assigned_location"], values["attending_provider"], values["account_number"],
+                     "valid", "[]", "", timestamp, timestamp),
+                )
+            except IntegrityError as exc:
+                if "idx_patient_mrn_normalized" not in str(exc) and "local_patient_records.mrn" not in str(exc):
+                    raise
+                raise SimulatorValidationError(
+                    f"Patient MRN {values['mrn']} already exists."
+                ) from exc
             record_id = int(cursor.lastrowid)
             rendered, visit = self._build_payload(values, record_id=record_id, timestamp=timestamp, hl7_time=self._hl7_timestamp())
             connection.execute(

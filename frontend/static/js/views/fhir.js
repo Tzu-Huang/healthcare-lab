@@ -72,7 +72,7 @@ function medplumPatientInventoryRecord(patient) {
 
 function medplumPatientMrn(patient) {
   const record = medplumPatientInventoryRecord(patient);
-  return record?.summary?.secondary || patient?.identifier?.value || "-";
+  return record?.summary?.secondary || patient?.summary?.secondary || "-";
 }
 
 function medplumTimestamp(value) {
@@ -417,7 +417,7 @@ function renderMedplumPatientSummary(patient) {
   [
     ["MRN", medplumPatientMrn(patient)],
     ["Sync", patient.sync?.status || "-"],
-    ["Medplum", medplumRecordReference(record) || patient.sync?.error || "-"],
+    ["Medplum Reference", medplumRecordReference(record) || patient.sync?.error || "-"],
     ["Updated", medplumTimestamp(record.updatedAt)],
   ].forEach(([label, value]) => {
     const block = createElement("div", "", "detail-block");
