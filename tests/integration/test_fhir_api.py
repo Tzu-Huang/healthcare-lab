@@ -70,6 +70,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertEqual(by_id[observation["id"]]["summary"]["status"], "final")
         self.assertTrue(by_id[observation["id"]]["retryable"])
         self.assertEqual(body["patients"][0]["reference"], "Patient/patient-created")
+        self.assertEqual(body["patients"][0]["createdAt"], body["items"][0]["createdAt"])
 
         preview = self.client.get(f"/api/fhir/records/{observation['id']}/preview")
         self.assertEqual(preview.status_code, 200)

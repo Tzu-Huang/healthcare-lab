@@ -2,6 +2,12 @@ import { checkAllDashboardServices, fetchDashboardServices, runDashboardChildAct
 import { setStatus } from "../components/status.js";
 import { byId, createElement, rowCell } from "../core/dom.js";
 
+const DASHBOARD_RESOURCE_CONTAINERS = [
+  { displayName: "oie-1", aliases: ["oie-1", "oie"] },
+  { displayName: "medplum-1", aliases: ["medplum-1", "medplum"] },
+  { displayName: "dcm4chee-1", aliases: ["dcm4chee-1", "dcm4chee"] },
+];
+
 const state = {
   services: [],
   events: [],
@@ -107,10 +113,7 @@ function renderDashboardChild(service, child, body) {
 
   row.appendChild(rowCell(createElement("span", child.runtime?.state || child.status, `status ${statusClass(child.status)}`)));
 
-  const checks = document.createElement("div");
-  checks.className = "dashboard-checks";
-  checks.appendChild(createElement("span", child.runtime?.detail || "Docker runtime state unavailable"));
-  row.appendChild(rowCell(checks));
+  row.appendChild(rowCell(createElement("span", "-", "muted")));
 
   const actions = document.createElement("div");
   actions.className = "button-row compact-actions";
@@ -157,12 +160,18 @@ function renderServices() {
     const status = createElement("span", service.status, `status ${statusClass(service.status)}`);
     row.appendChild(rowCell(status));
 
-    const checks = document.createElement("div");
-    checks.className = "dashboard-checks";
-    ["process", "application", "protocol"].forEach((key) => {
-      checks.appendChild(createElement("span", `${key}: ${service.checks?.[key] || "Unknown"}`));
+    const ports = document.createElement("div");
+    ports.className = "dashboard-ports";
+    (service.ports || []).forEach((port) => {
+      const link = document.createElement("a");
+      link.href = port.url;
+      link.textContent = port.label;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      ports.appendChild(link);
     });
-    row.appendChild(rowCell(checks));
+    if (!ports.childElementCount) ports.appendChild(createElement("span", "-", "muted"));
+    row.appendChild(rowCell(ports));
 
     const actions = document.createElement("div");
     actions.className = "button-row compact-actions";

@@ -122,6 +122,19 @@ display: block;
   font-size: 12px;
 }
 
+#lab-console-view .dashboard-ports {
+display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+#lab-console-view .dashboard-ports a {
+color: var(--accent-strong);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 #lab-console-view .dashboard-primary-identity,
 #lab-console-view .dashboard-child-identity {
 display: flex;

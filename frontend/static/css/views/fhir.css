@@ -169,11 +169,20 @@ width: 126px;
 }
 
 #medplum-view .medplum-patient-table th:nth-child(5),
-#medplum-view .medplum-patient-table td:nth-child(5),
+#medplum-view .medplum-patient-table td:nth-child(5) {
+width: 104px;
+}
+
 #medplum-view .medplum-patient-table th:nth-child(6),
-#medplum-view .medplum-patient-table td:nth-child(6) {
+#medplum-view .medplum-patient-table td:nth-child(6),
+#medplum-view .medplum-patient-table th:nth-child(7),
+#medplum-view .medplum-patient-table td:nth-child(7) {
 width: 72px;
   text-align: right;
+}
+
+#medplum-view .medplum-patient-table td:nth-child(7) {
+padding-right: 4px;
 }
 
 #medplum-view .medplum-patient-table th:last-child,

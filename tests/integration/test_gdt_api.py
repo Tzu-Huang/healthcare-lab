@@ -7,18 +7,40 @@ class GdtApiTests(ApiCaseSupport):
 
     def test_gdt_bridge_config_api_updates_shared_folder_path(self):
         target = Path(self.temp_dir.name) / "custom-gdt-bridge"
+        (target / "inbox").mkdir(parents=True)
+        (target / "outbox").mkdir()
 
-        response = self.client.put("/api/gdt/bridge/config", json={"bridgePath": str(target)})
+        response = self.client.put("/api/gdt/bridge/config", json={
+            "gdtInPath": str(target / "inbox"),
+            "gdtOutPath": str(target / "outbox"),
+            "inboxPollSeconds": 3,
+            "pollSeconds": 4,
+        })
 
         self.assertEqual(response.status_code, 200)
         body = response.get_json()
         self.assertEqual(body["item"]["bridgePath"], str(target))
-        self.assertFalse(target.exists())
+        self.assertTrue(target.exists())
         self.assertEqual(body["item"]["inboxPath"], str(target / "inbox"))
         self.assertEqual(body["item"]["outboxPath"], str(target / "outbox"))
         current = self.client.get("/api/gdt/bridge/config").get_json()["item"]
         self.assertEqual(current["outboxPath"], str(target / "outbox"))
         self.assertIn("watcher", current)
+        self.assertEqual(current["inboxPollSeconds"], 3)
+        self.assertEqual(current["watcher"]["pollSeconds"], 4)
+
+    def test_gdt_bridge_config_rejects_missing_folders_without_creating_them(self):
+        target = Path(self.temp_dir.name) / "missing-gdt-bridge"
+
+        response = self.client.put("/api/gdt/bridge/config", json={
+            "gdtInPath": str(target / "inbox"),
+            "gdtOutPath": str(target / "outbox"),
+            "pollSeconds": 2,
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("does not exist", response.get_json()["error"])
+        self.assertFalse(target.exists())
 
     def test_gdt_order_api_creates_and_lists_local_ecg_order_without_openemr(self):
         self.client.application.config["OPENEMR_DB_HOST"] = ""

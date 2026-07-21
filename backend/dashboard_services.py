@@ -30,6 +30,9 @@ LAB_DASHBOARD_SERVICE_GROUPS = {
         "children": (),
         "protocol": "HL7 v2",
         "backend": "Open Integration Engine",
+        "ports": (
+            {"label": "localhost:18080", "url": "http://localhost:18080"},
+        ),
         "risk": "medium",
         "riskSummary": "Restart interrupts MLLP listeners and queued HL7 result-return demos.",
         "affectedServices": ("OIE", "HL7Tester", "AP Listener"),
@@ -55,6 +58,9 @@ LAB_DASHBOARD_SERVICE_GROUPS = {
         ),
         "protocol": "FHIR R4",
         "backend": "Medplum",
+        "ports": (
+            {"label": "localhost:3000", "url": "http://localhost:3000"},
+        ),
         "risk": "high",
         "riskSummary": "Restart can interrupt OAuth token acquisition and active FHIR artifact submissions.",
         "affectedServices": ("Medplum", "FHIR ServiceRequest fetch", "FHIR result submission"),
@@ -80,6 +86,12 @@ LAB_DASHBOARD_SERVICE_GROUPS = {
         ),
         "protocol": "DICOM",
         "backend": "dcm4chee archive",
+        "ports": (
+            {
+                "label": "8082:8080",
+                "url": "http://localhost:8082/dcm4chee-arc/ui2/en/study/patient",
+            },
+        ),
         "risk": "medium",
         "riskSummary": "Restart interrupts archive availability and DICOM workflow smoke checks.",
         "affectedServices": ("dcm4chee", "DICOM archive UI"),
@@ -154,8 +166,9 @@ def dashboard_servers_for_group(store: Any, service_id: str) -> tuple[dict[str, 
 def dashboard_summary(items: list[dict[str, Any]], resource_snapshot: dict[str, Any]) -> dict[str, Any]:
     attention = [item for item in items if item["status"] in {"Degraded", "Down"}]
     running = [item for item in items if item["enabled"] and item["status"] != "Down"]
+    total = sum(1 + len(item.get("children") or []) for item in items)
     return {
-        "total": len(items),
+        "total": total,
         "running": len(running),
         "attention": len(attention),
         "resourceStatus": resource_snapshot["status"],

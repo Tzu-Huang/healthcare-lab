@@ -268,6 +268,47 @@ function medplumResourceRollupTable(items, emptyText) {
   return wrap;
 }
 
+function medplumOrderRollupTable(patient, items) {
+  const wrap = createElement("div", "", "table-wrap medplum-nested-table-wrap");
+  const table = createElement("table", "", "medplum-nested-table");
+  const thead = document.createElement("thead");
+  const header = document.createElement("tr");
+  ["Order", "MRN", "Status", "Reference", "Created", "Action"].forEach((label) => {
+    header.appendChild(createElement("th", label));
+  });
+  thead.appendChild(header);
+  const tbody = document.createElement("tbody");
+  if (!items.length) {
+    const row = document.createElement("tr");
+    const cell = rowCell("No FHIR Orders for this Patient.");
+    cell.colSpan = 6;
+    cell.className = "muted";
+    row.appendChild(cell);
+    tbody.appendChild(row);
+  }
+  items.forEach((item) => {
+    const actions = createElement("div", "", "button-row compact-actions");
+    actions.appendChild(medplumPreviewButton(item));
+    const retryButton = retryButtonForMedplumRecord(item);
+    if (retryButton) actions.appendChild(retryButton);
+    const status = item.sync?.status || item.summary?.status || "-";
+    const row = document.createElement("tr");
+    row.append(
+      rowCell(item.identifier?.value || item.localFhirRecordNumber || `FHIR-${item.id}`),
+      rowCell(medplumPatientMrn(patient)),
+      rowCell(createElement("span", status, `status ${fhirSyncStatusClass(status)}`)),
+      rowCell(medplumRecordReference(item) || "-"),
+      rowCell(medplumTimestamp(item.createdAt)),
+      rowCell(actions),
+    );
+    row.addEventListener("click", () => loadMedplumPreview(item.id));
+    tbody.appendChild(row);
+  });
+  table.append(thead, tbody);
+  wrap.appendChild(table);
+  return wrap;
+}
+
 function medplumPatientSection(label, title, body) {
   const section = createElement("section", "", "medplum-patient-section");
   const heading = createElement("div", "", "compact-heading medplum-patient-section-heading");
@@ -285,7 +326,7 @@ function renderMedplumPatientList() {
   if (!visible.length) {
     const row = document.createElement("tr");
     const cell = rowCell("No FHIR Patients match the current filter.");
-    cell.colSpan = 7;
+    cell.colSpan = 8;
     cell.className = "muted";
     row.appendChild(cell);
     body.appendChild(row);
@@ -329,6 +370,7 @@ function renderMedplumPatientList() {
       rowCell(toggleButton),
       rowCell(medplumPatientMrn(patient)),
       rowCell(medplumPatientLabel(patient)),
+      rowCell(medplumTimestamp(patient.createdAt || patientRecord.createdAt)),
       rowCell(createElement("span", status, `status ${fhirSyncStatusClass(status)}`)),
       rowCell(orders.length),
       rowCell(resultCount),
@@ -340,13 +382,13 @@ function renderMedplumPatientList() {
     if (expandedMedplumPatientIds.has(patientId)) {
       const detailRow = createElement("tr", "", "medplum-patient-detail-row");
       const detailCell = document.createElement("td");
-      detailCell.colSpan = 7;
+      detailCell.colSpan = 8;
       const content = createElement("div", "", "medplum-patient-rollup-content");
       content.append(
         medplumPatientSection(
           "FHIR ORDERS",
           "ServiceRequest",
-          medplumResourceRollupTable(orders, "No FHIR Orders for this Patient."),
+          medplumOrderRollupTable(patient, orders),
         ),
         medplumPatientSection(
           "FHIR RESULTS",

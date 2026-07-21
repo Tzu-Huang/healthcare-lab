@@ -119,7 +119,7 @@ class FhirInventoryService:
             raise ValueError("FHIR resource type is not supported by Medplum inventory.")
         records = [item for item in self._repository.list_fhir_workflow_records(sync_status) if item["resourceType"] in self._inventory_types and (not resource_type or item["resourceType"] == resource_type)]
         items = [self._inventory_mapper(item) for item in records]
-        patients = [{"id": item["id"], "localFhirRecordNumber": item["localFhirRecordNumber"], "localSourceId": item["localSourceId"], "identifier": item["identifier"], "medplum": item["medplum"], "sync": item["sync"], "reference": item["medplum"].get("reference") or ""} for item in items if item["resourceType"] == "Patient"]
+        patients = [{"id": item["id"], "localFhirRecordNumber": item["localFhirRecordNumber"], "localSourceId": item["localSourceId"], "identifier": item["identifier"], "medplum": item["medplum"], "sync": item["sync"], "reference": item["medplum"].get("reference") or "", "createdAt": item["createdAt"]} for item in items if item["resourceType"] == "Patient"]
         return {"items": items, "patients": patients, "resourceTypes": list(self._inventory_types)}
 
 

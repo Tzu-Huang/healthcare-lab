@@ -87,6 +87,7 @@ class GdtBridgeInboundWatcher:
         filename_profile: str | None = None,
         receiver_id: str | None = None,
         sender_id: str | None = None,
+        poll_seconds: float | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             if self._thread and self._thread.is_alive():
@@ -101,6 +102,8 @@ class GdtBridgeInboundWatcher:
                 self.receiver_id = str(receiver_id or "").strip()
             if sender_id is not None:
                 self.sender_id = str(sender_id or "").strip()
+            if poll_seconds is not None:
+                self.poll_seconds = max(0.25, float(poll_seconds))
             self._observations = {}
             self._last_error = ""
             return self.status()

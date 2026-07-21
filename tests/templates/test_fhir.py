@@ -25,7 +25,7 @@ class FhirTemplateTests(unittest.TestCase):
         )
         self.assertEqual("ServiceRequest", resource["resourceType"])
         self.assertEqual("Patient/patient-1", resource["subject"]["reference"])
-        self.assertEqual("local-order-records-9", resource["identifier"][0]["value"])
+        self.assertEqual("ORD-0009", resource["identifier"][0]["value"])
         self.assertEqual({"system": "urn:extra", "value": "abc"}, resource["identifier"][1])
         self.assertEqual([{"reference": "ServiceRequest/prior"}], resource["basedOn"])
         self.assertEqual({"value": 2.5, "unit": "mL"}, resource["quantityQuantity"])

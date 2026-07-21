@@ -15,11 +15,14 @@ class DashboardViewModuleTests(unittest.TestCase):
 
     def test_dashboard_owns_state_rendering_and_actions(self):
         self.assertIn("const state = {", self.source)
+        self.assertIn("const DASHBOARD_RESOURCE_CONTAINERS = [", self.source)
         for name in ("services", "events", "resources", "expandedServiceIds"):
             self.assertIn(f"{name}:", self.source)
         self.assertIn("function renderServices()", self.source)
         self.assertIn("function renderResources()", self.source)
         self.assertIn("function renderEvents()", self.source)
+        self.assertIn('(service.ports || []).forEach((port) => {', self.source)
+        self.assertIn('link.target = "_blank";', self.source)
 
     def test_dashboard_initialization_is_idempotent(self):
         self.assertIn("export function initializeDashboardView()", self.source)

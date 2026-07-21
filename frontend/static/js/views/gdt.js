@@ -1,4 +1,4 @@
-import { createGdtOrderDemoResult, fetchGdtBridgeConfig, fetchGdtWorkbench, importGdtBridgeFile, saveGdtBridgeConfiguration, startGdtBridgeWatcher, stopGdtBridgeWatcher, writeGdtOrderFile } from "../api/gdt.js";
+import { fetchGdtBridgeConfig, fetchGdtWorkbench, importGdtBridgeFile, saveGdtBridgeConfiguration, startGdtBridgeWatcher, stopGdtBridgeWatcher, writeGdtOrderFile } from "../api/gdt.js";
 import { setStatus } from "../components/status.js";
 import { copyTextFromElement } from "../core/clipboard.js";
 import { byId, createElement, rowCell } from "../core/dom.js";
@@ -32,50 +32,17 @@ export function selectedGdtPatient() {
 
 function renderGdtBridgeConfig() {
   const item = state.bridgeConfig || {};
-  byId("gdt-bridge-path").value = item.bridgePath || "";
-  byId("gdt-bridge-host-path").value = item.hostPath || "";
-  const summary = byId("gdt-bridge-config-summary");
-  summary.replaceChildren();
-  [
-    ["Output (inbox)", item.inboxPath],
-    ["Returned data (outbox)", item.outboxPath],
-    ["Archive", item.archivePath],
-    ["Error", item.errorPath],
-    ["Import mode", item.successMode],
-    ["Filename binding", item.filenameProfile],
-  ].forEach(([label, value]) => {
-    const row = document.createElement("p");
-    row.appendChild(createElement("strong", `${label}: `));
-    row.appendChild(document.createTextNode(value || "-"));
-    summary.appendChild(row);
-  });
-  if (item.dockerHint) {
-    summary.appendChild(createElement("p", item.dockerHint, "muted"));
-  }
+  const pollSeconds = item.watcher?.pollSeconds || 2;
+  byId("gdt-in-folder-path").value = item.inboxPath || "";
+  byId("gdt-out-folder-path").value = item.outboxPath || "";
+  byId("gdt-in-poll-seconds").value = item.inboxPollSeconds || pollSeconds;
+  byId("gdt-out-poll-seconds").value = pollSeconds;
   renderGdtWatcherStatus(item.watcher || {});
 }
 
 function renderGdtWatcherStatus(watcher) {
   const running = Boolean(watcher.running);
   setStatus("gdt-watcher-status", running ? `On (${watcher.pollSeconds || "-"}s)` : "Off", running ? "success" : "neutral");
-  const summary = byId("gdt-watcher-summary");
-  summary.replaceChildren();
-  const lastResult = watcher.lastResult || {};
-  [
-    ["Bridge root", watcher.bridgeRoot],
-    ["Success mode", watcher.successMode],
-    ["Filename binding", watcher.filenameProfile],
-    ["Last run", watcher.lastRunAt ? gdtTaipeiTimestamp(watcher.lastRunAt) : "-"],
-    ["Imported", (lastResult.imported || []).length],
-    ["Skipped", (lastResult.skipped || []).length],
-    ["Failures", (lastResult.failures || []).length],
-    ["Last error", watcher.lastError || "-"],
-  ].forEach(([label, value]) => {
-    const row = document.createElement("p");
-    row.appendChild(createElement("strong", `${label}: `));
-    row.appendChild(document.createTextNode(String(value ?? "-")));
-    summary.appendChild(row);
-  });
 }
 
 async function refreshGdtBridgeConfig() {
@@ -93,7 +60,12 @@ async function refreshGdtBridgeConfig() {
 async function saveGdtBridgeConfig() {
   setStatus("gdt-bridge-config-status", "Saving...", "pending");
   try {
-    const result = await saveGdtBridgeConfiguration({ bridgePath: byId("gdt-bridge-path").value.trim() });
+    const result = await saveGdtBridgeConfiguration({
+      gdtInPath: byId("gdt-in-folder-path").value.trim(),
+      gdtOutPath: byId("gdt-out-folder-path").value.trim(),
+      inboxPollSeconds: Number(byId("gdt-in-poll-seconds").value),
+      pollSeconds: Number(byId("gdt-out-poll-seconds").value),
+    });
     state.bridgeConfig = result.item || {};
     renderGdtBridgeConfig();
     await refreshGdtConsole();
@@ -322,12 +294,12 @@ function selectGdtPatientForPreview(patient) {
 
 function renderGdtPatientOrders(patient) {
   const orders = patient?.orders || [];
-  const { wrap, tbody } = compactTable(["Order", "Status", "Created", "Result", "Actions"], orders.length ? "" : "No GDT-OUT orders for this patient.", 5);
+  const { wrap, tbody } = compactTable(["Order", "MRN", "Status", "Created", "Result", "Actions"], orders.length ? "" : "No GDT-OUT orders for this patient.", 6);
   if (!orders.length) {
     return wrap;
   }
   orders.forEach((item) => {
-    const resultCount = (item.messages || []).filter((message) => message.direction === "inbound").length;
+    const writtenFile = String(item.exportPath || "").split(/[\\/]/).pop();
     const actions = document.createElement("div");
     actions.className = "button-row compact-actions";
     actions.append(
@@ -339,17 +311,14 @@ function renderGdtPatientOrders(patient) {
         event.stopPropagation();
         writeGdtOrder(item.id);
       }),
-      gdtActionButton("Demo Result", (event) => {
-        event.stopPropagation();
-        createGdtDemoResult(item.id);
-      }),
     );
     const row = document.createElement("tr");
     row.append(
       rowCell(displayGdtOrderNumber(item.localGdtOrderNumber)),
+      rowCell(item.summary?.mrn || patient.summary?.mrn || ""),
       rowCell(item.status),
       rowCell(gdtTaipeiTimestamp(item.createdAt)),
-      rowCell(resultCount ? `${resultCount} result(s)` : "-"),
+      rowCell(writtenFile),
       rowCell(actions),
     );
     row.addEventListener("click", () => selectGdtOrder(item));
@@ -360,13 +329,22 @@ function renderGdtPatientOrders(patient) {
 
 function renderGdtPatientResults(patient) {
   const results = patient?.results || [];
-  const { wrap, tbody } = compactTable(["Result", "Artifacts", "Received", "Actions"], results.length ? "" : "No imported GDT-IN results for this patient.", 4);
+  const orders = patient?.orders || [];
+  const { wrap, tbody } = compactTable(["File", "Status", "Updated", "Action"], results.length ? "" : "No imported GDT-IN results for this patient.", 4);
   if (!results.length) {
     return wrap;
   }
   results.forEach((item, index) => {
     const row = document.createElement("tr");
     const attachments = item.attachments || [];
+    const matchingOrder = orders.find((order) => Number(order.id) === Number(item.orderRecordId));
+    const exportedFile = String(matchingOrder?.exportPath || "").split(/[\\/]/).pop();
+    const sourceFile = exportedFile
+      || attachments.find((attachment) => attachment.sourceFile)?.sourceFile
+      || attachments.find((attachment) => attachment.filename)?.filename
+      || item.canonical?.sourceFile
+      || `GDT-IN-${item.id || index + 1}.gdt`;
+    const status = item.parseStatus || item.matchStatus || "received";
     const actions = document.createElement("div");
     actions.className = "button-row compact-actions";
     actions.appendChild(gdtActionButton("Preview GDT-IN", (event) => {
@@ -374,9 +352,9 @@ function renderGdtPatientResults(patient) {
       selectGdtResult(item);
     }));
     row.append(
-      rowCell(index + 1),
-      rowCell(attachments.length),
-      rowCell(gdtTaipeiTimestamp(item.receivedAt)),
+      rowCell(sourceFile),
+      rowCell(status),
+      rowCell(gdtTaipeiTimestamp(item.updatedAt || item.receivedAt)),
       rowCell(actions),
     );
     row.addEventListener("click", () => selectGdtResult(item));
@@ -507,17 +485,6 @@ async function writeGdtOrder(orderId) {
     await writeGdtOrderFile(orderId);
     await refreshGdtConsole();
     setStatus("gdt-console-status", "GDT-OUT written", "success");
-  } catch (error) {
-    setStatus("gdt-console-status", error.message, "error");
-  }
-}
-
-async function createGdtDemoResult(orderId) {
-  setStatus("gdt-console-status", "Creating demo result...", "pending");
-  try {
-    await createGdtOrderDemoResult(orderId);
-    await refreshGdtConsole();
-    setStatus("gdt-console-status", "Demo result imported", "success");
   } catch (error) {
     setStatus("gdt-console-status", error.message, "error");
   }

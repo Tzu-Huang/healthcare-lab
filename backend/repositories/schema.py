@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS local_order_records (
     filler_order_number TEXT NOT NULL DEFAULT '',
     priority TEXT NOT NULL DEFAULT 'R',
     requested_at TEXT NOT NULL,
+    scheduled_at TEXT NOT NULL DEFAULT '',
     ordering_provider TEXT NOT NULL,
     clinical_indication TEXT NOT NULL DEFAULT '',
     order_code TEXT NOT NULL,
@@ -559,6 +560,7 @@ ON local_dcm4chee_patient_sync_attempts(patient_record_id, attempted_at);
 """
 
 ADDITIVE_COLUMNS = (
+    ("local_order_records", "scheduled_at", "TEXT NOT NULL DEFAULT ''"),
     ("oie_managed_channel_mappings", "desired_config_json", "TEXT NOT NULL DEFAULT '{}'"),
     ("lab_servers", "control_type", "TEXT NOT NULL DEFAULT ''"),
     ("lab_servers", "backing_service", "TEXT NOT NULL DEFAULT ''"),
@@ -663,4 +665,5 @@ APPLICATION_MIGRATIONS = (
     Migration(3, "create-application-indexes", create_application_indexes),
     Migration(4, "add-oie-managed-channel-lifecycle-audits", ensure_application_schema),
     Migration(5, "add-oie-managed-channel-desired-config", ensure_application_schema),
+    Migration(6, "add-order-scheduled-time", ensure_application_schema),
 )

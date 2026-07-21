@@ -19,7 +19,11 @@ class GdtViewModuleTests(unittest.TestCase):
             self.assertIn(f"{name}:", self.source)
         self.assertIn("function renderGdtPatients()", self.source)
         self.assertIn("function renderGdtPatientOrders(patient)", self.source)
+        self.assertIn('["Order", "MRN", "Status", "Created", "Result", "Actions"]', self.source)
+        self.assertIn('String(item.exportPath || "").split', self.source)
         self.assertIn("function renderGdtPatientResults(patient)", self.source)
+        self.assertIn('["File", "Status", "Updated", "Action"]', self.source)
+        self.assertIn("matchingOrder?.exportPath", self.source)
 
     def test_gdt_initialization_is_idempotent_and_uses_explicit_patient_builder(self):
         self.assertIn("export function initializeGdtView(options = {})", self.source)

@@ -32,13 +32,16 @@ class PatientOrderTemplateTests(unittest.TestCase):
 
     def test_order_template_preserves_row_derived_identifiers(self):
         payload = build_orm({**VALUES, "local_order_number": "ORD-000001", "filler_order_number": "",
-            "visit_id": "VISIT-000001", "priority": "R", "requested_at": "20260715103000",
+            "visit_id": "VISIT-000001", "priority": "R", "requested_at": "20260715103000", "scheduled_at": "20260715110000",
             "ordering_provider": "1001^WANG^AMY", "clinical_indication": "Chest pain",
             "order_code": "ECG12", "order_code_text": "12 Lead ECG", "alternate_code": "93000",
             "alternate_code_text": "Electrocardiogram", "alternate_code_system": "C4"},
             record_id=1, timestamp="20260715103000")
         self.assertIn("ORC|NW|ORD-000001", payload)
         self.assertIn("OBR|1|ORD-000001", payload)
+        segments = {segment.split("|", 1)[0]: segment.split("|") for segment in payload.split("\r")}
+        self.assertEqual(segments["TQ1"][7], "20260715110000")
+        self.assertEqual(segments["OBR"][36], "20260715110000")
 
 
 if __name__ == "__main__":

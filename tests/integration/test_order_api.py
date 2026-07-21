@@ -14,6 +14,7 @@ class OrderApiTests(ApiCaseSupport):
                 "patientRecordId": patient["id"],
                 "priority": "R",
                 "requestedAt": "20260703103000",
+                "scheduledAt": "20260703110000",
                 "orderingProvider": "1001^WANG^AMY",
                 "clinicalIndication": "Chest pain evaluation",
             },
@@ -28,6 +29,10 @@ class OrderApiTests(ApiCaseSupport):
         self.assertIn("ORM^O01^ORM_O01", item["payload"])
         self.assertIn("|P|2.5.1||||||UNICODE UTF-8", item["payload"])
         self.assertIn("MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|", item["payload"])
+        self.assertEqual(item["scheduledAt"], "20260703110000")
+        segments = {segment.split("|", 1)[0]: segment.split("|") for segment in item["payload"].split("\r")}
+        self.assertEqual(segments["TQ1"][7], "20260703110000")
+        self.assertEqual(segments["OBR"][36], "20260703110000")
 
         listed = self.client.get("/api/oie/local-orders")
         self.assertEqual(listed.status_code, 200)

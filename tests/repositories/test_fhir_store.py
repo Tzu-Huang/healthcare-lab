@@ -190,7 +190,7 @@ class FhirStoreTests(StoreCaseSupport):
             medplum_resource_reference="ServiceRequest/sr-1",
         )
 
-        self.assertEqual(service_request["identifier"]["value"], f"local-order-records-{order['id']}")
+        self.assertEqual(service_request["identifier"]["value"], f"ORD-{order['id']:04d}")
         refreshed = self.dependencies.order_repository.get_order_record(order["id"])
         self.assertEqual(refreshed["fhir"]["serviceRequest"]["resourceType"], "ServiceRequest")
         self.assertEqual(set(refreshed["fhir"]), {"serviceRequest"})

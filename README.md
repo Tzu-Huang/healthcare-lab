@@ -304,8 +304,9 @@ record.
 For **HL7 v2.5.1** orders:
 
 - HL7 v2.5.1 is enabled for the MVP.
-- The generated `ORM^O01` preview includes `MSH`, `PID`, `PV1`, `ORC`, and
-  `OBR`.
+- The generated `ORM^O01` preview includes `MSH`, `PID`, `PV1`, `ORC`, `TQ1`,
+  and `OBR`. The Scheduled Time input is emitted as both `TQ1-7` and `OBR-36`;
+  when omitted, it defaults to Requested Time.
 - Orders are stored in the local SQLite demo database with status, raw ORM
   payload, and later ACK/send details.
 - Identifier mappings are `PID-3` for MRN, `PV1-19` for Visit Number, and

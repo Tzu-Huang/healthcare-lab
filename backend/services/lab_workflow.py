@@ -669,6 +669,7 @@ def dashboard_group_item(app: ApplicationPort, store: LabRepositoryPort, service
         "label": group["label"],
         "protocol": group["protocol"],
         "backend": group["backend"],
+        "ports": [dict(port) for port in group.get("ports", ())],
         "status": status,
         "enabled": all(server.get("enabled") for server in servers),
         "lastCheckAt": max((server.get("lastCheckAt") or "" for server in servers), default=""),
