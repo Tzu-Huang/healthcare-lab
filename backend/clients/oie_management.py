@@ -251,11 +251,80 @@ class OieManagementClient:
         self._require_fields(value, "channel status", {"channelId": str, "state": str})
         return OieResult("channel-status", channel_id, status=str(value["state"]), values=value)
 
+    def destination_statistics(self, channel_id: str) -> OieResult:
+        """Return bounded destination totals, explicitly marking unsupported APIs.
+
+        OIE distributions differ in whether the Channel statistics resource is
+        enabled. A missing resource is therefore a supported diagnostic outcome,
+        not a zero-message result.
+        """
+        channel_id = self._identifier(channel_id)
+        try:
+            response = self._send(
+                "GET", f"/channels/{self._quote(channel_id)}/statistics"
+            )
+        except OieManagementError as exc:
+            if exc.http_status in {400, 404, 405}:
+                return OieResult(
+                    "destination-statistics", channel_id, status="unsupported",
+                    values={"availability": "unsupported"},
+                )
+            raise
+        value = self._json(response)
+        normalized = self._normalize_destination_statistics(value)
+        return OieResult(
+            "destination-statistics", channel_id, status="available", values=normalized
+        )
+
     def ports_in_use(self) -> OieResult:
         return self._sequence_result(
             "ports-in-use", self._send("GET", "/channels/portsInUse"),
             required={"id": str, "name": str, "port": (str, int)},
         )
+
+    @classmethod
+    def _normalize_destination_statistics(cls, value: Any) -> Mapping[str, Any]:
+        candidates: list[Mapping[str, Any]] = []
+        if isinstance(value, Mapping):
+            candidates.append(value)
+            for key in ("statistics", "destination", "destinationStatistics"):
+                nested = value.get(key)
+                if isinstance(nested, Mapping):
+                    candidates.append(nested)
+                elif isinstance(nested, list):
+                    candidates.extend(item for item in nested if isinstance(item, Mapping))
+        elif isinstance(value, list):
+            candidates.extend(item for item in value if isinstance(item, Mapping))
+        if not candidates:
+            raise OieManagementError(
+                OieErrorCategory.UNEXPECTED_RESPONSE,
+                "OIE destination statistics response lacked required structure.",
+            )
+
+        def total(keys: tuple[str, ...]) -> int | None:
+            found: list[int] = []
+            for item in candidates:
+                for key in keys:
+                    raw = item.get(key)
+                    if isinstance(raw, bool):
+                        continue
+                    try:
+                        number = int(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if number >= 0:
+                        found.append(number)
+                        break
+            return sum(found) if found else None
+
+        queued = total(("queued", "queuedCount", "queuedMessages"))
+        errors = total(("error", "errors", "errorCount", "errorMessages"))
+        if queued is None or errors is None:
+            raise OieManagementError(
+                OieErrorCategory.UNEXPECTED_RESPONSE,
+                "OIE destination statistics response lacked queued/error totals.",
+            )
+        return {"availability": "available", "queued": queued, "errors": errors}
 
     def create_channel(self, channel: Mapping[str, Any] | str) -> OieResult:
         response = self._send_channel("POST", "/channels/", channel)

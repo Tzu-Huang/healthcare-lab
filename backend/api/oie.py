@@ -12,7 +12,7 @@ from backend.services.oie_workflow import OieTransportError, OieWorkflowService
 
 
 def create_oie_blueprint(
-    settings: OieSettingsService, workflow: OieWorkflowService, lifecycle=None
+    settings: OieSettingsService, workflow: OieWorkflowService, lifecycle=None, diagnostics=None
 ) -> Blueprint:
     blueprint = Blueprint("oie", __name__)
 
@@ -90,6 +90,11 @@ def create_oie_blueprint(
     @blueprint.get("/api/oie/result-listener/status")
     def oie_result_listener_status():
         return jsonify({"success": True, "item": workflow.listener_status()})
+
+    if diagnostics is not None:
+        @blueprint.get("/api/oie/settings/diagnostics")
+        def oie_runtime_diagnostics():
+            return jsonify({"success": True, "item": diagnostics.diagnose()})
 
     @blueprint.post("/api/oie/result-listener/start")
     def start_oie_result_listener():

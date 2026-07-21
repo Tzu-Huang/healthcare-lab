@@ -12,10 +12,10 @@
 
 ## 3. Layered Runtime Diagnostics
 
-- [ ] 3.1 Add bounded Management API client support for managed Channel deployment and destination queued/error statistics with explicit unsupported/unavailable results.
-- [ ] 3.2 Implement a diagnostic service that independently composes Management API, HLAB listener, Channel deployment, port-contract, and delivery-state probes.
-- [ ] 3.3 Expose a secret- and PHI-safe diagnostics API with stable categories, timestamps, and recovery guidance.
-- [ ] 3.4 Add tests for partial probe failure, unavailable statistics, port conflicts, deployment failures, listener degradation, and sensitive upstream error redaction.
+- [x] 3.1 Add bounded Management API client support for managed Channel deployment and destination queued/error statistics with explicit unsupported/unavailable results.
+- [x] 3.2 Implement a diagnostic service that independently composes Management API, HLAB listener, Channel deployment, port-contract, and delivery-state probes.
+- [x] 3.3 Expose a secret- and PHI-safe diagnostics API with stable categories, timestamps, and recovery guidance.
+- [x] 3.4 Add tests for partial probe failure, unavailable statistics, port conflicts, deployment failures, listener degradation, and sensitive upstream error redaction.
 
 ## 4. Settings Audit and Workspace
 

@@ -178,6 +178,38 @@ class OieManagementClientTests(unittest.TestCase):
              "/channels/c%2F1", "/channels/c%2F1/status", "/channels/portsInUse"], paths,
         )
 
+    def test_destination_statistics_normalizes_totals_without_exposing_payload(self):
+        client, transport = client_with(
+            Step(body={"status": "SUCCESS"}),
+            Step(body={"destinationStatistics": [
+                {"queuedCount": 2, "errorCount": 1, "lastMessage": "MSH|patient-canary"},
+                {"queuedCount": "3", "errorCount": "0"},
+            ]}),
+        )
+        client.login()
+        result = client.destination_statistics("c/1")
+        self.assertEqual({"availability": "available", "queued": 5, "errors": 1}, result.values)
+        self.assertNotIn("patient-canary", repr(result))
+        self.assertTrue(transport.requests[-1]["url"].endswith("/channels/c%2F1/statistics"))
+
+    def test_destination_statistics_marks_missing_resource_unsupported_not_zero(self):
+        for status in (400, 404, 405):
+            with self.subTest(status=status):
+                client, _ = client_with(Step(body={"status": "SUCCESS"}), Step(status=status))
+                client.login()
+                result = client.destination_statistics("c1")
+                self.assertEqual("unsupported", result.status)
+                self.assertEqual({"availability": "unsupported"}, result.values)
+
+    def test_destination_statistics_rejects_ambiguous_or_incomplete_shape(self):
+        client, _ = client_with(
+            Step(body={"status": "SUCCESS"}), Step(body={"queuedCount": 2})
+        )
+        client.login()
+        with self.assertRaises(OieManagementError) as raised:
+            client.destination_statistics("c1")
+        self.assertEqual(OieErrorCategory.UNEXPECTED_RESPONSE, raised.exception.category)
+
     def test_mutation_shapes_preserve_safe_update_default_and_exact_primitives(self):
         client, transport = client_with(
             Step(body={"status": "SUCCESS"}), Step(body="4.5.2"),
