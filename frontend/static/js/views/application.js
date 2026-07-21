@@ -3,7 +3,6 @@ import { copyTextFromElement as copyElementText } from "../core/clipboard.js";
 import { byId, createElement } from "../core/dom.js";
 import { activateView, initializeNavigation, initializeView, registerViewActivation } from "../core/navigation.js";
 import { initializeOieView, refreshOieInventory } from "./oie.js";
-import { initializeSettingsView, refreshSettingsChannels } from "./settings.js";
 import { initializeDashboardView, refreshDashboard } from "./dashboard.js";
 import { initializeGdtView, refreshGdtConsole } from "./gdt.js";
 import { initializeFhirView, refreshMedplumInventory } from "./fhir.js";
@@ -263,13 +262,11 @@ export function initializeApplication() {
   registerViewActivation("oie-view", "OIE", refreshOieInventory);
   registerViewActivation("gdt-view", "GDT", refreshGdtConsole);
   registerViewActivation("settings-view", "Settings", refreshSettings);
-  registerViewActivation("settings-view", "Settings", refreshSettingsChannels);
   initializeNavigation();
   initializeView("lab-console-view", initializeDashboardView);
   initializeView("oie-view", initializeOieView);
   initializeView("gdt-view", () => initializeGdtView({ buildPatientPreviewPayload: buildPatientGdtPreviewPayload }));
   initializeView("settings-view", () => initializeSettingsView(byId("settings-view")));
-  initializeView("settings-view", initializeSettingsView);
   initializeView("medplum-view", initializeFhirView);
   initializeView("dcm4chee-view", () => {
     configureDcm4cheeCoordinator({
