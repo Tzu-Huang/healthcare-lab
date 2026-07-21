@@ -151,11 +151,20 @@ class OieRuntimeDiagnosticService:
                 "summary": "OIE destination statistics are unavailable.",
             }
         queued, errors = int(stats.values["queued"]), int(stats.values["errors"])
-        degraded = errors > 0
+        degraded = errors > 0 or queued > 0
+        if errors > 0:
+            category = "destination-errors"
+            summary = "OIE destination has delivery errors."
+        elif queued > 0:
+            category = "destination-queued"
+            summary = "OIE destination has messages queued for delivery."
+        else:
+            category = "available"
+            summary = "OIE destination queue and error counts are zero."
         return {
             "state": "degraded" if degraded else "healthy",
-            "category": "destination-errors" if degraded else "available",
-            "summary": "OIE destination has delivery errors." if degraded else "OIE destination statistics are available.",
+            "category": category,
+            "summary": summary,
             "evidence": {"queued": queued, "errors": errors},
         }
 

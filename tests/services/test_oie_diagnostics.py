@@ -61,6 +61,16 @@ class OieRuntimeDiagnosticTests(unittest.TestCase):
         self.assertEqual(("unavailable", "unsupported"), (delivery["state"], delivery["category"]))
         self.assertNotIn("evidence", delivery)
 
+    def test_zero_and_queued_delivery_states_are_distinct(self):
+        zero = service(FakeClient(stats={"availability": "available", "queued": 0, "errors": 0})).diagnose()
+        queued = service(FakeClient(stats={"availability": "available", "queued": 3, "errors": 0})).diagnose()
+        zero_delivery = next(item for item in zero["probes"] if item["layer"] == "delivery-state")
+        queued_delivery = next(item for item in queued["probes"] if item["layer"] == "delivery-state")
+        self.assertEqual(("healthy", "available", {"queued": 0, "errors": 0}),
+                         (zero_delivery["state"], zero_delivery["category"], zero_delivery["evidence"]))
+        self.assertEqual(("degraded", "destination-queued", {"queued": 3, "errors": 0}),
+                         (queued_delivery["state"], queued_delivery["category"], queued_delivery["evidence"]))
+
     def test_port_conflict_deployment_failure_listener_degradation_and_errors_are_distinct(self):
         report = service(
             FakeClient(channel="STOPPED", stats={"availability": "available", "queued": 4, "errors": 2}),

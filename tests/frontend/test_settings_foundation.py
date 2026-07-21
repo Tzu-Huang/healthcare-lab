@@ -53,6 +53,9 @@ class SettingsFoundationTests(unittest.TestCase):
         for phrase in ("Apply/Redeploy", "Retry or lab-app restart", "container recreation"):
             self.assertIn(phrase, self.template)
         self.assertIn('check.state || "unknown"', self.view)
+        self.assertIn('return `Queued: ${evidence.queued}; Errors: ${evidence.errors}`', self.view)
+        self.assertIn('return "Counts unavailable."', self.view)
+        self.assertIn('check.layer !== "delivery-state"', self.view)
 
     def test_preview_is_required_and_delete_matches_display_name(self):
         self.assertIn("state.preview?.previewToken", self.view)
