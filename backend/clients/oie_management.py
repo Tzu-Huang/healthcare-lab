@@ -10,6 +10,7 @@ import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 from xml.etree import ElementTree as ET
@@ -346,9 +347,21 @@ class OieManagementClient:
         return {"availability": "available", "queued": queued, "errors": errors}
 
     def create_channel(self, channel: Mapping[str, Any] | str) -> OieResult:
+        identifier = str(channel.get("id", "")) if isinstance(channel, Mapping) else ""
+        if isinstance(channel, str):
+            try:
+                root = ET.fromstring(channel)
+            except ET.ParseError:
+                root = None
+            identifier_node = root.find("id") if root is not None else None
+            if identifier_node is not None:
+                identifier = (identifier_node.text or "").strip()
+                if not identifier:
+                    identifier = str(uuid.uuid4())
+                    identifier_node.text = identifier
+                    channel = ET.tostring(root, encoding="unicode", short_empty_elements=True)
         response = self._send_channel("POST", "/channels/", channel)
         self._require_boolean_success(response)
-        identifier = str(channel.get("id", "")) if isinstance(channel, Mapping) else ""
         return OieResult("create-channel", identifier=identifier)
 
     def update_channel(
