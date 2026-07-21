@@ -303,7 +303,7 @@ after restart was running on `0.0.0.0:6665` with MLLP framing enabled.
 | REC-01..02 | PASS | With `lab-app` stopped, `ZAC52-RECOVERY-001` received `AA`; ORU statistics became received 3, sent 2, error 0, queued 1. |
 | REC-03..04 | PASS | After `lab-app` restart, listener auto-started on `6665`; result 17 persisted exactly once and matched order 51. |
 | OPS-01 | PASS | Management status/statistics and listener read-back exercised; API projections were bounded and queue visibility was immediate. |
-| OPS-02 | BLOCKED | Final automated/full-suite validation and evidence review remain task 6.4; exact AP receipt remains blocked as ORM-03. |
+| OPS-02 | PASS | Focused 51 tests and full 580-test regression suite passed; compileall, strict OpenSpec validation, diff check, and bounded evidence review passed. |
 
 Overall gate: **BLOCKED**. Open blocker: obtain direct, correlation-specific
 QHeart-AP receipt evidence for `ORM20260721052758000051` (or repeat with a new
