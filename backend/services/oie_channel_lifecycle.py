@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import base64, hashlib, hmac, json, secrets
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping
 from xml.etree import ElementTree as ET
@@ -42,13 +44,38 @@ class PreviewTokenCodec:
 
 
 class OieManagedChannelLifecycleService:
-    def __init__(self, client, repository, *, ap_host: str, token_codec: PreviewTokenCodec, operation_id=None):
-        self.client, self.repository, self.ap_host, self.tokens = client, repository, ap_host, token_codec
+    def __init__(self, client, repository, *, ap_host: str, token_codec: PreviewTokenCodec, operation_id=None, client_provider=None):
+        self._fixed_client, self._client_provider = client, client_provider
+        self._active_client = ContextVar("oie_lifecycle_client", default=None)
+        self.repository, self.ap_host, self.tokens = repository, ap_host, token_codec
         self.operation_id = operation_id or (lambda: secrets.token_hex(12))
 
-    def inspect(self): return [self._project_with_config(item) for item in self._snapshots()]
+    @property
+    def client(self):
+        client = self._active_client.get() or self._fixed_client
+        if client is None: raise RuntimeError("An OIE Management API client is required.")
+        return client
+
+    @contextmanager
+    def _client_scope(self):
+        if self._client_provider is None:
+            yield self.client
+            return
+        client = self._client_provider()
+        token = self._active_client.set(client)
+        try:
+            yield client
+        finally:
+            self._active_client.reset(token)
+            client.close()
+
+    def inspect(self):
+        with self._client_scope(): return [self._project_with_config(item) for item in self._snapshots()]
 
     def preview(self, logical_type: str, operation: str):
+        with self._client_scope(): return self._preview(logical_type, operation)
+
+    def _preview(self, logical_type: str, operation: str):
         kind, action = self._types(logical_type, operation); snapshot = self._snapshot(kind)
         permitted = self._permitted(snapshot, action)
         projected = self._project_with_config(snapshot)
@@ -63,6 +90,9 @@ class OieManagedChannelLifecycleService:
         return result
 
     def execute(self, logical_type: str, operation: str, token: str, *, confirmation: str = ""):
+        with self._client_scope(): return self._execute(logical_type, operation, token, confirmation=confirmation)
+
+    def _execute(self, logical_type: str, operation: str, token: str, *, confirmation: str = ""):
         kind, action = self._types(logical_type, operation)
         claims, snapshot = self.tokens.verify(token), self._snapshot(kind)
         expected = self._claims(snapshot, kind, action)
