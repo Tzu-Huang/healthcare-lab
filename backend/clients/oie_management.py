@@ -15,6 +15,7 @@ from typing import Any, Mapping, Protocol
 
 from backend.domain.oie_management import (
     OieErrorCategory,
+    OieChannelDocument,
     OieManagementConfig,
     OieManagementError,
     OieResult,
@@ -217,6 +218,31 @@ class OieManagementClient:
         self._require_fields(value, "channel", {"id": str, "revision": int})
         return self._mapping_value_result("get-channel", value, channel_id)
 
+    def get_channel_complete(self, channel_id: str) -> OieChannelDocument:
+        """Return complete Channel XML through a payload-hiding internal contract."""
+        channel_id = self._identifier(channel_id)
+        value = self._json(self._send("GET", f"/channels/{self._quote(channel_id)}"))
+        if not isinstance(value, Mapping):
+            raise OieManagementError(
+                OieErrorCategory.UNEXPECTED_RESPONSE, "OIE Channel response was not an object."
+            )
+        self._require_fields(value, "channel", {"id": str, "revision": int})
+        payload = next(
+            (value.get(key) for key in ("payload", "xml", "channelXml")
+             if isinstance(value.get(key), str) and value.get(key).strip()),
+            None,
+        )
+        if payload is None:
+            raise OieManagementError(
+                OieErrorCategory.UNEXPECTED_RESPONSE,
+                "OIE Channel response did not contain complete XML.",
+            )
+        return OieChannelDocument(
+            identifier=str(value["id"]), name=str(value.get("name", "")),
+            revision=int(value["revision"]), payload=payload,
+            status=str(value.get("status", "")),
+        )
+
     def channel_status(self, channel_id: str) -> OieResult:
         channel_id = self._identifier(channel_id)
         value = self._json_mapping(
@@ -231,17 +257,18 @@ class OieManagementClient:
             required={"id": str, "name": str, "port": (str, int)},
         )
 
-    def create_channel(self, channel: Mapping[str, Any]) -> OieResult:
-        response = self._send_json("POST", "/channels/", channel)
+    def create_channel(self, channel: Mapping[str, Any] | str) -> OieResult:
+        response = self._send_channel("POST", "/channels/", channel)
         self._require_boolean_success(response)
-        return OieResult("create-channel", identifier=str(channel.get("id", "")))
+        identifier = str(channel.get("id", "")) if isinstance(channel, Mapping) else ""
+        return OieResult("create-channel", identifier=identifier)
 
     def update_channel(
-        self, channel_id: str, channel: Mapping[str, Any], *, override: bool = False
+        self, channel_id: str, channel: Mapping[str, Any] | str, *, override: bool = False
     ) -> OieResult:
         channel_id = self._identifier(channel_id)
         query = urllib.parse.urlencode({"override": str(override).lower()})
-        response = self._send_json(
+        response = self._send_channel(
             "PUT", f"/channels/{self._quote(channel_id)}?{query}", channel
         )
         self._require_boolean_success(response)
@@ -284,6 +311,22 @@ class OieManagementClient:
             method, path, body=body,
             content_type="application/json",
         )
+
+    def _send_channel(
+        self, method: str, path: str, value: Mapping[str, Any] | str
+    ) -> HttpResponse:
+        if isinstance(value, str):
+            if not value.strip().startswith("<channel"):
+                raise OieManagementError(
+                    OieErrorCategory.VALIDATION,
+                    "Channel XML payload must contain a channel root.",
+                )
+            self.require_supported_version()
+            return self._send(
+                method, path, body=value.encode("utf-8"),
+                content_type="application/xml",
+            )
+        return self._send_json(method, path, value)
 
     def _send(
         self,

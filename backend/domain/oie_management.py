@@ -112,6 +112,15 @@ class OieResult:
 
 
 @dataclass(frozen=True)
+class OieChannelDocument:
+    identifier: str
+    name: str
+    revision: int
+    payload: str = field(repr=False)
+    status: str = ""
+
+
+@dataclass(frozen=True)
 class OieVersionSupport:
     version: str
     supported: bool

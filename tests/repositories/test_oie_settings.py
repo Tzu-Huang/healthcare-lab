@@ -5,6 +5,7 @@ from pathlib import Path
 
 from backend.domain.errors import SimulatorValidationError
 from backend.application_composition import assemble_application_dependencies
+from backend.domain.oie_channel_lifecycle import OieMappingConflictError
 from backend.repositories.oie_settings import OieSettingsRepository
 
 
@@ -146,6 +147,116 @@ class OieSettingsRepositoryTest(unittest.TestCase):
             self.repository.update(invalid)
 
         self.assertEqual(self.repository.get(), original)
+
+    @staticmethod
+    def audit(operation_id="operation-1", **overrides):
+        event = {
+            "operation_id": operation_id,
+            "actor": "local-operator",
+            "operation": "update",
+            "logical_type": "hlab-orm-to-ap",
+            "channel_id": "channel-1",
+            "before_revision": "7",
+            "after_revision": "8",
+            "classification": "drifted",
+            "outcome": "success",
+            "error_category": "",
+            "changed_owned_fields": ["destination.port"],
+        }
+        event.update(overrides)
+        return event
+
+    def seed_mappings(self):
+        self.repository.update(self.settings_payload(managedChannels=[
+            {"logicalType": "hlab-orm-to-ap", "channelId": "channel-1",
+             "channelName": "HLAB_ORM_TO_AP", "templateVersion": "1",
+             "lastKnownRevision": "7"},
+            {"logicalType": "hlab-oru-to-hlab", "channelId": "channel-2",
+             "channelName": "HLAB_ORU_TO_HLAB", "templateVersion": "1",
+             "lastKnownRevision": "3"},
+        ]))
+
+    def test_targeted_update_preserves_profile_and_unrelated_mapping(self):
+        self.seed_mappings()
+        before = self.repository.get()
+
+        updated = self.repository.compare_and_update_managed_channel_mapping(
+            logical_type="hlab-orm-to-ap", expected_channel_id="channel-1",
+            expected_revision="7", channel_id="channel-1",
+            channel_name="HLAB_ORM_TO_AP", template_version="1", revision="8",
+            audit_event=self.audit(),
+        )
+
+        after = self.repository.get()
+        self.assertEqual("8", updated["lastKnownRevision"])
+        self.assertEqual(before["managementApi"], after["managementApi"])
+        self.assertEqual(before["resultListener"], after["resultListener"])
+        self.assertEqual(before["managedChannels"][1], after["managedChannels"][1])
+        self.assertEqual("operation-1", self.repository.list_managed_channel_lifecycle_audits()[0]["operation_id"])
+
+    def test_stale_mapping_update_rolls_back_audit(self):
+        self.seed_mappings()
+        for field, value in (("expected_channel_id", "stale"), ("expected_revision", "6")):
+            arguments = dict(
+                logical_type="hlab-orm-to-ap", expected_channel_id="channel-1",
+                expected_revision="7", channel_id="channel-1",
+                channel_name="HLAB_ORM_TO_AP", template_version="1", revision="8",
+                audit_event=self.audit(f"stale-{field}"),
+            )
+            arguments[field] = value
+            with self.assertRaises(OieMappingConflictError):
+                self.repository.compare_and_update_managed_channel_mapping(**arguments)
+        self.assertEqual([], self.repository.list_managed_channel_lifecycle_audits())
+        self.assertEqual("7", self.repository.get()["managedChannels"][0]["lastKnownRevision"])
+
+    def test_clear_retains_template_identity_and_writes_audit(self):
+        self.seed_mappings()
+        cleared = self.repository.compare_and_clear_managed_channel_mapping(
+            logical_type="hlab-orm-to-ap", expected_channel_id="channel-1",
+            expected_revision="7", audit_event=self.audit(operation_id="delete-1", operation="delete",
+                after_revision="", outcome="success"),
+        )
+        self.assertEqual("", cleared["channelId"])
+        self.assertEqual("", cleared["lastKnownRevision"])
+        self.assertEqual("HLAB_ORM_TO_AP", cleared["channelName"])
+        self.assertEqual("1", cleared["templateVersion"])
+
+    def test_duplicate_audit_rolls_back_mapping_change(self):
+        self.seed_mappings()
+        self.repository.append_managed_channel_lifecycle_audit(self.audit())
+        with self.assertRaises(OieMappingConflictError):
+            self.repository.compare_and_update_managed_channel_mapping(
+                logical_type="hlab-orm-to-ap", expected_channel_id="channel-1",
+                expected_revision="7", channel_id="channel-1",
+                channel_name="HLAB_ORM_TO_AP", template_version="1", revision="8",
+                audit_event=self.audit(),
+            )
+        self.assertEqual("7", self.repository.get()["managedChannels"][0]["lastKnownRevision"])
+
+    def test_audit_allowlist_rejects_sensitive_and_arbitrary_content(self):
+        for forbidden in ("password", "cookie", "authorization", "payload", "hl7", "patient_mrn"):
+            with self.assertRaisesRegex(ValueError, "unsupported fields"):
+                self.repository.append_managed_channel_lifecycle_audit(
+                    self.audit(**{forbidden: "sensitive-value"})
+                )
+        self.assertEqual([], self.repository.list_managed_channel_lifecycle_audits())
+
+    def test_nonempty_channel_id_cannot_be_claimed_twice(self):
+        self.repository.update(self.settings_payload(managedChannels=[
+            {"logicalType": "hlab-orm-to-ap", "channelName": "HLAB_ORM_TO_AP"},
+            {"logicalType": "hlab-oru-to-hlab", "channelName": "HLAB_ORU_TO_HLAB"},
+        ]))
+        self.repository.compare_and_update_managed_channel_mapping(
+            logical_type="hlab-orm-to-ap", expected_channel_id="", expected_revision="",
+            channel_id="same-channel", channel_name="HLAB_ORM_TO_AP",
+            template_version="1", revision="1",
+        )
+        with self.assertRaises(OieMappingConflictError):
+            self.repository.compare_and_update_managed_channel_mapping(
+                logical_type="hlab-oru-to-hlab", expected_channel_id="", expected_revision="",
+                channel_id="same-channel", channel_name="HLAB_ORU_TO_HLAB",
+                template_version="1", revision="1",
+            )
 
 
 if __name__ == "__main__":

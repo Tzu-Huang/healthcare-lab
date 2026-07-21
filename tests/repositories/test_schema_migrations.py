@@ -53,8 +53,8 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
         legacy = self._schema_inventory(legacy_path)
         migrated = self._schema_inventory(migrated_path)
         self.assertEqual(migrated, legacy)
-        self.assertEqual(len(migrated[0]), 21)
-        self.assertEqual(len(migrated[1]), 17)
+        self.assertEqual(len(migrated[0]), 22)
+        self.assertEqual(len(migrated[1]), 20)
 
     def test_current_unversioned_database_is_recorded_without_data_loss(self):
         database_path = self.root / "current.db"
@@ -81,7 +81,7 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
             preserved = connection.execute(
                 "SELECT mrn FROM local_patient_records WHERE id = ?", (patient["id"],)
             ).fetchone()
-        self.assertEqual(versions, [1, 2, 3])
+        self.assertEqual(versions, [1, 2, 3, 4])
         self.assertEqual(preserved["mrn"], "MRN-UNVERSIONED-1")
 
     def test_partial_legacy_columns_are_added_before_indexes(self):
