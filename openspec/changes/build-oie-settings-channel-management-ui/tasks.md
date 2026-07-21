@@ -31,7 +31,7 @@
 - [x] 5.2 Add a single-target Redeploy lifecycle operation that revalidates ownership/revision, performs bounded undeploy then deploy steps, reports partial failure, and never invokes redeploy-all.
 - [x] 5.3 Change Delete to require the exact previewed display name, disclose Channel ID/route/undeploy implications, retain the logical template after success, and expose Recreate when Missing.
 - [x] 5.4 Render success, failure, partial-failure, stale-preview, conflict, validation, revision, deployment, and runtime outcomes as actionable bounded messages and refresh inventory after execution.
-- [ ] 5.5 Add domain, service, API, frontend module, and browser tests for all lifecycle actions, no-ops, stale revisions, external/conflict blocking, exact-name confirmation, partial failure, and recreation.
+- [x] 5.5 Add domain, service, API, frontend module, and browser tests for all lifecycle actions, no-ops, stale revisions, external/conflict blocking, exact-name confirmation, partial failure, and recreation.
 
 ## 6. Responsive Integration and Quality Gate
 
