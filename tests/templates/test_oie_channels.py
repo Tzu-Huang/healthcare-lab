@@ -39,6 +39,7 @@ class ManagedOieChannelTemplateTests(unittest.TestCase):
             {
                 "channel/id", "channel/name", "channel/revision",
                 "channel/sourceConnector/properties/listenerConnectorProperties/port",
+                "channel/destinationConnectors/connector/properties/destinationConnectorProperties/queueEnabled",
                 "channel/destinationConnectors/connector/properties/remoteAddress",
                 "channel/destinationConnectors/connector/properties/remotePort",
                 "channel/exportData/metadata/lastModified/time",
@@ -83,6 +84,39 @@ class ManagedOieChannelTemplateTests(unittest.TestCase):
         self.assertEqual("true", destination.findtext("properties/queueOnResponseTimeout"))
         self.assertEqual("5000", destination.findtext("properties/sendTimeout"))
         self.assertEqual("5000", destination.findtext("properties/responseTimeout"))
+        self.assertEqual("true", queue.findtext("validateResponse"))
+        self.assertEqual(
+            "true",
+            destination.findtext(
+                "responseTransformer/inboundProperties/responseValidationProperties/validateMessageControlId"
+            ),
+        )
+
+    def test_canonical_oru_export_has_same_retryable_delivery_contract(self):
+        root = ET.parse(ROOT / "docs" / "AP_RESULT_TO_LAB.xml").getroot()
+        destination = root.find("destinationConnectors/connector")
+        queue = destination.find("properties/destinationConnectorProperties")
+        expected = {
+            "queueEnabled": "true",
+            "retryIntervalMillis": "10000",
+            "retryCount": "0",
+            "queueBufferSize": "1000",
+            "validateResponse": "true",
+        }
+        self.assertEqual(expected, {name: queue.findtext(name) for name in expected})
+        self.assertEqual("true", destination.findtext("properties/queueOnResponseTimeout"))
+        self.assertEqual("5000", destination.findtext("properties/sendTimeout"))
+        self.assertEqual("5000", destination.findtext("properties/responseTimeout"))
+        self.assertFalse(
+            destination.findtext("properties/checkRemoteHost") == "true",
+            "connection refusal must be handled by the enabled destination queue",
+        )
+
+    def test_orm_queue_contract_remains_disabled(self):
+        root = ET.fromstring(compile_orm_to_ap("ap.internal"))
+        destination = root.find("destinationConnectors/connector")
+        queue = destination.find("properties/destinationConnectorProperties")
+        self.assertEqual("false", queue.findtext("queueEnabled"))
 
     def test_public_interfaces_do_not_accept_generic_payload_extensions(self):
         forbidden = {"connectors", "destinations", "filters", "transformers", "scripts", "credentials", "payload", "xml"}

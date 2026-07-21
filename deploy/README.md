@@ -163,20 +163,24 @@ Medplum API server and Web UI companion.
 
 ## Default Ports
 
-| Service | Port |
-| --- | --- |
-| Lab app UI | `5000` via `LAB_APP_PORT` |
-| Lab app HL7 listener | `6671` |
-| OIE HTTP | `18080` |
-| OIE HTTPS | `10443` |
-| OIE inbound MLLP | container network `6671` |
-| OIE result listener | host `6661` |
-| OIE order listener | host `6600` |
-| Medplum FHIR/API | `8103` |
-| Medplum Web UI | `3000` |
-| dcm4chee UI | `8082` |
-| dcm4chee DICOM | `11112` |
-| dcm4chee HL7 Patient sync | `2575` |
+Docker service names are resolvable only inside the `lab` network. Managed
+Channels therefore use service endpoints such as `lab-app:6665`; a host or AP
+outside Docker uses the separately published host port. Changing a published
+port does not change the container endpoint.
+
+| Flow / service | Docker-network endpoint | Host publication |
+| --- | --- | --- |
+| Lab app UI | `lab-app:5000` | `LAB_APP_PORT` (default `5000`) |
+| HLAB order to OIE | `oie:6600` | `OIE_ORDER_INGRESS_HOST_PORT` (default `6600`) |
+| AP result to OIE | `oie:6661` | `OIE_AP_RESULT_INGRESS_HOST_PORT` (default `6661`) |
+| OIE result to HLAB | `lab-app:6665` via `HLAB_RESULT_LISTENER_PORT` | none by default |
+| OIE Management HTTP | `oie:8080` | `OIE_HTTP_PORT` (default `18080`) |
+| OIE Management HTTPS | `oie:8443` | `OIE_HTTPS_PORT` (default `10443`) |
+| Medplum FHIR/API | `medplum:8103` | `MEDPLUM_PORT` (default `8103`) |
+| Medplum Web UI | `medplum-app:3000` | `MEDPLUM_APP_PORT` (default `3000`) |
+| dcm4chee UI | `dcm4chee:8080` | `DCM4CHEE_HTTP_PORT` (default `8082`) |
+| dcm4chee DICOM | `dcm4chee:11112` | `DCM4CHEE_DICOM_PORT` (default `11112`) |
+| dcm4chee HL7 Patient sync | `dcm4chee:2575` | `DCM4CHEE_HL7_PORT` (default `2575`) |
 
 For the full Healthcare Lab -> dcm4chee MWL -> AP -> C-STORE -> Healthcare Lab
 verification procedure, see
@@ -185,10 +189,49 @@ That SOP also covers the simulated AP PDF/DICOM return path used to verify the
 Healthcare Lab frontend without a live AP.
 
 Override ports with the matching variables in `docker-compose.yml`, for
-example `LAB_APP_PORT`, `OPENEMR_PORT`, or `MEDPLUM_PORT`. The Compose runtime
+example `LAB_APP_PORT`, `OIE_AP_RESULT_INGRESS_HOST_PORT`, or `MEDPLUM_PORT`.
+The Compose runtime
 maps the host `LAB_APP_PORT` to the lab app container port and sets
 `LAB_APP_HOST=0.0.0.0` inside the container so Flask accepts the forwarded
 connection.
+
+### OIE/HLAB port migration
+
+`OIE_MLLP_RESULT_PORT` previously had two conflicting meanings: the OIE `6661`
+host publication and the HLAB `6665` listener. It is deprecated. For one
+migration window, Compose accepts `OIE_MLLP_RESULT_HOST` and
+`OIE_MLLP_RESULT_PORT` only as fallbacks for the HLAB listener when the new
+`HLAB_RESULT_LISTENER_HOST` and `HLAB_RESULT_LISTENER_PORT` values are absent.
+The legacy values never configure an OIE host publication. Migrate `.env` to:
+
+```text
+HLAB_RESULT_LISTENER_HOST=0.0.0.0
+HLAB_RESULT_LISTENER_PORT=6665
+OIE_AP_RESULT_INGRESS_HOST_PORT=6661
+OIE_ORDER_INGRESS_HOST_PORT=6600
+```
+
+The AP connects to the Docker host's published AP-result port. The managed ORU
+Channel continues to send to `lab-app:6665`, never to `127.0.0.1:6665` (which
+would refer to the OIE container itself).
+
+### Applying endpoint changes
+
+Use the action matching the layer that changed:
+
+| Change | Required action |
+| --- | --- |
+| Managed Channel destination, queue, retry, timeout, MLLP, or ACK validation | Preview, Apply, and redeploy the Channel |
+| `HLAB_RESULT_LISTENER_HOST` or `HLAB_RESULT_LISTENER_PORT` | Recreate/restart `lab-app`, then use listener Retry if its runtime status is degraded |
+| `OIE_AP_RESULT_INGRESS_HOST_PORT`, `OIE_ORDER_INGRESS_HOST_PORT`, `OIE_HTTP_PORT`, or `OIE_HTTPS_PORT` | Recreate `oie`; Channel redeploy alone cannot change a Compose publication |
+| Temporary listener failure with unchanged settings | Restore the dependency and use listener Retry/restart; do not recreate OIE or discard its queue |
+
+For Compose environment or port changes, `restart` in `deploy/lab.ps1` performs
+container recreation. After changing the ORU endpoint or durable-delivery
+settings, apply the managed `HLAB_ORU_TO_HLAB` definition as well. Its required
+contract queues connection failures and ACK response timeouts, retries every
+10 seconds indefinitely, retains 1000 messages, uses 5000 ms send/response
+timeouts, and validates the returned HL7 ACK before marking delivery complete.
 
 Open the local Medplum Web UI at:
 
