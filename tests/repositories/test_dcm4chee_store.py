@@ -8,7 +8,7 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
     def test_dcm4chee_mapping_backfills_from_existing_attempts(self):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
-                "mrn": "MRN-A04-001",
+                "mrn": "MRN-300101",
                 "firstName": "Avery",
                 "middleName": "Lee",
                 "lastName": "Morgan",
@@ -49,7 +49,7 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
         self.assertEqual(mapping["status"], DCM4CHEE_MWL_STATUS_CREATED)
         self.assertEqual(mapping["lastAttemptId"], attempt["id"])
         self.assertEqual(mapping["accessionNumber"], "ACC-000001")
-        self.assertEqual(mapping["patientId"], "MRN-A04-001")
+        self.assertEqual(mapping["patientId"], "MRN-300101")
         self.assertEqual(attempts[0]["mappingId"], mapping["id"])
         self.assertEqual(self.dependencies.order_repository.list_order_records()[0]["id"], order["id"])
 
@@ -57,7 +57,7 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "dicom",
-                "mrn": "MRN-DCM-001",
+                "mrn": "MRN-300102",
                 "firstName": "Avery",
                 "middleName": "Lee",
                 "lastName": "Morgan",
@@ -102,7 +102,7 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
 
         self.assertEqual(sync["status"], DCM4CHEE_PATIENT_SYNC_STATUS_PENDING)
         self.assertEqual(updated_sync["status"], DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED)
-        self.assertEqual(updated_sync["patientId"], "MRN-DCM-001")
+        self.assertEqual(updated_sync["patientId"], "MRN-300102")
         self.assertEqual(updated_sync["issuerOfPatientId"], "local-dcm4chee")
         self.assertEqual(updated_sync["ack"]["code"], "AA")
         self.assertFalse(updated_sync["retryable"])
@@ -113,7 +113,7 @@ class Dcm4cheeStoreTests(StoreCaseSupport):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "dicom",
-                "mrn": "MRN-DCM-002",
+                "mrn": "MRN-300103",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",

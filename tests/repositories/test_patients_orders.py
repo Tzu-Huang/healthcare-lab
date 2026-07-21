@@ -23,9 +23,9 @@ class ExtractedPatientOrderRepositoryTests(unittest.TestCase):
         self.assertEqual(self.dependencies.order_repository.get_order_record(order["id"]), order)
 
     def test_existing_database_can_be_reopened_without_schema_change(self):
-        patient = self.dependencies.patient_repository.create_patient_record({"mrn": "EXTERNAL-1", "firstName": "Avery", "lastName": "Morgan", "dob": "19850412", "sex": "F"})
+        patient = self.dependencies.patient_repository.create_patient_record({"mrn": "MRN-500001", "firstName": "Avery", "lastName": "Morgan", "dob": "19850412", "sex": "F"})
         reopened = assemble_application_dependencies(self.dependencies.database.path)
-        self.assertEqual(reopened.patient_repository.get_patient_record(patient["id"])["summary"]["mrn"], "EXTERNAL-1")
+        self.assertEqual(reopened.patient_repository.get_patient_record(patient["id"])["summary"]["mrn"], "MRN-500001")
 
     def test_latest_empty_dicom_refresh_snapshot_remains_authoritative(self):
         patient = self.dependencies.patient_repository.create_patient_record({
