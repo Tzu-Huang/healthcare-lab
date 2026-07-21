@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from backend.application_composition import assemble_application_dependencies
+from backend.domain.errors import ValidationError
 
 
 class OieRepositoryCharacterizationTests(unittest.TestCase):
@@ -54,6 +55,15 @@ class OieRepositoryCharacterizationTests(unittest.TestCase):
         self.assertEqual(patient_only["matchStatus"], "patient-only")
         self.assertEqual(matched["matchStatus"], "order-matched")
         self.assertEqual(matched["matchedOrderRecordId"], order["id"])
+
+    def test_rejects_missing_message_control_id_without_inserting(self):
+        with self.assertRaisesRegex(ValidationError, "MSH-10"):
+            self.repository.record_oie_result(
+                "MSH|missing-control-id",
+                {"messageControlId": "  ", "messageType": "ORU^R01"},
+            )
+
+        self.assertEqual([], self.repository.list_oie_results())
 
     def test_store_and_database_share_write_lock(self):
         self.assertIs(self.dependencies.database.lock, self.dependencies.database.lock)

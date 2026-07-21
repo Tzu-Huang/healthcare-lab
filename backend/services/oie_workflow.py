@@ -380,7 +380,35 @@ def accept_oie_result_payload(
                 message_control_id=parsed.get("messageControlId", ""),
             )
             return ack, item, 400
-        item = store.record_oie_result(payload, parsed)
+        if not parsed["messageControlId"]:
+            raise ValidationError("HL7 MSH-10 message control ID is required.")
+        try:
+            item = store.record_oie_result(payload, parsed)
+        except ValidationError:
+            raise
+        except Exception:
+            error = "Result persistence failed."
+            try:
+                item = store.record_oie_result_error(payload, parsed["messageType"], error)
+            except Exception:
+                # The ACK contract must survive a storage outage so OIE can keep
+                # this delivery queued. Do not reflect storage exception text.
+                item = {
+                    "messageControlId": parsed["messageControlId"],
+                    "messageType": parsed["messageType"],
+                    "parseStatus": "error",
+                    "error": error,
+                }
+            return (
+                build_hl7_ack(
+                    payload,
+                    code="AE",
+                    text=error,
+                    message_control_id=parsed["messageControlId"],
+                ),
+                item,
+                500,
+            )
         text = "Duplicate result ignored." if item.get("duplicate") else "Result accepted."
         ack = build_hl7_ack(
             payload,

@@ -8,6 +8,7 @@ from sqlite3 import Connection
 from threading import RLock
 from typing import Any
 
+from backend.domain.errors import ValidationError
 from backend.mappers.oie import project_result
 
 ConnectionFactory = Callable[[], AbstractContextManager[Connection]]
@@ -30,20 +31,21 @@ class OieRepository:
     def record_oie_result(self, payload_hl7: str, parsed: dict[str, str]) -> dict[str, Any]:
         timestamp = self._timestamp()
         message_control_id = str(parsed.get("messageControlId") or "").strip()
+        if not message_control_id:
+            raise ValidationError("HL7 MSH-10 message control ID is required.")
         message_type = str(parsed.get("messageType") or "").strip()
         patient_mrn = str(parsed.get("patientMrn") or "").strip()
         placer = str(parsed.get("placerOrderNumber") or "").strip()
         filler = str(parsed.get("fillerOrderNumber") or "").strip()
         with self._lock, self._connect() as connection:
-            if message_control_id:
-                duplicate = connection.execute(
-                    "SELECT * FROM oie_result_records WHERE message_control_id = ?",
-                    (message_control_id,),
-                ).fetchone()
-                if duplicate:
-                    item = project_result(duplicate)
-                    item.update(duplicate=True, duplicateOfId=duplicate["id"])
-                    return item
+            duplicate = connection.execute(
+                "SELECT * FROM oie_result_records WHERE message_control_id = ?",
+                (message_control_id,),
+            ).fetchone()
+            if duplicate:
+                item = project_result(duplicate)
+                item.update(duplicate=True, duplicateOfId=duplicate["id"])
+                return item
             patient = None
             if patient_mrn:
                 patient = connection.execute(
