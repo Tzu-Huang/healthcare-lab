@@ -66,7 +66,12 @@ def client_with(*steps: Step):
 
 class OieManagementClientTests(unittest.TestCase):
     def test_login_uses_form_header_and_bounded_transport_without_live_socket(self):
-        client, transport = client_with(Step(body={"status": "SUCCESS"}))
+        client, transport = client_with(Step(body={
+            "com.mirth.connect.model.LoginStatus": {
+                "status": "SUCCESS",
+                "message": None,
+            }
+        }))
         with (
             patch.object(urllib.request, "urlopen", side_effect=AssertionError("live network")),
             patch.object(socket, "create_connection", side_effect=AssertionError("live network")),
@@ -85,6 +90,13 @@ class OieManagementClientTests(unittest.TestCase):
         self.assertEqual((2, 9), (request["connect_timeout"], request["read_timeout"]))
         self.assertNotIn("password-canary", repr(client))
         self.assertNotIn("password-canary", repr(result))
+
+    def test_login_accepts_unwrapped_status_for_compatible_servers(self):
+        client, _ = client_with(Step(body={"status": "SUCCESS"}))
+
+        client.login()
+
+        self.assertIn("authenticated=True", repr(client))
 
     def test_operations_require_login_and_logout_always_clears_session(self):
         client, transport = client_with()
@@ -156,13 +168,15 @@ class OieManagementClientTests(unittest.TestCase):
 
     def test_read_operations_use_verified_paths_and_normalized_results(self):
         client, transport = client_with(
-            Step(body={"status": "SUCCESS"}), Step(body={"id": "u1", "username": "admin"}),
+            Step(body={"status": "SUCCESS"}), Step(body={"user": {"id": "u1", "username": "admin"}}),
             Step(body={"jvmVersion": "17", "osName": "Linux", "dbName": "PostgreSQL"}),
             Step(body="4.5.2"),
-            Step(body=[{"id": "c1", "revision": 3}]),
-            Step(body={"id": "c/1", "revision": 3}),
-            Step(body={"channelId": "c/1", "state": "STARTED"}),
-            Step(body=[{"id": "c1", "name": "Source", "port": "6661"}]),
+            Step(body={"list": {"channel": [{"id": "c1", "revision": 3}]}}),
+            Step(body={"channel": {"id": "c/1", "revision": 3}}),
+            Step(body={"dashboardStatus": {"channelId": "c/1", "state": "STARTED"}}),
+            Step(body={"list": {"com.mirth.connect.donkey.model.channel.Ports": [
+                {"id": "c1", "name": "Source", "port": 6661}
+            ]}}),
         )
         client.login()
         self.assertEqual("u1", client.current_user().identifier)
@@ -171,7 +185,8 @@ class OieManagementClientTests(unittest.TestCase):
         self.assertEqual("c1", client.list_channels().values["items"][0]["id"])
         self.assertEqual(3, client.get_channel("c/1").revision)
         self.assertEqual("STARTED", client.channel_status("c/1").status)
-        self.assertEqual("6661", client.ports_in_use().values["items"][0]["port"])
+        self.assertEqual(6661, client.ports_in_use().values["items"][0]["port"])
+        self.assertEqual("text/plain", transport.requests[3]["headers"]["Accept"])
         paths = [item["url"].removeprefix("https://oie.test/api") for item in transport.requests]
         self.assertEqual(
             ["/users/_login", "/users/current", "/system/info", "/server/version", "/channels",
@@ -200,6 +215,17 @@ class OieManagementClientTests(unittest.TestCase):
                 result = client.destination_statistics("c1")
                 self.assertEqual("unsupported", result.status)
                 self.assertEqual({"availability": "unsupported"}, result.values)
+
+    def test_missing_channel_status_represents_an_undeployed_channel(self):
+        client, _ = client_with(
+            Step(body={"status": "SUCCESS"}),
+            Step(status=404),
+        )
+        client.login()
+
+        result = client.channel_status("c1")
+
+        self.assertEqual("UNDEPLOYED", result.status)
 
     def test_destination_statistics_rejects_ambiguous_or_incomplete_shape(self):
         client, _ = client_with(
@@ -288,14 +314,20 @@ class OieManagementClientTests(unittest.TestCase):
         self.assertIn("override=false", transport.requests[3]["url"])
 
     def test_complete_channel_document_preserves_long_xml_without_repr_leak(self):
-        payload = "<channel>" + ("x" * 2000) + "</channel>"
+        payload = (
+            "<channel><id>c1</id><name>Managed</name><revision>7</revision><description>"
+            + ("x" * 2000)
+            + "</description></channel>"
+        )
         client, _ = client_with(
             Step(body={"status": "SUCCESS"}),
-            Step(body={"id": "c1", "name": "Managed", "revision": 7, "payload": payload}),
+            Step(body=payload),
+            Step(body={"dashboardStatus": {"channelId": "c1", "state": "STARTED"}}),
         )
         client.login()
         document = client.get_channel_complete("c1")
         self.assertEqual(payload, document.payload)
+        self.assertEqual("STARTED", document.status)
         self.assertNotIn("x" * 100, repr(document))
 
     def test_malformed_and_unsupported_responses_are_explicit(self):
