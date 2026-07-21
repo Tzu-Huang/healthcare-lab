@@ -92,7 +92,10 @@ class OieRuntimeDiagnosticService:
         status = self._listener_status()
         state = str(status.get("state") or "unknown").lower()
         running = bool(status.get("running")) or state == "running"
-        category = "listening" if running else ("port-conflict" if state == "bind-failed" else "not-listening")
+        safe_category = str(status.get("errorCategory") or "").lower()
+        category = "listening" if running else (
+            "port-conflict" if safe_category == "port-conflict" else "not-listening"
+        )
         return {
             "state": "healthy" if running else "degraded", "category": category,
             "summary": "HLAB result listener is running." if running else "HLAB result listener is not running.",
@@ -114,9 +117,19 @@ class OieRuntimeDiagnosticService:
 
     def _ports(self) -> dict[str, Any]:
         contract = self._port_contract()
-        valid = bool(contract.get("valid"))
-        conflicts = contract.get("conflicts")
-        count = len(conflicts) if isinstance(conflicts, (list, tuple)) else int(bool(conflicts))
+        configured_conflicts = contract.get("conflicts")
+        conflicts = list(configured_conflicts) if isinstance(configured_conflicts, (list, tuple)) else ([] if not configured_conflicts else ["configured"])
+        live = self._with_client(lambda client: client.ports_in_use())
+        live_items = live.values.get("items", ())
+        expected_ports = contract.get("expectedPorts", ())
+        for expected in expected_ports if isinstance(expected_ports, (list, tuple)) else ():
+            port = str(expected.get("port") or "")
+            channel_id = str(expected.get("channelId") or "")
+            owners = [item for item in live_items if str(item.get("port") or "") == port]
+            if owners and (not channel_id or any(str(item.get("id") or "") != channel_id for item in owners)):
+                conflicts.append("live-port-owner-conflict")
+        valid = bool(contract.get("valid")) and not conflicts
+        count = len(conflicts)
         return {
             "state": "healthy" if valid else "degraded",
             "category": "valid" if valid else "port-conflict",

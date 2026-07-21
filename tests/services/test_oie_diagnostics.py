@@ -10,10 +10,11 @@ NOW = datetime(2026, 7, 21, 4, 5, 6, tzinfo=timezone.utc)
 
 
 class FakeClient:
-    def __init__(self, *, channel="STARTED", stats=None, failure=None):
+    def __init__(self, *, channel="STARTED", stats=None, failure=None, live_ports=None):
         self.channel = channel
         self.stats = stats or {"availability": "available", "queued": 0, "errors": 0}
         self.failure = failure
+        self.live_ports = live_ports or []
 
     def login(self):
         if self.failure: raise self.failure
@@ -30,12 +31,15 @@ class FakeClient:
     def destination_statistics(self, _channel_id):
         return SimpleNamespace(values=self.stats)
 
+    def ports_in_use(self):
+        return SimpleNamespace(values={"items": self.live_ports})
+
 
 def service(client, listener=None, ports=None):
     return OieRuntimeDiagnosticService(
         lambda: client,
         lambda: listener or {"state": "running", "running": True},
-        lambda: ports or {"valid": True, "conflicts": []},
+        lambda: ports or {"valid": True, "conflicts": [], "expectedPorts": []},
         channel_id="oru-channel", clock=lambda: NOW,
     )
 
@@ -60,7 +64,7 @@ class OieRuntimeDiagnosticTests(unittest.TestCase):
     def test_port_conflict_deployment_failure_listener_degradation_and_errors_are_distinct(self):
         report = service(
             FakeClient(channel="STOPPED", stats={"availability": "available", "queued": 4, "errors": 2}),
-            listener={"state": "bind-failed", "running": False, "lastError": "secret"},
+            listener={"state": "degraded", "running": False, "errorCategory": "port-conflict", "lastError": "secret"},
             ports={"valid": False, "conflicts": [6665]},
         ).diagnose()
         probes = {item["layer"]: item for item in report["probes"]}
@@ -69,6 +73,29 @@ class OieRuntimeDiagnosticTests(unittest.TestCase):
         self.assertEqual("port-conflict", probes["port-contract"]["category"])
         self.assertEqual({"queued": 4, "errors": 2}, probes["delivery-state"]["evidence"])
         self.assertNotIn("secret", repr(report))
+
+    def test_live_external_owner_conflicts_with_managed_listener_port(self):
+        report = service(
+            FakeClient(live_ports=[{"id": "external", "name": "External", "port": "6661"}]),
+            ports={
+                "valid": True, "conflicts": [],
+                "expectedPorts": [{"logicalType": "hlab-oru-to-hlab", "port": 6661, "channelId": "oru-channel"}],
+            },
+        ).diagnose()
+        port_probe = next(item for item in report["probes"] if item["layer"] == "port-contract")
+        self.assertEqual(("degraded", "port-conflict"), (port_probe["state"], port_probe["category"]))
+        self.assertEqual({"conflictCount": 1}, port_probe["evidence"])
+
+    def test_live_managed_owner_is_not_a_port_conflict(self):
+        report = service(
+            FakeClient(live_ports=[{"id": "oru-channel", "name": "Managed", "port": 6661}]),
+            ports={
+                "valid": True, "conflicts": [],
+                "expectedPorts": [{"logicalType": "hlab-oru-to-hlab", "port": 6661, "channelId": "oru-channel"}],
+            },
+        ).diagnose()
+        port_probe = next(item for item in report["probes"] if item["layer"] == "port-contract")
+        self.assertEqual(("healthy", "valid"), (port_probe["state"], port_probe["category"]))
 
 
 if __name__ == "__main__":

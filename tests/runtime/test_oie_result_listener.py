@@ -36,6 +36,7 @@ class OieResultListenerTest(unittest.TestCase):
                 "port": 6665,
                 "mllpFraming": True,
                 "lastError": "",
+                "errorCategory": "",
                 "lastReceivedAt": "",
             },
             listener.status(),
@@ -136,9 +137,11 @@ class OieResultListenerTest(unittest.TestCase):
         self.assertEqual(port, degraded["port"])
         self.assertFalse(degraded["mllpFraming"])
         self.assertTrue(degraded["lastError"])
+        self.assertEqual("port-conflict", degraded["errorCategory"])
         stopped = listener.stop()
         self.assertEqual("stopped", stopped["state"])
         self.assertEqual("", stopped["lastError"])
+        self.assertEqual("", stopped["errorCategory"])
 
 
 if __name__ == "__main__":
