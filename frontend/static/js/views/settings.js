@@ -131,7 +131,7 @@ function renderChannels() {
 function normalizedActions(item) {
   const actions = [...(item.permittedActions || item.actions || [])];
   if (actions.includes("update") && !actions.includes("apply")) actions[actions.indexOf("update")] = "apply";
-  if ((item.lifecycleState || item.state || "").toLowerCase() === "missing" && actions.includes("create")) actions[actions.indexOf("create")] = "recreate";
+  if ((item.lifecycleState || item.state || item.classification || "").toLowerCase() === "missing" && actions.includes("create")) actions[actions.indexOf("create")] = "recreate";
   return actions;
 }
 
@@ -215,8 +215,11 @@ async function executePreview() {
     const response = await mutateManagedChannel(state.selected, state.operation, state.preview.previewToken, state.confirmation);
     const item = response.item || {}; const steps = item.steps || [];
     element("settings-operation-steps").textContent = steps.map((step) => `${step.name}: ${step.status}${step.message ? ` — ${step.message}` : ""}`).join("\n") || item.message || "Operation completed.";
-    if (response.success === false || item.status === "partial-failure") element("settings-status").textContent = item.message || "Operation did not fully complete. Refresh and preview again.";
+    const operationMessage = response.success === false || item.outcome === "partial-failure"
+      ? item.message || "Operation did not fully complete. Refresh and preview again."
+      : "Channel operation completed and inventory refreshed.";
     state.refreshRequired = true; state.preview = null; await refreshSettingsChannels();
+    element("settings-status").textContent = operationMessage;
   } catch (error) { state.refreshRequired = true; state.preview = null; element("settings-status").textContent = `Operation blocked: ${error.message}. Refresh and request a fresh preview.`; }
   finally { state.busy = false; updateExecuteState(); }
 }

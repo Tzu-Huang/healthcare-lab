@@ -260,6 +260,77 @@ class OieInteractionTests(unittest.TestCase):
         )
         self.assertTrue(reminder.evaluate("element => element.hidden"))
 
+    def test_settings_channel_lifecycle_is_preview_bound_and_external_is_read_only(self):
+        page = self.browser.new_page()
+        self.addCleanup(page.close)
+        mutations: list[tuple[str, dict]] = []
+        profile = {
+            "managementApi": {"baseUrl": "http://oie:8080", "username": "admin", "tlsVerify": False,
+                              "timeoutSeconds": 10, "passwordConfigured": True},
+            "resultListener": {"host": "127.0.0.1", "port": 6665, "mllpFraming": True, "autoStart": True},
+            "managedChannels": [],
+        }
+        inventory = [
+            {"logicalType": "hlab-orm-to-ap", "classification": "unchanged", "name": "HLAB_ORM_TO_AP",
+             "channelId": "c1", "revision": 7, "status": "STARTED", "route": "OIE:6600 -> AP:6671",
+             "permittedActions": ["redeploy", "delete"]},
+            {"logicalType": "hlab-oru-to-hlab", "classification": "missing", "name": "HLAB_ORU_TO_HLAB",
+             "route": "OIE:6661 -> lab-app:6665", "permittedActions": ["create"]},
+            {"classification": "external", "name": "OPERATOR_CHANNEL", "channelId": "external-1", "status": "STARTED"},
+        ]
+
+        def handle_api(route: Route) -> None:
+            request = route.request
+            path = urlparse(request.url).path
+            if path == "/api/oie/settings":
+                payload = {"success": True, "item": profile}
+            elif path == "/api/oie/result-listener/status":
+                payload = {"success": True, "item": {"state": "running", "running": True, "host": "127.0.0.1", "port": 6665, "mllpFraming": True}}
+            elif path == "/api/oie/managed-channels":
+                payload = {"success": True, "items": inventory}
+            elif "/previews/" in path:
+                operation = path.rsplit("/", 1)[-1]
+                logical_type = path.split("/")[-3]
+                item = next(value for value in inventory if value.get("logicalType") == logical_type)
+                payload = {"success": True, "item": {"previewToken": f"token-{operation}", "operation": operation,
+                    "channelName": item["name"], "route": item["route"], "channelId": item.get("channelId"),
+                    "snapshot": item, "expectedSteps": [operation]}}
+            elif path.startswith("/api/oie/managed-channels/") and request.method == "POST":
+                operation = path.rsplit("/", 1)[-1]
+                body = json.loads(request.post_data or "{}")
+                mutations.append((operation, body))
+                if operation == "redeploy":
+                    payload = {"success": False, "item": {"outcome": "partial-failure", "steps": [
+                        {"name": "undeploy", "status": "succeeded"}, {"name": "deploy", "status": "failed"}]}}
+                else:
+                    payload = {"success": True, "item": {"outcome": "success", "steps": [{"name": operation, "status": "succeeded"}]}}
+            else:
+                route.continue_()
+                return
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+        page.route("**/api/**", handle_api)
+        page.goto(self.base_url, wait_until="networkidle")
+        page.locator('[data-nav-target="settings-view"]').click()
+        page.get_by_text("OPERATOR_CHANNEL", exact=True).wait_for()
+        external_card = page.get_by_text("OPERATOR_CHANNEL", exact=True).locator("..")
+        self.assertEqual(0, external_card.locator("button[data-operation]").count())
+        page.get_by_role("button", name="Preview recreate", exact=True).wait_for()
+
+        page.get_by_role("button", name="Preview redeploy", exact=True).click()
+        page.locator("#settings-preview-execute").click()
+        page.get_by_text("Operation did not fully complete", exact=False).wait_for()
+        self.assertEqual("redeploy", mutations[-1][0])
+
+        page.get_by_role("button", name="Preview delete", exact=True).click()
+        execute = page.locator("#settings-preview-execute")
+        self.assertTrue(execute.is_disabled())
+        page.locator("#settings-delete-confirmation").fill("hlab-orm-to-ap")
+        self.assertTrue(execute.is_disabled())
+        page.locator("#settings-delete-confirmation").fill("HLAB_ORM_TO_AP")
+        self.assertFalse(execute.is_disabled())
+        execute.click()
+        self.assertEqual(("delete", {"previewToken": "token-delete", "confirmation": "HLAB_ORM_TO_AP"}), mutations[-1])
 
 if __name__ == "__main__":
     unittest.main()
