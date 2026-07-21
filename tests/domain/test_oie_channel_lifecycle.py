@@ -3,6 +3,7 @@ from xml.etree import ElementTree as ET
 
 from backend.domain.oie_channel_lifecycle import (
     ChannelClassification,
+    LifecycleOperation,
     LiveChannel,
     PersistedChannelMapping,
     reconcile_inventory,
@@ -36,6 +37,11 @@ class ReconcileManagedChannelTests(unittest.TestCase):
 
     def test_missing(self):
         self.assertEqual(ChannelClassification.MISSING, self.managed().classification)
+
+    def test_redeploy_is_an_explicit_single_channel_operation(self):
+        self.assertEqual("redeploy", LifecycleOperation.REDEPLOY.value)
+        with self.assertRaises(ValueError):
+            LifecycleOperation("redeploy-all")
 
     def test_unchanged_requires_marker_and_persisted_id(self):
         result = self.managed([live()], [mapping()])

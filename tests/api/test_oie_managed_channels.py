@@ -32,6 +32,23 @@ class ManagedChannelApiTests(unittest.TestCase):
         self.assertEqual(200, mutation.status_code)
         self.assertEqual(("execute", "hlab-orm-to-ap", "create", "opaque", ""), self.lifecycle.calls[-1])
 
+    def test_redeploy_is_forwarded_as_one_preview_bound_target(self):
+        preview = self.client.post(
+            "/api/oie/managed-channels/hlab-orm-to-ap/previews/redeploy", json={}
+        )
+        self.assertEqual(200, preview.status_code)
+
+        response = self.client.post(
+            "/api/oie/managed-channels/hlab-orm-to-ap/redeploy",
+            json={"previewToken": "opaque"},
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(
+            ("execute", "hlab-orm-to-ap", "redeploy", "opaque", ""),
+            self.lifecycle.calls[-1],
+        )
+
     def test_yolo_options_are_rejected_before_service(self):
         for body in ({"previewToken": "x", "force": True}, {"previewToken": "x", "override": True}, {"previewToken": "x", "targets": ["*"]}):
             with self.subTest(body=body): self.assertEqual(400, self.client.post("/api/oie/managed-channels/hlab-orm-to-ap/update", json=body).status_code)

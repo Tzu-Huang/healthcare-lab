@@ -46,12 +46,15 @@ class OieManagedChannelLifecycleService:
         self.client, self.repository, self.ap_host, self.tokens = client, repository, ap_host, token_codec
         self.operation_id = operation_id or (lambda: secrets.token_hex(12))
 
-    def inspect(self): return [self._project(item) for item in self._snapshots()]
+    def inspect(self): return [self._project_with_config(item) for item in self._snapshots()]
 
     def preview(self, logical_type: str, operation: str):
         kind, action = self._types(logical_type, operation); snapshot = self._snapshot(kind)
         permitted = self._permitted(snapshot, action)
-        result = {"operation": action.value, "logicalType": kind.value, "snapshot": self._project(snapshot), "permitted": permitted}
+        projected = self._project_with_config(snapshot)
+        result = {"operation": action.value, "logicalType": kind.value, "snapshot": projected,
+                  "channelName": projected["name"], "route": projected.get("route", ""),
+                  "expectedSteps": list(self._expected_steps(action)), "permitted": permitted}
         if permitted:
             preview_id = self.operation_id()
             if not self._try_audit(self._preview_event(preview_id, action, kind, snapshot)):
@@ -61,16 +64,18 @@ class OieManagedChannelLifecycleService:
 
     def execute(self, logical_type: str, operation: str, token: str, *, confirmation: str = ""):
         kind, action = self._types(logical_type, operation)
-        if action is LifecycleOperation.DELETE and confirmation != kind.value:
-            raise LifecycleGuardError("confirmation-mismatch", "Delete confirmation must match logical type.")
         claims, snapshot = self.tokens.verify(token), self._snapshot(kind)
         expected = self._claims(snapshot, kind, action)
         if any(claims.get(key) != value for key, value in expected.items()) or not self._permitted(snapshot, action):
             raise LifecycleGuardError("stale-preview", "Managed Channel state changed after preview.", fresh=True)
+        if action is LifecycleOperation.DELETE and confirmation != claims["channelName"]:
+            raise LifecycleGuardError("confirmation-mismatch", "Delete confirmation must match the previewed Channel name.")
         operation_id, steps = self.operation_id(), [{"name": "revalidate", "status": "succeeded"}]
         try:
             if action is LifecycleOperation.CREATE: return self._create(kind, snapshot, operation_id, steps)
             if action is LifecycleOperation.UPDATE: return self._update(kind, snapshot, operation_id, steps)
+            if action is LifecycleOperation.REDEPLOY:
+                return self._redeploy(kind, snapshot, operation_id, steps)
             if action in {LifecycleOperation.DEPLOY, LifecycleOperation.UNDEPLOY}:
                 current = self._guard_current(snapshot, kind)
                 if self._deployment_noop(current.status, action):
@@ -119,16 +124,46 @@ class OieManagedChannelLifecycleService:
         self.repository.compare_and_clear_managed_channel_mapping(logical_type=kind.value, expected_channel_id=before.channel_id or "", expected_revision=str(before.revision or ""), audit_event=self._event(operation_id, LifecycleOperation.DELETE, kind, before, "success"))
         steps.append({"name": "persist", "status": "succeeded"}); return self._result(kind, LifecycleOperation.DELETE, operation_id, "success", steps, ChannelClassification.MISSING, "")
 
+    def _redeploy(self, kind, before, operation_id, steps):
+        current = self._guard_current(before, kind)
+        try:
+            self.client.undeploy(before.channel_id)
+            steps.append({"name": "undeploy", "status": "succeeded"})
+            self.client.deploy(before.channel_id)
+            steps.append({"name": "deploy", "status": "succeeded"})
+            status = self.client.channel_status(before.channel_id).status
+            steps.append({"name": "status-readback", "status": "succeeded"})
+        except OieManagementError as exc:
+            category = getattr(exc.category, "value", exc.category)
+            failed_step = "undeploy" if not any(step["name"] == "undeploy" for step in steps) else (
+                "deploy" if not any(step["name"] == "deploy" for step in steps) else "status-readback"
+            )
+            steps.append({"name": failed_step, "status": "failed", "errorCategory": category})
+            outcome = "partial-failure" if any(step["status"] == "succeeded" and step["name"] != "revalidate" for step in steps) else "failure"
+            self._append_unattempted(LifecycleOperation.REDEPLOY, steps)
+            if not self._try_audit(self._event(operation_id, LifecycleOperation.REDEPLOY, kind, before, outcome, category)):
+                steps.append({"name": "audit", "status": "failed", "errorCategory": "audit-failure"})
+            else:
+                steps.append({"name": "audit", "status": "succeeded"})
+            return self._result(kind, LifecycleOperation.REDEPLOY, operation_id, outcome, steps, before.classification, current.status)
+        if not self._try_audit(self._event(operation_id, LifecycleOperation.REDEPLOY, kind, before, "success")):
+            steps.append({"name": "audit", "status": "failed", "errorCategory": "audit-failure"})
+            return self._result(kind, LifecycleOperation.REDEPLOY, operation_id, "partial-failure", steps, before.classification, status)
+        steps.append({"name": "audit", "status": "succeeded"})
+        return self._result(kind, LifecycleOperation.REDEPLOY, operation_id, "success", steps, before.classification, status)
+
     def _snapshots(self):
         if not getattr(self.client, "_authenticated", True):
             self.client.login()
         items = self.client.list_channels().values.get("items", ())
         live = [self._complete(str(item["id"])) for item in items]
         allowed = {kind.value for kind in ManagedChannelType}; mappings = []
-        for item in self.repository.get()["managedChannels"]:
+        profile_items = self.repository.get()["managedChannels"]
+        for item in profile_items:
             if item["logicalType"] in allowed:
                 mappings.append(PersistedChannelMapping(ManagedChannelType(item["logicalType"]), item["channelId"], item["channelName"], int(item["templateVersion"] or 1), int(item["lastKnownRevision"]) if item["lastKnownRevision"] else None))
-        return reconcile_inventory((orm_to_ap_config(self.ap_host), oru_to_hlab_config()), mappings, live,
+        configs = tuple(self._config(kind, profile_items) for kind in ManagedChannelType)
+        return reconcile_inventory(configs, mappings, live,
                                    normalize_desired=normalized_state,
                                    normalize_payload=normalized_state_from_payload)
 
@@ -154,22 +189,90 @@ class OieManagedChannelLifecycleService:
             state = normalized_state_from_payload(current.payload)
         except (ValueError, TypeError, ET.ParseError) as exc:
             raise LifecycleGuardError("stale-preview", "Managed Channel identity is no longer valid.", fresh=True) from exc
-        desired = normalized_state(orm_to_ap_config(self.ap_host) if kind is ManagedChannelType.ORM_TO_AP else oru_to_hlab_config())
+        desired = normalized_state(self._config(kind))
         if (current.channel_id != expected.channel_id or current.revision != expected.revision
                 or state["logical_type"] != kind.value or state["marker"] != desired["marker"]):
             raise LifecycleGuardError("stale-preview", "Managed Channel identity or revision changed after preview.", fresh=True)
         return current
-    def _payload(self, kind): return compile_orm_to_ap(self.ap_host) if kind is ManagedChannelType.ORM_TO_AP else compile_oru_to_hlab()
+    def _payload(self, kind):
+        config = self._config(kind)
+        values = {
+            "listener_host": config.listener.host,
+            "listener_port": config.listener.port,
+            "destination_host": config.destination.host,
+            "destination_port": config.destination.port,
+            "send_timeout_ms": config.send_timeout_ms,
+            "response_timeout_ms": config.response_timeout_ms,
+            "queue_enabled": config.queue.enabled,
+            "retry_count": config.queue.retry_count,
+            "retry_interval_ms": config.queue.retry_interval_ms,
+        }
+        return compile_orm_to_ap(self.ap_host, **values) if kind is ManagedChannelType.ORM_TO_AP else compile_oru_to_hlab(**values)
+
+    def _config(self, kind, items=None):
+        items = items if items is not None else self.repository.get()["managedChannels"]
+        item = next((value for value in items if value.get("logicalType") == kind.value), {})
+        timeout_ms = int(float(item.get("timeoutSeconds", 5)) * 1000)
+        common = {
+            "listener_host": str(item.get("sourceHost") or "0.0.0.0"),
+            "listener_port": int(item.get("sourcePort") or (6600 if kind is ManagedChannelType.ORM_TO_AP else 6661)),
+            "destination_host": str(item.get("destinationHost") or (self.ap_host if kind is ManagedChannelType.ORM_TO_AP else "lab-app")),
+            "destination_port": int(item.get("destinationPort") or (6671 if kind is ManagedChannelType.ORM_TO_AP else 6665)),
+            "send_timeout_ms": timeout_ms,
+            "response_timeout_ms": timeout_ms,
+            "queue_enabled": bool(item.get("queueEnabled", kind is ManagedChannelType.ORU_TO_HLAB)),
+            "retry_count": int(item.get("retryCount", 0)),
+            "retry_interval_ms": int(item.get("retryIntervalMs", 10_000)),
+        }
+        return orm_to_ap_config(self.ap_host, **common) if kind is ManagedChannelType.ORM_TO_AP else oru_to_hlab_config(**common)
     @staticmethod
     def _types(logical_type, operation):
         try: return ManagedChannelType(logical_type), LifecycleOperation(operation)
         except ValueError as exc: raise LifecycleGuardError("validation", "Unsupported logical type or lifecycle operation.") from exc
     @staticmethod
     def _permitted(snapshot, action):
-        return (action is LifecycleOperation.CREATE and snapshot.classification is ChannelClassification.MISSING) or (action is LifecycleOperation.UPDATE and snapshot.classification is ChannelClassification.DRIFTED) or (action in {LifecycleOperation.DEPLOY, LifecycleOperation.UNDEPLOY, LifecycleOperation.DELETE} and snapshot.classification in {ChannelClassification.UNCHANGED, ChannelClassification.DRIFTED})
-    def _claims(self, snapshot, kind, action): return {"operation": action.value, "logicalType": kind.value, "desiredDigest": hashlib.sha256(self._payload(kind).encode()).hexdigest(), "channelId": snapshot.channel_id or "", "revision": snapshot.revision, "classification": snapshot.classification.value}
+        managed = snapshot.classification in {ChannelClassification.UNCHANGED, ChannelClassification.DRIFTED}
+        deployed = str(snapshot.status or "").upper() in {"STARTED", "DEPLOYED"}
+        return (action is LifecycleOperation.CREATE and snapshot.classification is ChannelClassification.MISSING) or (action is LifecycleOperation.UPDATE and snapshot.classification is ChannelClassification.DRIFTED) or (action is LifecycleOperation.REDEPLOY and managed and deployed) or (action in {LifecycleOperation.DEPLOY, LifecycleOperation.UNDEPLOY, LifecycleOperation.DELETE} and managed)
+    def _claims(self, snapshot, kind, action): return {"operation": action.value, "logicalType": kind.value, "desiredDigest": hashlib.sha256(self._payload(kind).encode()).hexdigest(), "channelId": snapshot.channel_id or "", "channelName": snapshot.name, "revision": snapshot.revision, "classification": snapshot.classification.value}
     @staticmethod
-    def _project(item): return {"logicalType": item.logical_type.value if item.logical_type else None, "classification": item.classification.value, "name": item.name, "channelId": item.channel_id, "revision": item.revision, "status": item.status, "differences": [{"path": d.path, "desired": d.desired, "observed": d.observed} for d in item.differences], "blockingReasons": list(item.blocking_reasons), "permittedActions": [a.value for a in LifecycleOperation if OieManagedChannelLifecycleService._permitted(item, a)]}
+    def _project(item):
+        differences = [{"path": d.path, "desired": d.desired, "observed": d.observed} for d in item.differences]
+        return {"logicalType": item.logical_type.value if item.logical_type else None, "classification": item.classification.value, "name": item.name, "channelName": item.name, "channelId": item.channel_id, "revision": item.revision, "status": item.status, "differences": differences, "blockingReasons": list(item.blocking_reasons), "permittedActions": [a.value for a in LifecycleOperation if OieManagedChannelLifecycleService._permitted(item, a)]}
+
+    def _project_with_config(self, item):
+        result = self._project(item)
+        if item.logical_type is None:
+            return result
+        config = self._config(item.logical_type)
+        timeout_seconds = config.send_timeout_ms / 1000
+        result.update({
+            "source": f"{config.listener.host}:{config.listener.port}",
+            "destination": f"{config.destination.host}:{config.destination.port}",
+            "route": f"OIE:{config.listener.port} -> {config.destination.host}:{config.destination.port}",
+            "editableFields": {
+                "sourceHost": config.listener.host,
+                "sourcePort": config.listener.port,
+                "destinationHost": config.destination.host,
+                "destinationPort": config.destination.port,
+                "timeoutSeconds": int(timeout_seconds) if timeout_seconds.is_integer() else timeout_seconds,
+                "queueEnabled": config.queue.enabled,
+                "retryCount": config.queue.retry_count,
+                "retryIntervalMs": config.queue.retry_interval_ms,
+            },
+        })
+        return result
+
+    @staticmethod
+    def _expected_steps(action):
+        return {
+            LifecycleOperation.CREATE: ("create", "readback", "persist"),
+            LifecycleOperation.UPDATE: ("update", "readback", "persist"),
+            LifecycleOperation.DEPLOY: ("deploy", "status-readback", "audit"),
+            LifecycleOperation.REDEPLOY: ("undeploy", "deploy", "status-readback", "audit"),
+            LifecycleOperation.UNDEPLOY: ("undeploy", "status-readback", "audit"),
+            LifecycleOperation.DELETE: ("undeploy-if-required", "delete", "persist"),
+        }[action]
     @staticmethod
     def _result(kind, action, operation_id, outcome, steps, classification, status):
         return {"outcome": outcome, "operationId": operation_id, "operation": action.value,
@@ -199,6 +302,7 @@ class OieManagedChannelLifecycleService:
             LifecycleOperation.CREATE: ("create", "readback", "persist"),
             LifecycleOperation.UPDATE: ("update", "readback", "persist"),
             LifecycleOperation.DEPLOY: ("deploy", "status-readback", "audit"),
+            LifecycleOperation.REDEPLOY: ("undeploy", "deploy", "status-readback"),
             LifecycleOperation.UNDEPLOY: ("undeploy", "status-readback", "audit"),
             LifecycleOperation.DELETE: ("undeploy", "delete", "persist"),
         }
