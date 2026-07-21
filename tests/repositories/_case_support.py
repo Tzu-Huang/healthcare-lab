@@ -1,5 +1,6 @@
 import unittest
 import json
+import sqlite3
 from pathlib import Path
 
 from backend.application_composition import assemble_application_dependencies

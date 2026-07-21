@@ -30,14 +30,14 @@ class PatientOrderStoreTests(StoreCaseSupport):
         self.assertEqual(generated["summary"]["mrn"], "MRN-000002")
 
     def test_duplicate_explicit_mrn_is_rejected_without_patient_side_effects(self):
-        created = self.dependencies.patient_repository.create_patient_record(self.patient_payload(mrn="EXTERNAL-001"))
+        created = self.dependencies.patient_repository.create_patient_record(self.patient_payload(mrn="mrn-000101"))
 
         with self.assertRaisesRegex(
             SimulatorValidationError,
-            "Patient MRN EXTERNAL-001 already exists",
+            "Patient MRN MRN-000101 already exists",
         ):
             self.dependencies.patient_repository.create_patient_record(
-                self.patient_payload(mrn=" EXTERNAL-001 ", firstName="Duplicate")
+                self.patient_payload(mrn=" MRN-000101 ", firstName="Duplicate")
             )
 
         records = self.dependencies.patient_repository.list_patient_records()
@@ -49,15 +49,39 @@ class PatientOrderStoreTests(StoreCaseSupport):
                 0,
             )
 
+    def test_noncanonical_explicit_mrn_is_rejected_without_side_effects(self):
+        with self.assertRaisesRegex(SimulatorValidationError, "canonical format"):
+            self.dependencies.patient_repository.create_patient_record(
+                self.patient_payload(mrn="EXTERNAL-001")
+            )
+
+        self.assertEqual(self.dependencies.patient_repository.list_patient_records(), [])
+
+    def test_database_enforces_normalized_mrn_uniqueness(self):
+        self.dependencies.patient_repository.create_patient_record(
+            self.patient_payload(mrn="MRN-000102")
+        )
+        other = self.dependencies.patient_repository.create_patient_record(
+            self.patient_payload(mrn="MRN-000103", firstName="Other")
+        )
+        with self.dependencies.database.connect() as connection:
+            with self.assertRaises(sqlite3.IntegrityError):
+                connection.execute(
+                    "UPDATE local_patient_records SET mrn = ? WHERE id = ?",
+                    (" mrn-000102 ", other["id"]),
+                )
+
+        self.assertEqual(len(self.dependencies.patient_repository.list_patient_records()), 2)
+
     def test_patient_protocol_filter_and_workbenches_keep_protocol_boundaries(self):
         hl7_patient = self.dependencies.patient_repository.create_patient_record(
-            self.patient_payload(mrn="MRN-HL7", mode="hl7-v2")
+            self.patient_payload(mrn="MRN-000201", mode="hl7-v2")
         )
-        self.dependencies.patient_repository.create_patient_record(self.patient_payload(mrn="MRN-FHIR", mode="fhir"))
+        self.dependencies.patient_repository.create_patient_record(self.patient_payload(mrn="MRN-000202", mode="fhir"))
         gdt_patient = self.dependencies.patient_repository.create_patient_record(
-            self.patient_payload(mrn="MRN-GDT", mode="gdt")
+            self.patient_payload(mrn="MRN-000203", mode="gdt")
         )
-        self.dependencies.patient_repository.create_patient_record(self.patient_payload(mrn="MRN-DICOM", mode="dicom"))
+        self.dependencies.patient_repository.create_patient_record(self.patient_payload(mrn="MRN-000204", mode="dicom"))
 
         self.assertEqual(
             [item["id"] for item in self.dependencies.patient_repository.list_patient_records("HL7 v2.5.1")],
@@ -79,7 +103,7 @@ class PatientOrderStoreTests(StoreCaseSupport):
     def test_local_order_record_persists_orm_payload(self):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
-                "mrn": "MRN-A04-001",
+                "mrn": "MRN-000301",
                 "firstName": "Avery",
                 "middleName": "Lee",
                 "lastName": "Morgan",
@@ -112,7 +136,7 @@ class PatientOrderStoreTests(StoreCaseSupport):
         self.assertIn("MSH|^~\\&|HEALTHCARE_LAB|DASHBOARD|OIE|HL7LAB|", order["payload"])
         self.assertIn("ORM^O01^ORM_O01", order["payload"])
         self.assertIn("|P|2.5.1||||||UNICODE UTF-8", order["payload"])
-        self.assertIn("PID|1||MRN-A04-001^^^HEALTHCARE_LAB^MR", order["payload"])
+        self.assertIn("PID|1||MRN-000301^^^HEALTHCARE_LAB^MR", order["payload"])
         self.assertIn("PV1|1|O|CARDIOLOGY^ROOM1", order["payload"])
         self.assertIn("ORC|NW|ORD-000001", order["payload"])
         self.assertIn(
@@ -122,7 +146,7 @@ class PatientOrderStoreTests(StoreCaseSupport):
 
     def test_local_patient_modes_generate_protocol_specific_payloads(self):
         base_payload = {
-            "mrn": "MRN-MODE-001",
+            "mrn": "MRN-000401",
             "firstName": "Avery",
             "middleName": "Lee",
             "lastName": "Morgan",
@@ -145,7 +169,7 @@ class PatientOrderStoreTests(StoreCaseSupport):
         self.assertEqual(fhir_payload["gender"], "female")
         self.assertTrue(fhir_payload["active"])
 
-        gdt = self.dependencies.patient_repository.create_patient_record({**base_payload, "mode": "gdt", "mrn": "MRN-MODE-002"})
+        gdt = self.dependencies.patient_repository.create_patient_record({**base_payload, "mode": "gdt", "mrn": "MRN-000402"})
         self.assertEqual(gdt["protocolVersion"], "GDT 2.1")
         self.assertEqual(gdt["messageType"], "6301")
         records = parse_gdt_records(gdt["payload"])
@@ -153,13 +177,13 @@ class PatientOrderStoreTests(StoreCaseSupport):
         self.assertEqual(records["8100"], f"{len(gdt['payload'].encode('cp1252')):05d}")
         self.assertEqual(records["9218"], "02.10")
         self.assertEqual(records["9206"], "3")
-        self.assertEqual(records["3000"], "MRN-MODE-002")
+        self.assertEqual(records["3000"], "MRN-000402")
         self.assertEqual(records["3101"], "Morgan")
         self.assertEqual(records["3102"], "Avery")
         self.assertEqual(records["3103"], "12041985")
         self.assertEqual(records["3110"], "2")
 
-        dicom = self.dependencies.patient_repository.create_patient_record({**base_payload, "mode": "dicom", "mrn": "MRN-MODE-003"})
+        dicom = self.dependencies.patient_repository.create_patient_record({**base_payload, "mode": "dicom", "mrn": "MRN-000403"})
         self.assertEqual(dicom["protocolVersion"], "DICOM")
         self.assertEqual(dicom["messageType"], "Patient Module")
         self.assertIn("(0010,0010) PatientName", dicom["payload"])
