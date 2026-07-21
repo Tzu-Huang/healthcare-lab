@@ -1,5 +1,5 @@
 import {
-  fetchSettings, fetchSettingsListenerStatus, inspectManagedChannels, mutateManagedChannel,
+  fetchRuntimeDiagnostics, fetchSettings, fetchSettingsListenerStatus, inspectManagedChannels, mutateManagedChannel,
   previewManagedChannel, retrySettingsListener, saveSettings, startSettingsListener,
   stopSettingsListener, testSettingsConnection,
 } from "../api/settings.js";
@@ -78,11 +78,34 @@ function renderPortWarning() {
 
 function reportError(error) { element("settings-status").textContent = error.message || settingsUnavailableMessage(); }
 
+function renderDiagnostics(report = {}) {
+  const checks = report.probes || report.checks || report.items || [];
+  const container = element("settings-diagnostics-list"); container.replaceChildren();
+  checks.forEach((check) => {
+    const card = document.createElement("article"); card.className = "settings-diagnostic";
+    card.dataset.state = String(check.state || "unknown").toLowerCase();
+    const title = document.createElement("h4"); title.textContent = check.layer || check.name || "Runtime check";
+    const stateLine = document.createElement("p"); stateLine.textContent = `State: ${check.state || "unknown"}${check.category ? ` (${check.category})` : ""}`;
+    const summary = document.createElement("p"); summary.textContent = check.summary || check.message || "No additional evidence.";
+    const guidance = document.createElement("p"); guidance.textContent = check.guidance || check.recoveryGuidance || "";
+    card.append(title, stateLine, summary); if (guidance.textContent) card.append(guidance); container.append(card);
+  });
+  if (!checks.length) container.textContent = "No diagnostic checks were returned.";
+  element("settings-diagnostics-summary").textContent = report.summary || `Diagnostics completed: ${checks.length} layer${checks.length === 1 ? "" : "s"}.`;
+}
+
+export async function refreshRuntimeDiagnostics() {
+  element("settings-diagnostics-summary").textContent = "Running layered diagnostics…";
+  try { const result = await fetchRuntimeDiagnostics(); renderDiagnostics(result.item || result); return result; }
+  catch (error) { element("settings-diagnostics-summary").textContent = `Diagnostics unavailable: ${error.message}`; throw error; }
+}
+
 export async function refreshSettings() {
   const [profile, runtime] = await Promise.all([fetchSettings(), fetchSettingsListenerStatus()]);
   renderProfile(profile.item); renderRuntime(runtime.item);
   state.runtimeReloadRequired = !listenerSettingsMatchStatus(state.profile, runtime.item); renderReminder();
   await refreshSettingsChannels();
+  await refreshRuntimeDiagnostics().catch(() => undefined);
   return state;
 }
 
@@ -232,7 +255,7 @@ export function initializeSettingsView(root) {
   root.dataset.moduleOwner = "settings"; root.dataset.emptyState = settingsUnavailableMessage();
   bind("save-connection-settings", saveConnectionSettings); bind("test-settings-connection", testConnectionFromSettings);
   bind("save-listener-settings", saveListenerSettings); bind("start-settings-listener", () => controlListener("start")); bind("stop-settings-listener", () => controlListener("stop")); bind("retry-settings-listener", retryListenerFromSettings);
-  bind("settings-refresh", refreshSettings); element("settings-listener-port").addEventListener("input", renderPortWarning);
+  bind("settings-refresh", refreshSettings); bind("settings-refresh-diagnostics", refreshRuntimeDiagnostics); element("settings-listener-port").addEventListener("input", renderPortWarning);
   element("settings-managed-list").addEventListener("click", handleAction); element("settings-preview-execute").addEventListener("click", executePreview);
   element("settings-delete-confirmation").addEventListener("input", (event) => { state.confirmation = event.target.value; updateExecuteState(); });
   state.initialized = true; return state;

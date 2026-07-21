@@ -95,6 +95,11 @@ class OieSettingsRepository:
             ).fetchone()
             if not profile:
                 raise KeyError(self._profile_name)
+            mappings = connection.execute(
+                "SELECT * FROM oie_managed_channel_mappings WHERE profile_id = ? ORDER BY logical_type COLLATE NOCASE, id",
+                (profile["id"],),
+            ).fetchall()
+            before = self._serialize(profile, mappings)
             password = values["management_api_password"] if values["password_provided"] else profile["management_api_password"]
             connection.execute(
                 """UPDATE oie_settings_profiles
@@ -119,7 +124,63 @@ class OieSettingsRepository:
                      mapping["channel_name"], mapping["template_version"], mapping["last_known_revision"],
                      mapping["desired_config_json"], timestamp, timestamp),
                 )
+            changed_fields = self._settings_changed_fields(before, values)
+            connection.execute(
+                """INSERT INTO oie_settings_mutation_audits (
+                    profile_id, actor, operation, changed_fields_json, outcome, created_at
+                ) VALUES (?, 'local-operator', 'update', ?, 'success', ?)""",
+                (profile["id"], json.dumps(changed_fields, separators=(",", ":")), timestamp),
+            )
         return self.get()
+
+    def list_settings_mutation_audits(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT actor, operation, changed_fields_json, outcome, created_at
+                FROM oie_settings_mutation_audits WHERE profile_id = ?
+                ORDER BY created_at DESC, id DESC""",
+                (self._profile_id(connection),),
+            ).fetchall()
+        return [{
+            "actor": row["actor"], "operation": row["operation"],
+            "changed_fields": json.loads(row["changed_fields_json"]),
+            "outcome": row["outcome"], "created_at": row["created_at"],
+        } for row in rows]
+
+    @staticmethod
+    def _settings_changed_fields(before: Mapping[str, Any], values: Mapping[str, Any]) -> list[str]:
+        management = before["managementApi"]
+        listener = before["resultListener"]
+        comparisons = (
+            ("managementApi.baseUrl", management["baseUrl"], values["management_api_base_url"]),
+            ("managementApi.username", management["username"], values["management_api_username"]),
+            ("managementApi.tlsVerify", management["tlsVerify"], bool(values["management_api_tls_verify"])),
+            ("managementApi.timeoutSeconds", float(management["timeoutSeconds"]), float(values["management_api_timeout_seconds"])),
+            ("resultListener.host", listener["host"], values["result_listener_host"]),
+            ("resultListener.port", int(listener["port"]), int(values["result_listener_port"])),
+            ("resultListener.mllpFraming", listener["mllpFraming"], bool(values["result_listener_mllp_framing"])),
+            ("resultListener.autoStart", listener["autoStart"], bool(values["result_listener_auto_start"])),
+        )
+        changed = [path for path, old, new in comparisons if old != new]
+        if values["password_provided"]:
+            changed.append("managementApi.password")
+        desired_channels = [
+            (item["logical_type"], item["oie_channel_id"], item["channel_name"],
+             item["template_version"], item["last_known_revision"], item["desired_config_json"])
+            for item in values["managed_channels"]
+        ]
+        current_channels = [
+            (item.get("logicalType", ""), item.get("channelId", ""), item.get("channelName", ""),
+             item.get("templateVersion", ""), item.get("lastKnownRevision", ""),
+             json.dumps({key: item[key] for key in (
+                 "sourceHost", "sourcePort", "destinationHost", "destinationPort",
+                 "timeoutSeconds", "queueEnabled", "retryCount", "retryIntervalMs"
+             ) if key in item}, separators=(",", ":"), sort_keys=True))
+            for item in before.get("managedChannels", [])
+        ]
+        if current_channels != desired_channels:
+            changed.append("managedChannels")
+        return changed
 
     def compare_and_update_managed_channel_mapping(
         self, *, logical_type: str, expected_channel_id: str,
