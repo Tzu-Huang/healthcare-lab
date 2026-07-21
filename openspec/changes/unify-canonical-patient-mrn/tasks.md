@@ -12,9 +12,9 @@
 
 ## 3. Correct API projections and console labels
 
-- [ ] 3.1 Make Medplum Patient MRN projection select the `urn:healthcare-lab:mrn` identifier by system instead of identifier order or deterministic workflow identifier fallback.
-- [ ] 3.2 Audit Patient, Order, OIE, Medplum, GDT, and dcm4chee tables/details so `MRN` always displays canonical MRN and protocol-specific identifiers use explicit labels.
-- [ ] 3.3 Update previews, placeholders, validation messages, and documentation to describe the global sequence, canonical `MRN-NNNNNN` format, and expected per-server gaps.
+- [x] 3.1 Make Medplum Patient MRN projection select the `urn:healthcare-lab:mrn` identifier by system instead of identifier order or deterministic workflow identifier fallback.
+- [x] 3.2 Audit Patient, Order, OIE, Medplum, GDT, and dcm4chee tables/details so `MRN` always displays canonical MRN and protocol-specific identifiers use explicit labels.
+- [x] 3.3 Update previews, placeholders, validation messages, and documentation to describe the global sequence, canonical `MRN-NNNNNN` format, and expected per-server gaps.
 
 ## 4. Verify the unified contract
 

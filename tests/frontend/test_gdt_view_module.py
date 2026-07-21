@@ -24,6 +24,9 @@ class GdtViewModuleTests(unittest.TestCase):
         self.assertIn("function renderGdtPatientResults(patient)", self.source)
         self.assertIn('["File", "Status", "Updated", "Action"]', self.source)
         self.assertIn("matchingOrder?.exportPath", self.source)
+        self.assertIn('mrn: summary.mrn || ""', self.source)
+        self.assertIn('"GDT Workflow Patient ID"', self.source)
+        self.assertNotIn("summary.gdtPatientNumber || patient.gdtPatientNumber || summary.mrn", self.source)
 
     def test_gdt_initialization_is_idempotent_and_uses_explicit_patient_builder(self):
         self.assertIn("export function initializeGdtView(options = {})", self.source)

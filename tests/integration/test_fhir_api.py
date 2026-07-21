@@ -18,7 +18,13 @@ class FhirApiTests(ApiCaseSupport):
             json={
                 "localSourceType": "local_patient_records",
                 "localSourceId": "1",
-                "resource": {"resourceType": "Patient", "active": True},
+                "resource": {
+                    "resourceType": "Patient",
+                    "active": True,
+                    "identifier": [
+                        {"system": "urn:healthcare-lab:mrn", "value": "MRN-000701"}
+                    ],
+                },
             },
         )
 
@@ -36,7 +42,13 @@ class FhirApiTests(ApiCaseSupport):
             json={
                 "localSourceType": "local_patient_records",
                 "localSourceId": "1",
-                "resource": {"resourceType": "Patient", "active": True},
+                "resource": {
+                    "resourceType": "Patient",
+                    "active": True,
+                    "identifier": [
+                        {"system": "urn:healthcare-lab:mrn", "value": "MRN-000701"}
+                    ],
+                },
             },
         ).get_json()["item"]
         observation = self.client.post(
@@ -64,6 +76,11 @@ class FhirApiTests(ApiCaseSupport):
         body = inventory.get_json()
         by_id = {item["id"]: item for item in body["items"]}
         self.assertEqual(by_id[patient["id"]]["previewSource"], "medplum-live")
+        self.assertEqual(by_id[patient["id"]]["summary"]["secondary"], "MRN-000701")
+        self.assertNotEqual(
+            by_id[patient["id"]]["summary"]["secondary"],
+            by_id[patient["id"]]["identifier"]["value"],
+        )
         self.assertEqual(by_id[observation["id"]]["patientReferences"], ["Patient/patient-created"])
         self.assertEqual(by_id[observation["id"]]["references"], ["Patient/patient-created"])
         self.assertEqual(by_id[observation["id"]]["summary"]["primary"], "Observation")
