@@ -78,6 +78,15 @@ function renderPortWarning() {
 
 function reportError(error) { element("settings-status").textContent = error.message || settingsUnavailableMessage(); }
 
+function deliveryEvidenceText(check) {
+  if (check.layer !== "delivery-state") return "";
+  const evidence = check.evidence || {};
+  if (Number.isInteger(evidence.queued) && Number.isInteger(evidence.errors)) {
+    return `Queued: ${evidence.queued}; Errors: ${evidence.errors}`;
+  }
+  return "Counts unavailable.";
+}
+
 function renderDiagnostics(report = {}) {
   const checks = report.probes || report.checks || report.items || [];
   const container = element("settings-diagnostics-list"); container.replaceChildren();
@@ -87,8 +96,9 @@ function renderDiagnostics(report = {}) {
     const title = document.createElement("h4"); title.textContent = check.layer || check.name || "Runtime check";
     const stateLine = document.createElement("p"); stateLine.textContent = `State: ${check.state || "unknown"}${check.category ? ` (${check.category})` : ""}`;
     const summary = document.createElement("p"); summary.textContent = check.summary || check.message || "No additional evidence.";
+    const evidence = document.createElement("p"); evidence.textContent = deliveryEvidenceText(check);
     const guidance = document.createElement("p"); guidance.textContent = check.guidance || check.recoveryGuidance || "";
-    card.append(title, stateLine, summary); if (guidance.textContent) card.append(guidance); container.append(card);
+    card.append(title, stateLine, summary); if (evidence.textContent) card.append(evidence); if (guidance.textContent) card.append(guidance); container.append(card);
   });
   if (!checks.length) container.textContent = "No diagnostic checks were returned.";
   element("settings-diagnostics-summary").textContent = report.summary || `Diagnostics completed: ${checks.length} layer${checks.length === 1 ? "" : "s"}.`;
