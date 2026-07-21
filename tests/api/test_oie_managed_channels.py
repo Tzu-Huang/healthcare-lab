@@ -7,7 +7,7 @@ from backend.services.oie_channel_lifecycle import LifecycleGuardError
 
 class Lifecycle:
     def __init__(self): self.calls = []
-    def inspect(self): self.calls.append(("inspect",)); return [{"logicalType": "hlab-orm-to-ap", "classification": "missing"}]
+    def inspect(self): self.calls.append(("inspect",)); return [{"logicalType": "hlab-orm-to-ap", "classification": "missing", "lastOperation": {"operation": "create", "outcome": "failure"}}]
     def preview(self, logical_type, operation): self.calls.append(("preview", logical_type, operation)); return {"permitted": True, "previewToken": "opaque"}
     def execute(self, logical_type, operation, token, *, confirmation=""):
         self.calls.append(("execute", logical_type, operation, token, confirmation))
@@ -25,7 +25,9 @@ class ManagedChannelApiTests(unittest.TestCase):
         app.register_blueprint(create_oie_blueprint(Settings(), Workflow(), self.lifecycle)); self.client = app.test_client()
 
     def test_inspection_preview_and_single_target_mutation(self):
-        self.assertEqual(200, self.client.get("/api/oie/managed-channels").status_code)
+        inspection = self.client.get("/api/oie/managed-channels")
+        self.assertEqual(200, inspection.status_code)
+        self.assertEqual("failure", inspection.get_json()["items"][0]["lastOperation"]["outcome"])
         preview = self.client.post("/api/oie/managed-channels/hlab-orm-to-ap/previews/create", json={})
         self.assertEqual("opaque", preview.get_json()["item"]["previewToken"])
         mutation = self.client.post("/api/oie/managed-channels/hlab-orm-to-ap/create", json={"previewToken": "opaque"})

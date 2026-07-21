@@ -273,6 +273,7 @@ class OieInteractionTests(unittest.TestCase):
         inventory = [
             {"logicalType": "hlab-orm-to-ap", "classification": "unchanged", "name": "HLAB_ORM_TO_AP",
              "channelId": "c1", "revision": 7, "status": "STARTED", "route": "OIE:6600 -> AP:6671",
+             "lastOperation": {"operation": "redeploy", "outcome": "success"},
              "permittedActions": ["redeploy", "delete"]},
             {"logicalType": "hlab-oru-to-hlab", "classification": "missing", "name": "HLAB_ORU_TO_HLAB",
              "route": "OIE:6661 -> lab-app:6665", "permittedActions": ["create"]},
@@ -323,6 +324,7 @@ class OieInteractionTests(unittest.TestCase):
         page.get_by_text("OPERATOR_CHANNEL", exact=True).wait_for()
         external_card = page.get_by_text("OPERATOR_CHANNEL", exact=True).locator("..")
         self.assertEqual(0, external_card.locator("button[data-operation]").count())
+        self.assertIn("redeploy: success", page.get_by_text("HLAB_ORM_TO_AP", exact=True).locator("..").inner_text())
         page.get_by_role("button", name="Preview recreate", exact=True).wait_for()
 
         missing_card = page.get_by_text("HLAB_ORU_TO_HLAB", exact=True).locator("..")
