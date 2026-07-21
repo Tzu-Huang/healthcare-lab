@@ -32,6 +32,13 @@
     <p class="muted">Save is persistence-only and never restarts the listener.</p>
   </section>
 
+  <section class="lab-panel settings-panel" aria-labelledby="settings-diagnostics-title">
+    <div class="settings-header"><div><h3 id="settings-diagnostics-title">Runtime Diagnostics</h3><p class="muted">Independent checks for OIE API, HLAB listener, managed Channel, ports, and queued delivery.</p></div><button id="settings-refresh-diagnostics" type="button">Run diagnostics</button></div>
+    <p id="settings-diagnostics-summary" role="status">Diagnostics have not run.</p>
+    <div id="settings-diagnostics-list" class="settings-diagnostics-grid"></div>
+    <p class="muted">Channel endpoint changes require Apply/Redeploy; listener intent requires Retry or lab-app restart; host-published port changes require container recreation.</p>
+  </section>
+
   <section class="lab-panel settings-panel" aria-labelledby="settings-channels-title">
     <h3 id="settings-channels-title">Managed Channels</h3>
     <p class="muted">Approved routes: OIE:6600 → AP:6671 and OIE:6661 → lab-app:6665.</p>

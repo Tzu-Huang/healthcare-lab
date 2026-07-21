@@ -129,6 +129,8 @@ INTEGRATION_OWNER_INVENTORY = {
         "test_oie_settings_api_preserves_replaces_and_never_exposes_password",
         "test_oie_result_api_keeps_unknown_patient_unmatched",
         "test_oie_result_api_rejects_unsupported_message_with_failure_ack",
+        "test_oie_result_api_requires_msh_10_without_accepting_a_result",
+        "test_oie_result_redelivery_is_acknowledged_without_duplicate_insert",
         "test_oie_result_listener_status_defaults_to_port_6665",
         "test_oie_result_listener_start_reports_bind_failure",
         "test_oie_send_order_records_ack_acceptance",
@@ -224,8 +226,8 @@ class Zac64OwnershipContractTests(unittest.TestCase):
             actual = _test_method_names(tests_root / relative)
             self.assertEqual(actual, expected, relative)
             integration_names.extend(actual)
-        self.assertEqual(len(integration_names), 125)
-        self.assertEqual(len(set(integration_names)), 125)
+        self.assertEqual(len(integration_names), 127)
+        self.assertEqual(len(set(integration_names)), 127)
 
         repository_names = []
         for relative, expected in REPOSITORY_OWNER_INVENTORY.items():

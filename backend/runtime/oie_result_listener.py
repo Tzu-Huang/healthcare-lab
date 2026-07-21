@@ -52,6 +52,7 @@ class OieResultListener:
         self._lock = threading.RLock()
         self._state = "stopped"
         self.last_error = ""
+        self.error_category = ""
         self.last_received_at = ""
 
     def status(self) -> dict[str, Any]:
@@ -63,6 +64,7 @@ class OieResultListener:
                 "port": self.port,
                 "mllpFraming": self.framing,
                 "lastError": self.last_error,
+                "errorCategory": self.error_category,
                 "lastReceivedAt": self.last_received_at,
             }
 
@@ -91,11 +93,13 @@ class OieResultListener:
                 self.framing = bool(framing)
                 self._state = "degraded"
                 self.last_error = str(exc)
+                self.error_category = "port-conflict"
                 raise ValidationError(f"Listener could not start: {exc}") from exc
             self.host = host
             self.port = int(port)
             self.framing = bool(framing)
             self.last_error = ""
+            self.error_category = ""
             self._state = "running"
             self._stop_event.clear()
             self._socket = server
@@ -117,6 +121,7 @@ class OieResultListener:
         with self._lock:
             self._state = "stopped"
             self.last_error = ""
+            self.error_category = ""
         return self.status()
 
     def _serve(self) -> None:
@@ -135,6 +140,7 @@ class OieResultListener:
                         with self._lock:
                             self._state = "degraded"
                             self.last_error = "Listener socket closed unexpectedly."
+                            self.error_category = "runtime-failure"
                     break
                 with connection:
                     self._handle_connection(connection)
@@ -142,6 +148,7 @@ class OieResultListener:
             with self._lock:
                 self._state = "degraded"
                 self.last_error = str(exc)
+                self.error_category = "runtime-failure"
         finally:
             with self._lock:
                 self._socket = None
@@ -169,6 +176,8 @@ class OieResultListener:
             with self._lock:
                 self.last_received_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
                 self.last_error = ""
+                self.error_category = ""
         except Exception as exc:  # pragma: no cover - defensive listener boundary
             with self._lock:
                 self.last_error = str(exc)
+                self.error_category = "message-processing-failure"

@@ -13,6 +13,12 @@
 .settings-runtime dt { font-weight: 700; }
 .settings-runtime dd { margin: 0; overflow-wrap: anywhere; }
 .settings-channel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.settings-diagnostics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+.settings-diagnostic { border: 1px solid var(--border-color, #ccd4dc); border-left: 5px solid #667085; border-radius: 10px; padding: .85rem; }
+.settings-diagnostic[data-state="ok"], .settings-diagnostic[data-state="healthy"] { border-left-color: #16803c; }
+.settings-diagnostic[data-state="warning"], .settings-diagnostic[data-state="unavailable"] { border-left-color: #b54708; }
+.settings-diagnostic[data-state="error"], .settings-diagnostic[data-state="failed"], .settings-diagnostic[data-state="degraded"] { border-left-color: #b42318; }
+.settings-diagnostic p { margin: .35rem 0 0; overflow-wrap: anywhere; }
 .settings-channel { min-width: 0; border: 1px solid var(--border-color, #ccd4dc); border-radius: 12px; padding: 1rem; }
 .settings-channel p { overflow-wrap: anywhere; }
 .settings-conflict { border-color: #b42318; background: #fff4f2; }

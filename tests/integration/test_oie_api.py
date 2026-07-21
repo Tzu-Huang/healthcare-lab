@@ -166,6 +166,38 @@ class OieApiTests(ApiCaseSupport):
         self.assertIn("ACK^A04^ACK", body["ack"])
         self.assertIn("ERR||MSH^1^9^1^1|200^Unsupported message type^HL70357|E", body["ack"])
 
+    def test_oie_result_api_requires_msh_10_without_accepting_a_result(self):
+        payload = (
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^R01^ORU_R01||P|2.5.1\r"
+            "PID|1||MRN-MISSING-ID^^^HEALTHCARE_LAB^MR"
+        )
+
+        response = self.client.post("/api/oie/results", json={"payload": payload})
+
+        self.assertEqual(response.status_code, 400)
+        body = response.get_json()
+        self.assertFalse(body["success"])
+        self.assertIn("MSA|AE||HL7 MSH-10 message control ID is required.", body["ack"])
+        results = self.client.get("/api/oie/workbench").get_json()["unmatchedResults"]
+        self.assertEqual(1, len(results))
+        self.assertEqual("error", results[0]["parseStatus"])
+
+    def test_oie_result_redelivery_is_acknowledged_without_duplicate_insert(self):
+        payload = (
+            "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^R01^ORU_R01|ORU-RETRY|P|2.5.1\r"
+            "PID|1||UNKNOWN^^^HEALTHCARE_LAB^MR"
+        )
+
+        first = self.client.post("/api/oie/results", json={"payload": payload})
+        duplicate = self.client.post("/api/oie/results", json={"payload": payload})
+
+        self.assertEqual(200, first.status_code)
+        self.assertEqual(200, duplicate.status_code)
+        self.assertIn("MSA|AA|ORU-RETRY|Duplicate result ignored.", duplicate.get_json()["ack"])
+        self.assertTrue(duplicate.get_json()["item"]["duplicate"])
+        results = self.client.get("/api/oie/workbench").get_json()["unmatchedResults"]
+        self.assertEqual(1, len(results))
+
     def test_oie_result_listener_status_defaults_to_port_6665(self):
         response = self.client.get("/api/oie/result-listener/status")
 

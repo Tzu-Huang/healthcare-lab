@@ -10,6 +10,7 @@ export function saveSettings(payload) {
 export function testSettingsConnection() {
   return requestJson(`${SETTINGS_API_NAMESPACE}/test-connection`, { method: "POST", body: "{}" });
 }
+export function fetchRuntimeDiagnostics() { return requestJson(`${SETTINGS_API_NAMESPACE}/diagnostics`); }
 export function fetchSettingsListenerStatus() { return requestJson("/api/oie/result-listener/status"); }
 export function startSettingsListener() { return requestJson("/api/oie/result-listener/start", { method: "POST" }); }
 export function stopSettingsListener() { return requestJson("/api/oie/result-listener/stop", { method: "POST" }); }
