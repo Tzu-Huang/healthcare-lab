@@ -37,9 +37,10 @@ The read-only inventory performed before the first ZAC-52 run found OIE image
 `nextgenhealthcare/connect:4.5.2` in Compose project `interoperability-lab`,
 HLAB HTTP on host `5000`, and the HLAB listener running internally at
 `0.0.0.0:6665`. The Windows-native simulator
-`C:\Program Files\QHeart-AP\QHeart-AP.exe` was listening on host `6671`; record
-its product build/version during the witnessed run rather than treating the
-executable path as a build identifier.
+`C:\Program Files\QHeart-AP\QHeart-AP.exe` reported product/file version
+`1.5.3` and was listening on host `6671`. The repository readiness revision was
+`08b22c1196a848317389da9a4f24edb3ffd45f19`; the witnessed acceptance run must
+record its own later revision rather than reusing this inventory value.
 
 This runtime is not a clean baseline. Its OIE container still publishes legacy
 host port `6663` instead of required `6600`; an external started
@@ -48,6 +49,12 @@ are missing; and runtime diagnostics report port conflicts. The desired ORM
 destination currently resolves to `hl7tester:6671`, whose reachability from the
 OIE container must be proven. These facts block protocol and lifecycle
 acceptance until the controlled clean-state procedure resolves them.
+
+A bounded host-side helper run confirmed OIE management, host `6661`, and AP
+`6671` reachable; host `6600` and `6665` timed out; and the safe HLAB diagnostic
+projection returned `degraded`. The `6665` host result is expected because the
+listener is internal-only, while the `6600` result is a blocking publication
+mismatch. No fixture was sent during this readiness check.
 
 ## Safety and evidence rules
 
