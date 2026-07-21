@@ -64,7 +64,7 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
         return GdtWorkflowCoordinator(repository), repository
 
     def test_conflicting_exact_identifiers_choose_newest_matching_order_id(self):
-        patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-GDT-CONFLICT"))
+        patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-000611"))
         first = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"]})
         second = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"]})
         newest = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"]})
@@ -95,8 +95,8 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
         self.assertEqual(self.dependencies.gdt_workflow.get_gdt_order_record(second["id"])["status"], "Created")
 
     def test_exact_order_match_overrides_contradictory_patient_number(self):
-        matched_patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-GDT-MATCHED"))
-        contradictory_patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-GDT-CONTRADICT"))
+        matched_patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-000612"))
+        contradictory_patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-000613"))
         matched_order = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": matched_patient["id"]})
         contradictory_order = self.dependencies.gdt_workflow.create_gdt_order_record(
             {"patientRecordId": contradictory_patient["id"]}
@@ -127,7 +127,7 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
         self.assertEqual(workbench_by_patient[contradictory_patient["id"]]["results"], [])
 
     def test_context_only_and_fully_unbound_results_use_current_workbench_buckets(self):
-        patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-GDT-BUCKETS"))
+        patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-000614"))
         order = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"]})
         context_only = self.dependencies.gdt_workflow.record_gdt_result(
             {
@@ -152,18 +152,36 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
             }
         )
 
-        workbench = self.dependencies.gdt_workflow.list_gdt_workbench()
-        patient_bucket = next(item for item in workbench["patients"] if item["id"] == patient["id"])
         self.assertEqual(context_only["matchStatus"], "unmatched")
         self.assertIsNone(context_only["orderRecordId"])
         self.assertEqual(context_only["patientContextId"], order["gdtPatientContextId"])
-        self.assertEqual([item["id"] for item in patient_bucket["results"]], [context_only["id"]])
+        legacy_context_only = self.dependencies.gdt_workflow.record_gdt_result(
+            {
+                "rawGdtText": self.result_message(
+                    [
+                        ("3000", order["patientSnapshot"]["gdtWorkflowPatientId"]),
+                        ("8402", "EKG01"),
+                        ("6220", "Known legacy context only"),
+                    ]
+                )
+            }
+        )
+        self.assertEqual(legacy_context_only["patientContextId"], order["gdtPatientContextId"])
+        workbench = self.dependencies.gdt_workflow.list_gdt_workbench()
+        patient_bucket = next(item for item in workbench["patients"] if item["id"] == patient["id"])
+        self.assertEqual(
+            [item["id"] for item in patient_bucket["results"]],
+            [legacy_context_only["id"], context_only["id"]],
+        )
         self.assertEqual([item["id"] for item in workbench["unmatchedResults"]], [fully_unbound["id"]])
-        self.assertEqual({item["id"] for item in workbench["results"]}, {context_only["id"], fully_unbound["id"]})
+        self.assertEqual(
+            {item["id"] for item in workbench["results"]},
+            {context_only["id"], legacy_context_only["id"], fully_unbound["id"]},
+        )
         self.assertEqual(workbench["resultsByOrder"], {})
 
     def test_6302_builder_failure_rolls_back_all_gdt_workflow_rows(self):
-        patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-GDT-ORDER-ROLLBACK"))
+        patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-000615"))
 
         workflow, _ = self.workflow(
             order_builder=lambda _payload: (_ for _ in ()).throw(RuntimeError("6302 failed"))
@@ -179,7 +197,7 @@ class GdtWorkflowCharacterizationTests(unittest.TestCase):
         self.assertEqual(self.table_counts(), {table: 0 for table in self.table_counts()})
 
     def test_result_side_failure_rolls_back_message_attachments_events_and_status(self):
-        patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-GDT-RESULT-ROLLBACK"))
+        patient = self.dependencies.patient_repository.create_patient_record(self.patient("MRN-000616"))
         order = self.dependencies.gdt_workflow.create_gdt_order_record({"patientRecordId": patient["id"]})
         before = self.table_counts()
         workflow, repository = self.workflow()
