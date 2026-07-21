@@ -36,5 +36,5 @@
 - [x] 6.1 Publish the verified port matrix and route diagram for `HLAB -> OIE:6600 -> AP:6671` and `AP -> OIE:6661 -> HLAB:6665`.
 - [x] 6.2 Publish Settings and managed-Channel operating instructions plus create/edit/deploy/undeploy/delete/recreate and outage-recovery SOPs.
 - [x] 6.3 Publish known limitations, troubleshooting guidance, clean-rerun instructions, and the repeatable protocol-level smoke check for an operator who did not implement the feature.
-- [ ] 6.4 Run focused automated tests, the full regression suite, syntax/compile checks, strict OpenSpec validation, and secret/PHI evidence review.
-- [ ] 6.5 Complete the evidence ledger with a result for every required step and leave the gate failed or blocked if any unresolved blocking defect remains.
+- [x] 6.4 Run focused automated tests, the full regression suite, syntax/compile checks, strict OpenSpec validation, and secret/PHI evidence review.
+- [x] 6.5 Complete the evidence ledger with a result for every required step and leave the gate failed or blocked if any unresolved blocking defect remains.
