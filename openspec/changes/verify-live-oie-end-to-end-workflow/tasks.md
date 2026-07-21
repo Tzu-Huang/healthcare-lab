@@ -9,8 +9,8 @@
 
 - [ ] 2.1 Add bounded preflight checks for OIE version and Management API reachability, HLAB `6665` listener state, published OIE ports, and AP `6671` reachability without exposing credentials.
 - [ ] 2.2 Add or document deterministic synthetic ORM and matched, unmatched, and recovery ORU fixtures with unique Patient, Order, and `MSH-10` correlation identifiers.
-- [ ] 2.3 Add repeatable smoke steps or helper tooling that captures ACKs, bounded diagnostics, persistence outcomes, and queue/retry observations without destructive cleanup or fixed-sleep assumptions.
-- [ ] 2.4 Add automated tests for any new smoke helper parsing, redaction, timeout, and failure-classification behavior.
+- [x] 2.3 Add repeatable smoke steps or helper tooling that captures ACKs, bounded diagnostics, persistence outcomes, and queue/retry observations without destructive cleanup or fixed-sleep assumptions.
+- [x] 2.4 Add automated tests for any new smoke helper parsing, redaction, timeout, and failure-classification behavior.
 
 ## 3. Clean Provisioning and ORM Verification
 
