@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import json
 import urllib.parse
 from typing import Any
 
@@ -77,10 +78,43 @@ def validate_settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
         if logical_type in logical_types:
             raise SimulatorValidationError(f"OIE managedChannels contains duplicate logicalType '{logical_type}'.")
         logical_types.add(logical_type)
+        desired = {}
+        desired_fields = {
+            "sourceHost": str,
+            "sourcePort": int,
+            "destinationHost": str,
+            "destinationPort": int,
+            "timeoutSeconds": (int, float),
+            "queueEnabled": bool,
+            "retryCount": int,
+            "retryIntervalMs": int,
+        }
+        for key, expected in desired_fields.items():
+            if key not in mapping:
+                continue
+            value = mapping[key]
+            if isinstance(value, bool) and expected is not bool:
+                raise SimulatorValidationError(f"OIE managedChannels[{index}].{key} has an invalid type.")
+            if not isinstance(value, expected):
+                raise SimulatorValidationError(f"OIE managedChannels[{index}].{key} has an invalid type.")
+            desired[key] = value
+        if "sourceHost" in desired and not desired["sourceHost"].strip():
+            raise SimulatorValidationError(f"OIE managedChannels[{index}].sourceHost is required.")
+        if "destinationHost" in desired and not desired["destinationHost"].strip():
+            raise SimulatorValidationError(f"OIE managedChannels[{index}].destinationHost is required.")
+        for key in ("sourcePort", "destinationPort"):
+            if key in desired and not 1 <= desired[key] <= 65535:
+                raise SimulatorValidationError(f"OIE managedChannels[{index}].{key} must be between 1 and 65535.")
+        if "timeoutSeconds" in desired and (not math.isfinite(float(desired["timeoutSeconds"])) or float(desired["timeoutSeconds"]) <= 0):
+            raise SimulatorValidationError(f"OIE managedChannels[{index}].timeoutSeconds must be positive.")
+        for key in ("retryCount", "retryIntervalMs"):
+            if key in desired and desired[key] < (0 if key == "retryCount" else 1):
+                raise SimulatorValidationError(f"OIE managedChannels[{index}].{key} is invalid.")
         normalized.append({
             "logical_type": logical_type, "oie_channel_id": str(mapping.get("channelId") or "").strip(),
             "channel_name": channel_name, "template_version": str(mapping.get("templateVersion") or "").strip(),
             "last_known_revision": str(mapping.get("lastKnownRevision") or "").strip(),
+            "desired_config_json": json.dumps(desired, sort_keys=True, separators=(",", ":")),
         })
     password_provided = "password" in management
     password = ""

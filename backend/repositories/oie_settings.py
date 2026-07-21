@@ -113,11 +113,11 @@ class OieSettingsRepository:
                 connection.execute(
                     """INSERT INTO oie_managed_channel_mappings (
                         profile_id, logical_type, oie_channel_id, channel_name, template_version,
-                        last_known_revision, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        last_known_revision, desired_config_json, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (profile["id"], mapping["logical_type"], mapping["oie_channel_id"],
                      mapping["channel_name"], mapping["template_version"], mapping["last_known_revision"],
-                     timestamp, timestamp),
+                     mapping["desired_config_json"], timestamp, timestamp),
                 )
         return self.get()
 
