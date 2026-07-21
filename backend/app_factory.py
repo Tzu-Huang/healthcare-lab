@@ -9,6 +9,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import secrets
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -127,6 +128,7 @@ from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as Runtim
 from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
 from backend.runtime.lazy_wsgi import LazyWsgiApplication
 from backend.services.oie_settings import OieSettingsService, create_oie_management_client
+from backend.services.oie_channel_lifecycle import OieManagedChannelLifecycleService, PreviewTokenCodec
 from backend.application_composition import assemble_application_dependencies
 from backend.lab_composition import LabApplicationRepository, dashboard_services, lab_server_services
 from backend.services.lab_workflow import (
@@ -325,6 +327,11 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
     app.extensions["oie_settings_service"] = OieSettingsService(dependencies.oie_settings_repository)
     app.extensions["oie_management_client"] = create_oie_management_client(dependencies.oie_settings_repository)
+    app.extensions["oie_channel_lifecycle_service"] = OieManagedChannelLifecycleService(
+        app.extensions["oie_management_client"], dependencies.oie_settings_repository,
+        ap_host=app.config["OIE_MANAGED_AP_HOST"],
+        token_codec=PreviewTokenCodec(secrets.token_bytes(32)),
+    )
     app.extensions["oie_workflow_service"] = OieWorkflowService(
         dependencies.oie_repository,
         oie_coordination,
@@ -339,6 +346,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         create_oie_blueprint(
             app.extensions["oie_settings_service"],
             app.extensions["oie_workflow_service"],
+            app.extensions["oie_channel_lifecycle_service"],
         )
     )
     if activate_runtime:
