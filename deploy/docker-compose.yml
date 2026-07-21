@@ -32,8 +32,11 @@ services:
       GDT_BRIDGE_PATH: /data/gdt-bridge
       OIE_MLLP_ORDER_HOST: ${OIE_MLLP_ORDER_HOST:-oie}
       OIE_MLLP_ORDER_PORT: ${OIE_MLLP_ORDER_PORT:-6600}
-      OIE_MLLP_RESULT_HOST: ${OIE_MLLP_RESULT_HOST:-0.0.0.0}
-      OIE_MLLP_RESULT_PORT: ${OIE_MLLP_RESULT_PORT:-6665}
+      # The application still consumes the historical OIE_MLLP_RESULT_* names.
+      # Compose maps the unambiguous HLAB listener settings to them. The legacy
+      # aliases are accepted for one migration window and affect lab-app only.
+      OIE_MLLP_RESULT_HOST: ${HLAB_RESULT_LISTENER_HOST:-${OIE_MLLP_RESULT_HOST:-0.0.0.0}}
+      OIE_MLLP_RESULT_PORT: ${HLAB_RESULT_LISTENER_PORT:-${OIE_MLLP_RESULT_PORT:-6665}}
       DCM4CHEE_WEB_UI_URL: ${DCM4CHEE_WEB_UI_URL:-http://127.0.0.1:8082/dcm4chee-arc/ui2}
       DCM4CHEE_DIMSE_HOST: ${DCM4CHEE_DIMSE_HOST:-dcm4chee}
       DCM4CHEE_DIMSE_PORT: ${DCM4CHEE_DIMSE_PORT:-11112}
@@ -61,8 +64,8 @@ services:
     ports:
       - "${OIE_HTTP_PORT:-18080}:8080"
       - "${OIE_HTTPS_PORT:-10443}:8443"
-      - "0.0.0.0:${OIE_MLLP_RESULT_PORT:-6661}:6661"
-      - "${OIE_MLLP_ORDER_PORT:-6600}:6600"
+      - "0.0.0.0:${OIE_AP_RESULT_INGRESS_HOST_PORT:-6661}:6661"
+      - "${OIE_ORDER_INGRESS_HOST_PORT:-6600}:6600"
     expose:
       - "6671"
       - "6661"

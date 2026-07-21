@@ -149,7 +149,7 @@
       <properties class="com.mirth.connect.connectors.tcp.TcpDispatcherProperties" version="4.5.2">
         <pluginProperties/>
         <destinationConnectorProperties version="4.5.2">
-          <queueEnabled>false</queueEnabled>
+          <queueEnabled>true</queueEnabled>
           <sendFirst>false</sendFirst>
           <retryIntervalMillis>10000</retryIntervalMillis>
           <regenerateTemplate>false</regenerateTemplate>

@@ -1,8 +1,8 @@
 ## 1. Runtime Port and Channel Contract
 
-- [ ] 1.1 Split ambiguous OIE host-publication and HLAB listener environment settings, preserve an explicitly bounded migration path, and add Compose contract tests.
-- [ ] 1.2 Align the canonical and compiled `HLAB_ORU_TO_HLAB` XML queue, retry, timeout, MLLP, and ACK-validation settings.
-- [ ] 1.3 Add template tests proving connection failure and response timeout remain queueable and ORM queue behavior remains unchanged.
+- [x] 1.1 Split ambiguous OIE host-publication and HLAB listener environment settings, preserve an explicitly bounded migration path, and add Compose contract tests.
+- [x] 1.2 Align the canonical and compiled `HLAB_ORU_TO_HLAB` XML queue, retry, timeout, MLLP, and ACK-validation settings.
+- [x] 1.3 Add template tests proving connection failure and response timeout remain queueable and ORM queue behavior remains unchanged.
 
 ## 2. Idempotent HLAB Result Delivery
 
@@ -26,7 +26,7 @@
 
 ## 5. Documentation and End-to-End Verification
 
-- [ ] 5.1 Document Docker service-name versus host-published-port behavior and the `6600`, `6661`, `6665`, HTTP, and HTTPS contracts.
-- [ ] 5.2 Document which endpoint changes require Channel Apply/Redeploy, listener Retry/restart, or Docker container recreation.
+- [x] 5.1 Document Docker service-name versus host-published-port behavior and the `6600`, `6661`, `6665`, HTTP, and HTTPS contracts.
+- [x] 5.2 Document which endpoint changes require Channel Apply/Redeploy, listener Retry/restart, or Docker container recreation.
 - [ ] 5.3 Add locally simulatable outage/recovery tests proving accepted ORUs remain retryable, deliver after listener recovery, and do not create uncontrolled duplicates.
 - [ ] 5.4 Run focused OIE suites, the full automated suite, syntax/compile checks, secret/PHI leakage assertions, and strict OpenSpec validation.

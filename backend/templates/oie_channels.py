@@ -196,6 +196,12 @@ def _render_channel(config: ManagedChannelConfig) -> str:
     _set(destination, "properties/destinationConnectorProperties/retryIntervalMillis", config.queue.retry_interval_ms)
     _set(destination, "properties/destinationConnectorProperties/retryCount", config.queue.retry_count)
     _set(destination, "properties/destinationConnectorProperties/queueBufferSize", config.queue.buffer_size)
+    _set(destination, "properties/destinationConnectorProperties/validateResponse", "true")
+    validation = "responseTransformer/inboundProperties/responseValidationProperties"
+    _set(destination, f"{validation}/successfulACKCode", "AA,CA")
+    _set(destination, f"{validation}/errorACKCode", "AE,CE")
+    _set(destination, f"{validation}/rejectedACKCode", "AR,CR")
+    _set(destination, f"{validation}/validateMessageControlId", "true")
     _set(root, "properties/initialState", config.initial_state.value)
     _set(root, "exportData/metadata/enabled", _xml_bool(config.enabled))
     return ET.tostring(root, encoding="unicode", short_empty_elements=True)
