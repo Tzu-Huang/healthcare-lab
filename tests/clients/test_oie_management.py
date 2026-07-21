@@ -8,6 +8,7 @@ import urllib.request
 from collections import deque
 from dataclasses import dataclass
 from unittest.mock import patch
+from xml.etree import ElementTree as ET
 
 from backend.clients.oie_management import HttpResponse, OieManagementClient, UrllibOieTransport
 from backend.domain.oie_management import (
@@ -318,10 +319,12 @@ class OieManagementClientTests(unittest.TestCase):
             Step(body={"boolean": True}), Step(body=True),
         )
         client.login()
-        client.create_channel("<channel><id /></channel>")
+        created = client.create_channel("<channel><id /></channel>")
         client.update_channel("c1", "<channel><id>c1</id></channel>")
         self.assertEqual("application/xml", transport.requests[2]["headers"]["Content-Type"])
-        self.assertEqual(b"<channel><id /></channel>", transport.requests[2]["body"])
+        created_xml = ET.fromstring(transport.requests[2]["body"])
+        self.assertEqual(created.identifier, created_xml.findtext("id"))
+        self.assertTrue(created.identifier)
         self.assertIn("override=false", transport.requests[3]["url"])
 
     def test_complete_channel_document_preserves_long_xml_without_repr_leak(self):
