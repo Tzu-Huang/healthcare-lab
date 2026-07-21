@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
+
+from backend.domain.patient import CANONICAL_MRN_PATTERN
 
 
 def seed_patient_mrn_sequence(connection: sqlite3.Connection) -> None:
     highest_existing = 0
     for row in connection.execute("SELECT mrn FROM local_patient_records"):
-        match = re.fullmatch(r"MRN-(\d+)", str(row["mrn"] or ""))
-        if match:
-            highest_existing = max(highest_existing, int(match.group(1)))
+        normalized_mrn = str(row["mrn"] or "").strip().upper()
+        if CANONICAL_MRN_PATTERN.fullmatch(normalized_mrn):
+            highest_existing = max(highest_existing, int(normalized_mrn[4:]))
     connection.execute(
         """
         INSERT INTO local_identifier_sequences (name, next_value)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from backend.domain.patient import CANONICAL_MRN_PATTERN
 from backend.repositories.database import Migration
 
 TABLE_SCHEMA_SQL = """
@@ -680,6 +681,18 @@ def enforce_normalized_patient_mrn_uniqueness(connection: sqlite3.Connection) ->
             "Cannot enforce canonical Patient MRN uniqueness; resolve normalized duplicates: "
             + details
         )
+    rows = connection.execute("SELECT id, mrn FROM local_patient_records").fetchall()
+    for row in rows:
+        stored_mrn = str(row["mrn"] or "")
+        normalized_mrn = stored_mrn.strip().upper()
+        if (
+            normalized_mrn != stored_mrn
+            and CANONICAL_MRN_PATTERN.fullmatch(normalized_mrn)
+        ):
+            connection.execute(
+                "UPDATE local_patient_records SET mrn = ? WHERE id = ?",
+                (normalized_mrn, row["id"]),
+            )
     connection.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_patient_mrn_normalized
