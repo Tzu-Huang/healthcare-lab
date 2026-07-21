@@ -128,6 +128,7 @@ from backend.runtime.gdt_bridge_watcher import GdtBridgeInboundWatcher as Runtim
 from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieResultListener
 from backend.runtime.lazy_wsgi import LazyWsgiApplication
 from backend.services.oie_settings import OieSettingsService, create_oie_management_client
+from backend.services.oie_diagnostics import OieRuntimeDiagnosticService
 from backend.services.oie_channel_lifecycle import OieManagedChannelLifecycleService, PreviewTokenCodec
 from backend.application_composition import assemble_application_dependencies
 from backend.lab_composition import LabApplicationRepository, dashboard_services, lab_server_services
@@ -342,11 +343,36 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         ack_parser=parse_hl7_ack,
         order_sender_provider=lambda: send_hl7_mllp_message,
     )
+    def managed_oru_channel_id() -> str:
+        mappings = dependencies.oie_settings_repository.get().get("managedChannels", [])
+        item = next((value for value in mappings if value.get("logicalType") == "hlab-oru-to-hlab"), {})
+        return str(item.get("channelId") or "")
+
+    def oie_port_contract() -> dict[str, Any]:
+        profile = dependencies.oie_settings_repository.get()
+        listener_port = int(profile.get("resultListener", {}).get("port", 6665))
+        mappings = profile.get("managedChannels", [])
+        source_ports = [int(item["sourcePort"]) for item in mappings if item.get("sourcePort")]
+        oru = next((item for item in mappings if item.get("logicalType") == "hlab-oru-to-hlab"), {})
+        conflicts = []
+        if len(source_ports) != len(set(source_ports)):
+            conflicts.append("managed-listener-port-conflict")
+        if oru.get("destinationPort") and int(oru["destinationPort"]) != listener_port:
+            conflicts.append("oru-destination-listener-mismatch")
+        return {"valid": not conflicts, "conflicts": conflicts}
+
+    app.extensions["oie_runtime_diagnostics_service"] = OieRuntimeDiagnosticService(
+        management_client=lambda: create_oie_management_client(dependencies.oie_settings_repository),
+        listener_status=app.extensions["oie_workflow_service"].listener_status,
+        port_contract=oie_port_contract,
+        channel_id=managed_oru_channel_id,
+    )
     app.register_blueprint(
         create_oie_blueprint(
             app.extensions["oie_settings_service"],
             app.extensions["oie_workflow_service"],
             app.extensions["oie_channel_lifecycle_service"],
+            app.extensions["oie_runtime_diagnostics_service"],
         )
     )
     if activate_runtime:
