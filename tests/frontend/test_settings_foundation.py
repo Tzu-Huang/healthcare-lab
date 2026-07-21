@@ -11,6 +11,8 @@ class SettingsFoundationTests(unittest.TestCase):
         self.template = (ROOT / "frontend/templates/views/settings.html").read_text(encoding="utf-8")
         self.view = (ROOT / "frontend/static/js/views/settings.js").read_text(encoding="utf-8")
         self.api = (ROOT / "frontend/static/js/api/settings.js").read_text(encoding="utf-8")
+        self.sidebar = (ROOT / "frontend/templates/shell/sidebar.html").read_text(encoding="utf-8")
+        self.layout = (ROOT / "frontend/static/css/layout.css").read_text(encoding="utf-8")
 
     def test_complete_workspace_has_one_modular_owner(self):
         for relative in (
@@ -68,6 +70,14 @@ class SettingsFoundationTests(unittest.TestCase):
         self.assertIn("export function initializeSettingsView(root)", self.view)
         self.assertIn("state.initialized", self.view)
         self.assertNotIn("fetch(", self.view)
+
+    def test_settings_navigation_is_semantically_and_visually_separated(self):
+        self.assertIn('class="sidebar-settings-group" role="group" aria-label="Application settings"', self.sidebar)
+        group_start = self.sidebar.index('class="sidebar-settings-group"')
+        self.assertGreater(self.sidebar.index('data-nav-target="settings-view"'), group_start)
+        rule = self.layout[self.layout.index(".sidebar-settings-group"):]
+        self.assertIn("border-top:", rule)
+        self.assertIn("padding-top:", rule)
 
 
 if __name__ == "__main__":
