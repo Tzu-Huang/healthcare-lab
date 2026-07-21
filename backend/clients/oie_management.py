@@ -12,6 +12,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
+from xml.etree import ElementTree as ET
 
 from backend.domain.oie_management import (
     OieErrorCategory,
@@ -138,7 +139,11 @@ class OieManagementClient:
             content_type="application/x-www-form-urlencoded", require_auth=False,
         )
         try:
-            status = str(self._json_mapping(response).get("status", "")).strip().upper()
+            login_status = self._json_mapping(response)
+            wrapped_status = login_status.get("com.mirth.connect.model.LoginStatus")
+            if isinstance(wrapped_status, Mapping):
+                login_status = wrapped_status
+            status = str(login_status.get("status", "")).strip().upper()
         except OieManagementError:
             self._authenticated = False
             self._version_support = None
@@ -184,6 +189,9 @@ class OieManagementClient:
 
     def current_user(self) -> OieResult:
         value = self._json_mapping(self._send("GET", "/users/current"))
+        wrapped_user = value.get("user")
+        if isinstance(wrapped_user, Mapping):
+            value = wrapped_user
         self._require_fields(value, "current user", {"id": (int, str), "username": str})
         return self._mapping_value_result("current-user", value)
 
@@ -193,7 +201,7 @@ class OieManagementClient:
         return self._mapping_value_result("system-info", value)
 
     def server_version(self) -> OieVersionSupport:
-        response = self._send("GET", "/server/version")
+        response = self._send("GET", "/server/version", accept="text/plain")
         return classify_oie_version(response.body.decode("utf-8", errors="replace"))
 
     def require_supported_version(self) -> OieVersionSupport:
@@ -215,39 +223,50 @@ class OieManagementClient:
     def get_channel(self, channel_id: str) -> OieResult:
         channel_id = self._identifier(channel_id)
         value = self._json_mapping(self._send("GET", f"/channels/{self._quote(channel_id)}"))
+        value = self._unwrap_mapping(value, "channel")
         self._require_fields(value, "channel", {"id": str, "revision": int})
         return self._mapping_value_result("get-channel", value, channel_id)
 
     def get_channel_complete(self, channel_id: str) -> OieChannelDocument:
         """Return complete Channel XML through a payload-hiding internal contract."""
         channel_id = self._identifier(channel_id)
-        value = self._json(self._send("GET", f"/channels/{self._quote(channel_id)}"))
-        if not isinstance(value, Mapping):
-            raise OieManagementError(
-                OieErrorCategory.UNEXPECTED_RESPONSE, "OIE Channel response was not an object."
-            )
-        self._require_fields(value, "channel", {"id": str, "revision": int})
-        payload = next(
-            (value.get(key) for key in ("payload", "xml", "channelXml")
-             if isinstance(value.get(key), str) and value.get(key).strip()),
-            None,
+        response = self._send(
+            "GET", f"/channels/{self._quote(channel_id)}", accept="application/xml"
         )
-        if payload is None:
+        try:
+            payload = response.body.decode("utf-8")
+            root = ET.fromstring(payload)
+        except (UnicodeDecodeError, ET.ParseError):
+            raise OieManagementError(
+                OieErrorCategory.UNEXPECTED_RESPONSE, "OIE Channel response was not complete XML."
+            ) from None
+        identifier = (root.findtext("id") or "").strip()
+        name = (root.findtext("name") or "").strip()
+        revision_text = (root.findtext("revision") or "").strip()
+        if root.tag != "channel" or not identifier or not revision_text.isdigit():
             raise OieManagementError(
                 OieErrorCategory.UNEXPECTED_RESPONSE,
                 "OIE Channel response did not contain complete XML.",
             )
+        status = self.channel_status(channel_id).status
         return OieChannelDocument(
-            identifier=str(value["id"]), name=str(value.get("name", "")),
-            revision=int(value["revision"]), payload=payload,
-            status=str(value.get("status", "")),
+            identifier=identifier, name=name, revision=int(revision_text), payload=payload,
+            status=status,
         )
 
     def channel_status(self, channel_id: str) -> OieResult:
         channel_id = self._identifier(channel_id)
-        value = self._json_mapping(
-            self._send("GET", f"/channels/{self._quote(channel_id)}/status")
-        )
+        try:
+            response = self._send("GET", f"/channels/{self._quote(channel_id)}/status")
+        except OieManagementError as exc:
+            if exc.http_status == 404:
+                return OieResult(
+                    "channel-status", channel_id, status="UNDEPLOYED",
+                    values={"channelId": channel_id, "state": "UNDEPLOYED"},
+                )
+            raise
+        value = self._json_mapping(response)
+        value = self._unwrap_mapping(value, "dashboardStatus")
         self._require_fields(value, "channel status", {"channelId": str, "state": str})
         return OieResult("channel-status", channel_id, status=str(value["state"]), values=value)
 
@@ -404,6 +423,7 @@ class OieManagementClient:
         *,
         body: bytes | None = None,
         content_type: str = "",
+        accept: str = "application/json",
         require_auth: bool = True,
     ) -> HttpResponse:
         if self._closed:
@@ -412,7 +432,7 @@ class OieManagementClient:
             raise OieManagementError(
                 OieErrorCategory.UNAUTHENTICATED, "OIE operation requires an authenticated session."
             )
-        headers = {"Accept": "application/json", "X-Requested-With": REQUESTED_WITH}
+        headers = {"Accept": accept, "X-Requested-With": REQUESTED_WITH}
         if content_type:
             headers["Content-Type"] = content_type
         try:
@@ -520,6 +540,11 @@ class OieManagementClient:
         required: Mapping[str, type | tuple[type, ...]],
     ) -> OieResult:
         value = self._json(response)
+        for _ in range(3):
+            if isinstance(value, Mapping) and len(value) == 1:
+                value = next(iter(value.values()))
+            else:
+                break
         if not isinstance(value, list):
             raise OieManagementError(
                 OieErrorCategory.UNEXPECTED_RESPONSE, "OIE response was not a list."
@@ -535,6 +560,11 @@ class OieManagementClient:
             self._require_fields(redacted, operation, required)
             normalized.append(redacted)
         return OieResult(operation, values={"items": tuple(normalized)})
+
+    @staticmethod
+    def _unwrap_mapping(value: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+        wrapped = value.get(key)
+        return wrapped if isinstance(wrapped, Mapping) else value
 
     @classmethod
     def _redact_mapping(cls, value: Mapping[str, Any]) -> Mapping[str, Any]:
