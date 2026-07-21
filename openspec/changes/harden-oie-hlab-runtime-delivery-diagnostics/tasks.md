@@ -6,9 +6,9 @@
 
 ## 2. Idempotent HLAB Result Delivery
 
-- [ ] 2.1 Require and validate a non-empty `MSH-10` before supported ORU persistence and return a bounded failure ACK when it is absent.
-- [ ] 2.2 Make duplicate `MSH-10` redelivery return a successful duplicate-recognition ACK without inserting another result.
-- [ ] 2.3 Add repository, service, and listener tests for first delivery, duplicate delivery, missing control ID, persistence failure, ACK failure, and listener recovery.
+- [x] 2.1 Require and validate a non-empty `MSH-10` before supported ORU persistence and return a bounded failure ACK when it is absent.
+- [x] 2.2 Make duplicate `MSH-10` redelivery return a successful duplicate-recognition ACK without inserting another result.
+- [x] 2.3 Add repository, service, and listener tests for first delivery, duplicate delivery, missing control ID, persistence failure, ACK failure, and listener recovery.
 
 ## 3. Layered Runtime Diagnostics
 
@@ -28,5 +28,5 @@
 
 - [x] 5.1 Document Docker service-name versus host-published-port behavior and the `6600`, `6661`, `6665`, HTTP, and HTTPS contracts.
 - [x] 5.2 Document which endpoint changes require Channel Apply/Redeploy, listener Retry/restart, or Docker container recreation.
-- [ ] 5.3 Add locally simulatable outage/recovery tests proving accepted ORUs remain retryable, deliver after listener recovery, and do not create uncontrolled duplicates.
+- [x] 5.3 Add locally simulatable outage/recovery tests proving accepted ORUs remain retryable, deliver after listener recovery, and do not create uncontrolled duplicates.
 - [ ] 5.4 Run focused OIE suites, the full automated suite, syntax/compile checks, secret/PHI leakage assertions, and strict OpenSpec validation.
