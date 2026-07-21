@@ -12,6 +12,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Mapping, Protocol
 from xml.etree import ElementTree as ET
 
@@ -359,7 +360,7 @@ class OieManagementClient:
                 if not identifier:
                     identifier = str(uuid.uuid4())
                     identifier_node.text = identifier
-                    channel = ET.tostring(root, encoding="unicode", short_empty_elements=True)
+                channel = self._with_live_channel_metadata(root)
         response = self._send_channel("POST", "/channels/", channel)
         self._require_boolean_success(response)
         return OieResult("create-channel", identifier=identifier)
@@ -368,12 +369,35 @@ class OieManagementClient:
         self, channel_id: str, channel: Mapping[str, Any] | str, *, override: bool = False
     ) -> OieResult:
         channel_id = self._identifier(channel_id)
-        query = urllib.parse.urlencode({"override": str(override).lower()})
+        start_edit = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
+        if isinstance(channel, str):
+            try:
+                channel = self._with_live_channel_metadata(ET.fromstring(channel))
+            except ET.ParseError:
+                pass
+        query = urllib.parse.urlencode({
+            "override": str(override).lower(), "startEdit": start_edit,
+        })
         response = self._send_channel(
             "PUT", f"/channels/{self._quote(channel_id)}?{query}", channel
         )
         self._require_boolean_success(response)
         return OieResult("update-channel", identifier=channel_id)
+
+    @staticmethod
+    def _with_live_channel_metadata(root: ET.Element) -> str:
+        metadata = root.find("exportData/metadata")
+        if metadata is not None:
+            last_modified = metadata.find("lastModified")
+            if last_modified is None:
+                last_modified = ET.SubElement(metadata, "lastModified")
+            for child in list(last_modified):
+                last_modified.remove(child)
+            ET.SubElement(last_modified, "time").text = str(
+                int(datetime.now(timezone.utc).timestamp() * 1000)
+            )
+            ET.SubElement(last_modified, "timezone").text = "UTC"
+        return ET.tostring(root, encoding="unicode", short_empty_elements=True)
 
     def delete_channel(self, channel_id: str) -> OieResult:
         channel_id = self._identifier(channel_id)
