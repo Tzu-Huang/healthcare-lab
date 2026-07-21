@@ -1,6 +1,14 @@
 import unittest
+from datetime import datetime, timezone
 
-from backend.domain.oie_management import OieManagementConfig, OieTlsMode
+from backend.domain.oie_management import (
+    OieErrorCategory,
+    OieManagementConfig,
+    OieManagementError,
+    OieResult,
+    OieTlsMode,
+    OieVersionSupport,
+)
 from backend.services.oie_settings import OieSettingsService, create_oie_management_client
 
 
@@ -18,6 +26,15 @@ class FakeRepository:
     def update(self, payload):
         self.updated_with = payload
         return {**self.profile, "updated": True, "resultListener": payload.get("resultListener", self.profile["resultListener"])}
+
+    def get_management_api_configuration(self):
+        return {
+            "base_url": "https://oie.example.test",
+            "username": "operator",
+            "password": "saved-password-canary",
+            "tls_verify": False,
+            "timeout_seconds": 10,
+        }
 
 
 class OieSettingsServiceTest(unittest.TestCase):
@@ -87,6 +104,128 @@ class OieSettingsServiceTest(unittest.TestCase):
         create_oie_management_client(Source(), client_factory=lambda config: captured.append(config))
 
         self.assertEqual(OieTlsMode.VERIFIED, captured[0].tls_mode)
+
+    def test_connection_projects_only_bounded_safe_fields_and_closes_session(self):
+        repository = FakeRepository()
+
+        class Client:
+            config = OieManagementConfig(
+                base_url="https://oie.example.test",
+                username="operator",
+                password="saved-password-canary",
+                tls_mode=OieTlsMode.LOCAL_SELF_SIGNED,
+            )
+            closed = False
+
+            def login(self):
+                return OieResult("login")
+
+            def require_supported_version(self):
+                return OieVersionSupport("4.5.2", True)
+
+            def current_user(self):
+                return OieResult(
+                    "current-user",
+                    identifier="user-1",
+                    values={
+                        "id": "user-1",
+                        "username": "operator",
+                        "password": "upstream-password-canary",
+                        "roles": ["admin"],
+                    },
+                )
+
+            def close(self):
+                self.closed = True
+
+        client = Client()
+        service = OieSettingsService(
+            repository,
+            management_client_factory=lambda source: client,
+            clock=lambda: datetime(2026, 7, 21, 4, 5, 6, tzinfo=timezone.utc),
+        )
+
+        result = service.test_connection()
+
+        self.assertEqual(
+            {
+                "status": "connected",
+                "version": "4.5.2",
+                "currentUser": "operator",
+                "tlsMode": "local-self-signed",
+                "testedAt": "2026-07-21T04:05:06Z",
+            },
+            result,
+        )
+        self.assertTrue(client.closed)
+        self.assertNotIn("saved-password-canary", repr(result))
+        self.assertNotIn("upstream-password-canary", repr(result))
+        self.assertNotIn("roles", result)
+
+    def test_connection_closes_session_and_preserves_stable_client_failure(self):
+        repository = FakeRepository()
+        expected = OieManagementError(
+            OieErrorCategory.AUTHENTICATION,
+            "OIE rejected the configured credentials.",
+        )
+
+        class Client:
+            config = OieManagementConfig(
+                base_url="https://oie.example.test",
+                username="operator",
+                password="saved-password-canary",
+            )
+            closed = False
+
+            def login(self):
+                raise expected
+
+            def close(self):
+                self.closed = True
+
+        client = Client()
+        service = OieSettingsService(
+            repository,
+            management_client_factory=lambda source: client,
+        )
+
+        with self.assertRaises(OieManagementError) as caught:
+            service.test_connection()
+
+        self.assertIs(expected, caught.exception)
+        self.assertEqual(OieErrorCategory.AUTHENTICATION, caught.exception.category)
+        self.assertTrue(client.closed)
+        self.assertNotIn("saved-password-canary", repr(caught.exception))
+
+    def test_connection_normalizes_naive_test_time_to_utc(self):
+        repository = FakeRepository()
+
+        class Client:
+            config = OieManagementConfig(
+                base_url="http://oie:8080",
+                username="operator",
+                password="secret",
+            )
+
+            def login(self):
+                return OieResult("login")
+
+            def require_supported_version(self):
+                return OieVersionSupport("4.5.2", True)
+
+            def current_user(self):
+                return OieResult("current-user", values={"username": "operator"})
+
+            def close(self):
+                pass
+
+        service = OieSettingsService(
+            repository,
+            management_client_factory=lambda source: Client(),
+            clock=lambda: datetime(2026, 7, 21, 12, 0, 0),
+        )
+
+        self.assertEqual("2026-07-21T12:00:00Z", service.test_connection()["testedAt"])
 
 
 if __name__ == "__main__":

@@ -6,10 +6,10 @@
 
 ## 2. OIE Connection Settings and Test
 
-- [ ] 2.1 Add a narrow Settings connection-test service that uses persisted private credentials, closes its OIE session, and projects only bounded version, current-user, TLS, status, and test-time fields.
-- [ ] 2.2 Expose the connection-test API with stable validation, TLS, authentication, permission, connection, timeout, unsupported-version, server, and unexpected-response errors that contain no secrets or raw upstream material.
+- [x] 2.1 Add a narrow Settings connection-test service that uses persisted private credentials, closes its OIE session, and projects only bounded version, current-user, TLS, status, and test-time fields.
+- [x] 2.2 Expose the connection-test API with stable validation, TLS, authentication, permission, connection, timeout, unsupported-version, server, and unexpected-response errors that contain no secrets or raw upstream material.
 - [ ] 2.3 Implement the OIE Connection form for URL, username, write-only password replacement, TLS mode, timeout, Save, password-configured state, and connection-test results.
-- [ ] 2.4 Add service, API, repository-regression, and frontend tests for defaults, password preservation/replacement, successful testing, classified failures, and secret absence.
+- [x] 2.4 Add service, API, repository-regression, and frontend tests for defaults, password preservation/replacement, successful testing, classified failures, and secret absence.
 
 ## 3. Listener Intent and Runtime Controls
 

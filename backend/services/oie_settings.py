@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from backend.clients.oie_management import OieManagementClient
@@ -51,8 +52,18 @@ def create_oie_management_client(
 
 
 class OieSettingsService:
-    def __init__(self, repository: OieSettingsRepositoryPort) -> None:
+    def __init__(
+        self,
+        repository: OieSettingsRepositoryPort,
+        *,
+        management_client_factory: Callable[
+            [OieManagementConfigurationSource], OieManagementClient
+        ] = create_oie_management_client,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._repository = repository
+        self._management_client_factory = management_client_factory
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def get_profile(self) -> dict[str, Any]:
         return self._repository.get()
@@ -64,3 +75,32 @@ class OieSettingsService:
             profile=profile,
             runtime_reload_required=before != profile.get("resultListener"),
         )
+
+    def test_connection(self) -> dict[str, str]:
+        """Test persisted OIE credentials and return only presentation-safe fields.
+
+        Stable ``OieManagementError`` failures intentionally pass through for the
+        API boundary to classify. The low-level client owns all upstream response
+        redaction, while this projection selects only the values the Settings UI
+        is permitted to display.
+        """
+        client = self._management_client_factory(self._repository)
+        try:
+            client.login()
+            version = client.require_supported_version()
+            user = client.current_user()
+            return {
+                "status": "connected",
+                "version": version.version,
+                "currentUser": str(user.values["username"]),
+                "tlsMode": client.config.tls_mode.value,
+                "testedAt": self._tested_at(),
+            }
+        finally:
+            client.close()
+
+    def _tested_at(self) -> str:
+        tested_at = self._clock()
+        if tested_at.tzinfo is None:
+            tested_at = tested_at.replace(tzinfo=timezone.utc)
+        return tested_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
