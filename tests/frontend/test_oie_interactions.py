@@ -282,7 +282,15 @@ class OieInteractionTests(unittest.TestCase):
         def handle_api(route: Route) -> None:
             request = route.request
             path = urlparse(request.url).path
-            if path == "/api/oie/settings":
+            if path == "/api/oie/settings" and request.method == "PUT":
+                saved = json.loads(request.post_data or "{}")
+                profile["managedChannels"] = saved["managedChannels"]
+                saved_type = saved["managedChannels"][-1]["logicalType"]
+                item = next(value for value in inventory if value.get("logicalType") == saved_type)
+                if item["classification"] == "unchanged":
+                    item.update(classification="drifted", permittedActions=["update", "redeploy", "delete"])
+                payload = {"success": True, "item": profile}
+            elif path == "/api/oie/settings":
                 payload = {"success": True, "item": profile}
             elif path == "/api/oie/result-listener/status":
                 payload = {"success": True, "item": {"state": "running", "running": True, "host": "127.0.0.1", "port": 6665, "mllpFraming": True}}
@@ -316,6 +324,18 @@ class OieInteractionTests(unittest.TestCase):
         external_card = page.get_by_text("OPERATOR_CHANNEL", exact=True).locator("..")
         self.assertEqual(0, external_card.locator("button[data-operation]").count())
         page.get_by_role("button", name="Preview recreate", exact=True).wait_for()
+
+        missing_card = page.get_by_text("HLAB_ORU_TO_HLAB", exact=True).locator("..")
+        missing_card.get_by_text("Edit approved fields", exact=True).click()
+        missing_card.get_by_role("button", name="Save desired fields", exact=True).click()
+        page.get_by_role("button", name="Preview recreate", exact=True).wait_for()
+        missing_mapping = next(item for item in profile["managedChannels"] if item["logicalType"] == "hlab-oru-to-hlab")
+        self.assertEqual("HLAB_ORU_TO_HLAB", missing_mapping["channelName"])
+
+        unchanged_card = page.get_by_text("HLAB_ORM_TO_AP", exact=True).locator("..")
+        unchanged_card.get_by_text("Edit approved fields", exact=True).click()
+        unchanged_card.get_by_role("button", name="Save desired fields", exact=True).click()
+        page.get_by_role("button", name="Preview apply", exact=True).wait_for()
 
         page.get_by_role("button", name="Preview redeploy", exact=True).click()
         page.locator("#settings-preview-execute").click()

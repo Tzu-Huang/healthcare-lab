@@ -181,11 +181,12 @@ async function saveChannelEdits(button) {
     desired[input.dataset.channelField] = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value.trim();
   });
   const entries = [...(state.profile?.managedChannels || [])]; const index = entries.findIndex((entry) => entry.logicalType === logicalType);
-  const updated = { ...(index >= 0 ? entries[index] : {}), logicalType, ...desired };
+  const inventoryItem = state.items.find((item) => item.logicalType === logicalType);
+  const updated = { ...(index >= 0 ? entries[index] : {}), logicalType, channelName: displayedChannelName(inventoryItem), ...desired };
   if (index >= 0) entries[index] = updated; else entries.push(updated);
   state.busy = true;
   try {
-    const payload = profilePayload(); payload.managedChannels = entries; const result = await saveSettings(payload); renderProfile(result.item);
+    const payload = profilePayload(); payload.managedChannels = entries; const result = await saveSettings(payload); renderProfile(result.item); await refreshSettingsChannels();
     element("settings-status").textContent = "Desired Channel fields saved. Preview Apply before changing OIE.";
   } catch (error) { reportError(error); }
   finally { state.busy = false; }
