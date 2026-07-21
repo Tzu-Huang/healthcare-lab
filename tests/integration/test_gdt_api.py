@@ -63,7 +63,11 @@ class GdtApiTests(ApiCaseSupport):
         self.assertEqual(item["messageType"], "6302")
         self.assertEqual(item["gdtTestField"], "8402")
         self.assertEqual(item["gdtTestCode"], "EKG01")
-        self.assertEqual(item["gdtPatientNumber"], f"GDT-PAT-{patient['id']:06d}")
+        self.assertEqual(item["gdtPatientNumber"], patient["summary"]["mrn"])
+        self.assertEqual(
+            item["patientSnapshot"]["gdtWorkflowPatientId"],
+            f"GDT-PAT-{patient['id']:06d}",
+        )
         self.assertEqual(item["messages"][0]["parsedFields"]["8402"], ["EKG01"])
         self.assertEqual(item["messages"][0]["parsedFields"]["6200"], ["06072026"])
         self.assertEqual(item["messages"][0]["parsedFields"]["6330"], [item["localGdtOrderNumber"]])
@@ -308,13 +312,13 @@ class GdtApiTests(ApiCaseSupport):
     def test_parse_oru_summary_extracts_matching_fields(self):
         parsed = parse_oru_summary(
             "MSH|^~\\&|OIE|HL7LAB|HEALTHCARE_LAB|DASHBOARD|20260706100000||ORU^R01^ORU_R01|ORU1|P|2.5.1||||||UNICODE UTF-8\r"
-            "PID|1||MRN-A04-001^^^HEALTHCARE_LAB^MR||Morgan^Avery\r"
+            "PID|1||MRN-100001^^^HEALTHCARE_LAB^MR||Morgan^Avery\r"
             "OBR|1|ORD-000001|FILL-1|ECG12^12 Lead ECG"
         )
 
         self.assertEqual(parsed["messageType"], "ORU^R01")
         self.assertEqual(parsed["messageControlId"], "ORU1")
-        self.assertEqual(parsed["patientMrn"], "MRN-A04-001")
+        self.assertEqual(parsed["patientMrn"], "MRN-100001")
         self.assertEqual(parsed["placerOrderNumber"], "ORD-000001")
         self.assertEqual(parsed["fillerOrderNumber"], "FILL-1")
 

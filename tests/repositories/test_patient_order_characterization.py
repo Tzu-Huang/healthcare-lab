@@ -59,17 +59,17 @@ class PatientOrderCharacterizationTests(unittest.TestCase):
             )
 
     def test_patient_filters_projection_and_not_found_contract(self):
-        hl7 = self.dependencies.patient_repository.create_patient_record(self.patient(mrn="MRN-HL7", mode="hl7-v2"))
-        self.dependencies.patient_repository.create_patient_record(self.patient(mrn="MRN-FHIR", mode="fhir"))
+        hl7 = self.dependencies.patient_repository.create_patient_record(self.patient(mrn="MRN-000501", mode="hl7-v2"))
+        self.dependencies.patient_repository.create_patient_record(self.patient(mrn="MRN-000502", mode="fhir"))
         self.assertEqual([row["id"] for row in self.dependencies.patient_repository.list_patient_records("HL7 v2.5.1")], [hl7["id"]])
-        self.assertEqual(hl7["summary"]["mrn"], "MRN-HL7")
+        self.assertEqual(hl7["summary"]["mrn"], "MRN-000501")
         self.assertIn("patient", hl7)
         self.assertIn("payload", hl7)
         with self.assertRaises(KeyError):
             self.dependencies.patient_repository.get_patient_record(999_999)
 
     def test_order_identifiers_payload_rollback_filters_and_not_found_contract(self):
-        patient = self.dependencies.patient_repository.create_patient_record(self.patient(mrn="MRN-ORDER"))
+        patient = self.dependencies.patient_repository.create_patient_record(self.patient(mrn="MRN-000503"))
         with patch.object(self.dependencies.order_repository, "_build_payload", side_effect=RuntimeError("payload")):
             with self.assertRaisesRegex(RuntimeError, "payload"):
                 self.dependencies.order_repository.create_order_record({"patientRecordId": patient["id"]})
@@ -85,7 +85,7 @@ class PatientOrderCharacterizationTests(unittest.TestCase):
             self.dependencies.order_repository.get_order_record(999_999)
 
     def test_order_send_result_updates_ack_error_and_timestamps(self):
-        patient = self.dependencies.patient_repository.create_patient_record(self.patient(mrn="MRN-SEND"))
+        patient = self.dependencies.patient_repository.create_patient_record(self.patient(mrn="MRN-000504"))
         order = self.dependencies.order_repository.create_order_record({"patientRecordId": patient["id"]})
         accepted = self.dependencies.order_repository.update_order_send_result(
             order["id"], order_status="Accepted", ack_code="AA", ack_control_id="ACK-1", ack_text="OK"

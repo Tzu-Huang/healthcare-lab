@@ -9,7 +9,7 @@ class FhirStoreTests(StoreCaseSupport):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "fhir",
-                "mrn": "MRN-FHIR-001",
+                "mrn": "MRN-200101",
                 "firstName": "Avery",
                 "middleName": "Lee",
                 "lastName": "Morgan",
@@ -132,7 +132,7 @@ class FhirStoreTests(StoreCaseSupport):
         patient = self.dependencies.patient_repository.create_patient_record(
             {
                 "mode": "fhir",
-                "mrn": "MRN-FHIR-ORDER-001",
+                "mrn": "MRN-200102",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",

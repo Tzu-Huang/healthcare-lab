@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from backend.domain.patient import CANONICAL_MRN_PATTERN
 from backend.repositories.database import Migration
 
 TABLE_SCHEMA_SQL = """
@@ -659,6 +660,47 @@ def ensure_application_schema(connection: sqlite3.Connection) -> None:
     create_application_indexes(connection)
 
 
+def enforce_normalized_patient_mrn_uniqueness(connection: sqlite3.Connection) -> None:
+    duplicates = connection.execute(
+        """
+        SELECT UPPER(TRIM(mrn)) AS normalized_mrn,
+               GROUP_CONCAT(id) AS patient_ids,
+               GROUP_CONCAT(mrn, ' | ') AS stored_values
+        FROM local_patient_records
+        GROUP BY UPPER(TRIM(mrn))
+        HAVING COUNT(*) > 1
+        ORDER BY normalized_mrn
+        """
+    ).fetchall()
+    if duplicates:
+        details = "; ".join(
+            f"{row['normalized_mrn']} (patient ids {row['patient_ids']}: {row['stored_values']})"
+            for row in duplicates
+        )
+        raise RuntimeError(
+            "Cannot enforce canonical Patient MRN uniqueness; resolve normalized duplicates: "
+            + details
+        )
+    rows = connection.execute("SELECT id, mrn FROM local_patient_records").fetchall()
+    for row in rows:
+        stored_mrn = str(row["mrn"] or "")
+        normalized_mrn = stored_mrn.strip().upper()
+        if (
+            normalized_mrn != stored_mrn
+            and CANONICAL_MRN_PATTERN.fullmatch(normalized_mrn)
+        ):
+            connection.execute(
+                "UPDATE local_patient_records SET mrn = ? WHERE id = ?",
+                (normalized_mrn, row["id"]),
+            )
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_patient_mrn_normalized
+        ON local_patient_records(UPPER(TRIM(mrn)))
+        """
+    )
+
+
 APPLICATION_MIGRATIONS = (
     Migration(1, "create-application-tables", create_application_tables),
     Migration(2, "add-legacy-columns", add_legacy_columns),
@@ -666,4 +708,5 @@ APPLICATION_MIGRATIONS = (
     Migration(4, "add-oie-managed-channel-lifecycle-audits", ensure_application_schema),
     Migration(5, "add-oie-managed-channel-desired-config", ensure_application_schema),
     Migration(6, "add-order-scheduled-time", ensure_application_schema),
+    Migration(7, "enforce-normalized-patient-mrn-uniqueness", enforce_normalized_patient_mrn_uniqueness),
 )

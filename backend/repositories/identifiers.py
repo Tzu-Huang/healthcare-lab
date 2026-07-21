@@ -27,6 +27,7 @@ class PatientIdentifierRepository:
             )
             candidate = mrn(value)
             if not connection.execute(
-                "SELECT 1 FROM local_patient_records WHERE mrn = ? LIMIT 1", (candidate,)
+                "SELECT 1 FROM local_patient_records WHERE UPPER(TRIM(mrn)) = ? LIMIT 1",
+                (candidate,),
             ).fetchone():
                 return candidate

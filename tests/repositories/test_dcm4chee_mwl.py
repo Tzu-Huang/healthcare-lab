@@ -24,7 +24,7 @@ class Dcm4cheeMwlRepositoryTests(unittest.TestCase):
         self.path = Path(self.temp_dir.name) / "mwl.db"
         self.dependencies = assemble_application_dependencies(self.path)
         patient = self.dependencies.patient_repository.create_patient_record(
-            {"mrn": "MRN-MWL-001", "firstName": "Grace", "lastName": "Hopper", "dob": "19061209", "sex": "F"}
+            {"mrn": "MRN-300002", "firstName": "Grace", "lastName": "Hopper", "dob": "19061209", "sex": "F"}
         )
         self.order = self.dependencies.order_repository.create_dcm4chee_order_record(
             {"patientRecordId": patient["id"], "requestedAt": "20260715103000"}

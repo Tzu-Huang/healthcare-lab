@@ -54,20 +54,25 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
         migrated = self._schema_inventory(migrated_path)
         self.assertEqual(migrated, legacy)
         self.assertEqual(len(migrated[0]), 23)
-        self.assertEqual(len(migrated[1]), 20)
+        self.assertEqual(len(migrated[1]), 21)
 
     def test_current_unversioned_database_is_recorded_without_data_loss(self):
         database_path = self.root / "current.db"
         store = assemble_application_dependencies(database_path)
         patient = store.patient_repository.create_patient_record(
             {
-                "mrn": "MRN-UNVERSIONED-1",
+                "mrn": "MRN-000901",
                 "firstName": "Current",
                 "lastName": "Database",
                 "dob": "19850412",
                 "sex": "F",
             }
         )
+        with store.database.connect() as connection:
+            connection.execute(
+                "UPDATE local_patient_records SET mrn = ? WHERE id = ?",
+                ("MRN-UNVERSIONED-1", patient["id"]),
+            )
 
         database = SQLiteDatabase(database_path, migrations=APPLICATION_MIGRATIONS)
         database.initialize()
@@ -81,8 +86,80 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
             preserved = connection.execute(
                 "SELECT mrn FROM local_patient_records WHERE id = ?", (patient["id"],)
             ).fetchone()
-        self.assertEqual(versions, [1, 2, 3, 4, 5, 6])
+        self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7])
         self.assertEqual(preserved["mrn"], "MRN-UNVERSIONED-1")
+
+    def test_normalized_duplicate_migration_fails_with_actionable_rows_and_rolls_back(self):
+        database_path = self.root / "duplicates.db"
+        store = assemble_application_dependencies(database_path)
+        first = store.patient_repository.create_patient_record(
+            {"mrn": "MRN-000801", "firstName": "First", "lastName": "Patient", "dob": "19850412", "sex": "F"}
+        )
+        second = store.patient_repository.create_patient_record(
+            {"mrn": "MRN-000802", "firstName": "Second", "lastName": "Patient", "dob": "19850412", "sex": "F"}
+        )
+        with store.database.connect() as connection:
+            connection.execute("DROP INDEX idx_patient_mrn_normalized")
+            connection.execute(
+                "UPDATE local_patient_records SET mrn = ? WHERE id = ?",
+                (" mrn-000801 ", second["id"]),
+            )
+            connection.execute("DELETE FROM schema_migrations WHERE version = 7")
+
+        database = SQLiteDatabase(database_path, migrations=APPLICATION_MIGRATIONS)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            rf"MRN-000801 .*patient ids {first['id']},{second['id']}",
+        ):
+            database.initialize()
+
+        with database.connect() as connection:
+            version = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 7"
+            ).fetchone()
+            index = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_patient_mrn_normalized'"
+            ).fetchone()
+        self.assertIsNone(version)
+        self.assertIsNone(index)
+
+    def test_migration_normalizes_safe_legacy_mrn_and_advances_sequence_high_water(self):
+        database_path = self.root / "normalizable-legacy.db"
+        store = assemble_application_dependencies(database_path)
+        patient = store.patient_repository.create_patient_record(
+            {
+                "mrn": "MRN-000902",
+                "firstName": "Legacy",
+                "lastName": "Patient",
+                "dob": "19850412",
+                "sex": "F",
+            }
+        )
+        with store.database.connect() as connection:
+            connection.execute("DROP INDEX idx_patient_mrn_normalized")
+            connection.execute(
+                "UPDATE local_patient_records SET mrn = ? WHERE id = ?",
+                (" mrn-900000 ", patient["id"]),
+            )
+            connection.execute(
+                "UPDATE local_identifier_sequences SET next_value = 1 WHERE name = 'patient_mrn'"
+            )
+            connection.execute("DELETE FROM schema_migrations WHERE version = 7")
+
+        migrated = assemble_application_dependencies(database_path)
+        preserved = migrated.patient_repository.get_patient_record(patient["id"])
+        generated = migrated.patient_repository.create_patient_record(
+            {
+                "mrn": "",
+                "firstName": "Next",
+                "lastName": "Patient",
+                "dob": "19850412",
+                "sex": "F",
+            }
+        )
+
+        self.assertEqual(preserved["summary"]["mrn"], "MRN-900000")
+        self.assertEqual(generated["summary"]["mrn"], "MRN-900001")
 
     def test_partial_legacy_columns_are_added_before_indexes(self):
         database_path = self.root / "partial.db"

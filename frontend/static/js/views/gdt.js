@@ -185,12 +185,18 @@ function gdtPatientPreviewPayload(patient) {
   const patientData = patient?.patient || {};
   const nameParts = String(summary.name || "").trim().split(/\s+/);
   return buildPatientPreviewPayload({
-    mrn: summary.gdtPatientNumber || patient.gdtPatientNumber || summary.mrn || "",
+    mrn: summary.mrn || "",
     firstName: patientData.firstName || nameParts.slice(0, -1).join(" ") || summary.name || "",
     lastName: patientData.lastName || nameParts.slice(-1).join("") || "",
     dob: summary.dob || patientData.dob || "",
     sex: summary.sex || patientData.sex || "U",
   });
+}
+
+function gdtWorkflowPatientId(patient) {
+  const orders = patient?.orders || [];
+  return orders.find((item) => item?.patientSnapshot?.gdtWorkflowPatientId)
+    ?.patientSnapshot?.gdtWorkflowPatientId || "";
 }
 
 function gdtPatientSection(label, title, body) {
@@ -242,8 +248,8 @@ function renderGdtSelectedPatient() {
     return;
   }
   [
-    ["GDT Patient", summary.gdtPatientNumber],
     ["MRN", summary.mrn],
+    ["GDT Workflow Patient ID", gdtWorkflowPatientId(patient)],
     ["DOB", summary.dob],
     ["Sex", summary.sex],
     ["Orders", patient.orderCount],
@@ -284,9 +290,10 @@ function selectGdtPatientForPreview(patient) {
   byId("gdt-detail-title").textContent = "Raw Patient";
   byId("gdt-payload-preview").textContent = state.selectedPayload;
   renderGdtDetailSummary([
-    ["Patient ID", patient.id],
+    ["Local Patient Record ID", patient.id],
     ["Name", patient.summary?.name],
-    ["GDT Patient", patient.summary?.gdtPatientNumber],
+    ["MRN", patient.summary?.mrn],
+    ["GDT Workflow Patient ID", gdtWorkflowPatientId(patient)],
     ["Orders", patient.orderCount],
     ["Results", patient.resultCount],
   ]);

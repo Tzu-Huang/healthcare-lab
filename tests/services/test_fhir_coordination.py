@@ -33,7 +33,7 @@ class FhirCoordinationTests(unittest.TestCase):
     def tearDown(self):
         self.directory.cleanup()
 
-    def patient(self, *, mode="fhir", mrn="MRN-FHIR-COORD"):
+    def patient(self, *, mode="fhir", mrn="MRN-200201"):
         return self.dependencies.patient_repository.create_patient_record({
             "mode": mode, "mrn": mrn, "firstName": "Avery", "lastName": "Morgan",
             "dob": "19850412", "sex": "F",
@@ -52,9 +52,9 @@ class FhirCoordinationTests(unittest.TestCase):
         record = self.patient_coordinator.create_patient_fhir_workflow_record_by_id(patient["id"])
         self.assertEqual("Patient", record["resourceType"])
         self.assertEqual(str(patient["id"]), record["localSourceId"])
-        self.assertEqual("MRN-FHIR-COORD", record["resource"]["identifier"][1]["value"])
+        self.assertEqual("MRN-200201", record["resource"]["identifier"][1]["value"])
         with self.assertRaisesRegex(SimulatorValidationError, "not FHIR mode"):
-            create_patient_ledger_record(self.patient(mode="hl7-v2", mrn="MRN-HL7"), self.ledger)
+            create_patient_ledger_record(self.patient(mode="hl7-v2", mrn="MRN-200202"), self.ledger)
 
     def test_order_requires_fhir_synced_patient_reference(self):
         patient = self.patient()

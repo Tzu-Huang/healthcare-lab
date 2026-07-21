@@ -47,6 +47,9 @@ class FhirApiModuleTests(unittest.TestCase):
         ):
             self.assertIn(owner, self.view)
         self.assertNotIn("requestJson(", self.view)
+        self.assertIn('record?.summary?.secondary || patient?.summary?.secondary || "-"', self.view)
+        self.assertNotIn("patient?.identifier?.value || \"-\"", self.view)
+        self.assertIn('"Medplum Reference"', self.view)
 
     def test_bootstrap_only_initializes_and_activates_fhir_view(self):
         self.assertIn('initializeView("medplum-view", initializeFhirView);', self.bootstrap)

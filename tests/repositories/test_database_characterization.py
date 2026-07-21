@@ -60,7 +60,7 @@ class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
         store = assemble_application_dependencies(self.database_path)
         patient = store.patient_repository.create_patient_record(
             {
-                "mrn": "MRN-LEGACY-900001",
+                "mrn": "MRN-900001",
                 "firstName": "Legacy",
                 "lastName": "Patient",
                 "dob": "19850412",
@@ -81,7 +81,7 @@ class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
 
         reopened = assemble_application_dependencies(self.database_path)
 
-        self.assertEqual(reopened.patient_repository.get_patient_record(patient["id"])["summary"]["mrn"], "MRN-LEGACY-900001")
+        self.assertEqual(reopened.patient_repository.get_patient_record(patient["id"])["summary"]["mrn"], "MRN-900001")
         reopened_oie = next(item for item in reopened.lab_repository.list_servers() if item["name"] == "OIE")
         self.assertEqual(reopened_oie["host"], "legacy-oie.example.test")
         reopened_settings = reopened.oie_settings_repository.get()

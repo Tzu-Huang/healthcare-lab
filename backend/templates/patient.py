@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
-from backend.domain.patient import record_number, visit_number
+from backend.domain.patient import MRN_IDENTIFIER_SYSTEM, record_number, visit_number
 from backend.templates.hl7 import HL7_V2_MSH_SUFFIX, escape, escape_composite
 
 HL7_MSH_SUFFIX = HL7_V2_MSH_SUFFIX
@@ -48,7 +48,7 @@ def build_fhir(values: dict[str, Any], *, record_id: int) -> tuple[str, str]:
     resource = {
         "resourceType": "Patient", "id": record_number(record_id), "active": bool(values["fhir_active"]),
         "meta": {"profile": ["https://twcore.mohw.gov.tw/ig/twcore/StructureDefinition/Patient-twcore"]},
-        "identifier": [{"system": "urn:healthcare-lab:mrn", "value": values["mrn"]}],
+        "identifier": [{"system": MRN_IDENTIFIER_SYSTEM, "value": values["mrn"]}],
         "name": [{"use": "official", "text": name, "family": values["last_name"], "given": [part for part in (values["first_name"], values["middle_name"]) if part]}],
         "gender": {"M": "male", "F": "female", "O": "other", "U": "unknown"}[values["sex"]],
         "birthDate": f"{values['dob'][:4]}-{values['dob'][4:6]}-{values['dob'][6:]}",

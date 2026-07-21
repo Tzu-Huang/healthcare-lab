@@ -33,14 +33,14 @@ class PatientApiTests(ApiCaseSupport):
             mode: store.patient_repository.create_patient_record(
                 {
                     "mode": mode,
-                    "mrn": f"MRN-{mode.upper()}",
+                    "mrn": f"MRN-{index:06d}",
                     "firstName": mode,
                     "lastName": "Patient",
                     "dob": "19850412",
                     "sex": "F",
                 }
             )
-            for mode in ("hl7-v2", "fhir", "gdt", "dicom")
+            for index, mode in enumerate(("hl7-v2", "fhir", "gdt", "dicom"), start=1)
         }
         store.patient_fhir.create_patient_fhir_workflow_record(patients["fhir"])
 
@@ -63,7 +63,7 @@ class PatientApiTests(ApiCaseSupport):
             "/api/patients",
             json={
                 "mode": "fhir",
-                "mrn": "MRN-FHIR-001",
+                "mrn": "MRN-100101",
                 "firstName": "Avery",
                 "lastName": "Morgan",
                 "dob": "19850412",

@@ -677,8 +677,8 @@ export function renderDcm4cheeSelectedPatient() {
     ["Name", patient.summary?.name],
     ["DOB", patient.summary?.dob],
     ["Sex", patient.summary?.sex],
-    ["Patient ID", sync.patientId],
-    ["Issuer", sync.issuerOfPatientId],
+    ["DICOM Patient ID", sync.patientId],
+    ["Patient ID Issuer", sync.issuerOfPatientId],
   ]));
   const syncCard = dcm4cheeDetailBlock("dcm4chee Patient Sync", [
     ["Status", sync.displayStatus || sync.status || "Local only"],

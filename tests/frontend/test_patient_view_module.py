@@ -38,6 +38,7 @@ class PatientViewModuleTests(unittest.TestCase):
             self.assertNotIn(f"function {owner}", self.bootstrap)
 
         self.assertIn('../core/dom.js', self.source)
+        self.assertIn("MRN must use canonical format MRN-", self.source)
 
     def test_patient_view_owns_patient_record_table(self):
         for owner in ("patientStateLabel", "renderPatientRecordList", "renderPatientSummaryFromPayload"):

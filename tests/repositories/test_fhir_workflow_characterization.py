@@ -27,7 +27,7 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
         self.directory.cleanup()
 
     @staticmethod
-    def patient(*, mode="fhir", mrn="MRN-FHIR-CHAR"):
+    def patient(*, mode="fhir", mrn="MRN-200001"):
         return {
             "mode": mode,
             "mrn": mrn,
@@ -148,7 +148,7 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
         self.assertEqual(attempts[1]["error"], "HTTP 400")
 
     def test_unsynced_or_wrong_protocol_patient_creates_no_order_or_service_request(self):
-        unsynced = self.dependencies.patient_repository.create_patient_record(self.patient(mrn="MRN-UNSYNCED"))
+        unsynced = self.dependencies.patient_repository.create_patient_record(self.patient(mrn="MRN-200002"))
         with self.assertRaisesRegex(SimulatorValidationError, "synced Medplum Patient"):
             self.dependencies.order_fhir.create_fhir_order_record(
                 {"mode": "fhir", "patientRecordId": unsynced["id"]}
@@ -157,7 +157,7 @@ class FhirWorkflowCharacterizationTests(unittest.TestCase):
         self.assertEqual(self.service_request_count(), 0)
 
         wrong_protocol = self.dependencies.patient_repository.create_patient_record(
-            self.patient(mode="hl7-v2", mrn="MRN-HL7-WRONG-PROTOCOL")
+            self.patient(mode="hl7-v2", mrn="MRN-200003")
         )
         with self.assertRaisesRegex(SimulatorValidationError, "synced Medplum Patient"):
             self.dependencies.order_fhir.create_fhir_order_record(
