@@ -11,7 +11,7 @@ export function createSettingsState() {
 export function listenerSettingsMatchStatus(profile, status) {
   const listener = profile?.resultListener;
   const runningConfigurationMatches = Boolean(
-    listener && status?.running
+    listener && listener.autoStart !== false && status?.running
     && listener.host === status.host
     && Number(listener.port) === Number(status.port)
     && Boolean(listener.mllpFraming) === Boolean(status.mllpFraming)

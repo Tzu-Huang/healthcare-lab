@@ -229,6 +229,37 @@ class OieInteractionTests(unittest.TestCase):
         )
         self.assertTrue(reminder.evaluate("element => element.hidden"))
 
+        reloaded_page.locator("#settings-listener-auto-start").evaluate(
+            "element => { element.checked = false; }"
+        )
+        reloaded_page.evaluate(
+            "() => import('/static/js/views/settings.js')"
+            ".then(({ saveListenerSettings }) => saveListenerSettings())"
+        )
+        self.assertFalse(reminder.evaluate("element => element.hidden"))
+
+        reloaded_page.close()
+        disabled_page = self.browser.new_page()
+        self.addCleanup(disabled_page.close)
+        disabled_page.route("**/api/**", handle_api)
+        disabled_page.goto(self.base_url, wait_until="networkidle")
+        disabled_page.locator('#settings-view[data-module-owner="settings"]').wait_for(
+            state="attached"
+        )
+        disabled_page.evaluate(
+            "() => import('/static/js/views/settings.js')"
+            ".then(({ refreshSettings }) => refreshSettings())"
+        )
+        reminder = disabled_page.locator("#settings-listener-reload-reminder")
+        self.assertFalse(reminder.evaluate("element => element.hidden"))
+
+        listener_status.update({"state": "stopped", "running": False})
+        disabled_page.evaluate(
+            "() => import('/static/js/views/settings.js')"
+            ".then(({ refreshSettings }) => refreshSettings())"
+        )
+        self.assertTrue(reminder.evaluate("element => element.hidden"))
+
 
 if __name__ == "__main__":
     unittest.main()
