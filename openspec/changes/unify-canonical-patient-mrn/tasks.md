@@ -1,8 +1,8 @@
 ## 1. Characterize and migrate MRN persistence
 
-- [ ] 1.1 Add focused characterization for global cross-mode allocation, canonical explicit-MRN validation, normalized duplicates, collision skipping, restart, deletion, and rollback behavior.
-- [ ] 1.2 Add a schema migration that audits existing MRNs, reports normalized collisions without partial mutation, preserves unique nonconforming legacy identities, and installs database-enforced normalized uniqueness.
-- [ ] 1.3 Centralize canonical MRN normalization and format validation, then map database uniqueness failures to the existing Patient validation error without Patient or downstream side effects.
+- [x] 1.1 Add focused characterization for global cross-mode allocation, canonical explicit-MRN validation, normalized duplicates, collision skipping, restart, deletion, and rollback behavior.
+- [x] 1.2 Add a schema migration that audits existing MRNs, reports normalized collisions without partial mutation, preserves unique nonconforming legacy identities, and installs database-enforced normalized uniqueness.
+- [x] 1.3 Centralize canonical MRN normalization and format validation, then map database uniqueness failures to the existing Patient validation error without Patient or downstream side effects.
 
 ## 2. Propagate canonical MRN through protocols
 

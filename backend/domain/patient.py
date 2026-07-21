@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Any
 
 from backend.domain.errors import SimulatorValidationError
 
 PATIENT_CLASS_DEFAULT = "O"
+CANONICAL_MRN_PATTERN = re.compile(r"^MRN-[0-9]{6,}$")
 PATIENT_MODES = {
     "hl7-v2": {"protocol": "HL7 v2.5.1", "message_type": "ADT^A04"},
     "fhir": {"protocol": "FHIR R4", "message_type": "Patient"},
@@ -64,12 +66,21 @@ def normalize_active(value: Any) -> bool:
     raise SimulatorValidationError("Patient active must be true or false.")
 
 
+def normalize_mrn(value: Any) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized and not CANONICAL_MRN_PATTERN.fullmatch(normalized):
+        raise SimulatorValidationError(
+            "Patient mrn must use canonical format MRN- followed by at least six digits."
+        )
+    return normalized
+
+
 def validate_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise SimulatorValidationError("Patient payload must be a JSON object.")
     return {
         "mode": normalize_mode(payload),
-        "mrn": clean_text(payload.get("mrn"), "mrn"),
+        "mrn": normalize_mrn(payload.get("mrn")),
         "first_name": clean_text(payload.get("firstName"), "firstName", required=True),
         "last_name": clean_text(payload.get("lastName"), "lastName", required=True),
         "middle_name": clean_text(payload.get("middleName"), "middleName"),
@@ -106,5 +117,12 @@ def mrn(value: int) -> str:
     return f"MRN-{value:06d}"
 
 
-__all__ = ["mrn", "record_number", "validate_payload", "visit_number"]
+__all__ = [
+    "CANONICAL_MRN_PATTERN",
+    "mrn",
+    "normalize_mrn",
+    "record_number",
+    "validate_payload",
+    "visit_number",
+]
 
