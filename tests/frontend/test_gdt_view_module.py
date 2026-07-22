@@ -25,6 +25,8 @@ class GdtViewModuleTests(unittest.TestCase):
         self.assertIn('["File", "Status", "Updated", "Action"]', self.source)
         self.assertIn("matchingOrder?.exportPath", self.source)
         self.assertIn('mrn: summary.mrn || ""', self.source)
+        self.assertIn('rowCell(summary.mrn || "")', self.source)
+        self.assertNotIn("rowCell(item.id)", self.source)
         self.assertIn('"GDT Workflow Patient ID"', self.source)
         self.assertNotIn("summary.gdtPatientNumber || patient.gdtPatientNumber || summary.mrn", self.source)
 
