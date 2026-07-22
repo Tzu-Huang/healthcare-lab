@@ -162,6 +162,8 @@ configuration groups are:
 - `MEDPLUM_*` — Medplum runtime, OAuth client credentials, and public URLs.
 - `OIE_*` and `HLAB_RESULT_LISTENER_*` — OIE management, MLLP ingress, and
   Healthcare Lab result-listener endpoints.
+- `OIE_BOOTSTRAP_*` controls bounded startup provisioning for only missing
+  managed OIE Channels; set `OIE_BOOTSTRAP_MODE=off` to disable it.
 - `DCM4CHEE_*` — DICOMweb, DIMSE, HL7, AE titles, authentication, and TLS.
 - `GDT_BRIDGE_*` — host-folder binding, import behavior, filename profile, and
   watcher timing.
