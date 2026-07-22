@@ -14,6 +14,7 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/tzu-huang/healthcare-lab
+  DOCKER_METADATA_SHORT_SHA_LENGTH: 7
 
 jobs:
   verify:
@@ -81,6 +82,16 @@ jobs:
             exit 1
           fi
 
+      - name: Verify public GHCR package before stable mutation
+        if: github.event_name == 'release'
+        run: |
+          docker logout ghcr.io >/dev/null 2>&1 || true
+          if ! docker buildx imagetools inspect "${IMAGE_NAME}:edge" >/dev/null 2>&1; then
+            echo "The GHCR package is not anonymously readable." >&2
+            echo "Publish edge from main, set the package visibility to Public in GitHub, then retry the release." >&2
+            exit 1
+          fi
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
@@ -101,8 +112,8 @@ jobs:
               echo "Refusing to overwrite ${IMAGE_NAME}:${VERSION}; it belongs to revision ${EXISTING_REVISION}." >&2
               exit 1
             fi
-            echo "Release image already matches ${GITHUB_SHA}; skipping the idempotent publish."
-            echo "skip_publish=true" >> "${GITHUB_OUTPUT}"
+            echo "Release image already matches ${GITHUB_SHA}; repairing all aliases from its immutable digest."
+            echo "reuse_release=true" >> "${GITHUB_OUTPUT}"
           fi
 
       - name: Derive image tags and labels
@@ -122,7 +133,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Build and publish linux/amd64 image
-        if: steps.release_guard.outputs.skip_publish != 'true'
+        if: steps.release_guard.outputs.reuse_release != 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -134,11 +145,30 @@ jobs:
             VCS_REF=${{ github.sha }}
             VERSION=${{ github.event_name == 'release' && github.event.release.tag_name || 'edge' }}
 
+      - name: Repair release aliases from immutable image
+        if: github.event_name == 'release' && steps.release_guard.outputs.reuse_release == 'true'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          IFS=. read -r MAJOR MINOR PATCH <<< "${VERSION}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          docker buildx imagetools create \
+            --tag "${IMAGE_NAME}:${MAJOR}.${MINOR}" \
+            --tag "${IMAGE_NAME}:${MAJOR}" \
+            --tag "${IMAGE_NAME}:latest" \
+            --tag "${IMAGE_NAME}:sha-${SHORT_SHA}" \
+            "${IMAGE_NAME}:${VERSION}"
+
       - name: Verify anonymous GHCR access
         if: github.event_name == 'release'
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           VERSION="${RELEASE_TAG#v}"
+          IFS=. read -r MAJOR MINOR PATCH <<< "${VERSION}"
+          SHORT_SHA="${GITHUB_SHA::7}"
           docker logout ghcr.io
-          docker buildx imagetools inspect "${IMAGE_NAME}:${VERSION}" >/dev/null
+          for TAG in "${VERSION}" "${MAJOR}.${MINOR}" "${MAJOR}" latest "sha-${SHORT_SHA}"; do
+            docker buildx imagetools inspect "${IMAGE_NAME}:${TAG}" >/dev/null
+          done
