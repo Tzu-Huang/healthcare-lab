@@ -34,12 +34,45 @@ class ComposePortContractTests(unittest.TestCase):
         ):
             self.assertIn(setting, self.example)
 
+    def test_dcm4chee_compose_defaults_do_not_use_lab_app_loopback(self):
+        internal_settings = (
+            "DCM4CHEE_DIMSE_HOST=dcm4chee",
+            "DCM4CHEE_HL7_HOST=dcm4chee",
+            "DCM4CHEE_DICOMWEB_BASE_URL=http://dcm4chee:8080/dcm4chee-arc/aets/WORKLIST/rs",
+            "DCM4CHEE_QIDO_RS_URL=http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs",
+            "DCM4CHEE_WADO_RS_URL=http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs",
+            "DCM4CHEE_STOW_RS_URL=http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs",
+        )
+        for setting in internal_settings:
+            self.assertIn(setting, self.example)
+
+        self.assertIn(
+            "DCM4CHEE_WEB_UI_URL=http://127.0.0.1:8082/dcm4chee-arc/ui2",
+            self.example,
+        )
+        self.assertNotIn("DCM4CHEE_DIMSE_HOST=127.0.0.1", self.example)
+        self.assertNotIn("DCM4CHEE_HL7_HOST=127.0.0.1", self.example)
+        self.assertNotIn(
+            "DCM4CHEE_DICOMWEB_BASE_URL=http://127.0.0.1:8082",
+            self.example,
+        )
+
+        for variable in (
+            "DCM4CHEE_DIMSE_HOST",
+            "DCM4CHEE_HL7_HOST",
+            "DCM4CHEE_DICOMWEB_BASE_URL",
+            "DCM4CHEE_QIDO_RS_URL",
+            "DCM4CHEE_WADO_RS_URL",
+            "DCM4CHEE_STOW_RS_URL",
+        ):
+            self.assertIn(f"{variable}: ${{{variable}:-", self.compose)
+
     def test_lab_app_uses_published_image_without_source_mount_or_startup_install(self):
         self.assertIn(
-            "${LAB_APP_IMAGE:-ghcr.io/tzu-huang/healthcare-lab:1.0.0}",
+            "${LAB_APP_IMAGE:-ghcr.io/tzu-huang/healthcare-lab:1.0.1}",
             self.compose,
         )
-        self.assertIn("LAB_APP_IMAGE=ghcr.io/tzu-huang/healthcare-lab:1.0.0", self.example)
+        self.assertIn("LAB_APP_IMAGE=ghcr.io/tzu-huang/healthcare-lab:1.0.1", self.example)
         self.assertNotIn("- ..:/workspace", self.compose)
         self.assertNotIn("pip install", self.compose)
         self.assertNotIn("python app.py", self.compose)

@@ -134,7 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="127.0.0.1", help="Host for local published endpoints")
     parser.add_argument("--ap-host", default="127.0.0.1")
     parser.add_argument("--hlab-host", help="HLAB listener host; defaults to --host")
-    parser.add_argument("--management-port", type=int, default=10443)
+    parser.add_argument("--management-port", type=int, default=8443)
     parser.add_argument("--orm-port", type=int, default=6600)
     parser.add_argument("--oru-port", type=int, default=6661)
     parser.add_argument("--hlab-port", type=int, default=6665)

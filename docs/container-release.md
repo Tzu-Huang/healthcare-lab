@@ -23,7 +23,7 @@ creates a deployment outside the verified v1.0.0 matrix.
 
 | Service | v1.0.0 default |
 | --- | --- |
-| lab-app | `ghcr.io/tzu-huang/healthcare-lab:1.0.0` |
+| lab-app | `ghcr.io/tzu-huang/healthcare-lab:1.0.1` |
 | OIE | `nextgenhealthcare/connect:4.5.2@sha256:4afa295cfe7c5ffd596efee69594157fea87202e33d66bb4a98a52db4598f836` |
 | Medplum server | `medplum/medplum-server@sha256:4d2c8e926fe536176a88a7e24555f97f92226e39f171bd0b5f0c7f667d0bf9f0` |
 | Medplum app | `medplum/medplum-app@sha256:79f162f7124a8932c2a76fc2c7c72df4b080d5fef43496c64bc34ad68e65ca56` |

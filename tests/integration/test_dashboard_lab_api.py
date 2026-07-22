@@ -57,7 +57,7 @@ class DashboardLabApiTests(ApiCaseSupport):
         by_id = {item["id"]: item for item in body["items"]}
         self.assertEqual(
             by_id["hl7-v2-oie"]["ports"],
-            [{"label": "localhost:18080", "url": "http://localhost:18080"}],
+            [{"label": "localhost:8080", "url": "http://localhost:8080"}],
         )
         self.assertEqual(
             by_id["fhir-medplum"]["ports"],

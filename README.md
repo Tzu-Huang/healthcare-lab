@@ -135,7 +135,7 @@ service-specific operations, troubleshooting, backup, and endpoint migration.
 | Service or flow | Host endpoint | Container endpoint |
 | --- | --- | --- |
 | Healthcare Lab | `http://127.0.0.1:5000` | `lab-app:5000` |
-| OIE management HTTP | `http://127.0.0.1:18080` | `oie:8080` |
+| OIE management HTTP | `http://127.0.0.1:8080` | `oie:8080` |
 | Healthcare Lab order to OIE | `127.0.0.1:6600` | `oie:6600` |
 | AP result ingress to OIE | `127.0.0.1:6661` | `oie:6661` |
 | OIE result to Healthcare Lab | not published by default | `lab-app:6665` |
@@ -148,6 +148,10 @@ service-specific operations, troubleshooting, backup, and endpoint migration.
 Published ports can be overridden in `.env`. Docker-internal integrations must
 continue to use service names and container ports rather than host loopback
 addresses.
+
+For dcm4chee, only the browser-facing `DCM4CHEE_WEB_UI_URL` uses the published
+host port. DIMSE, HL7, and DICOMweb settings used by lab-app must keep the
+`dcm4chee` service name and container ports in the Compose deployment.
 
 ## Configuration
 
@@ -182,6 +186,11 @@ python app.py
 The development server binds to `127.0.0.1:5000` by default. Override
 `LAB_APP_HOST`, `LAB_APP_PORT`, or `HEALTHCARE_LAB_DB` when needed. Runtime data
 is otherwise stored in `instance/healthcare-lab.db`.
+
+The checked-in `.env.example` targets Docker Compose. When running `python
+app.py` directly on the host while dcm4chee remains in Docker, set
+`DCM4CHEE_DIMSE_HOST=127.0.0.1` and `DCM4CHEE_HL7_HOST=127.0.0.1`, then replace
+`http://dcm4chee:8080` with `http://127.0.0.1:8082` in the DICOMweb URLs.
 
 Run the automated suite with:
 

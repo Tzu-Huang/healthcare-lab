@@ -83,7 +83,7 @@ Confirm that Docker Server information is present, `OSType=linux`, and the archi
 Also confirm that:
 
 - The host can access GHCR and third-party image registries.
-- Default host ports 5000, 6600, 6661, 18080, 10443, 8103, 3000, 8082, 11112, and 2575 are not used by another process.
+- Default host ports 5000, 6600, 6661, 8080, 8443, 8103, 3000, 8082, 11112, and 2575 are not used by another process.
 - A Medplum OAuth client ID and secret are available when FHIR sync is required.
 - A GDT host folder is prepared; the Docker host IP, firewall rules, and required external AP (QHAP) endpoints are known when applicable.
 - Only virtual test data will be used.
@@ -141,6 +141,8 @@ The release model combines a fixed Healthcare Lab image, a versioned deployment 
    docker compose --env-file .env -f deploy\docker-compose.yml ps
    Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
    ```
+
+   `dcm4chee-storage-init` is a one-shot initialization service. It creates the configured archive storage directory, sets the directory to `wildfly:wildfly` with mode `0775`, and must succeed before `dcm4chee` starts. `Exited (0)` in `docker compose ps -a` is its expected state; a nonzero exit code means archive storage initialization failed.
 
 The root page should return HTTP 200 and required containers should be running/healthy. Confirm the actual image rather than relying on the container name:
 
@@ -211,7 +213,7 @@ Run these commands from the deployment bundle root:
 
 `gdt-bridge`, `hl7tester`, and `gdt-hospital` are logical wrapper names mapped to the `lab-app` container. `medplum` maps to both the Medplum API and Web UI.
 
-Default interfaces are Healthcare Lab at `http://127.0.0.1:5000`, OIE HTTP at `http://127.0.0.1:18080`, Medplum UI at `http://127.0.0.1:3000`, and dcm4chee UI at `http://127.0.0.1:8082/dcm4chee-arc/ui2`.
+Default interfaces are Healthcare Lab at `http://127.0.0.1:5000`, OIE HTTP at `http://127.0.0.1:8080`, Medplum UI at `http://127.0.0.1:3000`, and dcm4chee UI at `http://127.0.0.1:8082/dcm4chee-arc/ui2`.
 
 ### Ready-for-use verification
 
@@ -695,6 +697,8 @@ A local profile without authentication can be valid for a trusted lab. A Valid d
 4. Confirm `Reconciliation: Matched`. The system prefers a strong Study Instance UID match, then Accession Number in the same server/profile namespace, and then RP ID plus SPS ID. Weak identifiers, cross-Patient conflicts, or multiple candidates must remain unresolved/ambiguous and must not be attached to an arbitrary Order.
 5. Expand the Study, Series, and Instance hierarchy. Verify Study/Series/SOP Instance UIDs, modality, instance count, and times. `Open Viewer` inspects archive content; `Copy Retrieve` copies the retrieval reference. Neither action changes reconciliation.
 
+If AP reports `C-STORE returned unknown status: 0x110`, `0x110` is DICOM `0x0110 Processing Failure`. It only establishes that archive processing failed and does not by itself mean that the AE was unauthorized. Inspect `errorComment`/`Caused by` in the dcm4chee server log at the same timestamp. `java.nio.file.AccessDeniedException: /storage/fs1` means dcm4chee accepted the Association and C-STORE request, but WildFly could not write the archive storage. In contrast, an AE policy/authorization failure normally rejects the Association before C-STORE or explicitly returns `0x0124 Refused: Not Authorized`; use the actual AP and server-log response as evidence. Compose now runs `dcm4chee-storage-init` at startup to correct the configured storage directory. After correction, resend the instance; a successful response is `status=0H`.
+
 ### State interpretation and recovery
 
 | Display | Meaning | Action |
@@ -769,6 +773,7 @@ Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
 | FHIR `Sync failed` | Persisted Medplum `baseUrl`, OAuth, and `OperationOutcome`; Docker requires `http://medplum:8103/fhir/R4` | Correct inventory/credential and Retry the same ledger record; do not create a duplicate resource |
 | GDT file is not imported | Bridge mount, `inbox/`/`outbox/` direction, filename profile, watcher, byte lengths, and `processing/archive/error` disposition | Wait for file stability, then manual-import or start watcher; preserve raw 6310 and never replay a processed file |
 | DICOM Patient/MWL fails | ADT ACK, `dcm4chee:2575`, `WORKLIST` REST read-back, and stable identifiers | Repair Patient sync first; query/read back before MWL retry to avoid a duplicate POST |
+| AP C-STORE returns `0x0110`/`110H` | dcm4chee `server.log`, `errorComment`/`Caused by` at the same timestamp; inspect the configured storage directory when `AccessDeniedException` appears | `0x0110` is a general processing failure, not proof of AE denial. For `/storage/fs1` permission failure, confirm `dcm4chee-storage-init` is `Exited (0)` and the directory is `wildfly:wildfly`, `0775`; resend after correction and never delete the archive volume |
 | DICOM result is unmatched | Patient ID/issuer, Study UID, Accession, RP/SPS, and server/profile namespace | Correct mapping, then refresh/reconcile; never guess the newest Order |
 
 ### Select the smallest recovery action
@@ -908,8 +913,8 @@ docker compose --env-file .env -f deploy\docker-compose.yml port <service> <cont
 | AP Result → OIE | `oie:6661` | `<Docker-host-IP>:6661` | Host port: `OIE_AP_RESULT_INGRESS_HOST_PORT`; Compose explicitly publishes the default on `0.0.0.0`. |
 | OIE Result → Healthcare Lab | `lab-app:6665` | Not published by default | Listener: `HLAB_RESULT_LISTENER_HOST` / `HLAB_RESULT_LISTENER_PORT`; OIE reaches it through the Docker network. The deprecated `OIE_MLLP_RESULT_*` aliases affect this listener only. |
 | OIE Order → AP | `<AP-address>:6671` | AP-owned listener, normally `<AP-IP>:6671` | The release bundle does not provide or host-publish an AP service. OIE `expose: 6671` does not create the external listener. |
-| OIE HTTP | `http://oie:8080` | `http://127.0.0.1:18080` | Host port: `OIE_HTTP_PORT`. |
-| OIE HTTPS | `https://oie:8443` | `https://127.0.0.1:10443` | Host port: `OIE_HTTPS_PORT`; trust behavior depends on the deployed certificate. |
+| OIE HTTP | `http://oie:8080` | `http://127.0.0.1:8080` | Host port: `OIE_HTTP_PORT`. |
+| OIE HTTPS | `https://oie:8443` | `https://127.0.0.1:8443` | Host port: `OIE_HTTPS_PORT`; trust behavior depends on the deployed certificate. |
 | Medplum FHIR R4 API | `http://medplum:8103/fhir/R4` | `http://127.0.0.1:8103/fhir/R4` | Host port: `MEDPLUM_PORT`. Healthcare Lab sync must use the Docker URL in its persisted server inventory, not the browser/public URL. |
 | Medplum web app | `http://medplum-app:3000` | `http://127.0.0.1:3000` | Host port: `MEDPLUM_APP_PORT`; the browser-side API base is `MEDPLUM_PUBLIC_BASE_URL`. |
 | dcm4chee web UI | `http://dcm4chee:8080/dcm4chee-arc/ui2` | `http://127.0.0.1:8082/dcm4chee-arc/ui2` | Host port: `DCM4CHEE_HTTP_PORT`; operator link: `DCM4CHEE_WEB_UI_URL`. |
@@ -969,12 +974,13 @@ Configuration has three different owners:
 
 | Variable(s) | Required | Release default / example | Purpose | Apply action |
 | --- | --- | --- | --- | --- |
+| `DCM4CHEE_STORAGE_DIR` | Required for archive storage | `/storage/fs1` | LDAP archive storage path and the target initialized by `dcm4chee-storage-init`; it must be inside the archive volume mounted at `/storage`. | Decide before first deployment and do not directly change it after data exists. Persisted LDAP may not rewrite its storage configuration from an environment change, and changing the path does not move old DICOM objects. Any change requires pausing AP, taking a consistent archive-volume/database/LDAP backup, following a supported dcm4chee migration, and verifying it before resuming. |
 | `DCM4CHEE_PROFILE_NAME`, `DCM4CHEE_DISPLAY_NAME`, `DCM4CHEE_ENVIRONMENT_NAME` | For DICOM workflow | `local-dcm4chee`, `dcm4chee Local Archive`, `local-docker` | Stable profile identity and operator labels. | Recreate `lab-app`; do not rename a profile casually because mappings use its namespace. |
 | `DCM4CHEE_WEB_UI_URL` | For operator link | `http://127.0.0.1:8082/dcm4chee-arc/ui2` | Host/browser URL only. | Recreate `lab-app`; verify the link from the operator host. |
-| `DCM4CHEE_DIMSE_HOST`, `DCM4CHEE_DIMSE_PORT` | For DIMSE diagnostics/workflow | Template: `127.0.0.1`, `11112`; Compose-safe host: `dcm4chee` | DIMSE destination from `lab-app`. | Correct to the caller-reachable address, recreate `lab-app`, and test AE connectivity. |
+| `DCM4CHEE_DIMSE_HOST`, `DCM4CHEE_DIMSE_PORT` | For DIMSE diagnostics/workflow | Compose default: `dcm4chee`, `11112`; direct-host override: `127.0.0.1`, `11112` | DIMSE destination from `lab-app`. | Correct to the caller-reachable address, recreate `lab-app`, and test AE connectivity. |
 | `DCM4CHEE_CALLED_AE_TITLE`, `DCM4CHEE_CALLING_AE_TITLE` | For DIMSE | `DCM4CHEE`, `HEALTHCARE_LAB` | Archive called AE and Healthcare Lab calling AE. | Recreate `lab-app`; coordinate with dcm4chee AE policy. |
 | `DCM4CHEE_MWL_AE_TITLE`, `DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE` | For MWL | `WORKLIST`, `ECG_AP` | MWL REST AE path and scheduled station/AP identity. | Recreate `lab-app`; verify MWL create/read-back and physical AP query. |
-| `DCM4CHEE_HL7_HOST`, `DCM4CHEE_HL7_PORT` | For Patient ADT sync | Template: `127.0.0.1`, `2575`; Compose-safe endpoint: `dcm4chee:2575` | dcm4chee HL7 listener reached from `lab-app`. | Recreate `lab-app`; verify ADT ACK. See the port-overload blocker below. |
+| `DCM4CHEE_HL7_HOST`, `DCM4CHEE_HL7_PORT` | For Patient ADT sync | Compose default: `dcm4chee:2575`; direct-host override: `127.0.0.1:2575` | dcm4chee HL7 listener reached from `lab-app`. | Recreate `lab-app`; verify ADT ACK. See the port-overload blocker below. |
 | `DCM4CHEE_HL7_SENDING_APPLICATION`, `DCM4CHEE_HL7_SENDING_FACILITY` | For Patient ADT sync | `HEALTHCARE_LAB`, `LAB_APP` | MSH sender identity. | Recreate `lab-app`; coordinate with receiver routing. |
 | `DCM4CHEE_HL7_RECEIVING_APPLICATION`, `DCM4CHEE_HL7_RECEIVING_FACILITY` | For Patient ADT sync | `DCM4CHEE`, `DCM4CHEE` | MSH receiver identity. | Recreate `lab-app`; coordinate with receiver routing. |
 | `DCM4CHEE_PATIENT_ASSIGNING_AUTHORITY` | For stable Patient identity | `local-dcm4chee` | Issuer/assigning authority paired with Patient ID. | Recreate `lab-app`; do not change after data exists without a migration plan. |
