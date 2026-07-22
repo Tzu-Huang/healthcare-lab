@@ -67,6 +67,25 @@ class LifecycleServiceTests(unittest.TestCase):
         self.assertEqual("create", client.calls[0][0])
         self.assertEqual("preview-create", repository.audits[0]["operation"])
 
+    def test_bootstrap_actor_is_applied_to_preview_and_mutation_audits(self):
+        client, repository = FakeClient(), FakeRepository(mapped=False)
+        service = self.service(client, repository)
+        preview = service.preview("hlab-orm-to-ap", "create", actor="startup-bootstrap")
+
+        service.execute(
+            "hlab-orm-to-ap", "create", preview["previewToken"], actor="startup-bootstrap"
+        )
+
+        self.assertEqual(["startup-bootstrap", "startup-bootstrap"], [
+            audit["actor"] for audit in repository.audits
+        ])
+
+    def test_actor_must_be_bounded_and_non_empty(self):
+        service = self.service(FakeClient(), FakeRepository(mapped=False))
+        for actor in ("", "x" * 81):
+            with self.subTest(actor=actor), self.assertRaises(LifecycleGuardError):
+                service.preview("hlab-orm-to-ap", "create", actor=actor)
+
     def test_each_operation_uses_latest_client_configuration_and_closes_session(self):
         repository = FakeRepository()
         repository.connection_marker = "old"
