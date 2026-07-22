@@ -23,6 +23,26 @@ class PatientOrderFhirMapperTests(unittest.TestCase):
         self.assertEqual({"dicomResults": [], "resultCount": 0}, projected["dcm4chee"])
         self.assertIsNone(projected["fhir"])
 
+    def test_patient_projection_counts_dcm4chee_results_by_study(self):
+        row = defaultdict(str, id=1, mrn="MRN-1", validation_messages_json="[]")
+        results = [
+            {"studyInstanceUid": "1.2.3", "seriesInstanceUid": ""},
+            {"studyInstanceUid": "1.2.3", "seriesInstanceUid": "1.2.3.1"},
+            {"studyInstanceUid": "1.2.3", "seriesInstanceUid": "1.2.3.1", "sopInstanceUid": "1.2.3.1.1"},
+        ]
+
+        projected = project_patient(row, dcm4chee_results=results)
+
+        self.assertEqual(1, projected["dcm4chee"]["resultCount"])
+        self.assertEqual(3, len(projected["dcm4chee"]["dicomResults"]))
+
+        simulated = [
+            {"source": "simulated_ap_return", "resultKey": "pdf", "studyInstanceUid": "1.2.3"},
+            {"source": "simulated_ap_return", "resultKey": "dicom", "studyInstanceUid": "1.2.3"},
+        ]
+        projected = project_patient(row, dcm4chee_results=simulated)
+        self.assertEqual(2, projected["dcm4chee"]["resultCount"])
+
     def test_order_projection_preserves_ack_and_protocol_specific_defaults(self):
         row = defaultdict(str, id=2, protocol_version="HL7 v2.5.1",
                           validation_messages_json="[]", ack_code="AA")
