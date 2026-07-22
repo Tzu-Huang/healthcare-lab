@@ -8,6 +8,19 @@ from typing import Any
 from backend.mappers.types import RowMapping
 
 
+def _dcm4chee_result_count(results: list[dict[str, Any]]) -> int:
+    """Count clinical results by Study, not by Study/Series/Instance rows."""
+    keys = {
+        (
+            f"simulated:{item.get('resultKey') or item.get('id')}"
+            if item.get("source") == "simulated_ap_return"
+            else str(item.get("studyInstanceUid") or item.get("accessionNumber") or "").strip()
+        )
+        for item in results
+    }
+    return len(keys - {""})
+
+
 def project(
     row: RowMapping,
     *,
@@ -44,6 +57,6 @@ def project(
         "accountNumber": row["account_number"],
         "validation": {"status": row["validation_status"], "messages": json.loads(row["validation_messages_json"] or "[]")},
         "payload": row["payload_hl7"], "fhir": fhir,
-        "dcm4chee": {**({"patient": dcm4chee_patient_sync} if dcm4chee_patient_sync else {}), "dicomResults": dcm4chee_results, "resultCount": len(dcm4chee_results)},
+        "dcm4chee": {**({"patient": dcm4chee_patient_sync} if dcm4chee_patient_sync else {}), "dicomResults": dcm4chee_results, "resultCount": _dcm4chee_result_count(dcm4chee_results)},
         "createdAt": row["created_at"], "updatedAt": row["updated_at"], "localOnly": True,
     }

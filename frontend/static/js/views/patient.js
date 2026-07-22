@@ -355,7 +355,7 @@ export async function refreshPatientDcm4cheeResults(patientId, button, options =
     byId("patient-payload-preview").textContent = patient.payload || "";
     patientCoordinator.onSelectRecord?.(patient);
     patientCoordinator.renderDcm4cheeConsole?.();
-    const count = (patient.dcm4chee?.dicomResults || []).length;
+    const count = patient.dcm4chee?.resultCount ?? (patient.dcm4chee?.dicomResults || []).length;
     setStatus("patient-form-status", `dcm4chee results refreshed (${count})`, result.success ? "success" : "warning");
     if (options.orderId) {
       setSelectedOrderId(options.orderId);
