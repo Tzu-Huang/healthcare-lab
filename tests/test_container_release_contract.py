@@ -15,7 +15,7 @@ class ContainerReleaseContractTests(unittest.TestCase):
         cls.deploy_readme = (ROOT / "deploy" / "README.md").read_text(encoding="utf-8")
         cls.release_guide = (ROOT / "docs" / "container-release.md").read_text(encoding="utf-8")
         cls.release_checklist = (
-            ROOT / "docs" / "releases" / "v1.0.0.md"
+            ROOT / "docs" / "releases" / "v1.0.0-checklist.md"
         ).read_text(encoding="utf-8")
 
     def test_image_contains_owned_runtime_files(self):
