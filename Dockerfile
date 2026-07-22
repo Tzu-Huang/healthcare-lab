@@ -24,6 +24,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 COPY app.py ./
 COPY backend ./backend
 COPY frontend ./frontend
+COPY docs/Dashboard_to_OIE_to_AP.xml docs/AP_RESULT_TO_LAB.xml ./docs/
 
 RUN mkdir -p /app/instance /data/gdt-bridge
 

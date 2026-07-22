@@ -7,7 +7,7 @@ Healthcare Lab SHALL persist one local OIE settings profile containing Managemen
 #### Scenario: A new database receives local defaults
 
 - **WHEN** Healthcare Lab initializes a database without an OIE settings profile
-- **THEN** it creates a local profile with Management API URL `http://oie:8080`, username `admin`, a configured case-sensitive password value of `Admin`, TLS verification disabled, and a 10-second request timeout
+- **THEN** it creates a local profile with Management API base URL `https://oie:8443`, username `admin`, a configured case-sensitive password value of `admin`, TLS verification disabled for the local self-signed certificate, and a 10-second request timeout
 - **AND** its result listener settings are host `0.0.0.0`, port `6665`, MLLP framing enabled, and auto-start enabled
 - **AND** it persists empty-identity desired mappings for `HLAB_ORM_TO_AP` from `OIE:6600` to `AP:6671` and `HLAB_ORU_TO_HLAB` from `OIE:6661` to `lab-app:6665`
 
