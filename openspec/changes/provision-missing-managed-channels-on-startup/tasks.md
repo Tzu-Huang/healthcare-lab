@@ -20,6 +20,6 @@
 
 ## 4. Deployment Documentation and Verification
 
-- [ ] 4.1 Document bootstrap mode, timeout, retry interval, one-worker constraint, startup evidence, manual recovery, and rollback-by-`off` in `.env.example`, Compose guidance, and OIE operating documentation.
+- [x] 4.1 Document bootstrap mode, timeout, retry interval, one-worker constraint, startup evidence, manual recovery, and rollback-by-`off` in `.env.example`, Compose guidance, and OIE operating documentation.
 - [ ] 4.2 Verify clean Compose startup creates and starts both routes, ordinary restart performs no mutation, and partial setup creates only the absent member using bounded secret-safe evidence.
 - [ ] 4.3 Run focused bootstrap/settings/lifecycle tests, the complete regression suite, Python compilation, `git diff --check`, and strict OpenSpec validation.
