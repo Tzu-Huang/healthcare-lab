@@ -18,6 +18,7 @@ from backend.app_factory import (
     collect_dashboard_resource_snapshot,
     create_app,
     dashboard_action_for_group,
+    dashboard_summary,
     derive_lab_overall_status,
     dcm4chee_profile_from_config,
     dcm4chee_result_refresh_generation,

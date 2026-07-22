@@ -137,6 +137,7 @@ from backend.services.lab_workflow import (
     dashboard_child_item,
     dashboard_events,
     dashboard_group_item,
+    dashboard_summary,
     derive_lab_overall_status,
     run_lab_smoke_check,
     run_lab_operation,
@@ -189,7 +190,6 @@ from backend.dashboard_services import (
     dashboard_health_rank,
     dashboard_operation_services,
     dashboard_servers_for_group,
-    dashboard_summary,
     derive_dashboard_group_status,
 )
 

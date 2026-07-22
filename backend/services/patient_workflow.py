@@ -17,7 +17,6 @@ from backend.domain.statuses import (
     DCM4CHEE_PATIENT_SYNC_STATUS_FAILED,
     DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
     DCM4CHEE_RESULT_STATUS_DUPLICATE,
-    DCM4CHEE_RESULT_STATUS_NO_RESULT,
     DCM4CHEE_RESULT_STATUS_QUERY_FAILED,
     FHIR_SYNC_STATUS_SYNCED,
 )
@@ -342,20 +341,13 @@ def refresh_patient_dcm4chee_results(
     refresh_generation = dcm4chee_result_refresh_generation()
     store.begin_dcm4chee_result_refresh(patient_record_id, refresh_generation)
     if not mappings:
-        diagnostic = store.record_dcm4chee_result_refresh_diagnostic(
-            patient_record_id=patient_record_id,
-            profile=profile,
-            status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
-            diagnostic_payload={"reason": "no_local_dcm4chee_orders"},
-            refresh_generation=refresh_generation,
-        )
         store.complete_dcm4chee_result_refresh(patient_record_id, refresh_generation)
         patient = store.get_patient_record(patient_record_id)
         return {
             "success": True,
             "patient": patient,
             "items": patient.get("dcm4chee", {}).get("dicomResults", []),
-            "refreshed": [diagnostic],
+            "refreshed": [],
             "queries": [],
             "refreshGeneration": refresh_generation,
         }
@@ -394,16 +386,6 @@ def refresh_patient_dcm4chee_results(
         queries.append({"url": studies_url, "status": status, "query": query})
         study_datasets = store.dcm4chee_datasets_from_response_body(studies_body)
         if not study_datasets:
-            diagnostic = store.record_dcm4chee_result_refresh_diagnostic(
-                patient_record_id=patient_record_id,
-                profile=profile,
-                status=DCM4CHEE_RESULT_STATUS_NO_RESULT,
-                query_url=studies_url,
-                query_payload=query,
-                diagnostic_payload={"reason": "empty_study_query", "mappingId": mapping.get("id")},
-                refresh_generation=refresh_generation,
-            )
-            refreshed.append(diagnostic)
             continue
         for study_dataset in study_datasets:
             study_metadata = store.dcm4chee_result_metadata_from_dataset(study_dataset)

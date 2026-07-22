@@ -28,7 +28,6 @@ from backend.dashboard_services import (
     dashboard_health_rank,
     dashboard_operation_services,
     dashboard_servers_for_group,
-    dashboard_summary,
     derive_dashboard_group_status,
 )
 from backend.domain.dicom import validate_dcm4chee_profile
@@ -59,6 +58,31 @@ from backend.services.fhir_workflow import (
 class ApplicationPort(Protocol):
     config: dict[str, Any]
     extensions: dict[str, Any]
+
+
+def dashboard_summary(
+    items: list[dict[str, Any]], resource_snapshot: dict[str, Any]
+) -> dict[str, Any]:
+    attention = [item for item in items if item["status"] in {"Degraded", "Down"}]
+    running_primary_count = sum(
+        1 for item in items if item["enabled"] and item["status"] != "Down"
+    )
+    running_child_count = sum(
+        1
+        for item in items
+        for child in item.get("children") or []
+        if child.get("status") == "Healthy"
+        and (child.get("runtime") or {}).get("running") is True
+    )
+    total = sum(1 + len(item.get("children") or []) for item in items)
+    return {
+        "total": total,
+        "running": running_primary_count + running_child_count,
+        "attention": len(attention),
+        "resourceStatus": resource_snapshot["status"],
+        "cpuPercent": resource_snapshot["totals"]["cpuPercent"],
+        "memoryPercent": resource_snapshot["totals"]["memoryPercent"],
+    }
 
 
 class LabRepositoryPort(Protocol):
