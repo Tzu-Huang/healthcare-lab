@@ -6,11 +6,11 @@
 
 ## 2. Guarded Bootstrap Coordination
 
-- [ ] 2.1 Make lifecycle audit actor selection explicit and bounded while preserving `local-operator` for existing API flows and the current secret-safe allowlist.
-- [ ] 2.2 Implement a runtime-neutral startup bootstrap coordinator with injected clock/sleeper and Management API/lifecycle dependencies, finite readiness retry, and bounded safe outcomes.
-- [ ] 2.3 Sequence fresh guarded create, identity readback/persistence, fresh guarded deploy, and started-status verification independently for each missing canonical Channel.
-- [ ] 2.4 Implement terminal no-mutation handling for unchanged, stopped unchanged, drifted, conflicted, and external inventory, and stop replay after uncertain mutation or persistence failure.
-- [ ] 2.5 Add focused coordinator and lifecycle tests for clean, restart no-op, partial pair, delayed readiness, timeout, unsupported/authentication failure, drift, conflict, partial failure, audit actor, and secret-safe evidence.
+- [x] 2.1 Make lifecycle audit actor selection explicit and bounded while preserving `local-operator` for existing API flows and the current secret-safe allowlist.
+- [x] 2.2 Implement a runtime-neutral startup bootstrap coordinator with injected clock/sleeper and Management API/lifecycle dependencies, finite readiness retry, and bounded safe outcomes.
+- [x] 2.3 Sequence fresh guarded create, identity readback/persistence, fresh guarded deploy, and started-status verification independently for each missing canonical Channel.
+- [x] 2.4 Implement terminal no-mutation handling for unchanged, stopped unchanged, drifted, conflicted, and external inventory, and stop replay after uncertain mutation or persistence failure.
+- [x] 2.5 Add focused coordinator and lifecycle tests for clean, restart no-op, partial pair, delayed readiness, timeout, unsupported/authentication failure, drift, conflict, partial failure, audit actor, and secret-safe evidence.
 
 ## 3. Runtime Integration
 
