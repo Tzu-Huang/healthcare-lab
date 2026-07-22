@@ -130,6 +130,7 @@ from backend.runtime.lazy_wsgi import LazyWsgiApplication
 from backend.services.oie_settings import OieSettingsService, create_oie_management_client
 from backend.services.oie_diagnostics import OieRuntimeDiagnosticService
 from backend.services.oie_channel_lifecycle import OieManagedChannelLifecycleService, PreviewTokenCodec
+from backend.services.oie_channel_bootstrap import OieManagedChannelBootstrap
 from backend.application_composition import assemble_application_dependencies
 from backend.lab_composition import LabApplicationRepository, dashboard_services, lab_server_services
 from backend.services.lab_workflow import (
@@ -221,7 +222,7 @@ request_dcm4chee_patient_create = dcm4chee_client.request_dcm4chee_patient_creat
 request_dcm4chee_mwl_readback = dcm4chee_client.request_dcm4chee_mwl_readback
 request_dcm4chee_mwl_verification = dcm4chee_client.request_dcm4chee_mwl_verification
 request_dcm4chee_qido = dcm4chee_client.request_dcm4chee_qido
-def create_app(database_path: str | None = None, *, dependency_receiver: Callable[[object], None] | None = None, order_coordination_receiver: Callable[[object], None] | None = None, activate_runtime: bool = True) -> Flask:
+def create_app(database_path: str | None = None, *, dependency_receiver: Callable[[object], None] | None = None, order_coordination_receiver: Callable[[object], None] | None = None, activate_runtime: bool = True, bootstrap_thread_factory: Callable[..., object] | None = None) -> Flask:
     app = Flask(
         __name__,
         template_folder=str(PROJECT_ROOT / "frontend" / "templates"),
@@ -333,6 +334,11 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         token_codec=PreviewTokenCodec(secrets.token_bytes(32)),
         client_provider=lambda: create_oie_management_client(dependencies.oie_settings_repository),
     )
+    app.extensions["oie_channel_bootstrap"] = OieManagedChannelBootstrap(
+        app.extensions["oie_channel_lifecycle_service"],
+        timeout_seconds=app.config["OIE_BOOTSTRAP_TIMEOUT_SECONDS"],
+        retry_interval_seconds=app.config["OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS"],
+    )
     app.extensions["oie_workflow_service"] = OieWorkflowService(
         dependencies.oie_repository,
         oie_coordination,
@@ -386,6 +392,14 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
     )
     if activate_runtime:
         app.extensions["oie_workflow_service"].auto_start_listener()
+        if app.config["OIE_BOOTSTRAP_MODE"] == "create-missing":
+            bootstrap_thread = (bootstrap_thread_factory or threading.Thread)(
+                target=app.extensions["oie_channel_bootstrap"].run,
+                name="oie-managed-channel-bootstrap",
+                daemon=True,
+            )
+            app.extensions["oie_channel_bootstrap_thread"] = bootstrap_thread
+            bootstrap_thread.start()
     app.register_blueprint(
         create_lab_servers_blueprint(
             *lab_server_services(

@@ -1,6 +1,7 @@
 import socket
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from backend.app_factory import create_app
@@ -9,11 +10,16 @@ from backend.application_composition import assemble_application_dependencies
 
 class OieListenerLifecycleIntegrationTest(unittest.TestCase):
     def setUp(self):
+        self.bootstrap_environment = patch.dict(
+            "os.environ", {"OIE_BOOTSTRAP_MODE": "off"}, clear=False
+        )
+        self.bootstrap_environment.start()
         self.directory = tempfile.TemporaryDirectory()
         self.database_path = Path(self.directory.name) / "lab.db"
 
     def tearDown(self):
         self.directory.cleanup()
+        self.bootstrap_environment.stop()
 
     @staticmethod
     def _free_port():
