@@ -15,8 +15,11 @@ instance/
 .env.*
 !.env.example
 
-# Local tooling and troubleshooting notes
+# Local tooling and generated workflow artifacts
+.agent/
+.agents/
 .codex/
+openspec/
 report.md
 
 # Editors and operating systems
