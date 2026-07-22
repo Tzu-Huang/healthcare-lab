@@ -35,6 +35,7 @@ def seed_oie_settings_profile(
     management_api_timeout_seconds: float,
     result_listener_host: str,
     result_listener_port: int,
+    managed_channel_defaults: Sequence[Mapping[str, Any]],
     timestamp_factory: Callable[[], str],
 ) -> None:
     timestamp = timestamp_factory()
@@ -62,6 +63,33 @@ def seed_oie_settings_profile(
             timestamp,
         ),
     )
+    profile = connection.execute(
+        "SELECT id FROM oie_settings_profiles WHERE profile_name = ?", (profile_name,)
+    ).fetchone()
+    for mapping in managed_channel_defaults:
+        desired = {
+            key: mapping[key]
+            for key in (
+                "sourceHost", "sourcePort", "destinationHost", "destinationPort",
+                "timeoutSeconds", "queueEnabled", "retryCount", "retryIntervalMs",
+            )
+        }
+        connection.execute(
+            """
+            INSERT INTO oie_managed_channel_mappings (
+                profile_id, logical_type, oie_channel_id, channel_name,
+                template_version, last_known_revision, desired_config_json,
+                created_at, updated_at
+            ) VALUES (?, ?, '', ?, ?, '', ?, ?, ?)
+            ON CONFLICT(profile_id, logical_type) DO NOTHING
+            """,
+            (
+                profile["id"], mapping["logicalType"], mapping["channelName"],
+                mapping["templateVersion"],
+                json.dumps(desired, separators=(",", ":"), sort_keys=True),
+                timestamp, timestamp,
+            ),
+        )
 
 
 def seed_lab_servers(

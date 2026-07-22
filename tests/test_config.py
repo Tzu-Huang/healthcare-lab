@@ -14,6 +14,9 @@ class ApplicationConfigTest(unittest.TestCase):
         self.assertEqual(6600, config["OIE_MLLP_ORDER_PORT"])
         self.assertEqual("0.0.0.0", config["OIE_MLLP_RESULT_HOST"])
         self.assertEqual(6665, config["OIE_MLLP_RESULT_PORT"])
+        self.assertEqual("create-missing", config["OIE_BOOTSTRAP_MODE"])
+        self.assertEqual(120.0, config["OIE_BOOTSTRAP_TIMEOUT_SECONDS"])
+        self.assertEqual(2.0, config["OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS"])
         self.assertEqual(str(Path("instance") / "gdt-bridge"), config["GDT_BRIDGE_PATH"])
 
     def test_explicit_database_and_environment_values_are_applied(self):
@@ -31,6 +34,27 @@ class ApplicationConfigTest(unittest.TestCase):
         self.assertEqual("test", config["PROJECT_MODE"])
         self.assertEqual(7777, config["OIE_MLLP_ORDER_PORT"])
         self.assertEqual("delete", config["GDT_BRIDGE_IMPORT_SUCCESS_MODE"])
+
+    def test_explicit_bootstrap_configuration_is_applied(self):
+        config = load_application_config("instance", environ={
+            "OIE_BOOTSTRAP_MODE": "off",
+            "OIE_BOOTSTRAP_TIMEOUT_SECONDS": "30.5",
+            "OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS": "0.25",
+        })
+
+        self.assertEqual("off", config["OIE_BOOTSTRAP_MODE"])
+        self.assertEqual(30.5, config["OIE_BOOTSTRAP_TIMEOUT_SECONDS"])
+        self.assertEqual(0.25, config["OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS"])
+
+    def test_invalid_bootstrap_configuration_is_rejected(self):
+        invalid = (
+            {"OIE_BOOTSTRAP_MODE": "force"},
+            {"OIE_BOOTSTRAP_TIMEOUT_SECONDS": "0"},
+            {"OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS": "not-a-number"},
+        )
+        for environ in invalid:
+            with self.subTest(environ=environ), self.assertRaises(ValidationError):
+                load_application_config("instance", environ=environ)
 
     def test_invalid_app_port_is_rejected(self):
         with self.assertRaises(ValidationError):

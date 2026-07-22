@@ -62,6 +62,19 @@ class OieSettingsRepositoryTest(unittest.TestCase):
         )
         self.assertNotIn("password", profile["managementApi"])
         self.assertNotIn("Admin", json.dumps(profile))
+        self.assertEqual(
+            ["hlab-orm-to-ap", "hlab-oru-to-hlab"],
+            [item["logicalType"] for item in profile["managedChannels"]],
+        )
+        orm, oru = profile["managedChannels"]
+        self.assertEqual(("", "HLAB_ORM_TO_AP", 6600, "hl7tester", 6671), (
+            orm["channelId"], orm["channelName"], orm["sourcePort"],
+            orm["destinationHost"], orm["destinationPort"],
+        ))
+        self.assertEqual(("", "HLAB_ORU_TO_HLAB", 6661, "lab-app", 6665), (
+            oru["channelId"], oru["channelName"], oru["sourcePort"],
+            oru["destinationHost"], oru["destinationPort"],
+        ))
         with self.dependencies.database.connect() as connection:
             password = connection.execute(
                 "SELECT management_api_password FROM oie_settings_profiles"
@@ -75,6 +88,21 @@ class OieSettingsRepositoryTest(unittest.TestCase):
         self.assertNotIn("password", public_profile["managementApi"])
         self.assertEqual("Admin", private_configuration["password"])
         self.assertEqual(10.0, private_configuration["timeout_seconds"])
+
+    def test_repeated_maintenance_seeds_only_missing_canonical_mappings(self):
+        profile = self.repository.get()
+        edited = [dict(item) for item in profile["managedChannels"]]
+        edited[0]["destinationHost"] = "operator-ap"
+        self.repository.update(self.settings_payload(managedChannels=[edited[0]]))
+
+        reopened = assemble_application_dependencies(self.dependencies.database.path)
+        mappings = reopened.oie_settings_repository.get()["managedChannels"]
+
+        self.assertEqual(["hlab-orm-to-ap", "hlab-oru-to-hlab"], [
+            item["logicalType"] for item in mappings
+        ])
+        self.assertEqual("operator-ap", mappings[0]["destinationHost"])
+        self.assertEqual("lab-app", mappings[1]["destinationHost"])
 
     def test_private_listener_configuration_is_narrow_and_persisted(self):
         self.repository.update(self.settings_payload(resultListener={
@@ -129,13 +157,17 @@ class OieSettingsRepositoryTest(unittest.TestCase):
         reopened = assemble_application_dependencies(self.dependencies.database.path)
         persisted = reopened.oie_settings_repository.get()
 
-        self.assertEqual(updated, persisted)
+        persisted_result = next(
+            item for item in persisted["managedChannels"]
+            if item["logicalType"] == "hlab-result"
+        )
+        self.assertEqual(updated["managementApi"], persisted["managementApi"])
+        self.assertEqual(updated["resultListener"], persisted["resultListener"])
         self.assertEqual(persisted["managementApi"]["timeoutSeconds"], 12.5)
-        self.assertEqual(persisted["managedChannels"][0]["logicalType"], "hlab-result")
-        self.assertEqual(persisted["managedChannels"][0]["channelId"], "channel-1")
-        self.assertEqual(persisted["managedChannels"][0]["destinationHost"], "ap.internal")
-        self.assertEqual(persisted["managedChannels"][0]["timeoutSeconds"], 7.5)
-        self.assertEqual(persisted["managedChannels"][0]["retryIntervalMs"], 12000)
+        self.assertEqual(persisted_result["channelId"], "channel-1")
+        self.assertEqual(persisted_result["destinationHost"], "ap.internal")
+        self.assertEqual(persisted_result["timeoutSeconds"], 7.5)
+        self.assertEqual(persisted_result["retryIntervalMs"], 12000)
         self.assertNotIn("replacement-secret", json.dumps(persisted))
 
         replacement = self.settings_payload(
@@ -173,7 +205,7 @@ class OieSettingsRepositoryTest(unittest.TestCase):
         self.assertEqual(1, len(audits))
         self.assertEqual("success", audits[0]["outcome"])
         self.assertEqual(
-            ["managementApi.username", "resultListener.host", "resultListener.port", "managementApi.password"],
+            ["managementApi.username", "resultListener.host", "resultListener.port", "managementApi.password", "managedChannels"],
             audits[0]["changed_fields"],
         )
         serialized = json.dumps(audits)

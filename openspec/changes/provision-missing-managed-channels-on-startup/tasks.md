@@ -1,8 +1,8 @@
 ## 1. Configuration and Desired Mapping Intent
 
-- [ ] 1.1 Add validated `create-missing` and `off` bootstrap mode configuration with positive bounded timeout and retry interval defaults, environment examples, and configuration tests.
-- [ ] 1.2 Extend repeatable OIE settings maintenance to seed complete empty-identity mappings for both canonical routes without overwriting existing profile or mapping values.
-- [ ] 1.3 Add repository and migration tests for fresh databases, existing profiles with no mappings, partial mappings, operator-edited mappings, and preserved workflow records.
+- [x] 1.1 Add validated `create-missing` and `off` bootstrap mode configuration with positive bounded timeout and retry interval defaults, environment examples, and configuration tests.
+- [x] 1.2 Extend repeatable OIE settings maintenance to seed complete empty-identity mappings for both canonical routes without overwriting existing profile or mapping values.
+- [x] 1.3 Add repository and migration tests for fresh databases, existing profiles with no mappings, partial mappings, operator-edited mappings, and preserved workflow records.
 
 ## 2. Guarded Bootstrap Coordination
 
