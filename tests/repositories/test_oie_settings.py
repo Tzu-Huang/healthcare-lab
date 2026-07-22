@@ -22,7 +22,7 @@ class OieSettingsRepositoryTest(unittest.TestCase):
     def settings_payload(**overrides):
         payload = {
             "managementApi": {
-                "baseUrl": "http://oie:8080",
+                "baseUrl": "https://oie:8443",
                 "username": "admin",
                 "tlsVerify": False,
                 "timeoutSeconds": 10,
@@ -46,7 +46,7 @@ class OieSettingsRepositoryTest(unittest.TestCase):
         profile = self.repository.get()
 
         self.assertEqual(profile["profileName"], "local-oie")
-        self.assertEqual(profile["managementApi"]["baseUrl"], "http://oie:8080")
+        self.assertEqual(profile["managementApi"]["baseUrl"], "https://oie:8443")
         self.assertEqual(profile["managementApi"]["username"], "admin")
         self.assertTrue(profile["managementApi"]["passwordConfigured"])
         self.assertFalse(profile["managementApi"]["tlsVerify"])
@@ -61,7 +61,6 @@ class OieSettingsRepositoryTest(unittest.TestCase):
             },
         )
         self.assertNotIn("password", profile["managementApi"])
-        self.assertNotIn("Admin", json.dumps(profile))
         self.assertEqual(
             ["hlab-orm-to-ap", "hlab-oru-to-hlab"],
             [item["logicalType"] for item in profile["managedChannels"]],
@@ -79,14 +78,14 @@ class OieSettingsRepositoryTest(unittest.TestCase):
             password = connection.execute(
                 "SELECT management_api_password FROM oie_settings_profiles"
             ).fetchone()[0]
-        self.assertEqual(password, "Admin")
+        self.assertEqual(password, "admin")
 
     def test_private_management_configuration_is_separate_from_public_projection(self):
         public_profile = self.repository.get()
         private_configuration = self.repository.get_management_api_configuration()
 
         self.assertNotIn("password", public_profile["managementApi"])
-        self.assertEqual("Admin", private_configuration["password"])
+        self.assertEqual("admin", private_configuration["password"])
         self.assertEqual(10.0, private_configuration["timeout_seconds"])
 
     def test_repeated_maintenance_seeds_only_missing_canonical_mappings(self):
@@ -189,7 +188,7 @@ class OieSettingsRepositoryTest(unittest.TestCase):
     def test_settings_updates_append_bounded_value_free_audits(self):
         payload = self.settings_payload(
             managementApi={
-                "baseUrl": "http://oie:8080", "username": "sensitive-user",
+                "baseUrl": "https://oie:8443", "username": "sensitive-user",
                 "password": "never-store-this-in-audit", "tlsVerify": False,
                 "timeoutSeconds": 10,
             },

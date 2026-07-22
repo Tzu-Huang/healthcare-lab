@@ -228,6 +228,10 @@ it serves the first browser request. The default mode, `create-missing`, waits
 up to 120 seconds for the authenticated OIE 4.5.2 Management API, retrying
 every 2 seconds. Once OIE is ready it evaluates the two fixed routes separately:
 
+Fresh profiles target the OIE Client API base at `https://oie:8443` using the
+image's `admin` / `admin` local-lab credentials and local self-signed TLS mode.
+OIE 4.5.2 does not expose the Client API on its HTTP port.
+
 | Managed Channel | Route |
 | --- | --- |
 | `HLAB_ORM_TO_AP` | `OIE:6600 -> hl7tester:6671` |
