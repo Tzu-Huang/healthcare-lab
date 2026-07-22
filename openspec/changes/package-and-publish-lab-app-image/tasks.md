@@ -1,9 +1,9 @@
 ## 1. Container Runtime
 
-- [ ] 1.1 Add focused contract tests for build-context exclusions, required runtime files, production WSGI startup, and the absence of source-mount/startup-install assumptions.
-- [ ] 1.2 Add the production WSGI dependency and an application entrypoint/configuration that preserves single-process OIE listener ownership.
-- [ ] 1.3 Add the root Dockerfile and `.dockerignore` for a self-contained, non-root where compatible, `linux/amd64` `lab-app` image with OCI source/revision/version metadata support.
-- [ ] 1.4 Build the image locally and verify HTTP health, static assets, SQLite initialization/migration, and the OIE result-listener runtime without a repository mount.
+- [x] 1.1 Add focused contract tests for build-context exclusions, required runtime files, production WSGI startup, and the absence of source-mount/startup-install assumptions.
+- [x] 1.2 Add the production WSGI dependency and an application entrypoint/configuration that preserves single-process OIE listener ownership.
+- [x] 1.3 Add the root Dockerfile and `.dockerignore` for a self-contained, non-root where compatible, `linux/amd64` `lab-app` image with OCI source/revision/version metadata support.
+- [x] 1.4 Build the image locally and verify HTTP health, static assets, SQLite initialization/migration, and the OIE result-listener runtime without a repository mount.
 
 ## 2. Compose and Persistence
 
