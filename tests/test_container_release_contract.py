@@ -55,6 +55,8 @@ class ContainerReleaseContractTests(unittest.TestCase):
             "tests",
             "openspec",
             "__pycache__",
+            "**/__pycache__",
+            "**/*.py[cod]",
         ):
             self.assertIn(path, excluded)
 
