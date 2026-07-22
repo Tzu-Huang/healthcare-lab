@@ -31,7 +31,7 @@ class ContainerReleaseContractTests(unittest.TestCase):
         self.assertIn("gunicorn>=23.0,<24.0", self.requirements)
         self.assertIn('"gunicorn"', self.dockerfile)
         self.assertIn('"--workers", "1"', self.dockerfile)
-        self.assertIn('"backend.app_factory:app"', self.dockerfile)
+        self.assertIn('"backend.wsgi:app"', self.dockerfile)
         self.assertNotIn('CMD ["python", "app.py"]', self.dockerfile)
 
     def test_image_declares_runtime_and_traceability_contracts(self):

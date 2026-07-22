@@ -14,9 +14,9 @@
 
 ## 3. Runtime Integration
 
-- [ ] 3.1 Compose and expose one bootstrap coordinator per concrete application and start one named daemon worker only when runtime activation and `create-missing` mode are enabled.
-- [ ] 3.2 Adjust the production WSGI startup boundary so concrete runtime activation occurs before the first browser request while factory tests can continue using `activate_runtime=False`.
-- [ ] 3.3 Add integration tests proving one bootstrap start per runtime, no start in `off` or runtime-disabled modes, non-blocking HTTP availability, and failure isolation from lab-app health.
+- [x] 3.1 Compose and expose one bootstrap coordinator per concrete application and start one named daemon worker only when runtime activation and `create-missing` mode are enabled.
+- [x] 3.2 Adjust the production WSGI startup boundary so concrete runtime activation occurs before the first browser request while factory tests can continue using `activate_runtime=False`.
+- [x] 3.3 Add integration tests proving one bootstrap start per runtime, no start in `off` or runtime-disabled modes, non-blocking HTTP availability, and failure isolation from lab-app health.
 
 ## 4. Deployment Documentation and Verification
 
