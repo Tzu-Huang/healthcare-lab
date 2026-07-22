@@ -5,6 +5,46 @@ from ._case_support import *
 class DashboardLabApiTests(ApiCaseSupport):
     """Focused assertion owner for DashboardLabApiTests."""
 
+    def test_dashboard_summary_counts_running_primary_and_child_services(self):
+        items = [
+            {
+                "enabled": True,
+                "status": "Healthy",
+                "children": [],
+            },
+            {
+                "enabled": True,
+                "status": "Healthy",
+                "children": [
+                    {"status": "Healthy", "runtime": {"running": True}},
+                    {"status": "Healthy", "runtime": {"running": True}},
+                ],
+            },
+            {
+                "enabled": True,
+                "status": "Healthy",
+                "children": [
+                    {"status": "Healthy", "runtime": {"running": True}},
+                    {"status": "Healthy", "runtime": {"running": True}},
+                ],
+            },
+        ]
+        resources = {
+            "status": "ok",
+            "totals": {"cpuPercent": 1.0, "memoryPercent": 2.0},
+        }
+
+        summary = dashboard_summary(items, resources)
+
+        self.assertEqual(summary["total"], 7)
+        self.assertEqual(summary["running"], 7)
+
+        items[1]["children"][0] = {
+            "status": "Down",
+            "runtime": {"running": False},
+        }
+        self.assertEqual(dashboard_summary(items, resources)["running"], 6)
+
     def test_dashboard_services_exposes_three_allowlisted_groups_with_children(self):
         response = self.client.get("/api/dashboard/services")
         self.assertEqual(response.status_code, 200)

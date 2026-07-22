@@ -163,20 +163,6 @@ def dashboard_servers_for_group(store: Any, service_id: str) -> tuple[dict[str, 
     return group, servers
 
 
-def dashboard_summary(items: list[dict[str, Any]], resource_snapshot: dict[str, Any]) -> dict[str, Any]:
-    attention = [item for item in items if item["status"] in {"Degraded", "Down"}]
-    running = [item for item in items if item["enabled"] and item["status"] != "Down"]
-    total = sum(1 + len(item.get("children") or []) for item in items)
-    return {
-        "total": total,
-        "running": len(running),
-        "attention": len(attention),
-        "resourceStatus": resource_snapshot["status"],
-        "cpuPercent": resource_snapshot["totals"]["cpuPercent"],
-        "memoryPercent": resource_snapshot["totals"]["memoryPercent"],
-    }
-
-
 def parse_docker_stats_percent(value: str) -> float:
     text = str(value or "").strip().replace("%", "")
     try:

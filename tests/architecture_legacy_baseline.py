@@ -17,7 +17,6 @@ catch-all|backend/dashboard_services.py|dashboard_health_rank|f52d8c617d08b482
 catch-all|backend/dashboard_services.py|dashboard_operation_services|eeb8a4e762de6843
 catch-all|backend/dashboard_services.py|dashboard_resource_fallback|b10e912b7158a34f
 catch-all|backend/dashboard_services.py|dashboard_servers_for_group|eed4c6f1d63de146
-catch-all|backend/dashboard_services.py|dashboard_summary|fea1b55fb0f165d8
 catch-all|backend/dashboard_services.py|derive_dashboard_group_status|bd2f38a640196eb6
 catch-all|backend/dashboard_services.py|docker_socket_available|7c917b803c455f42
 catch-all|backend/dashboard_services.py|docker_socket_json_request|de36d1301bfb75c8

@@ -989,9 +989,9 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertIn("Issuer of Patient ID", dcm4chee_view)
         self.assertIn("Open Viewer", dcm4chee_view)
         self.assertIn("Copy Retrieve", dcm4chee_view)
-        self.assertIn("Refresh PACS Results", dcm4chee_view)
-        self.assertIn("Simulate AP PDF", dcm4chee_view)
-        self.assertIn("Simulate AP DICOM", dcm4chee_view)
+        self.assertNotIn("Refresh PACS Results", dcm4chee_view)
+        self.assertNotIn("Simulate AP PDF", dcm4chee_view)
+        self.assertNotIn("Simulate AP DICOM", dcm4chee_view)
         self.assertIn("/api/orders/${orderId}/dcm4chee-simulated-ap-return", order_api)
         self.assertIn("Open Artifact", dcm4chee_view)
         self.assertIn("Copy Artifact", dcm4chee_view)
@@ -1218,10 +1218,10 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.assertIn(mapping["studyInstanceUid"], matched[0]["viewerUrl"])
         self.assertTrue(any("/studies?" in url and "StudyInstanceUID=" in url for url in calls))
         patient_detail = self.client.get("/api/patients").get_json()["items"][0]
-        self.assertGreaterEqual(patient_detail["dcm4chee"]["resultCount"], 3)
+        self.assertEqual(patient_detail["dcm4chee"]["resultCount"], 1)
 
     @patch("backend.app_factory.urllib.request.urlopen")
-    def test_patient_dcm4chee_result_refresh_records_diagnostics(self, urlopen):
+    def test_patient_dcm4chee_result_refresh_ignores_empty_results_and_records_failures(self, urlopen):
         patient = self.create_local_patient()
         self.client.application.config["DCM4CHEE_QIDO_RS_URL"] = (
             "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"
@@ -1245,10 +1245,8 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         urlopen.return_value = FakeHttpResponse(b"[]", status=200)
         empty = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
         self.assertEqual(empty.status_code, 200)
-        self.assertIn(
-            DCM4CHEE_RESULT_STATUS_NO_RESULT,
-            {item["reconciliationStatus"] for item in empty.get_json()["items"]},
-        )
+        self.assertEqual(empty.get_json()["items"], [])
+        self.assertEqual(empty.get_json()["refreshed"], [])
 
         urlopen.return_value = FakeHttpResponse(
             json.dumps(
@@ -1391,7 +1389,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
             )
 
     @patch("backend.app_factory.urllib.request.urlopen")
-    def test_patient_dcm4chee_result_refresh_supersedes_stale_diagnostics(self, urlopen):
+    def test_patient_dcm4chee_result_refresh_replaces_empty_snapshot_with_results(self, urlopen):
         patient = self.create_local_patient()
         self.client.application.config["DCM4CHEE_QIDO_RS_URL"] = (
             "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"
@@ -1415,10 +1413,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         urlopen.return_value = FakeHttpResponse(b"[]", status=200)
         empty = self.client.post(f"/api/patients/{patient['id']}/dcm4chee-results-refresh")
         empty_body = empty.get_json()
-        self.assertIn(
-            DCM4CHEE_RESULT_STATUS_NO_RESULT,
-            {item["reconciliationStatus"] for item in empty_body["items"]},
-        )
+        self.assertEqual(empty_body["items"], [])
 
         urlopen.return_value = FakeHttpResponse(
             json.dumps(

@@ -21,6 +21,7 @@ INTEGRATION_OWNER_INVENTORY = {
         "test_oie_result_api_persists_and_matches_order_result",
     ),
     "integration/test_dashboard_lab_api.py": (
+        "test_dashboard_summary_counts_running_primary_and_child_services",
         "test_dashboard_services_exposes_three_allowlisted_groups_with_children",
         "test_dashboard_rejects_unsupported_service_ids",
         "test_dashboard_action_mapping_and_restart_preview",
@@ -81,11 +82,11 @@ INTEGRATION_OWNER_INVENTORY = {
         "test_dcm4chee_simulated_ap_return_records_pdf_and_dicom_results",
         "test_dcm4chee_simulated_ap_return_sequence_keeps_pdf_and_dicom_visible",
         "test_patient_dcm4chee_result_refresh_reconciles_study_series_and_instance",
-        "test_patient_dcm4chee_result_refresh_records_diagnostics",
+        "test_patient_dcm4chee_result_refresh_ignores_empty_results_and_records_failures",
         "test_dcm4chee_result_refresh_generation_is_unique_when_clock_does_not_advance",
         "test_dcm4chee_result_refresh_run_order_supersedes_updated_lower_id_row",
         "test_dcm4chee_result_refresh_publishes_only_completed_snapshots",
-        "test_patient_dcm4chee_result_refresh_supersedes_stale_diagnostics",
+        "test_patient_dcm4chee_result_refresh_replaces_empty_snapshot_with_results",
         "test_patient_dcm4chee_result_refresh_records_duplicate_study_candidates",
     ),
     "integration/test_fhir_api.py": (
@@ -229,8 +230,8 @@ class Zac64OwnershipContractTests(unittest.TestCase):
             actual = _test_method_names(tests_root / relative)
             self.assertEqual(actual, expected, relative)
             integration_names.extend(actual)
-        self.assertEqual(len(integration_names), 128)
-        self.assertEqual(len(set(integration_names)), 128)
+        self.assertEqual(len(integration_names), 129)
+        self.assertEqual(len(set(integration_names)), 129)
 
         repository_names = []
         for relative, expected in REPOSITORY_OWNER_INVENTORY.items():

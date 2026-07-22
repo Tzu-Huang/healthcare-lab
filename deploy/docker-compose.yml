@@ -18,13 +18,9 @@ volumes:
 
 services:
   lab-app:
-    image: ${LAB_APP_IMAGE:-python:3.11-slim}
+    image: ${LAB_APP_IMAGE:-ghcr.io/tzu-huang/healthcare-lab:1.0.0}
     env_file:
       - ../.env
-    working_dir: /workspace
-    command: >
-      sh -c "python -m pip install --no-cache-dir -r requirements.txt &&
-      python app.py"
     environment:
       LAB_APP_HOST: 0.0.0.0
       LAB_APP_PORT: "5000"
@@ -50,15 +46,14 @@ services:
       - "6665"
       - "5000"
     volumes:
-      - ..:/workspace
-      - lab-app-instance:/workspace/instance
+      - lab-app-instance:/app/instance
       - ${GDT_BRIDGE_HOST_PATH:-../instance/gdt-bridge}:/data/gdt-bridge
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - lab
 
   oie:
-    image: ${OIE_IMAGE:-nextgenhealthcare/connect:4.5.2}
+    image: ${OIE_IMAGE:-nextgenhealthcare/connect:4.5.2@sha256:4afa295cfe7c5ffd596efee69594157fea87202e33d66bb4a98a52db4598f836}
     environment:
       DATABASE: ${OIE_DATABASE:-derby}
     ports:
@@ -75,7 +70,7 @@ services:
       - lab
 
   medplum-postgres:
-    image: ${MEDPLUM_POSTGRES_IMAGE:-postgres:16-alpine}
+    image: ${MEDPLUM_POSTGRES_IMAGE:-postgres:16-alpine@sha256:e013e867e712fec275706a6c51c966f0bb0c93cfa8f51000f85a15f9865a28cb}
     environment:
       POSTGRES_DB: ${MEDPLUM_POSTGRES_DB:-medplum}
       POSTGRES_USER: ${MEDPLUM_POSTGRES_USER:-medplum}
@@ -86,14 +81,14 @@ services:
       - lab
 
   medplum-redis:
-    image: ${MEDPLUM_REDIS_IMAGE:-redis:7-alpine}
+    image: ${MEDPLUM_REDIS_IMAGE:-redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99}
     volumes:
       - medplum-redis:/data
     networks:
       - lab
 
   medplum:
-    image: ${MEDPLUM_IMAGE:-medplum/medplum-server:latest}
+    image: ${MEDPLUM_IMAGE:-medplum/medplum-server@sha256:4d2c8e926fe536176a88a7e24555f97f92226e39f171bd0b5f0c7f667d0bf9f0}
     command: "env:"
     environment:
       MEDPLUM_BASE_URL: ${MEDPLUM_BASE_URL:-http://127.0.0.1:8103/}
@@ -117,7 +112,7 @@ services:
       - lab
 
   medplum-app:
-    image: ${MEDPLUM_APP_IMAGE:-medplum/medplum-app:latest}
+    image: ${MEDPLUM_APP_IMAGE:-medplum/medplum-app@sha256:79f162f7124a8932c2a76fc2c7c72df4b080d5fef43496c64bc34ad68e65ca56}
     environment:
       MEDPLUM_BASE_URL: ${MEDPLUM_PUBLIC_BASE_URL:-http://127.0.0.1:8103/}
       MEDPLUM_RECAPTCHA_SITE_KEY: ${MEDPLUM_RECAPTCHA_SITE_KEY:-6LfHdsYdAAAAAC0uLnnRrDrhcXnziiUwKd8VtLNq}
@@ -129,7 +124,7 @@ services:
       - lab
 
   dcm4chee-db:
-    image: ${DCM4CHEE_DB_IMAGE:-dcm4che/postgres-dcm4chee:16.13-35}
+    image: ${DCM4CHEE_DB_IMAGE:-dcm4che/postgres-dcm4chee:16.13-35@sha256:1fced918fa507a133ec98db6ad2af92be2db0399c4061d5d59a4405ac445cd70}
     environment:
       POSTGRES_DB: ${DCM4CHEE_DB_NAME:-pacsdb}
       POSTGRES_USER: ${DCM4CHEE_DB_USER:-pacs}
@@ -140,7 +135,7 @@ services:
       - lab
 
   ldap:
-    image: ${DCM4CHEE_LDAP_IMAGE:-dcm4che/slapd-dcm4chee:2.6.13-35.0}
+    image: ${DCM4CHEE_LDAP_IMAGE:-dcm4che/slapd-dcm4chee:2.6.13-35.0@sha256:ca45eaf70d92c4008612ab345a566e06c13b553b079ccf6c652ceda4c9a98b98}
     environment:
       LDAP_ROOTPASS: ${DCM4CHEE_LDAP_ROOTPASS:-secret}
       STORAGE_DIR: ${DCM4CHEE_STORAGE_DIR:-/storage/fs1}
@@ -151,7 +146,7 @@ services:
       - lab
 
   dcm4chee:
-    image: ${DCM4CHEE_IMAGE:-dcm4che/dcm4chee-arc-psql:5.35.0}
+    image: ${DCM4CHEE_IMAGE:-dcm4che/dcm4chee-arc-psql:5.35.0@sha256:20a195c0c53336e1d0c7bdc30536d46611a939f0a2e25dec3318c8d99d7fba29}
     environment:
       POSTGRES_DB: ${DCM4CHEE_DB_NAME:-pacsdb}
       POSTGRES_USER: ${DCM4CHEE_DB_USER:-pacs}
