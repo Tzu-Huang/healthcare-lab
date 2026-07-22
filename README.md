@@ -1,274 +1,104 @@
 # Healthcare Lab
 
-Local healthcare interoperability lab dashboard and control plane for monitoring
-OIE, Medplum, and dcm4chee services while hosting an independent local GDT workflow.
+Healthcare Lab is a local healthcare interoperability workbench for exercising
+patient, order, and result workflows across HL7 v2, FHIR R4, GDT 2.1, and
+DICOM. It provides one browser-based control plane for the lab services and
+keeps a local SQLite workflow ledger for traceability, retry, and reconciliation.
 
-This project is split out from the former combined `intern/repo` workspace. It
-owns the Server Health Dashboard, local Docker Compose runtime, service health
-checks, and service operation controls.
+The supported v1.0.0 runtime combines:
 
-See [PROJECT_BOUNDARY.md](PROJECT_BOUNDARY.md) for the split rules.
+- **Healthcare Lab** — Flask application, workflow coordination, local ledger,
+  and service operations dashboard.
+- **Open Integration Engine (OIE)** — HL7 v2 MLLP order and result routing.
+- **Medplum** — FHIR R4 server and web application.
+- **dcm4chee** — DICOM archive, patient synchronization, modality worklist, and
+  result discovery.
+- **GDT Bridge** — shared-folder exchange for GDT orders and returned results.
 
-## Current Progress
+Healthcare Lab is intended for virtual data on a trusted local machine or
+internal lab. It is not a regulated clinical system and must not be exposed
+directly to the public Internet.
 
-The lab now has three working local workflow tracks:
+## What It Supports
 
-- **HL7 v2 / OIE:** local Patient and Order workflows can create HL7 ADT and
-  ORM payloads, send selected ORM messages to the configured OIE MLLP endpoint,
-  and record ACK or transport results.
-- **FHIR R4 / Medplum:** Patient creation is local-first with Medplum sync,
-  retry, and idempotent identifier matching. FHIR Orders create a local order
-  anchor and sync a `ServiceRequest` as the sole order resource.
-- **GDT 2.1 / local bridge:** Patient/order context can be exported as
-  GDT `6302`, result files can be imported from the bridge folders, and parsed
-  `6310` result context is retained locally.
+### HL7 v2 / OIE
 
-Healthcare Lab treats Medplum as the canonical source of truth for synced FHIR
-clinical resources. Local SQLite storage is a workflow ledger for unsynced
-intent, sync status, deterministic identifiers, retry/idempotency metadata,
-request/response audit, OperationOutcome details, and Medplum references.
+- Create local Patients and ECG Orders with HL7 v2.5.1 ADT and ORM payloads.
+- Send selected `ORM^O01` messages to OIE over MLLP and retain ACK or transport
+  outcomes.
+- Manage the Healthcare Lab OIE channel definitions and inspect runtime
+  diagnostics.
+- Automatically listen for routed ORU results and reconcile them with the local
+  patient and order context.
 
-## Test UI
+### FHIR R4 / Medplum
 
-![ECG AP Simulator SOP workflow](docs/images/ap-simulator-sop.png)
+- Create Patients locally, then synchronize them to Medplum with retry and
+  deterministic identifier matching.
+- Create ECG orders as FHIR `ServiceRequest` resources.
+- Inspect Patient-centered `Patient`, `ServiceRequest`, `DiagnosticReport`,
+  `Observation`, and `DocumentReference` data.
+- Retain local sync state, request/response metadata, Medplum references, and
+  `OperationOutcome` details without replacing Medplum as the source of truth.
 
-The browser UI opens with square test-category options:
+### GDT 2.1
 
-- **HL7 v2.5** for the OIE/Mirth MLLP workflow.
-- **HL7 FHIR** for Medplum FHIR API return testing.
-- **GDT** for the local ECG order / shared-folder bridge workflow.
+- Export patient and order context as a GDT `6302` file.
+- Exchange files through configurable `inbox/` and `outbox/` bridge folders.
+- Import and reconcile GDT `6310` results, including referenced PDF or DICOM
+  artifacts.
+- Optionally source OpenEMR procedure orders from an external MariaDB database.
 
-The HL7 v2.5 category presents the AP workflow: listen for hospital HL7, review
-the queue, upload ECG JSON and/or PDF, return the ECG result, and inspect the
-selected record.
+### DICOM / dcm4chee
+
+- Synchronize DICOM Patient master data to dcm4chee using HL7 `ADT^A04`.
+- Create and verify modality worklist items through DICOMweb MWL endpoints.
+- Keep stable Patient ID, issuer, accession number, requested procedure,
+  scheduled procedure step, and Study Instance UID mappings in the local ledger.
+- Discover studies through QIDO-RS and reconcile returned DICOM results with
+  local Patients and Orders.
+
+## Application Pages
+
+- **Dashboard** — managed service health, configuration, logs, smoke checks,
+  and supported lifecycle operations.
+- **Patient** — create and inspect protocol-specific patient records and refresh
+  patient results.
+- **Order** — create ECG orders for an existing local Patient.
+- **OIE** — review HL7 inventory, send ORM messages, manage channels, and inspect
+  listener diagnostics.
+- **Medplum** — browse supported FHIR resources and retry pending or failed sync.
+- **GDT** — configure the shared-folder bridge, export `6302`, and import `6310`.
+- **dcm4chee** — inspect connection settings, MWL mappings, verification, and
+  DICOM result metadata.
+- **Settings** — edit service and protocol connection profiles.
 
 ## Architecture
 
-```text
-Mirth Connect Hospital Simulator
-        |
-        | ADT^A04 / ADT^A08 / ORM^O01
-        | MLLP over TCP :6671
-        v
-ECG AP Integration Simulator
-        |
-        +-- SQLite demo queue
-        +-- ECG JSON upload and/or PDF upload
-        +-- MRN == HL7 PID-3 matching
-        |
-        | ORU^W01 waveform OBX or ORU^R01 aECG XML / PDF OBX attachment
-        | MLLP over TCP :6661
-        v
-Mirth Connect Hospital Listener
-        |
-        v
-ACK: AA / AE / AR
-```
-
-The browser UI also retains a collapsed Advanced Tools section for local
-loopback MLLP tests, raw message inspection, ACK failure simulation, and the
-optional mock Patient Pull extension.
-
-## Paired Open Source
-
-The recommended hospital-side simulator is
-[OpenIntegrationEngine](https://github.com/OpenIntegrationEngine/engine?utm_source=chatgpt.com).
-
-| Item | Value |
-| --- | --- |
-| Role | Simulates hospital HL7 Push and result-receive endpoints |
-| Version | `4.5.2` |
-| License | MPL-2.0 |
-| Container image | `nextgenhealthcare/connect:4.5.2` |
-
-`4.5.2 IOE` is used because IOE is the later update from Mirth Connect and is continuing updating. This repository does not vendor or redistribute its code or binaries.
-
-## Features
-
-- Healthcare Interoperability Lab Console first screen for managed service
-  health visibility, editable server registry, server detail, Run Check, and a
-  Servers / Settings Port Matrix.
-- Patient page with HL7 v2.5.1, FHIR R4, GDT 2.1, and DICOM preview modes.
-- FHIR Patient creation through a local-first Medplum sync flow, including
-  common demographics, contact/address fields, sync status display, and retry.
-- Local FHIR workflow ledger for `Patient`, `ServiceRequest`,
-  `DiagnosticReport`, `Observation`, `DocumentReference`, `Binary`, and
-  `Provenance` mapping metadata.
-- Medplum page for supported FHIR resource inventory, Patient-centered
-  filtering, live Medplum JSON preview, local fallback preview, copy action,
-  and non-destructive retry for pending or failed local workflow records.
-- FHIR Order mode that builds and syncs a `ServiceRequest` linked to the synced
-  Patient.
-- Raw TCP reachability and MLLP ACK testing.
-- AP-side MLLP listener with start, stop, status, and configurable demo ACK.
-- Inbound support for `ADT^A04`, `ADT^A08`, and `ORM^O01`.
-- SQLite-backed demo queue for multiple records.
-- ECG JSON upload, validation, preview, and MRN matching.
-- PDF upload, validation, metadata preview, and HL7 result attachment return.
-- Selectable HL7 v2.5.1 `ORU^W01` or `ORU^R01` result generation.
-- ECG JSON waveform return as `ORU^W01` MA or NA waveform OBX segments.
-- ECG JSON aECG XML return as `ORU^R01` inline `OBX|ED`.
-- Base64-encoded PDF inline `OBX|ED` generation, with `OBX|RP` when a public
-  URL is supplied.
-- URL-based artifact return for hospital-facing HL7 demos, including multiple
-  public URLs carried through `OBX`.
-- Outbound ORU send, ACK inspection, error recording, and retry.
-- Mock FHIR-style Patient lookup extension.
-- Medplum FHIR API submission for selected-order ECG/PDF return testing with
-  `Binary + Observation + DocumentReference + DiagnosticReport` packaging.
-- GDT ECG order creation, GDT 2.1 `6302` export, `6310` result return, and
-  PDF/DICOM artifact import through a shared-folder bridge contract.
-
-## Healthcare Lab Console
-
-The app opens on a server-health dashboard for the local interoperability lab.
-The managed service registry is stored in the local SQLite demo database and is
-seeded with:
-
-| Service | Type |
-| --- | --- |
-| OIE | HL7 Engine |
-| Medplum | FHIR Server |
-| dcm4chee | DICOM Archive |
-| HL7Tester | Test Tool |
-
-Health status values are:
-
-- `Healthy`: configured checks are passing.
-- `Degraded`: some health information is still unavailable or partially
-  available.
-- `Down`: a required reachable endpoint failed.
-- `Unknown`: no check has run or no Phase 1 check is configured.
-
-Phase 1 health checks include real HTTP or TCP reachability when a server record
-has a base URL or host/port. Protocol checks use the same health response model
-but remain shallow smoke checks; deep HL7, FHIR, GDT, and DICOM validation is
-reserved for later work. Server detail pages show operation buttons such as
-Start, Stop, and Restart as disabled controls because real command execution is
-not implemented in this phase.
-
-The local dcm4chee profile is available through:
+The application follows a layered, protocol-oriented structure:
 
 ```text
-GET /api/dcm4chee/profile
-GET /api/dcm4chee/profile/diagnostics
+frontend/                   Browser templates, styles, views, API and state modules
+backend/api/                HTTP boundary and response mapping
+backend/services/           Workflow orchestration and coordination
+backend/domain/             Protocol-neutral and protocol-specific domain rules
+backend/mappers/            HL7, FHIR, GDT and DICOM transformations
+backend/clients/            External service transports
+backend/repositories/       SQLite workflow ledgers and persistence
+backend/runtime/            Background OIE result and GDT bridge listeners
+deploy/                     Supported Docker Compose runtime and CLI
 ```
 
-The default profile is named `local-dcm4chee` and matches the Docker lab
-defaults:
+Dependencies point inward: API and runtime adapters call services; services use
+domain models and explicit client/repository ports. See
+[Architecture and boundaries](docs/architecture.md) and
+[Project boundary](PROJECT_BOUNDARY.md) for the detailed ownership rules.
 
-| Field | Value |
-| --- | --- |
-| Display name | `dcm4chee Local Archive` |
-| Environment | `local-docker` |
-| Web UI URL | `http://127.0.0.1:8082/dcm4chee-arc/ui2` |
-| DIMSE host / port | `127.0.0.1:11112` |
-| Called AE title | `DCM4CHEE` |
-| Healthcare Lab calling AE title | `HEALTHCARE_LAB` |
-| MWL AE title | `WORKLIST` |
-| Default Scheduled Station AE Title | `ECG_AP` |
-| HL7 Patient sync host / port | `127.0.0.1:2575` on host, `dcm4chee:2575` from Docker |
-| HL7 Patient assigning authority | `local-dcm4chee` |
-| DICOMweb / MWL REST base URL | `http://127.0.0.1:8082/dcm4chee-arc/aets/WORKLIST/rs` |
-| Archive QIDO/WADO/STOW URL | `http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs` |
-| Study Instance UID root | `1.2.826.0.1.3680043.10.543` |
+## Quick Start with Docker
 
-The profile also includes HL7 ADT, QIDO-RS, WADO-RS, STOW-RS, viewer-link,
-auth, and TLS fields for Patient sync, MWL, verification, C-STORE
-reconciliation, and viewer-link workflows. The local default uses
-`DCM4CHEE_AUTH_MODE=none` and
-`DCM4CHEE_TLS_ENABLED=false`; that is only for the local lab and is not a
-production security profile.
-
-DICOM MWL order creation and verification use the dcm4chee MWL REST path:
-
-```text
-POST /dcm4chee-arc/aets/WORKLIST/rs/mwlitems
-GET /dcm4chee-arc/aets/WORKLIST/rs/mwlitems?...query...
-Content-Type: application/dicom+json
-```
-
-The archive QIDO/WADO/STOW application is exposed by the `DCM4CHEE` web app,
-but modality worklist REST is exposed by the `WORKLIST` web app in the local
-dcm4chee defaults. Healthcare Lab records the configured MWL AE and request URL
-in the PACS/MWL ledger so operators can distinguish wrong-AE failures from empty
-worklist results.
-
-Local DICOM Patient creation syncs Patient master data to dcm4chee first by
-sending HL7 `ADT^A04` over MLLP to the configured dcm4chee HL7 receiver. The
-ADT Patient ID and assigning authority match the MWL Patient ID and Issuer of
-Patient ID, so dcm4chee can accept later MWL item creation for that Patient.
-Healthcare Lab records Patient sync attempts separately from MWL attempts and
-keeps the local Patient available if the ADT sync fails. STOW-RS is reserved for
-real DICOM object upload, not for creating Patient master data.
-
-Healthcare Lab stores the local order first, then maintains a local PACS/MWL
-ledger that maps the Healthcare Lab order to dcm4chee identifiers. The canonical
-mapping stores Patient ID, Issuer of Patient ID, Accession Number, Requested
-Procedure ID, Scheduled Procedure Step ID, Study Instance UID, Worklist Label,
-profile/server namespace, sync status, retry count, and latest error details.
-Every create/read-back operation also keeps request/response audit history for
-debugging.
-
-After a successful MWL create, Healthcare Lab attempts a best-effort dcm4chee
-read-back query and stores any identifiers dcm4chee returned, generated, or
-normalized. Re-running sync for an order with a successful canonical mapping
-does not POST a duplicate MWL item. Failed or ambiguous retries reuse the stable
-local identifiers from the mapping so later dcm4chee studies can be matched back
-to the original local order by Study Instance UID, then Accession Number, then
-Requested Procedure ID plus Scheduled Procedure Step ID. If dcm4chee rejects the
-request because the patient does not exist, the local order remains available
-and the dcm4chee MWL sync state is recorded as `Patient missing`. If Patient ADT
-sync fails before MWL creation, Healthcare Lab does not POST the MWL item and
-keeps the Patient sync failure as the root cause.
-
-The DICOM order workspace can verify MWL queryability for a local order. The
-verification action queries dcm4chee MWL using the ledger identifiers and records
-the query criteria, endpoint, response status, matched identifiers, and
-diagnostics. Successful verification proves which MWL item was found; failed
-verification distinguishes connectivity/profile problems, missing patient
-preconditions, empty worklist responses, identifier mismatches, and ambiguous
-matches.
-
-AP C-STORE result reconciliation is operator-triggered from the Patient page.
-Use the DICOM action for a local patient to refresh dcm4chee results. Healthcare
-Lab queries the archive QIDO-RS study, series, and instance endpoints, reconciles
-returned metadata against the PACS/MWL ledger, and stores result rows under the
-patient. The first version is intentionally manual instead of a background
-poller so operators can verify AP metadata and dcm4chee endpoint behavior before
-automating refresh.
-
-Result reconciliation expects AP to preserve the MWL/order identifiers in the
-returned DICOM result when available: Study Instance UID, Accession Number,
-Patient ID, Issuer of Patient ID, Requested Procedure ID, and Scheduled Procedure
-Step ID. Matching prefers Study Instance UID, then Accession Number in the
-profile/server namespace with patient identity validation, then Requested
-Procedure ID plus Scheduled Procedure Step ID. Weak patient/modality/time-window
-signals are recorded as ambiguous unless there is exactly one local candidate.
-
-The patient DICOM Results section shows matched and unresolved results with
-modality, timestamps, Study UID, Accession Number, viewer links, retrieve links,
-and diagnostics. Expected diagnostics include `no_result`, `wrong_patient`,
-`missing_accession`, `duplicate`, `ambiguous`, `unlinked`, and `query_failed`.
-
-For repeatable production-like verification, use the SOP in
-[docs/dcm4chee-production-e2e-verification.md](docs/dcm4chee-production-e2e-verification.md).
-It covers live AP C-STORE verification and simulated AP PDF/DICOM return
-fixtures. The simulated path records AP-returned result rows with source
-`simulated_ap_return` so the Healthcare Lab UI can prove PDF artifact display,
-DICOM Study/Series/Instance display, and reconciliation status without waiting
-for a live AP run.
-
-The first Docker Desktop runtime scaffold for the Lab Console lives in
-[deploy/](deploy/README.md). It includes `docker-compose.yml` and the
-`deploy/lab.ps1` wrapper for local `status`, `start`, `stop`, `restart`,
-`smoke`, and `logs` operations.
-
-## v1.0.0 Docker Release
-
-Docker Compose is the supported end-user installation path. Download and
-extract the `v1.0.0` GitHub Release source archive, copy `.env.example` to
-`.env`, review the local credentials and folders, then start the lab:
+Docker Compose is the supported end-user installation path. The verified v1.0.0
+environment targets `linux/amd64` with Docker Desktop on Windows or an
+equivalent Linux Docker host.
 
 ```powershell
 Copy-Item .env.example .env
@@ -278,144 +108,68 @@ docker compose --env-file .env -f deploy\docker-compose.yml up -d
 docker compose --env-file .env -f deploy\docker-compose.yml ps
 ```
 
-Compose pulls the public `linux/amd64` application image from:
+Open Healthcare Lab at <http://127.0.0.1:5000>.
 
-```text
-ghcr.io/tzu-huang/healthcare-lab:1.0.0
+The Compose stack pulls `ghcr.io/tzu-huang/healthcare-lab:1.0.0` by default, so
+the host does not need Python or a source-code mount. Useful operational
+commands are also available through the PowerShell wrapper:
+
+```powershell
+.\deploy\lab.ps1 status
+.\deploy\lab.ps1 smoke all
+.\deploy\lab.ps1 logs lab-app -Lines 200
+.\deploy\lab.ps1 restart lab-app
+.\deploy\lab.ps1 stop all
 ```
 
-Users do not need Python or a source-code mount. `1.0.0` is immutable,
-`latest` follows the latest stable GitHub Release, and `edge` follows verified
-pushes to `main`. See [deploy/README.md](deploy/README.md) for operation and
-[docs/container-release.md](docs/container-release.md) for the verified image
-matrix, persistence, backup, upgrade, and rollback contract.
+See [Deployment runtime](deploy/README.md) for configuration, persistence,
+service-specific operations, troubleshooting, backup, and endpoint migration.
 
-> **Trusted-lab boundary:** this release is for a local machine or trusted
-> internal lab using `linux/amd64`. It is not a claim of public-Internet,
-> regulated production-healthcare, ARM, or multi-replica support. `lab-app`
-> mounts `/var/run/docker.sock` for Dashboard container controls, which grants
-> powerful access to the host Docker daemon. Do not run untrusted code or mount
-> production patient data in this environment.
+> `lab-app` mounts `/var/run/docker.sock` so the Dashboard can inspect and
+> control lab containers. Access to that socket is effectively Docker host
+> administration. Only run this stack in a trusted environment and use virtual
+> patient data.
 
-## Patient Page
+## Default Endpoints
 
-Use **Patient** to create local virtual patient records for the supported
-workflow modes:
+| Service or flow | Host endpoint | Container endpoint |
+| --- | --- | --- |
+| Healthcare Lab | `http://127.0.0.1:5000` | `lab-app:5000` |
+| OIE management HTTP | `http://127.0.0.1:18080` | `oie:8080` |
+| Healthcare Lab order to OIE | `127.0.0.1:6600` | `oie:6600` |
+| AP result ingress to OIE | `127.0.0.1:6661` | `oie:6661` |
+| OIE result to Healthcare Lab | not published by default | `lab-app:6665` |
+| Medplum API / FHIR | `http://127.0.0.1:8103` | `medplum:8103` |
+| Medplum web app | `http://127.0.0.1:3000` | `medplum-app:3000` |
+| dcm4chee web UI | `http://127.0.0.1:8082` | `dcm4chee:8080` |
+| dcm4chee DIMSE | `127.0.0.1:11112` | `dcm4chee:11112` |
+| dcm4chee HL7 receiver | `127.0.0.1:2575` | `dcm4chee:2575` |
 
-- Leave MRN blank to allocate the next persistent identifier from one global
-  sequence shared by HL7 v2, FHIR, GDT, and DICOM Patients, starting at
-  `MRN-000001`. A server-specific list can therefore contain sequence gaps when
-  intervening values belong to other Patient modes. The preview shows
-  `Generated on create` until the Patient is saved; the browser does not predict
-  or reserve an identifier.
-- Enter an MRN explicitly only when an integration test needs a deterministic
-  value. New explicit values are trimmed, uppercased, and must use `MRN-`
-  followed by at least six decimal digits. Normalized MRNs are unique across all
-  Patient modes and enforced by SQLite.
-- The automatic sequence survives application restarts and does not reuse an
-  identifier after Patient deletion. Recreating the demo database resets the
-  sequence.
+Published ports can be overridden in `.env`. Docker-internal integrations must
+continue to use service names and container ports rather than host loopback
+addresses.
 
-- **HL7 v2.5.1:** previews an `ADT^A04` payload for the local OIE workflow.
-- **FHIR R4:** previews a FHIR `Patient`, stores the local Patient first, then
-  creates or updates the paired FHIR workflow ledger record and attempts Medplum
-  sync.
-- **GDT 2.1:** emits the canonical MRN in field `3000`; any `GDT-PAT-*`
-  workflow identifier is retained only as internal legacy correlation metadata.
-- **DICOM:** previews patient module attributes for future DICOM-oriented
-  workflow work.
+## Configuration
 
-FHIR Patient rows show sync status, Medplum `Patient/<id>` reference, last sync
-metadata, and sync errors when available. `Pending sync` and `Sync failed` rows
-remain visible locally and can be retried without creating duplicate Medplum
-Patients because sync uses deterministic identifiers.
+Copy `.env.example` to `.env` and review it before starting the stack. The main
+configuration groups are:
 
-The canonical MRN maps to HL7 `PID-3`, the FHIR identifier system
-`urn:healthcare-lab:mrn`, GDT field `3000`, and DICOM Patient ID `(0010,0020)`.
-Medplum resource references, GDT workflow identifiers, DICOM Patient ID issuers,
-accession numbers, and DICOM UIDs remain separate identifiers and are labelled
-accordingly in the server consoles.
+- `LAB_APP_*` and `LAB_APP_IMAGE` — application host port and image selection.
+- `MEDPLUM_*` — Medplum runtime, OAuth client credentials, and public URLs.
+- `OIE_*` and `HLAB_RESULT_LISTENER_*` — OIE management, MLLP ingress, and
+  Healthcare Lab result-listener endpoints.
+- `DCM4CHEE_*` — DICOMweb, DIMSE, HL7, AE titles, authentication, and TLS.
+- `GDT_BRIDGE_*` — host-folder binding, import behavior, filename profile, and
+  watcher timing.
+- `OPENEMR_DB_*` — optional external OpenEMR database integration.
 
-## Order Page
+Keep secrets in the untracked `.env` file or the operator environment. The
+defaults are deliberately local-lab settings and do not provide production TLS,
+authentication, authorization, or audit controls.
 
-The app uses a left sidebar for primary navigation. The Dashboard remains
-focused on managed server health and operations, while **Patient**, **Order**,
-**OIE**, **Medplum**, and **GDT** provide the local interoperability workflows.
+## Local Development
 
-Use **Order** to create a local 12-lead ECG order from an existing local Patient
-record.
-
-For **HL7 v2.5.1** orders:
-
-- HL7 v2.5.1 is enabled for the MVP.
-- The generated `ORM^O01` preview includes `MSH`, `PID`, `PV1`, `ORC`, `TQ1`,
-  and `OBR`. The Scheduled Time input is emitted as both `TQ1-7` and `OBR-36`;
-  when omitted, it defaults to Requested Time.
-- Orders are stored in the local SQLite demo database with status, raw ORM
-  payload, and later ACK/send details.
-- Identifier mappings are `PID-3` for MRN, `PV1-19` for Visit Number, and
-  `ORC-2` / `OBR-2` for the placer Order ID. `PV1-1` remains the PV1 segment
-  Set ID and is not the Visit Number.
-- Local Orders displays Order ID, mode, MRN, Visit Number, patient name, code,
-  status, and Order Created At using an unambiguous Taipei timestamp.
-
-Use **OIE** to inspect local Patient ADT inventory and local Order ORM
-inventory. The Order inventory can send one selected ORM message to the
-configured OIE MLLP endpoint, defaulting to `localhost:6600` for direct local
-Flask runs and `oie:6600` in the Docker Compose lab, and stores the returned ACK
-code (`AA`, `AE`, or `AR`) or transport error.
-Patient-scoped OIE Order rows retain the same Order ID, MRN, Visit Number, code,
-status, and creation context, with ACK and sent time added for transmission
-operations.
-
-OIE-to-AP routing is intentionally outside this app scope. Configure downstream
-channels inside OIE when an integration demo needs received ORM messages routed
-to another application endpoint.
-
-For **FHIR R4** orders:
-
-- The selected Patient must already be a synced FHIR Patient with a Medplum
-  `Patient/<id>` reference.
-- The Order page exposes the scoped ServiceRequest form fields needed for the
-  ECG order workflow and renders a FHIR R4 `ServiceRequest` preview.
-- Creating the order stores a local order anchor, syncs the `ServiceRequest` to
-  Medplum, and does not create a separate worklist resource.
-- Local Orders shows the `ServiceRequest` sync status and Medplum reference or
-  error.
-
-GDT order creation is handled through the GDT workflow and bridge contract.
-DICOM order mode remains future work.
-
-## Medplum Console
-
-Select **Medplum** from the sidebar to inspect supported FHIR workflow
-resources. The page reads synced resource previews from live Medplum APIs when
-possible and joins local ledger metadata such as sync status, local identifiers,
-Medplum references, and last error.
-
-The Medplum page currently supports:
-
-- Inventory rows for `Patient`, `ServiceRequest`, `DiagnosticReport`,
-  `Observation`, and `DocumentReference`.
-- Patient-centered filtering through direct FHIR references such as `subject`,
-  and `patient`.
-- A selected Patient workspace with related ServiceRequest, DiagnosticReport,
-  Observation, and DocumentReference context when available.
-- A bottom JSON console that labels whether the preview came from Medplum live
-  data, local submitted JSON, or local fallback after a live fetch failure.
-- Non-destructive retry for local `Pending sync` and `Sync failed` records.
-
-The page does not expose destructive Medplum actions such as delete or arbitrary
-resource update.
-
-## Requirements
-
-- Python 3.10 or newer
-- Flask dependencies from `requirements.txt`
-- Mirth Connect `4.5.2` or another compatible MLLP endpoint
-- Virtual test data only
-
-## Local Setup
+Python 3.10 or newer is required for direct host development:
 
 ```powershell
 python -m venv .venv
@@ -425,254 +179,36 @@ Copy-Item .env.example .env
 python app.py
 ```
 
-Then edit `.env` and set the Medplum credentials you need for the FHIR demo.
+The development server binds to `127.0.0.1:5000` by default. Override
+`LAB_APP_HOST`, `LAB_APP_PORT`, or `HEALTHCARE_LAB_DB` when needed. Runtime data
+is otherwise stored in `instance/healthcare-lab.db`.
 
-Open:
-
-```text
-http://127.0.0.1:5000
-```
-
-The Flask server binds to loopback only. Set `LAB_APP_PORT` before startup to
-use another local UI port, for example:
-
-```powershell
-$env:LAB_APP_PORT = "5100"
-python app.py
-```
-
-Then open `http://127.0.0.1:5100`. Lab registry and operation history data is
-created locally in `instance/healthcare-lab.db` and is excluded from Git. Set
-`HEALTHCARE_LAB_DB` to override the path; `HL7_SIMULATOR_DB` is still accepted
-as a migration fallback.
-
-When running inside Docker, the Compose runtime sets `LAB_APP_HOST=0.0.0.0` so
-the host port mapping can reach the Flask server. Local direct startup keeps the
-safer loopback default unless you explicitly override `LAB_APP_HOST`.
-
-## Quick Demo
-
-Select **HL7 v2.5** from the landing view, then follow the AP workflow in order:
-
-1. **Listen for Hospital HL7:** start `Hospital -> AP Listener :6671`.
-2. **Review Incoming Queue:** use Mirth Connect to push `ADT^A04`, then confirm
-   the matching queue row is `WAITING_FOR_ECG`.
-3. **Upload ECG JSON or PDF:** upload
-   [examples/ecg-sample.json](examples/ecg-sample.json), a PDF report, or both.
-   The row becomes `READY_TO_SEND` after inbound HL7 context and at least one
-   result artifact are present.
-4. **Return ECG Result to Hospital:** configure
-   `AP -> Hospital Result Endpoint :6661`, choose `ORU^W01` or `ORU^R01`,
-   generate the HL7 result, and send it.
-5. **Inspect Selected Record:** confirm the row becomes `ACCEPTED` and review
-   the recorded `AA` ACK and attempt history.
-
-All generated HL7 v2 result messages use `MSH-12 = 2.5.1`. When ECG JSON is
-present, `ORU^W01` emits waveform observations using the selected MA
-timepoint-major or NA channel-major layout. `ORU^R01` emits a standard aECG XML
-payload in an inline `OBX|ED`. When PDF is present, generated result messages
-include an inline `OBX|ED` attachment with Base64 `application/pdf` content.
-PDF-only records return a minimal result with patient context and the PDF
-attachment.
-
-When a hospital-facing workflow uses public URLs for artifact delivery, the
-result uses `OBX|RP` instead of embedding that same payload inline.
-
-The **Review Incoming Queue** card also provides demo cleanup controls:
-
-- **Remove All** clears all queued demo records after confirmation, without
-  stopping `Hospital -> AP Listener :6671`.
-- **Delete** appears on an individual row only after the result has been
-  accepted with an `AA` ACK.
-
-## Medplum FHIR Demo
-
-Select **HL7 FHIR** from the landing view to test against a Medplum FHIR server.
-Enter the Medplum FHIR base URL, such as:
-
-```text
-http://localhost:8103/fhir/R4
-```
-
-The connection card now shows server-side Medplum auth status. Configure the
-Flask server with `MEDPLUM_CLIENT_ID` and `MEDPLUM_CLIENT_SECRET` so it can
-obtain access tokens using OAuth client credentials and refresh them
-automatically when needed. The local dev server now loads these values from
-`.env` in the repo root before Flask starts.
-
-Optional auth-related environment variables:
-
-- `MEDPLUM_SCOPE`
-- `MEDPLUM_TOKEN_URL`
-- `MEDPLUM_AUTH_GRACE_SECONDS`
-
-When submitting ECG JSON as an external file link, set **File Base URL** to a
-server-reachable HTTPS origin such as an ngrok tunnel or your reverse-proxy
-domain. Do not leave this as `localhost` unless the FHIR server is running on
-the same host and can resolve that loopback address.
-
-For a stable deployment, do not expose the Flask dev server directly on
-`:8103`. Put Nginx or another reverse proxy in front of it so external clients
-use standard `80/443`, then set `ECG_FILE_BASE_URL` to that public HTTPS
-origin. The app now trusts forwarded host and scheme headers from one proxy
-layer, so generated URLs can stay on `https://your-domain/...` instead of
-falling back to the internal Flask host/port.
-
-Example:
-
-```text
-External users / FHIR server -> https://ecg.example.com/storage/...
-Nginx :443 -> http://127.0.0.1:5000
-Flask app -> stores files locally and publishes URLs with ECG_FILE_BASE_URL
-```
-
-Use **GET ServiceRequest** to fetch recent order data with included patient and
-order context:
-
-```text
-ServiceRequest?_count=20&_sort=-_lastUpdated&_include=ServiceRequest:subject&_include=ServiceRequest:encounter&_include=ServiceRequest:requester&_include=ServiceRequest:performer
-```
-
-The UI displays the raw `ServiceRequest` bundle directly so the test user can
-inspect the returned FHIR content as-is. Then choose one returned
-`ServiceRequest` from the summary list and upload ECG JSON, a PDF report, or
-both:
-
-- The fetched `ServiceRequest` bundle is still kept in raw form for debugging,
-  but the UI shows a simplified selectable list with patient and order details.
-- **Remove** in this view only removes an item from the current UI list. It does
-  not delete any FHIR resources on the server.
-- ECG JSON uploads are converted into structured ECG `Observation` resources and
-  are also preserved byte-for-byte as a FHIR `Binary` resource with
-  `contentType = application/json`.
-- Raw ECG JSON and optional PDF uploads are indexed through a
-  patient/order-linked `DocumentReference` so they remain easy to inspect from
-  the FHIR side.
-- The final selected-order clinical result is submitted as a
-  `DiagnosticReport` linked to both the selected `Patient` and the selected
-  `ServiceRequest`.
-
-The UI displays the created `DiagnosticReport`, related structured resources,
-and raw Medplum response details for the submission.
-
-For newer Patient-centered FHIR work, use the **Patient**, **Order**, and
-**Medplum** sidebar pages:
-
-1. Create a Patient in FHIR mode and confirm the row reaches `Synced`.
-2. Create an Order in FHIR mode from that synced Patient.
-3. Open **Medplum** to inspect the Patient, ServiceRequest, and raw live FHIR
-   JSON.
-
-## Mirth Connect Channel Setup
-
-Create these two channels in Mirth Connect Administrator before running the
-end-to-end demo.
-
-### Channel 1: Push Hospital HL7 to the AP
-
-1. Open **Channels**, then select **New Channel**.
-2. Set the channel name to `HOSPITAL_PUSH_TO_AP`.
-3. Set the **Source** connector type to `Channel Reader`.
-4. Open **Destinations**, then set the connector type to `TCP Sender`.
-5. Set **Remote Address** to the Windows AP simulator IP, such as
-   `192.168.30.52`.
-6. Set **Remote Port** to `6671`.
-7. Select `MLLP` transmission mode and use a `5000` ms timeout.
-8. Save and deploy the channel.
-
-The AP UI must already show:
-
-```text
-Hospital -> AP Listener :6671
-Listening 0.0.0.0:6671
-```
-
-To send a hospital-side test message:
-
-1. In Mirth Connect Administrator, open **Channels**.
-2. Select `HOSPITAL_PUSH_TO_AP`.
-3. Select **Send Message**.
-4. Paste the following virtual patient message and send it:
-
-```hl7
-MSH|^~\&|HOSPITAL||ECG_AP||20260602150000||ADT^A04^ADT_A01|ADT002|P|2.5.1||||||UNICODE UTF-8
-PID|1||QT_Athlete_003_Borderline2||Brooks^Caleb||20100228|M
-```
-
-The AP queue should show `WAITING_FOR_ECG`. Upload
-[examples/ecg-sample.json](examples/ecg-sample.json) to change the record to
-`READY_TO_SEND`.
-
-### Channel 2: Receive AP ECG Results
-
-1. Create another channel named `HOSPITAL_RECEIVE_ORU`.
-2. Set the **Source** connector type to `TCP Listener`.
-3. Set **Listener Port** to `6661`.
-4. Select server mode, `MLLP` transmission mode, and `UTF-8` encoding.
-5. Keep the default response behavior so Mirth returns an HL7 ACK on the same
-   connection.
-6. Save and deploy the channel.
-
-In the AP UI, configure:
-
-```text
-AP -> Hospital Result Endpoint :6661
-Hospital Host: <Ubuntu-IP>
-Hospital Port: 6661
-```
-
-Choose a result profile, select **Generate HL7 Result**, then select **Send ORU
-to Hospital** and confirm the selected record reports an `AA` ACK. For the full
-Ubuntu Docker setup and connectivity checks, see
-[Mirth Connect setup](docs/mirth-connect-setup.md).
-
-## Advanced Tools
-
-Expand **Advanced Tools** only when troubleshooting or demonstrating optional
-behavior. The local loopback sender uses:
-
-```text
-AP Simulator Raw Sender -> 127.0.0.1:6671 -> AP Simulator Listener
-```
-
-This sends the simulator's test `ADT^A04` message back to itself. It does not
-represent the hospital production flow. Advanced Tools also contains the
-`AA` / `AE` / `AR` ACK simulation, raw ORU editor, session log, and mock
-Patient Pull lookup.
-
-## Documentation
-
-- [Architecture and boundaries](docs/architecture.md)
-- [Mirth Connect setup](docs/mirth-connect-setup.md)
-- [End-to-end demo walkthrough](docs/demo-walkthrough.md)
-- [ECG hospital integration research](docs/ecg-hl7-integration-research.md)
-- [GDT bridge MVP](docs/gdt-bridge-mvp.md)
-- [HL7 ORU PDF validation tool](docs/hl7-oru-pdf-validation.md)
-- [Reverse proxy notes](docs/reverse-proxy-nginx.md)
-
-## Tests
+Run the automated suite with:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile app.py backend\app_factory.py backend\application_composition.py backend\application_defaults.py backend\dashboard_services.py backend\lab_operations.py backend\gdt_adapter.py
-node --check frontend\static\app.js
 ```
 
-## Demo Limitations
+## Documentation
 
-- SQLite is demo persistence, not a production message queue.
-- MRN uniqueness is enforced for new exact identifier values inside one local
-  demo database. Existing duplicate demo rows are not silently renumbered, and
-  enterprise assigning-authority or MPI reconciliation is out of scope.
-- MRN matching uses ECG `patient.mrn == HL7 PID-3` without assigning authority
-  or order-ID matching.
-- Current patient-name reconciliation is incomplete. Returned names may not yet
-  match the hospital-sent demographics in every flow.
-- ECG observation identifiers are placeholders that must be agreed with each
-  hospital.
-- The mock Patient endpoint is not a complete FHIR server.
-- HL7 v2 waveform and aECG returns are lab interoperability profiles.
-  Production ECG waveform exchange should prefer DICOM ECG Waveform Storage
-  when PACS is available.
-- TLS, authentication, authorization, audit logging, and production patient
-  data handling are out of scope.
+- [User handbook — Traditional Chinese](docs/handbook/USER_HANDBOOK.zh-TW.md)
+- [User handbook — English](docs/handbook/USER_HANDBOOK.en.md)
+- [Deployment runtime](deploy/README.md)
+- [Container release and operations](docs/container-release.md)
+- [Architecture and boundaries](docs/architecture.md)
+- [OIE live verification runbook](docs/oie-live-verification-runbook.md)
+- [dcm4chee end-to-end verification](docs/dcm4chee-production-e2e-verification.md)
+- [GDT bridge MVP](docs/gdt-bridge-mvp.md)
+- [Mirth Connect / OIE setup](docs/mirth-connect-setup.md)
+- [Release notes: v1.0.0](docs/releases/v1.0.0.md)
+
+## Scope and Limitations
+
+- Virtual lab data only; do not use production patient information.
+- SQLite is a single-instance workflow ledger, not a production message queue.
+- The supported release platform is `linux/amd64`; ARM and multi-replica
+  deployment are outside the verified matrix.
+- OIE, FHIR, GDT, and DICOM workflows implement scoped interoperability lab
+  profiles, not complete protocol or clinical-system conformance.
+- Public-Internet hardening, built-in TLS, user authentication, authorization,
+  and regulated audit controls are outside v1.0.0 scope.
