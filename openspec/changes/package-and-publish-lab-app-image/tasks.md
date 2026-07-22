@@ -22,10 +22,10 @@
 
 ## 4. Operator Documentation
 
-- [ ] 4.1 Update the root and deployment README files with the Docker-only installation path, public pull/Compose commands, supported `linux/amd64` platform, configuration, ports, and health verification.
-- [ ] 4.2 Document persistence, backup, upgrade, rollback, immutable versus moving tags, and the verified third-party version matrix.
-- [ ] 4.3 Add a prominent trusted-local/internal-lab boundary and Docker socket host-control warning, and state that public-Internet, regulated production, ARM, and multi-replica support are not claimed.
-- [ ] 4.4 Add `v1.0.0` release notes/checklist covering artifacts, image tags, source revision, clean-environment smoke verification, and post-publication checks without publishing the release during implementation.
+- [x] 4.1 Update the root and deployment README files with the Docker-only installation path, public pull/Compose commands, supported `linux/amd64` platform, configuration, ports, and health verification.
+- [x] 4.2 Document persistence, backup, upgrade, rollback, immutable versus moving tags, and the verified third-party version matrix.
+- [x] 4.3 Add a prominent trusted-local/internal-lab boundary and Docker socket host-control warning, and state that public-Internet, regulated production, ARM, and multi-replica support are not claimed.
+- [x] 4.4 Add `v1.0.0` release notes/checklist covering artifacts, image tags, source revision, clean-environment smoke verification, and post-publication checks without publishing the release during implementation.
 
 ## 5. Verification and Release Readiness
 

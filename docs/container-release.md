@@ -1,5 +1,19 @@
 # Healthcare Lab Container Release
 
+## Image tags
+
+| Tag | Meaning |
+| --- | --- |
+| `1.0.0` | Immutable v1.0.0 application image |
+| `1.0` / `1` | Moving aliases for the newest stable compatible release |
+| `latest` | Newest stable published GitHub Release |
+| `edge` | Newest verified `main` build; not a stable release |
+| `sha-<commit>` | Traceable image for one source revision |
+
+The public registry name is `ghcr.io/tzu-huang/healthcare-lab`. Pull requests
+build and test without publishing. A failed `main` or release verification does
+not update tags, and later `main` pushes never repoint `1.0.0`.
+
 ## v1.0.0 verified image matrix
 
 The release Compose defaults identify every third-party image by both its
@@ -34,3 +48,41 @@ Before an upgrade, stop `lab-app` and copy `/app/instance` plus the configured
 GDT bridge host folder to operator-controlled backup storage. Do not rely on an
 image rollback to reverse a database migration: restore the matching instance
 backup when the older application schema is not forward-compatible.
+
+## Backup, upgrade, and rollback
+
+Create a backup directory, stop only `lab-app`, and copy its instance data plus
+the host-side GDT bridge folder:
+
+```powershell
+New-Item -ItemType Directory -Force backup\v1.0.0
+.\deploy\lab.ps1 stop lab-app
+docker compose --env-file .env -f deploy\docker-compose.yml cp lab-app:/app/instance backup\v1.0.0\instance
+Copy-Item -Recurse instance\gdt-bridge backup\v1.0.0\gdt-bridge
+```
+
+To upgrade, set `LAB_APP_IMAGE` in `.env` to the target immutable tag, pull it,
+and recreate only `lab-app`:
+
+```powershell
+docker compose --env-file .env -f deploy\docker-compose.yml pull lab-app
+.\deploy\lab.ps1 restart lab-app
+Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
+```
+
+To roll back, stop `lab-app`, restore the backup when schema compatibility
+requires it, select the previous immutable `LAB_APP_IMAGE`, and recreate the
+container. Keep `.env` and all secrets outside backup artifacts intended for
+publication.
+
+## Supported boundary
+
+v1.0.0 supports Docker Compose with `linux/amd64` on a trusted local machine or
+internal lab. It does not claim public-Internet, regulated production-healthcare,
+ARM, or multi-replica support. HTTPS termination, application authentication,
+and public ingress are outside this release.
+
+`lab-app` retains the `/var/run/docker.sock` mount for Dashboard container
+inspection and control. A process with that access can administer the host
+Docker daemon. Do not run untrusted images, expose the application directly to
+untrusted networks, or mount production patient data.

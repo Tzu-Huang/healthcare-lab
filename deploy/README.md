@@ -1,7 +1,37 @@
 # Lab Deployment Runtime
 
-This folder contains the first local runtime scaffold for the Healthcare
-Interoperability Lab Console. It targets Docker Desktop on Windows.
+This folder contains the supported v1.0.0 Docker runtime for the Healthcare
+Interoperability Lab Console. It targets `linux/amd64` containers through
+Docker Desktop on Windows or an equivalent trusted Linux Docker host.
+
+## Release Quick Start
+
+Download and extract the GitHub Release source archive so the tracked Compose
+and environment-template files are available. No host Python installation and
+no application source mount are required.
+
+```powershell
+Copy-Item .env.example .env
+New-Item -ItemType Directory -Force instance\gdt-bridge\inbox
+New-Item -ItemType Directory -Force instance\gdt-bridge\outbox
+docker pull ghcr.io/tzu-huang/healthcare-lab:1.0.0
+docker compose --env-file .env -f deploy\docker-compose.yml up -d
+docker compose --env-file .env -f deploy\docker-compose.yml ps
+Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
+```
+
+The release image is public, so `docker pull` does not require a GitHub token.
+Use `LAB_APP_IMAGE` in `.env` only for an intentional immutable-version
+selection or local build. See [the container release guide](../docs/container-release.md)
+for tags, pinned dependencies, persistence, backup, upgrade, and rollback.
+
+> **Security boundary:** `lab-app` mounts `/var/run/docker.sock` so its
+> Dashboard can inspect and control Compose services. Access to that socket is
+> effectively host Docker administration. Run this stack only on a trusted
+> local machine or internal lab; do not expose it directly to the public
+> Internet or use production patient data. v1.0.0 does not claim ARM,
+> multi-replica, regulated production, built-in TLS, or application
+> authentication support.
 
 ## Services
 
@@ -155,10 +185,14 @@ Medplum API server and Web UI companion.
 
 - Docker Desktop is installed and running in Linux container mode.
 - `docker compose` is available on `PATH`.
+- The supported application platform is `linux/amd64`.
+- Docker Compose is the supported end-user startup path; host Python startup is
+  for development only.
 - The OIE runtime uses `nextgenhealthcare/connect:4.5.2` by default, matching
   the Open Integration Engine / Mirth-style naming used elsewhere in this repo.
-- Image names and ports are intentionally overridable through environment
-  variables before running Compose.
+- Release defaults are pinned by digest. Image names and ports remain
+  intentionally overridable through environment variables, but overrides are
+  outside the verified v1.0.0 matrix.
 - The runtime is for local lab data only. Do not mount production patient data.
 
 ## Default Ports
