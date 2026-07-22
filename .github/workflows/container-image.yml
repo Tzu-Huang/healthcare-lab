@@ -66,6 +66,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Validate stable release contract
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: |
+          if [[ ! "${RELEASE_TAG}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must be a stable SemVer such as v1.0.0." >&2
+            exit 1
+          fi
+          if [[ "${REPOSITORY_VISIBILITY}" != "public" ]]; then
+            echo "Stable releases require a public repository so GHCR images remain anonymous-readable." >&2
+            exit 1
+          fi
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
@@ -73,15 +88,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Refuse to overwrite immutable release version
+      - name: Guard immutable release version
+        id: release_guard
         if: github.event_name == 'release'
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           VERSION="${RELEASE_TAG#v}"
-          if docker buildx imagetools inspect "${IMAGE_NAME}:${VERSION}" >/dev/null 2>&1; then
-            echo "Refusing to overwrite immutable image tag ${IMAGE_NAME}:${VERSION}." >&2
-            exit 1
+          if docker pull "${IMAGE_NAME}:${VERSION}" >/dev/null 2>&1; then
+            EXISTING_REVISION="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${IMAGE_NAME}:${VERSION}")"
+            if [[ "${EXISTING_REVISION}" != "${GITHUB_SHA}" ]]; then
+              echo "Refusing to overwrite ${IMAGE_NAME}:${VERSION}; it belongs to revision ${EXISTING_REVISION}." >&2
+              exit 1
+            fi
+            echo "Release image already matches ${GITHUB_SHA}; skipping the idempotent publish."
+            echo "skip_publish=true" >> "${GITHUB_OUTPUT}"
           fi
 
       - name: Derive image tags and labels
@@ -101,6 +122,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Build and publish linux/amd64 image
+        if: steps.release_guard.outputs.skip_publish != 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -112,10 +134,11 @@ jobs:
             VCS_REF=${{ github.sha }}
             VERSION=${{ github.event_name == 'release' && github.event.release.tag_name || 'edge' }}
 
-      - name: Ensure the GHCR package is public
+      - name: Verify anonymous GHCR access
+        if: github.event_name == 'release'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >-
-          gh api --method PATCH
-          /user/packages/container/healthcare-lab
-          -f visibility=public
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          docker logout ghcr.io
+          docker buildx imagetools inspect "${IMAGE_NAME}:${VERSION}" >/dev/null

@@ -40,14 +40,29 @@ class ContainerWorkflowContractTests(unittest.TestCase):
             "type=raw,value=latest",
         ):
             self.assertIn(contract, self.workflow)
-        self.assertIn("Ensure the GHCR package is public", self.workflow)
-        self.assertIn("/user/packages/container/healthcare-lab", self.workflow)
-        self.assertIn("visibility=public", self.workflow)
-
-    def test_release_build_uses_release_ref_and_refuses_version_overwrite(self):
-        self.assertIn("github.event.release.tag_name || github.sha", self.workflow)
-        self.assertIn("Refuse to overwrite immutable release version", self.workflow)
+        self.assertIn("Verify anonymous GHCR access", self.workflow)
+        self.assertIn("docker logout ghcr.io", self.workflow)
         self.assertIn("docker buildx imagetools inspect", self.workflow)
+        self.assertNotIn("gh api --method PATCH", self.workflow)
+
+    def test_release_contract_is_validated_before_registry_mutation(self):
+        self.assertIn("Validate stable release contract", self.workflow)
+        self.assertIn('=~ ^v?[0-9]+\\.[0-9]+\\.[0-9]+$', self.workflow)
+        self.assertIn("REPOSITORY_VISIBILITY", self.workflow)
+        self.assertIn('!= "public"', self.workflow)
+        self.assertLess(
+            self.workflow.index("Validate stable release contract"),
+            self.workflow.index("Log in to GitHub Container Registry"),
+        )
+
+    def test_release_build_uses_release_ref_and_is_idempotent(self):
+        self.assertIn("github.event.release.tag_name || github.sha", self.workflow)
+        self.assertIn("Guard immutable release version", self.workflow)
+        self.assertIn('docker pull "${IMAGE_NAME}:${VERSION}"', self.workflow)
+        self.assertIn("org.opencontainers.image.revision", self.workflow)
+        self.assertIn('"${EXISTING_REVISION}" != "${GITHUB_SHA}"', self.workflow)
+        self.assertIn('echo "skip_publish=true"', self.workflow)
+        self.assertIn("steps.release_guard.outputs.skip_publish != 'true'", self.workflow)
         self.assertIn('VERSION="${RELEASE_TAG#v}"', self.workflow)
 
     def test_required_verification_precedes_publication(self):
