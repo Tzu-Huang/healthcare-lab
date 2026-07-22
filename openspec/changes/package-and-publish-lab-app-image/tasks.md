@@ -14,11 +14,11 @@
 
 ## 3. GitHub Image Automation
 
-- [ ] 3.1 Add workflow-policy tests or static checks for pull-request validation, least-privilege permissions, allowed publication events, public GHCR naming, and semantic-version tag derivation.
-- [ ] 3.2 Add pull-request automation that runs required product tests and builds the `linux/amd64` image without publishing.
-- [ ] 3.3 Add successful-`main` publication of mutable `edge` and immutable commit-SHA tags, with no tag update after failed verification.
-- [ ] 3.4 Add stable GitHub Release publication of semantic-version aliases, `latest`, commit-SHA, and OCI metadata while excluding drafts and prereleases from stable publication.
-- [ ] 3.5 Validate that `v1.0.0` cannot be overwritten by a later `main` build and that publishing jobs use only the package-write permission and credentials they require.
+- [x] 3.1 Add workflow-policy tests or static checks for pull-request validation, least-privilege permissions, allowed publication events, public GHCR naming, and semantic-version tag derivation.
+- [x] 3.2 Add pull-request automation that runs required product tests and builds the `linux/amd64` image without publishing.
+- [x] 3.3 Add successful-`main` publication of mutable `edge` and immutable commit-SHA tags, with no tag update after failed verification.
+- [x] 3.4 Add stable GitHub Release publication of semantic-version aliases, `latest`, commit-SHA, and OCI metadata while excluding drafts and prereleases from stable publication.
+- [x] 3.5 Validate that `v1.0.0` cannot be overwritten by a later `main` build and that publishing jobs use only the package-write permission and credentials they require.
 
 ## 4. Operator Documentation
 
