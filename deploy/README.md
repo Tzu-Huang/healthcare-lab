@@ -202,14 +202,19 @@ Channels therefore use service endpoints such as `lab-app:6665`; a host or AP
 outside Docker uses the separately published host port. Changing a published
 port does not change the container endpoint.
 
+Keep the dcm4chee DIMSE and HL7 hosts set to `dcm4chee` and its DICOMweb URLs
+on `http://dcm4chee:8080` for Compose. Inside lab-app, `127.0.0.1` refers to
+lab-app itself. Only the browser-facing `DCM4CHEE_WEB_UI_URL` uses the
+published host port by default.
+
 | Flow / service | Docker-network endpoint | Host publication |
 | --- | --- | --- |
 | Lab app UI | `lab-app:5000` | `LAB_APP_PORT` (default `5000`) |
 | HLAB order to OIE | `oie:6600` | `OIE_ORDER_INGRESS_HOST_PORT` (default `6600`) |
 | AP result to OIE | `oie:6661` | `OIE_AP_RESULT_INGRESS_HOST_PORT` (default `6661`) |
 | OIE result to HLAB | `lab-app:6665` via `HLAB_RESULT_LISTENER_PORT` | none by default |
-| OIE Management HTTP | `oie:8080` | `OIE_HTTP_PORT` (default `18080`) |
-| OIE Management HTTPS | `oie:8443` | `OIE_HTTPS_PORT` (default `10443`) |
+| OIE Management HTTP | `oie:8080` | `OIE_HTTP_PORT` (default `8080`) |
+| OIE Management HTTPS | `oie:8443` | `OIE_HTTPS_PORT` (default `8443`) |
 | Medplum FHIR/API | `medplum:8103` | `MEDPLUM_PORT` (default `8103`) |
 | Medplum Web UI | `medplum-app:3000` | `MEDPLUM_APP_PORT` (default `3000`) |
 | dcm4chee UI | `dcm4chee:8080` | `DCM4CHEE_HTTP_PORT` (default `8082`) |

@@ -83,7 +83,7 @@ docker info --format 'Server={{.ServerVersion}} OSType={{.OSType}} Arch={{.Archi
 開始安裝前另確認：
 
 - 可連線至 GHCR 及第三方 image registries。
-- 預設 host ports 5000、6600、6661、18080、10443、8103、3000、8082、11112、2575 未被其他程式占用。
+- 預設 host ports 5000、6600、6661、8080、8443、8103、3000、8082、11112、2575 未被其他程式占用。
 - 需要 FHIR sync 時，已取得 Medplum OAuth client ID 與 secret。
 - 已準備 GDT host folder；若使用外部 AP (QHAP)，已確認 Docker host IP、firewall 與必要 endpoints。
 - 僅使用虛擬測試資料。
@@ -141,6 +141,8 @@ docker info --format 'Server={{.ServerVersion}} OSType={{.OSType}} Arch={{.Archi
    docker compose --env-file .env -f deploy\docker-compose.yml ps
    Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
    ```
+
+   `dcm4chee-storage-init` 是一次性初始化 service：它會先建立 configured archive storage directory，將目錄設為 `wildfly:wildfly`、權限 `0775`，成功後才允許 `dcm4chee` 啟動。`docker compose ps -a` 顯示它為 `Exited (0)` 是正常狀態；非零 exit code 才代表 archive storage 初始化失敗。
 
 預期首頁回傳 HTTP 200，必要 containers 為 running/healthy。再執行下列命令確認實際 image，不可只看 container 名稱：
 
@@ -211,7 +213,7 @@ docker compose --env-file .env -f deploy\docker-compose.yml config --quiet
 
 `gdt-bridge`、`hl7tester` 與 `gdt-hospital` 是 wrapper 中對應到 `lab-app` container 的 logical service names。`medplum` 同時對應 Medplum API 與 Web UI。
 
-介面預設位置：Healthcare Lab `http://127.0.0.1:5000`、OIE HTTP `http://127.0.0.1:18080`、Medplum UI `http://127.0.0.1:3000`、dcm4chee UI `http://127.0.0.1:8082/dcm4chee-arc/ui2`。
+介面預設位置：Healthcare Lab `http://127.0.0.1:5000`、OIE HTTP `http://127.0.0.1:8080`、Medplum UI `http://127.0.0.1:3000`、dcm4chee UI `http://127.0.0.1:8082/dcm4chee-arc/ui2`。
 
 ### Ready-for-use 驗證
 
@@ -695,6 +697,8 @@ Archive -> QIDO/WADO (DCM4CHEE) -> reconciliation
 4. 確認 `Reconciliation: Matched`。系統優先以 Study Instance UID 強比對；其次以同一 server/profile namespace 的 Accession Number；再其次以 RP ID＋SPS ID。只有弱識別碼、跨 Patient 衝突或多個候選時必須維持 unresolved／ambiguous，不得自動附加至任意 Order。
 5. 展開 Study、Series、Instance 階層，核對 Study／Series／SOP Instance UIDs、modality、instance count 與時間。`Open Viewer` 用於檢視 archive 內容；`Copy Retrieve` 複製 retrieval reference。兩者皆不會改變 reconciliation。
 
+若 AP 顯示 `C-STORE returned unknown status: 0x110`，`0x110` 即 DICOM `0x0110 Processing Failure`，只表示 archive 處理失敗，不足以判定 AE 未授權。先在同一時間點的 dcm4chee server log 查找 `errorComment`／`Caused by`；若為 `java.nio.file.AccessDeniedException: /storage/fs1`，代表 dcm4chee 已接受 Association 與 C-STORE request，但 WildFly 無法寫入 archive storage。相較之下，AE policy／授權問題通常會在 C-STORE 前拒絕 Association，或明確回傳 `0x0124 Refused: Not Authorized`；應以 AP 與 server log 的實際 response 判斷。Compose 會在啟動時透過 `dcm4chee-storage-init` 自動修正 configured storage directory；修復後重新上傳，成功 response 應為 `status=0H`。
+
 ### 狀態判讀與復原
 
 | 顯示 | 意義 | 操作 |
@@ -769,6 +773,7 @@ Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
 | FHIR `Sync failed` | persisted Medplum `baseUrl`、OAuth、`OperationOutcome`；Docker 應為 `http://medplum:8103/fhir/R4` | 修正 inventory/credential後 Retry 同一 ledger record；不要建立 duplicate resource |
 | GDT file 未 import | bridge mount、`inbox/`／`outbox/` 方向、filename profile、watcher、byte lengths、`processing/archive/error` disposition | 等待 file 穩定後 manual import或啟動 watcher；保留 raw 6310，不可重放已處理檔案 |
 | DICOM Patient／MWL 失敗 | ADT ACK、`dcm4chee:2575`、`WORKLIST` REST read-back、stable identifiers | 先修復 Patient sync；MWL retry 前先 query/read-back，避免 duplicate POST |
+| AP C-STORE 回傳 `0x0110`／`110H` | 同一時間點的 dcm4chee `server.log`、`errorComment`／`Caused by`；若有 `AccessDeniedException`，檢查 configured storage directory | `0x0110` 是一般 processing failure，不等同 AE 未授權。若為 `/storage/fs1` 權限問題，確認 `dcm4chee-storage-init` 為 `Exited (0)`，且目錄為 `wildfly:wildfly`、`0775`；修復後重傳同一 instance，不可刪除 archive volume |
 | DICOM result unmatched | Patient ID/issuer、Study UID、Accession、RP/SPS、server/profile namespace | 修正 mapping後 refresh/reconcile；不可依「最新 Order」猜測 |
 
 ### 選擇最小復原操作
@@ -908,8 +913,8 @@ docker compose --env-file .env -f deploy\docker-compose.yml port <service> <cont
 | AP Result → OIE | `oie:6661` | `<Docker-host-IP>:6661` | Host port：`OIE_AP_RESULT_INGRESS_HOST_PORT`；Compose 明確將預設值發布於 `0.0.0.0`。 |
 | OIE Result → Healthcare Lab | `lab-app:6665` | 預設不發布至 host | Listener：`HLAB_RESULT_LISTENER_HOST`／`HLAB_RESULT_LISTENER_PORT`；OIE 透過 Docker network 連線。Deprecated `OIE_MLLP_RESULT_*` aliases 只影響此 listener。 |
 | OIE Order → AP | `<AP-address>:6671` | AP-owned listener，通常為 `<AP-IP>:6671` | Release bundle 不提供或 host-publish AP service。OIE 的 `expose: 6671` 不會建立 external listener。 |
-| OIE HTTP | `http://oie:8080` | `http://127.0.0.1:18080` | Host port：`OIE_HTTP_PORT`。 |
-| OIE HTTPS | `https://oie:8443` | `https://127.0.0.1:10443` | Host port：`OIE_HTTPS_PORT`；trust behavior 取決於 deployed certificate。 |
+| OIE HTTP | `http://oie:8080` | `http://127.0.0.1:8080` | Host port：`OIE_HTTP_PORT`。 |
+| OIE HTTPS | `https://oie:8443` | `https://127.0.0.1:8443` | Host port：`OIE_HTTPS_PORT`；trust behavior 取決於 deployed certificate。 |
 | Medplum FHIR R4 API | `http://medplum:8103/fhir/R4` | `http://127.0.0.1:8103/fhir/R4` | Host port：`MEDPLUM_PORT`。Healthcare Lab sync 的 persisted server inventory 必須使用 Docker URL，不可使用 browser/public URL。 |
 | Medplum web app | `http://medplum-app:3000` | `http://127.0.0.1:3000` | Host port：`MEDPLUM_APP_PORT`；browser-side API base 為 `MEDPLUM_PUBLIC_BASE_URL`。 |
 | dcm4chee web UI | `http://dcm4chee:8080/dcm4chee-arc/ui2` | `http://127.0.0.1:8082/dcm4chee-arc/ui2` | Host port：`DCM4CHEE_HTTP_PORT`；operator link 為 `DCM4CHEE_WEB_UI_URL`。 |
@@ -969,12 +974,13 @@ docker compose --env-file .env -f deploy\docker-compose.yml port <service> <cont
 
 | Variable(s) | 必填 | Release default／example | 用途 | 生效操作 |
 | --- | --- | --- | --- | --- |
+| `DCM4CHEE_STORAGE_DIR` | Archive storage 必填 | `/storage/fs1` | LDAP archive storage path 與 `dcm4chee-storage-init` 初始化目標；必須位於掛載至 `/storage` 的 archive volume 內。 | 首次部署前決定且已有資料後不可直接改路徑。既有 LDAP 可能不會因環境變數改變而重寫 storage 設定；改路徑也不會搬移舊 DICOM objects。任何變更都必須先暫停 AP、備份一致的 archive volume／database／LDAP，依 dcm4chee 支援程序遷移並驗證後才能恢復。 |
 | `DCM4CHEE_PROFILE_NAME`、`DCM4CHEE_DISPLAY_NAME`、`DCM4CHEE_ENVIRONMENT_NAME` | DICOM workflow 必填 | `local-dcm4chee`、`dcm4chee Local Archive`、`local-docker` | Stable profile identity 與 operator labels。 | Recreate `lab-app`；mapping 使用其 namespace，不可任意改名。 |
 | `DCM4CHEE_WEB_UI_URL` | Operator link 需要 | `http://127.0.0.1:8082/dcm4chee-arc/ui2` | 只供 host/browser 使用的 URL。 | Recreate `lab-app`；從 operator host 驗證 link。 |
-| `DCM4CHEE_DIMSE_HOST`、`DCM4CHEE_DIMSE_PORT` | DIMSE diagnostics/workflow 必填 | Template：`127.0.0.1`、`11112`；Compose-safe host：`dcm4chee` | `lab-app` 的 DIMSE destination。 | 改為 caller-reachable address、recreate `lab-app`，再測試 AE connectivity。 |
+| `DCM4CHEE_DIMSE_HOST`、`DCM4CHEE_DIMSE_PORT` | DIMSE diagnostics/workflow 必填 | Compose 預設：`dcm4chee`、`11112`；主機直跑覆寫：`127.0.0.1`、`11112` | `lab-app` 的 DIMSE destination。 | 改為 caller-reachable address、recreate `lab-app`，再測試 AE connectivity。 |
 | `DCM4CHEE_CALLED_AE_TITLE`、`DCM4CHEE_CALLING_AE_TITLE` | DIMSE 必填 | `DCM4CHEE`、`HEALTHCARE_LAB` | Archive called AE 與 Healthcare Lab calling AE。 | Recreate `lab-app`；與 dcm4chee AE policy 對齊。 |
 | `DCM4CHEE_MWL_AE_TITLE`、`DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE` | MWL 必填 | `WORKLIST`、`ECG_AP` | MWL REST AE path 與 scheduled station／AP identity。 | Recreate `lab-app`；驗證 MWL create/read-back 與實體 AP query。 |
-| `DCM4CHEE_HL7_HOST`、`DCM4CHEE_HL7_PORT` | Patient ADT sync 必填 | Template：`127.0.0.1`、`2575`；Compose-safe endpoint：`dcm4chee:2575` | `lab-app` 連線的 dcm4chee HL7 listener。 | Recreate `lab-app`；驗證 ADT ACK。另見下方 port-overload blocker。 |
+| `DCM4CHEE_HL7_HOST`、`DCM4CHEE_HL7_PORT` | Patient ADT sync 必填 | Compose 預設：`dcm4chee:2575`；主機直跑覆寫：`127.0.0.1:2575` | `lab-app` 連線的 dcm4chee HL7 listener。 | Recreate `lab-app`；驗證 ADT ACK。另見下方 port-overload blocker。 |
 | `DCM4CHEE_HL7_SENDING_APPLICATION`、`DCM4CHEE_HL7_SENDING_FACILITY` | Patient ADT sync 必填 | `HEALTHCARE_LAB`、`LAB_APP` | MSH sender identity。 | Recreate `lab-app`；與 receiver routing 對齊。 |
 | `DCM4CHEE_HL7_RECEIVING_APPLICATION`、`DCM4CHEE_HL7_RECEIVING_FACILITY` | Patient ADT sync 必填 | `DCM4CHEE`、`DCM4CHEE` | MSH receiver identity。 | Recreate `lab-app`；與 receiver routing 對齊。 |
 | `DCM4CHEE_PATIENT_ASSIGNING_AUTHORITY` | Stable Patient identity 必填 | `local-dcm4chee` | 與 Patient ID 配對的 issuer／assigning authority。 | Recreate `lab-app`；已有資料後不可在沒有 migration plan 下變更。 |

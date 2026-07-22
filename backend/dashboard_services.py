@@ -31,7 +31,7 @@ LAB_DASHBOARD_SERVICE_GROUPS = {
         "protocol": "HL7 v2",
         "backend": "Open Integration Engine",
         "ports": (
-            {"label": "localhost:18080", "url": "http://localhost:18080"},
+            {"label": "localhost:8080", "url": "http://localhost:8080"},
         ),
         "risk": "medium",
         "riskSummary": "Restart interrupts MLLP listeners and queued HL7 result-return demos.",
