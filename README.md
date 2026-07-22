@@ -264,6 +264,39 @@ The first Docker Desktop runtime scaffold for the Lab Console lives in
 `deploy/lab.ps1` wrapper for local `status`, `start`, `stop`, `restart`,
 `smoke`, and `logs` operations.
 
+## v1.0.0 Docker Release
+
+Docker Compose is the supported end-user installation path. Download and
+extract the `v1.0.0` GitHub Release source archive, copy `.env.example` to
+`.env`, review the local credentials and folders, then start the lab:
+
+```powershell
+Copy-Item .env.example .env
+New-Item -ItemType Directory -Force instance\gdt-bridge\inbox
+New-Item -ItemType Directory -Force instance\gdt-bridge\outbox
+docker compose --env-file .env -f deploy\docker-compose.yml up -d
+docker compose --env-file .env -f deploy\docker-compose.yml ps
+```
+
+Compose pulls the public `linux/amd64` application image from:
+
+```text
+ghcr.io/tzu-huang/healthcare-lab:1.0.0
+```
+
+Users do not need Python or a source-code mount. `1.0.0` is immutable,
+`latest` follows the latest stable GitHub Release, and `edge` follows verified
+pushes to `main`. See [deploy/README.md](deploy/README.md) for operation and
+[docs/container-release.md](docs/container-release.md) for the verified image
+matrix, persistence, backup, upgrade, and rollback contract.
+
+> **Trusted-lab boundary:** this release is for a local machine or trusted
+> internal lab using `linux/amd64`. It is not a claim of public-Internet,
+> regulated production-healthcare, ARM, or multi-replica support. `lab-app`
+> mounts `/var/run/docker.sock` for Dashboard container controls, which grants
+> powerful access to the host Docker daemon. Do not run untrusted code or mount
+> production patient data in this environment.
+
 ## Patient Page
 
 Use **Patient** to create local virtual patient records for the supported

@@ -11,6 +11,12 @@ class ContainerReleaseContractTests(unittest.TestCase):
         cls.dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         cls.dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
         cls.requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+        cls.root_readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        cls.deploy_readme = (ROOT / "deploy" / "README.md").read_text(encoding="utf-8")
+        cls.release_guide = (ROOT / "docs" / "container-release.md").read_text(encoding="utf-8")
+        cls.release_checklist = (
+            ROOT / "docs" / "releases" / "v1.0.0.md"
+        ).read_text(encoding="utf-8")
 
     def test_image_contains_owned_runtime_files(self):
         for instruction in (
@@ -53,6 +59,40 @@ class ContainerReleaseContractTests(unittest.TestCase):
             self.assertIn(path, excluded)
 
         self.assertNotIn("COPY .", self.dockerfile)
+
+    def test_operator_docs_define_docker_only_install_and_supported_boundary(self):
+        combined = "\n".join((self.root_readme, self.deploy_readme, self.release_guide))
+        for contract in (
+            "ghcr.io/tzu-huang/healthcare-lab:1.0.0",
+            "linux/amd64",
+            "Docker Compose",
+            "/var/run/docker.sock",
+            "trusted",
+            "public-Internet",
+            "production patient data",
+        ):
+            self.assertIn(contract, combined)
+
+    def test_release_guide_covers_tags_backup_upgrade_and_rollback(self):
+        for contract in (
+            "`1.0.0`",
+            "`latest`",
+            "`edge`",
+            "## Backup, upgrade, and rollback",
+            "lab-app-instance",
+            "LAB_APP_IMAGE",
+        ):
+            self.assertIn(contract, self.release_guide)
+
+    def test_v1_release_checklist_defers_publication_and_verifies_artifacts(self):
+        for contract in (
+            "does not create the Git tag",
+            "OpenSpec verification",
+            "Image inspection",
+            "unauthenticated `docker pull",
+            "Post-publication smoke",
+        ):
+            self.assertIn(contract, self.release_checklist)
 
 
 if __name__ == "__main__":
