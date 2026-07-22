@@ -153,7 +153,7 @@ function renderGdtPatients() {
     });
     row.append(
       rowCell(toggleButton),
-      rowCell(item.id),
+      rowCell(summary.mrn || ""),
       rowCell(summary.name || "Patient"),
       rowCell(gdtTaipeiTimestamp(item.createdAt)),
       rowCell(item.orderCount ?? 0),
