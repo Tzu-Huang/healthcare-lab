@@ -54,6 +54,13 @@ class ContainerWorkflowContractTests(unittest.TestCase):
             self.workflow.index("Validate stable release contract"),
             self.workflow.index("Log in to GitHub Container Registry"),
         )
+        self.assertIn("Verify public GHCR package before stable mutation", self.workflow)
+        self.assertIn('imagetools inspect "${IMAGE_NAME}:edge"', self.workflow)
+        self.assertIn("set the package visibility to Public in GitHub", self.workflow)
+        self.assertLess(
+            self.workflow.index("Verify public GHCR package before stable mutation"),
+            self.workflow.index("Log in to GitHub Container Registry"),
+        )
 
     def test_release_build_uses_release_ref_and_is_idempotent(self):
         self.assertIn("github.event.release.tag_name || github.sha", self.workflow)
@@ -61,9 +68,25 @@ class ContainerWorkflowContractTests(unittest.TestCase):
         self.assertIn('docker pull "${IMAGE_NAME}:${VERSION}"', self.workflow)
         self.assertIn("org.opencontainers.image.revision", self.workflow)
         self.assertIn('"${EXISTING_REVISION}" != "${GITHUB_SHA}"', self.workflow)
-        self.assertIn('echo "skip_publish=true"', self.workflow)
-        self.assertIn("steps.release_guard.outputs.skip_publish != 'true'", self.workflow)
+        self.assertIn('echo "reuse_release=true"', self.workflow)
+        self.assertIn("steps.release_guard.outputs.reuse_release != 'true'", self.workflow)
         self.assertIn('VERSION="${RELEASE_TAG#v}"', self.workflow)
+
+    def test_same_commit_rerun_repairs_every_release_alias(self):
+        self.assertIn("Repair release aliases from immutable image", self.workflow)
+        self.assertIn("docker buildx imagetools create", self.workflow)
+        self.assertIn('"${IMAGE_NAME}:${VERSION}"', self.workflow)
+        for alias in (
+            '"${IMAGE_NAME}:${MAJOR}.${MINOR}"',
+            '"${IMAGE_NAME}:${MAJOR}"',
+            '"${IMAGE_NAME}:latest"',
+            '"${IMAGE_NAME}:sha-${SHORT_SHA}"',
+        ):
+            self.assertIn(f"--tag {alias}", self.workflow)
+        self.assertIn(
+            'for TAG in "${VERSION}" "${MAJOR}.${MINOR}" "${MAJOR}" latest "sha-${SHORT_SHA}"',
+            self.workflow,
+        )
 
     def test_required_verification_precedes_publication(self):
         self.assertIn("needs: verify", self.workflow)
