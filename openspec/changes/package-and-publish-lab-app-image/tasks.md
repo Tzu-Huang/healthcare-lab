@@ -7,10 +7,10 @@
 
 ## 2. Compose and Persistence
 
-- [ ] 2.1 Update Compose contract tests for the published `lab-app` image, removal of the repository bind mount and startup `pip install`, and preservation of ports, environment, network, instance volume, GDT bridge, and Docker socket integration.
-- [ ] 2.2 Change `deploy/docker-compose.yml` and `.env.example` to select a versioned GHCR image by default while retaining an intentional `LAB_APP_IMAGE` override.
-- [ ] 2.3 Replace unbounded third-party `latest` defaults with explicit verified versions and record the integrated `v1.0.0` component matrix.
-- [ ] 2.4 Verify container replacement retains SQLite instance data and GDT bridge content, and record backup/restore evidence needed for upgrade and rollback.
+- [x] 2.1 Update Compose contract tests for the published `lab-app` image, removal of the repository bind mount and startup `pip install`, and preservation of ports, environment, network, instance volume, GDT bridge, and Docker socket integration.
+- [x] 2.2 Change `deploy/docker-compose.yml` and `.env.example` to select a versioned GHCR image by default while retaining an intentional `LAB_APP_IMAGE` override.
+- [x] 2.3 Replace unbounded third-party `latest` defaults with explicit verified versions and record the integrated `v1.0.0` component matrix.
+- [x] 2.4 Verify container replacement retains SQLite instance data and GDT bridge content, and record backup/restore evidence needed for upgrade and rollback.
 
 ## 3. GitHub Image Automation
 
