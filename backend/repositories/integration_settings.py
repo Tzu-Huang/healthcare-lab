@@ -10,6 +10,9 @@ from threading import RLock
 from typing import Any
 
 from backend.domain.integration_settings import (
+    MEDPLUM_DEFAULT_TIMEOUT_SECONDS,
+    MEDPLUM_DEFAULT_WEB_UI_URL,
+    MEDPLUM_PROFILE_TYPE,
     PROFILE_FIELDS,
     PROFILE_SECRET_FIELDS,
     SecretAction,
@@ -46,6 +49,41 @@ class IntegrationSettingsRepository:
                 (profile_type,),
             ).fetchone()
         return row is not None
+
+    def migrate_medplum_profile(self) -> bool:
+        """Idempotently evolve pre-ZAC-73 JSON without consulting environment."""
+        timestamp = self._timestamp()
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                """SELECT id, schema_version, public_payload_json
+                FROM integration_settings_profiles WHERE profile_type = ?""",
+                (MEDPLUM_PROFILE_TYPE,),
+            ).fetchone()
+            if row is None:
+                return False
+            fields = json.loads(row["public_payload_json"])
+            changed = False
+            if "webUiUrl" not in fields:
+                fields["webUiUrl"] = MEDPLUM_DEFAULT_WEB_UI_URL
+                changed = True
+            if "timeoutSeconds" not in fields:
+                fields["timeoutSeconds"] = MEDPLUM_DEFAULT_TIMEOUT_SECONDS
+                changed = True
+            profile = validate_profile(MEDPLUM_PROFILE_TYPE, fields)
+            if not changed and int(row["schema_version"]) == profile.schema_version:
+                return False
+            connection.execute(
+                """UPDATE integration_settings_profiles
+                SET schema_version = ?, public_payload_json = ?, updated_at = ?
+                WHERE id = ?""",
+                (
+                    profile.schema_version,
+                    json.dumps(profile.fields, sort_keys=True, separators=(",", ":")),
+                    timestamp,
+                    row["id"],
+                ),
+            )
+        return True
 
     def get_private(self, profile_type: str) -> dict[str, Any]:
         self._require_profile_type(profile_type)

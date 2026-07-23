@@ -191,7 +191,8 @@ class CrossFeatureWorkflowTests(ApiCaseSupport):
         self.assertEqual(created.status_code, 201)
         item = created.get_json()["item"]
         self.assertEqual(item["fhir"]["sync"]["status"], "Sync failed")
-        self.assertEqual(item["fhir"]["sync"]["operationOutcome"], outcome)
+        self.assertEqual({}, item["fhir"]["sync"]["operationOutcome"])
+        self.assertNotIn("temporary failure", json.dumps(item))
         self.assertTrue(self.client.get("/api/patients").get_json()["items"][0]["fhir"]["recordId"])
 
         retry_mode["enabled"] = True

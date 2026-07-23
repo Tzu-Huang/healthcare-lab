@@ -6,6 +6,9 @@ import unittest
 from pathlib import Path
 
 from backend.domain.integration_settings import (
+    MEDPLUM_DEFAULT_TIMEOUT_SECONDS,
+    MEDPLUM_DEFAULT_WEB_UI_URL,
+    TypedSettingsValidationError,
     medplum_bootstrap_candidate,
     preserve_secret,
     remove_secret,
@@ -52,6 +55,69 @@ class IntegrationSettingsRepositoryTests(unittest.TestCase):
         self.assertNotIn("initial-secret", json.dumps(public))
         self.assertEqual("initial-secret", private["secrets"]["clientSecret"])
         self.assertEqual("initial-client", private["fields"]["clientId"])
+        self.assertEqual(MEDPLUM_DEFAULT_WEB_UI_URL, private["fields"]["webUiUrl"])
+        self.assertEqual(
+            MEDPLUM_DEFAULT_TIMEOUT_SECONDS, private["fields"]["timeoutSeconds"]
+        )
+
+    def test_profile_normalizes_urls_and_rejects_out_of_range_timeout(self):
+        fields = medplum_bootstrap_candidate({}).fields
+        profile = validate_profile(
+            "medplum",
+            {
+                **fields,
+                "baseUrl": " https://medplum.example/fhir/R4/ ",
+                "webUiUrl": " https://medplum.example/app/ ",
+                "tokenUrl": " https://medplum.example/oauth/token/ ",
+                "timeoutSeconds": 300,
+            },
+        )
+        self.assertEqual("https://medplum.example/fhir/R4", profile.fields["baseUrl"])
+        self.assertEqual("https://medplum.example/app", profile.fields["webUiUrl"])
+        self.assertEqual(
+            "https://medplum.example/oauth/token", profile.fields["tokenUrl"]
+        )
+
+        for invalid in (True, 0, 301, 1.5, "10"):
+            with self.subTest(timeout=invalid), self.assertRaises(
+                TypedSettingsValidationError
+            ) as caught:
+                validate_profile(
+                    "medplum", {**fields, "timeoutSeconds": invalid}
+                )
+            self.assertEqual(
+                "timeoutSeconds",
+                next(
+                    issue.field
+                    for issue in caught.exception.issues
+                    if issue.field == "timeoutSeconds"
+                ),
+            )
+
+    def test_legacy_profile_migration_is_idempotent_and_preserves_secret(self):
+        self.seed("migration-secret")
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT id, public_payload_json
+                FROM integration_settings_profiles WHERE profile_type = 'medplum'"""
+            ).fetchone()
+            fields = json.loads(row["public_payload_json"])
+            fields.pop("webUiUrl")
+            fields.pop("timeoutSeconds")
+            connection.execute(
+                """UPDATE integration_settings_profiles
+                SET public_payload_json = ? WHERE id = ?""",
+                (json.dumps(fields), row["id"]),
+            )
+
+        self.assertTrue(self.repository.migrate_medplum_profile())
+        self.assertFalse(self.repository.migrate_medplum_profile())
+        private = self.repository.get_private("medplum")
+        self.assertEqual(MEDPLUM_DEFAULT_WEB_UI_URL, private["fields"]["webUiUrl"])
+        self.assertEqual(
+            MEDPLUM_DEFAULT_TIMEOUT_SECONDS, private["fields"]["timeoutSeconds"]
+        )
+        self.assertEqual("migration-secret", private["secrets"]["clientSecret"])
 
     def test_replace_preserve_and_remove_are_atomic(self):
         self.seed()

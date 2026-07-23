@@ -2,6 +2,10 @@ import {
   initializeOieSettingsSection,
   refreshSettings as refreshOieSettings,
 } from "./oie.js";
+import {
+  initializeMedplumSettingsSection,
+  refreshMedplumSettings,
+} from "./medplum.js";
 
 const noOpInitialize = () => {};
 const noOpRefresh = async () => undefined;
@@ -41,6 +45,8 @@ export const SETTINGS_MODULES = Object.freeze([
   integrationModule({
     id: "medplum", label: "Medplum", required: true,
     owners: { view: "settings/medplum.js", api: "api/settings.js", state: "state/settings.js", style: "css/views/settings.css" },
+    initialize: initializeMedplumSettingsSection,
+    refresh: refreshMedplumSettings,
   }),
   integrationModule({
     id: "oie", label: "OIE", required: true,

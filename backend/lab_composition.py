@@ -33,10 +33,17 @@ class LabApplicationRepository:
     def list_gdt_orders(self): return self._gdt_inventory()
 
 
-def lab_server_services(app, repository, *, operation_runner, health_checker):
+def lab_server_services(
+    app,
+    repository,
+    *,
+    operation_runner,
+    health_checker,
+    availability_decorator=decorate_lab_operation_availability,
+):
     return (
-        LabRegistryService(app, repository, availability_decorator=decorate_lab_operation_availability),
-        LabHealthService(app, repository, health_checker=health_checker, availability_decorator=decorate_lab_operation_availability),
+        LabRegistryService(app, repository, availability_decorator=availability_decorator),
+        LabHealthService(app, repository, health_checker=health_checker, availability_decorator=availability_decorator),
         LabOperationService(app, repository, repository, operation_runner=operation_runner),
         LabSmokeService(app, repository, repository, operation_runner=operation_runner, operator_resolver=resolve_lab_operator),
     )
