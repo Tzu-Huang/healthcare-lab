@@ -229,6 +229,8 @@ class ApplicationShellTests(ApiCaseSupport):
 
     def test_only_healthcare_lab_routes_are_registered(self):
         routes = {rule.rule for rule in self.client.application.url_map.iter_rules()}
+        self.assertIn("/api/settings/readiness", routes)
+        self.assertIn("/api/settings/readiness/checks", routes)
         self.assertIn("/api/dashboard/services", routes)
         self.assertIn("/api/lab/servers", routes)
         self.assertIn("/api/orders", routes)
@@ -269,6 +271,38 @@ class ApplicationShellTests(ApiCaseSupport):
         self.assertIn("/api/dcm4chee/e2e-fixture", routes)
         self.assertIn("/api/orders/<int:order_id>/dcm4chee-e2e-evidence", routes)
         self.assertIn("/api/orders/<int:order_id>/dcm4chee-simulated-ap-return", routes)
+
+    def test_settings_readiness_is_composed_without_openemr(self):
+        response = self.client.get("/api/settings/readiness")
+        self.assertEqual(200, response.status_code)
+        body = response.get_json()
+        self.assertTrue(body["success"])
+        sections = body["item"]["sections"]
+        self.assertEqual(
+            [
+                "medplum",
+                "oie",
+                "gdt-bridge",
+                "dcm4chee",
+                "external-devices",
+                "deployment",
+            ],
+            [item["id"] for item in sections],
+        )
+        self.assertNotIn("openemr", response.get_data(as_text=True).lower())
+        optional = {
+            item["id"]: item["state"]
+            for item in sections
+            if not item["required"]
+        }
+        self.assertEqual(
+            {
+                "gdt-bridge": "disabled",
+                "dcm4chee": "disabled",
+                "external-devices": "disabled",
+            },
+            optional,
+        )
 
 
 if __name__ == "__main__":
