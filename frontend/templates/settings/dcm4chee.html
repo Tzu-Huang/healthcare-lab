@@ -1,0 +1,140 @@
+<div class="dcm4chee-settings" data-integration-owner="dcm4chee">
+  <div>
+    <h3>dcm4chee</h3>
+    <p>This optional imaging integration may remain disabled without blocking setup.</p>
+  </div>
+
+  <section class="lab-panel settings-panel" aria-labelledby="dcm4chee-profile-title">
+    <h4 id="dcm4chee-profile-title">Archive profile</h4>
+    <label class="checkbox-row">
+      <input id="dcm4chee-enabled" type="checkbox">
+      Enable dcm4chee workflows
+    </label>
+
+    <div class="form-grid settings-form-grid">
+      <label for="dcm4chee-display-name">Display name
+        <input id="dcm4chee-display-name" autocomplete="off" required>
+      </label>
+      <label for="dcm4chee-environment-name">Environment name
+        <input id="dcm4chee-environment-name" autocomplete="off" required>
+      </label>
+      <label for="dcm4chee-web-ui-url">Browser-facing Web UI URL
+        <input id="dcm4chee-web-ui-url" type="url" autocomplete="url" required>
+      </label>
+      <label for="dcm4chee-profile-name">Profile name
+        <input id="dcm4chee-profile-name" autocomplete="off" required>
+      </label>
+      <label for="dcm4chee-dimse-host">Application-facing DIMSE host
+        <input id="dcm4chee-dimse-host" autocomplete="off" required>
+      </label>
+      <label for="dcm4chee-dimse-port">DIMSE port
+        <input id="dcm4chee-dimse-port" type="number" min="1" max="65535" required>
+      </label>
+      <label for="dcm4chee-called-ae-title">Called AE title
+        <input id="dcm4chee-called-ae-title" autocomplete="off" required>
+      </label>
+      <label for="dcm4chee-calling-ae-title">Calling AE title
+        <input id="dcm4chee-calling-ae-title" autocomplete="off" required>
+      </label>
+      <label for="dcm4chee-mwl-ae-title">MWL AE title
+        <input id="dcm4chee-mwl-ae-title" autocomplete="off" required>
+      </label>
+      <label for="dcm4chee-scheduled-station-ae-title">Default Scheduled Station AE title
+        <input id="dcm4chee-scheduled-station-ae-title" autocomplete="off" required>
+      </label>
+    </div>
+
+    <details id="dcm4chee-advanced">
+      <summary>Advanced</summary>
+      <p class="muted">Protocol endpoints are application-facing. Mounted credential paths are references; file contents are never displayed.</p>
+      <div class="form-grid settings-form-grid">
+        <label for="dcm4chee-dicomweb-base-url">DICOMweb base URL
+          <input id="dcm4chee-dicomweb-base-url" type="url" autocomplete="url" required>
+        </label>
+        <label for="dcm4chee-qido-rs-url">QIDO-RS URL
+          <input id="dcm4chee-qido-rs-url" type="url" autocomplete="url" required>
+        </label>
+        <label for="dcm4chee-wado-rs-url">WADO-RS URL
+          <input id="dcm4chee-wado-rs-url" type="url" autocomplete="url" required>
+        </label>
+        <label for="dcm4chee-stow-rs-url">STOW-RS URL
+          <input id="dcm4chee-stow-rs-url" type="url" autocomplete="url" required>
+        </label>
+        <label for="dcm4chee-viewer-template">Viewer study URL template
+          <input id="dcm4chee-viewer-template" autocomplete="off" required>
+        </label>
+        <label for="dcm4chee-uid-root">UID root
+          <input id="dcm4chee-uid-root" autocomplete="off" required>
+        </label>
+        <label for="dcm4chee-hl7-host">HL7 host
+          <input id="dcm4chee-hl7-host" autocomplete="off" required>
+        </label>
+        <label for="dcm4chee-hl7-port">HL7 port
+          <input id="dcm4chee-hl7-port" type="number" min="1" max="65535" required>
+        </label>
+        <label for="dcm4chee-hl7-sending-application">HL7 sending application
+          <input id="dcm4chee-hl7-sending-application" autocomplete="off" required>
+        </label>
+        <label for="dcm4chee-hl7-sending-facility">HL7 sending facility
+          <input id="dcm4chee-hl7-sending-facility" autocomplete="off" required>
+        </label>
+        <label for="dcm4chee-hl7-receiving-application">HL7 receiving application
+          <input id="dcm4chee-hl7-receiving-application" autocomplete="off" required>
+        </label>
+        <label for="dcm4chee-hl7-receiving-facility">HL7 receiving facility
+          <input id="dcm4chee-hl7-receiving-facility" autocomplete="off" required>
+        </label>
+        <label for="dcm4chee-patient-assigning-authority">Patient assigning authority
+          <input id="dcm4chee-patient-assigning-authority" autocomplete="off" required>
+        </label>
+        <label for="dcm4chee-auth-mode">Authentication mode
+          <select id="dcm4chee-auth-mode">
+            <option value="none">None (local lab only)</option>
+            <option value="basic">Basic username/password</option>
+            <option value="bearer">Bearer token</option>
+            <option value="oauth2">OAuth 2 client credentials</option>
+            <option value="mtls">Mutual TLS</option>
+          </select>
+        </label>
+        <label for="dcm4chee-username">Username
+          <input id="dcm4chee-username" autocomplete="username">
+        </label>
+        <label for="dcm4chee-token-url">Token URL
+          <input id="dcm4chee-token-url" type="url" autocomplete="url">
+        </label>
+        <label for="dcm4chee-password">Replace password <span id="dcm4chee-password-configured" class="muted">(not configured)</span>
+          <input id="dcm4chee-password" type="password" autocomplete="new-password" placeholder="Leave blank to preserve">
+        </label>
+        <label for="dcm4chee-token">Replace bearer token <span id="dcm4chee-token-configured" class="muted">(not configured)</span>
+          <input id="dcm4chee-token" type="password" autocomplete="new-password" placeholder="Leave blank to preserve">
+        </label>
+        <label for="dcm4chee-client-secret">Replace OAuth client secret <span id="dcm4chee-client-secret-configured" class="muted">(not configured)</span>
+          <input id="dcm4chee-client-secret" type="password" autocomplete="new-password" placeholder="Leave blank to preserve">
+        </label>
+        <label for="dcm4chee-certificate-path">Mounted certificate reference
+          <input id="dcm4chee-certificate-path" autocomplete="off">
+          <span id="dcm4chee-certificate-state" class="dcm4chee-reference-state">Not configured</span>
+        </label>
+        <label for="dcm4chee-private-key-path">Mounted private-key reference
+          <input id="dcm4chee-private-key-path" autocomplete="off">
+          <span id="dcm4chee-private-key-state" class="dcm4chee-reference-state">Not configured</span>
+        </label>
+        <label class="checkbox-row"><input id="dcm4chee-tls-enabled" type="checkbox">Enable TLS</label>
+        <label class="checkbox-row"><input id="dcm4chee-tls-verify" type="checkbox">Verify TLS certificates</label>
+      </div>
+    </details>
+
+    <div class="button-row">
+      <button id="dcm4chee-save" class="primary" type="button">Save profile</button>
+      <button id="dcm4chee-run-diagnostics" type="button">Run bounded diagnostics</button>
+    </div>
+    <p id="dcm4chee-save-result" class="settings-result" role="status"></p>
+    <p id="dcm4chee-activation-result" class="settings-result" role="status"></p>
+  </section>
+
+  <section aria-labelledby="dcm4chee-diagnostics-title">
+    <h4 id="dcm4chee-diagnostics-title">Connection diagnostics</h4>
+    <p id="dcm4chee-diagnostics-summary" role="status">Diagnostics have not run.</p>
+    <div id="dcm4chee-diagnostics" class="settings-diagnostics-grid" aria-live="polite"></div>
+  </section>
+</div>

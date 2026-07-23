@@ -225,3 +225,29 @@ class SettingsReadinessServiceTests(unittest.TestCase):
             ],
             result["checks"],
         )
+
+    def test_dcm4chee_degraded_check_persists_until_a_healthy_check(self):
+        class _Settings:
+            def get_public(self, profile_type):
+                if profile_type == "dcm4chee":
+                    return {"fields": {"enabled": True}}
+                if profile_type == "medplum":
+                    return {"fields": {"enabled": False, "baseUrl": ""}}
+                return {"fields": {"managementApi": {}, "resultListener": {}}, "secrets": {}}
+
+            def has_operator_configuration(self, _profile_type):
+                return False
+
+        reports = iter(({"state": "degraded", "checks": []}, {"state": "healthy", "checks": []}))
+        service = create_settings_readiness_service(
+            _Settings(),
+            listener_status=lambda: {"running": False},
+            oie_diagnostics=lambda: {"state": "degraded"},
+            dcm4chee_diagnostics=lambda: next(reports),
+        )
+        service.run_checks()
+        section = next(item for item in service.get_readiness()["sections"] if item["id"] == "dcm4chee")
+        self.assertEqual("degraded", section["state"])
+        service.run_checks()
+        section = next(item for item in service.get_readiness()["sections"] if item["id"] == "dcm4chee")
+        self.assertEqual("ready", section["state"])

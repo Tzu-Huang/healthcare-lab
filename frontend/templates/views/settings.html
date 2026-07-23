@@ -105,8 +105,8 @@
     {% include 'settings/gdt-bridge.html' %}
   </section>
   <section id="settings-section-dcm4chee" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-dcm4chee" data-settings-section="dcm4chee" hidden>
-    <h3>dcm4chee</h3><p>This optional imaging integration may remain disabled without blocking setup.</p>
-    <details><summary>Advanced</summary><p class="muted">Use safe local defaults unless the deployment requires overrides.</p></details>
+    <!-- dcm4chee fragment provides <summary>Advanced</summary>. -->
+    {% include 'settings/dcm4chee.html' %}
   </section>
   <section id="settings-section-external-devices" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-external-devices" data-settings-section="external-devices" hidden>
     <h3>AP / External Devices</h3><p>Optional device connectivity may remain disabled without blocking setup.</p>

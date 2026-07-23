@@ -10,6 +10,10 @@ import {
   initializeGdtBridgeSettingsSection,
   refreshGdtBridgeSettings,
 } from "./gdt-bridge.js";
+import {
+  initializeDcm4cheeSettingsSection,
+  refreshDcm4cheeSettings,
+} from "./dcm4chee.js";
 
 const noOpInitialize = () => {};
 const noOpRefresh = async () => undefined;
@@ -66,7 +70,9 @@ export const SETTINGS_MODULES = Object.freeze([
   }),
   integrationModule({
     id: "dcm4chee", label: "dcm4chee", required: false,
-    owners: { view: "settings/dcm4chee.js", api: "api/settings.js", state: "state/settings.js", style: "css/views/settings.css" },
+    owners: { view: "settings/dcm4chee.js", api: "settings/dcm4chee.js", state: "settings/dcm4chee.js", style: "css/settings/dcm4chee.css" },
+    initialize: initializeDcm4cheeSettingsSection,
+    refresh: refreshDcm4cheeSettings,
   }),
   integrationModule({
     id: "external-devices", label: "AP / External Devices", required: false,

@@ -20,7 +20,6 @@ from backend.app_factory import (
     dashboard_action_for_group,
     dashboard_summary,
     derive_lab_overall_status,
-    dcm4chee_profile_from_config,
     dcm4chee_result_refresh_generation,
     import_gdt_bridge_files,
     parse_hl7_ack,
@@ -30,6 +29,7 @@ from backend.app_factory import (
     sync_order_to_dcm4chee_mwl,
     validate_dcm4chee_profile,
 )
+from backend.config import dcm4chee_profile_from_config
 from backend.domain.statuses import (
     DCM4CHEE_MWL_STATUS_CREATED,
     DCM4CHEE_MWL_STATUS_FAILED,
@@ -42,6 +42,7 @@ from backend.domain.statuses import (
     DCM4CHEE_RESULT_STATUS_WRONG_PATIENT,
 )
 from backend.domain.dicom import DCM4CHEE_RESULT_SOURCE_SIMULATED_AP
+from backend.domain.integration_settings import TypedSettingsValidationError
 from backend.domain.gdt_protocol import render_gdt_message
 from backend.domain.timestamps import hl7_timestamp
 from backend.templates import dicom as dicom_templates
