@@ -2,6 +2,7 @@ import { requestJson, requestJsonAllowBusinessFailure } from "./client.js";
 
 export const SETTINGS_API_NAMESPACE = "/api/oie/settings";
 export const MANAGED_CHANNELS_API = "/api/oie/managed-channels";
+export const MEDPLUM_PROFILE_API = "/api/settings/profiles/medplum";
 
 export function fetchSettings() { return requestJson(SETTINGS_API_NAMESPACE); }
 export function saveSettings(payload) {
@@ -9,6 +10,17 @@ export function saveSettings(payload) {
 }
 export function testSettingsConnection() {
   return requestJson(`${SETTINGS_API_NAMESPACE}/test-connection`, { method: "POST", body: "{}" });
+}
+export function fetchMedplumProfile() { return requestJson(MEDPLUM_PROFILE_API); }
+export function saveAndTestMedplumProfile(payload) {
+  return requestJsonAllowBusinessFailure(`${MEDPLUM_PROFILE_API}/save-and-test`, {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
+export function removeMedplumClientSecret() {
+  return requestJson(`${MEDPLUM_PROFILE_API}/secrets/clientSecret`, {
+    method: "DELETE", body: "{}",
+  });
 }
 export function fetchRuntimeDiagnostics() { return requestJson(`${SETTINGS_API_NAMESPACE}/diagnostics`); }
 export function fetchSettingsListenerStatus() { return requestJson("/api/oie/result-listener/status"); }

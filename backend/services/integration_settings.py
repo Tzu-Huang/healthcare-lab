@@ -58,6 +58,7 @@ OIE_MANAGED_CHANNEL_FIELDS = frozenset(
 
 
 class IntegrationSettingsRepositoryPort(Protocol):
+    def migrate_medplum_profile(self) -> bool: ...
     def create_if_missing(self, profile, *, secrets, bootstrap_source, actor="startup-bootstrap") -> bool: ...
     def get_private(self, profile_type: str) -> dict[str, Any]: ...
     def list_audits(self, profile_type: str) -> list[dict[str, Any]]: ...
@@ -220,20 +221,24 @@ def _typed_oie_validation_error(message: str) -> TypedSettingsValidationError:
 @dataclass(frozen=True, repr=False)
 class MedplumEffectiveSettings:
     base_url: str
+    web_ui_url: str
     client_id: str
     client_secret: str
     scope: str
     token_url: str
     auth_grace_seconds: int
+    timeout_seconds: int
     enabled: bool
 
     def __repr__(self) -> str:
         return (
             "MedplumEffectiveSettings("
-            f"base_url={self.base_url!r}, client_id={self.client_id!r}, "
+            f"base_url={self.base_url!r}, web_ui_url={self.web_ui_url!r}, "
+            f"client_id={self.client_id!r}, "
             f"client_secret_configured={bool(self.client_secret)!r}, "
             f"scope={self.scope!r}, token_url={self.token_url!r}, "
-            f"auth_grace_seconds={self.auth_grace_seconds!r}, enabled={self.enabled!r})"
+            f"auth_grace_seconds={self.auth_grace_seconds!r}, "
+            f"timeout_seconds={self.timeout_seconds!r}, enabled={self.enabled!r})"
         )
 
 
@@ -248,6 +253,7 @@ class IntegrationSettingsService:
         self._oie = oie_adapter
 
     def bootstrap_medplum(self, configuration: Mapping[str, Any]) -> bool:
+        self._repository.migrate_medplum_profile()
         profile = medplum_bootstrap_candidate(configuration)
         return self._repository.create_if_missing(
             profile,
@@ -287,11 +293,13 @@ class IntegrationSettingsService:
         fields = private["fields"]
         return MedplumEffectiveSettings(
             base_url=str(fields["baseUrl"]),
+            web_ui_url=str(fields["webUiUrl"]),
             client_id=str(fields["clientId"]),
             client_secret=str(private["secrets"].get("clientSecret", "")),
             scope=str(fields["scope"]),
             token_url=str(fields["tokenUrl"]),
             auth_grace_seconds=int(fields["authGraceSeconds"]),
+            timeout_seconds=int(fields["timeoutSeconds"]),
             enabled=bool(fields["enabled"]),
         )
 

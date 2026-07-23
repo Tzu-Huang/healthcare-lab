@@ -17,6 +17,7 @@ from backend.domain.openemr import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MEDPLUM_DEFAULT_AUTH_GRACE_SECONDS = 300
+MEDPLUM_DEFAULT_TIMEOUT_SECONDS = 10
 DCM4CHEE_PROFILE_NAME = "local-dcm4chee"
 GDT_BRIDGE_SUCCESS_MODES = {"archive", "delete"}
 GDT_FILENAME_PROFILES = {"permissive", "gdt21", "gdt35"}
@@ -307,6 +308,13 @@ def load_application_config(
         "MEDPLUM_TOKEN_URL": env.get("MEDPLUM_TOKEN_URL", ""),
         "MEDPLUM_AUTH_GRACE_SECONDS": int(
             env.get("MEDPLUM_AUTH_GRACE_SECONDS", str(MEDPLUM_DEFAULT_AUTH_GRACE_SECONDS))
+        ),
+        "MEDPLUM_WEB_UI_URL": env.get(
+            "MEDPLUM_WEB_UI_URL",
+            env.get("MEDPLUM_APP_BASE_URL", "http://127.0.0.1:3000"),
+        ).strip(),
+        "MEDPLUM_TIMEOUT_SECONDS": int(
+            env.get("MEDPLUM_TIMEOUT_SECONDS", str(MEDPLUM_DEFAULT_TIMEOUT_SECONDS))
         ),
         "OIE_MLLP_ORDER_HOST": env.get("OIE_MLLP_ORDER_HOST", "localhost").strip() or "localhost",
         "OIE_MLLP_ORDER_PORT": int(env.get("OIE_MLLP_ORDER_PORT", "6600")),

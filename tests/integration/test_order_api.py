@@ -104,7 +104,7 @@ class OrderApiTests(ApiCaseSupport):
         self.assertRegex(service_request["authoredOn"], r"^2026-07-08T09:00:00[+-]\d{2}:\d{2}$")
 
     @patch("backend.app_factory.urllib.request.urlopen")
-    def test_order_api_preserves_fhir_service_request_sync_failure(self, urlopen):
+    def test_order_api_preserves_safe_fhir_service_request_sync_failure(self, urlopen):
         self.set_medplum_base_url("http://medplum.test/fhir/R4")
         patient = self.create_synced_fhir_patient()
 
@@ -160,7 +160,11 @@ class OrderApiTests(ApiCaseSupport):
         self.assertEqual(response.status_code, 201)
         item = response.get_json()["item"]
         self.assertEqual(item["fhir"]["serviceRequest"]["sync"]["status"], "Sync failed")
-        self.assertIn("service request rejected", item["fhir"]["serviceRequest"]["sync"]["error"])
+        self.assertEqual(
+            "Medplum returned HTTP 400.",
+            item["fhir"]["serviceRequest"]["sync"]["error"],
+        )
+        self.assertNotIn("service request rejected", json.dumps(item))
         self.assertEqual(set(item["fhir"]), {"serviceRequest"})
 
     def test_historical_fhir_task_is_excluded_from_active_api_contracts(self):

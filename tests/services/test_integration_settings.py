@@ -26,12 +26,16 @@ class IntegrationSettingsServiceTests(unittest.TestCase):
                 "MEDPLUM_SCOPE": "openid",
                 "MEDPLUM_TOKEN_URL": "http://legacy-medplum/oauth2/token",
                 "MEDPLUM_AUTH_GRACE_SECONDS": 45,
+                "MEDPLUM_WEB_UI_URL": "http://localhost:3000/",
+                "MEDPLUM_TIMEOUT_SECONDS": 12,
             },
         )
         effective = dependencies.integration_settings_service.get_effective("medplum")
         self.assertEqual("http://127.0.0.1:8103/fhir/R4", effective.base_url)
         self.assertEqual("legacy-client", effective.client_id)
         self.assertEqual("legacy-secret", effective.client_secret)
+        self.assertEqual("http://localhost:3000", effective.web_ui_url)
+        self.assertEqual(12, effective.timeout_seconds)
         self.assertNotIn("legacy-secret", repr(effective))
 
     def test_restart_does_not_overwrite_persisted_operator_values(self):

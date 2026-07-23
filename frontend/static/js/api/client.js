@@ -3,7 +3,14 @@ async function responsePayload(response) {
 }
 
 function errorFrom(response, payload) {
-  return new Error(payload.error || response.statusText || "Request failed");
+  const detail = payload.error;
+  const message = typeof detail === "object"
+    ? detail.message || detail.code
+    : detail;
+  const error = new Error(message || response.statusText || "Request failed");
+  error.status = response.status;
+  error.payload = payload;
+  return error;
 }
 
 export async function requestJsonEnvelope(url, options = {}) {

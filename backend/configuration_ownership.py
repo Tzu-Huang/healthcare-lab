@@ -80,6 +80,7 @@ CONFIGURATION_OWNERSHIP: dict[str, ConfigurationOwnership] = {
     **_entries(
         """
         MEDPLUM_CLIENT_ID MEDPLUM_SCOPE MEDPLUM_TOKEN_URL MEDPLUM_AUTH_GRACE_SECONDS
+        MEDPLUM_TIMEOUT_SECONDS MEDPLUM_WEB_UI_URL
         """,
         RUNTIME_PERSISTED,
         "typed Medplum settings",

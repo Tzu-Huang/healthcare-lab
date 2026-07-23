@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from flask import Blueprint, jsonify, request
 
@@ -33,6 +33,8 @@ class IntegrationSettingsPort(Protocol):
 
 def create_integration_settings_blueprint(
     settings: IntegrationSettingsPort,
+    *,
+    medplum_diagnostics: Callable[[], dict[str, Any]] | None = None,
 ) -> Blueprint:
     blueprint = Blueprint("integration_settings", __name__)
 
@@ -92,6 +94,47 @@ def create_integration_settings_blueprint(
                 "invalid_settings_request", "Settings request was rejected.", 400
             )
         return jsonify({"success": True, "item": item})
+
+    @blueprint.post("/api/settings/profiles/medplum/save-and-test")
+    def save_and_test_medplum():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or set(body) - {"fields", "secrets"}:
+            return bounded_error(
+                "invalid_settings_request",
+                "Request must contain only fields and optional secrets.",
+                400,
+            )
+        fields = body.get("fields")
+        secrets = body.get("secrets", {})
+        if not isinstance(fields, dict) or not isinstance(secrets, dict):
+            return bounded_error(
+                "invalid_settings_request",
+                "Settings fields and secrets must be JSON objects.",
+                400,
+            )
+        try:
+            item = settings.replace(
+                "medplum", fields, secret_replacements=secrets
+            )
+        except TypedSettingsValidationError as exc:
+            return validation_error(exc)
+        except (KeyError, ValueError, SimulatorValidationError):
+            return bounded_error(
+                "settings_save_rejected", "Medplum settings were not saved.", 400
+            )
+        diagnostics = (
+            medplum_diagnostics()
+            if medplum_diagnostics is not None
+            else {"state": "unavailable", "stages": []}
+        )
+        return jsonify(
+            {
+                "success": True,
+                "saved": True,
+                "item": item,
+                "diagnostics": diagnostics,
+            }
+        )
 
     @blueprint.delete(
         "/api/settings/profiles/<profile_type>/secrets/<path:field>"
