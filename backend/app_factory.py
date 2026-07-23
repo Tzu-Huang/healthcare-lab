@@ -63,6 +63,7 @@ from backend.api.patients import create_patients_blueprint
 from backend.api.orders import create_orders_blueprint
 from backend.api.fhir import create_fhir_blueprint
 from backend.api.integration_settings import create_integration_settings_blueprint
+from backend.api.settings_readiness import create_settings_readiness_blueprint
 from backend.api.gdt import create_gdt_blueprint
 from backend.api.home import create_home_blueprint
 from backend.services.patient_workflow import (
@@ -130,6 +131,7 @@ from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieR
 from backend.runtime.lazy_wsgi import LazyWsgiApplication
 from backend.services.oie_settings import OieSettingsService, create_oie_management_client
 from backend.services.oie_diagnostics import OieRuntimeDiagnosticService
+from backend.settings_readiness_composition import create_settings_readiness_service
 from backend.services.oie_channel_lifecycle import OieManagedChannelLifecycleService, PreviewTokenCodec
 from backend.services.oie_channel_bootstrap import OieManagedChannelBootstrap
 from backend.application_composition import assemble_application_dependencies
@@ -390,6 +392,16 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         listener_status=app.extensions["oie_workflow_service"].listener_status,
         port_contract=oie_port_contract,
         channel_id=managed_oru_channel_id,
+    )
+    app.extensions["settings_readiness_service"] = create_settings_readiness_service(
+        dependencies.integration_settings_service,
+        listener_status=app.extensions["oie_workflow_service"].listener_status,
+        oie_diagnostics=app.extensions["oie_runtime_diagnostics_service"].diagnose,
+    )
+    app.register_blueprint(
+        create_settings_readiness_blueprint(
+            app.extensions["settings_readiness_service"]
+        )
     )
     app.register_blueprint(
         create_oie_blueprint(

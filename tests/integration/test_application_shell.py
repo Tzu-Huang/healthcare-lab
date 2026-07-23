@@ -229,6 +229,8 @@ class ApplicationShellTests(ApiCaseSupport):
 
     def test_only_healthcare_lab_routes_are_registered(self):
         routes = {rule.rule for rule in self.client.application.url_map.iter_rules()}
+        self.assertIn("/api/settings/readiness", routes)
+        self.assertIn("/api/settings/readiness/checks", routes)
         self.assertIn("/api/dashboard/services", routes)
         self.assertIn("/api/lab/servers", routes)
         self.assertIn("/api/orders", routes)
@@ -269,6 +271,66 @@ class ApplicationShellTests(ApiCaseSupport):
         self.assertIn("/api/dcm4chee/e2e-fixture", routes)
         self.assertIn("/api/orders/<int:order_id>/dcm4chee-e2e-evidence", routes)
         self.assertIn("/api/orders/<int:order_id>/dcm4chee-simulated-ap-return", routes)
+
+    def test_settings_readiness_is_composed_without_openemr(self):
+        response = self.client.get("/api/settings/readiness")
+        self.assertEqual(200, response.status_code)
+        body = response.get_json()
+        self.assertTrue(body["success"])
+        sections = body["item"]["sections"]
+        self.assertEqual(
+            [
+                "medplum",
+                "oie",
+                "gdt-bridge",
+                "dcm4chee",
+                "external-devices",
+                "deployment",
+            ],
+            [item["id"] for item in sections],
+        )
+        self.assertNotIn("openemr", response.get_data(as_text=True).lower())
+        self.assertFalse(body["item"]["complete"])
+        self.assertEqual("oie", body["item"]["nextAction"]["sectionId"])
+        optional = {
+            item["id"]: item["state"]
+            for item in sections
+            if not item["required"]
+        }
+        self.assertEqual(
+            {
+                "gdt-bridge": "disabled",
+                "dcm4chee": "disabled",
+                "external-devices": "disabled",
+            },
+            optional,
+        )
+
+        checks = self.client.post("/api/settings/readiness/checks").get_json()
+        states = {
+            item["id"]: item["state"] for item in checks["item"]["results"]
+        }
+        self.assertEqual("unavailable", states["medplum"])
+        self.assertEqual("disabled", states["gdt-bridge"])
+        self.assertEqual("unavailable", states["deployment"])
+
+    def test_fresh_settings_readiness_requires_operator_setup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fresh_app = create_app(
+                str(Path(directory) / "fresh.db"), activate_runtime=False
+            )
+            response = fresh_app.test_client().get("/api/settings/readiness")
+        body = response.get_json()["item"]
+        self.assertFalse(body["complete"])
+        self.assertEqual("medplum", body["nextAction"]["sectionId"])
+        self.assertEqual(
+            "needs-setup",
+            next(
+                item["state"]
+                for item in body["sections"]
+                if item["id"] == "medplum"
+            ),
+        )
 
 
 if __name__ == "__main__":

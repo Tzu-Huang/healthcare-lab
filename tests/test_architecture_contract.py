@@ -127,7 +127,8 @@ FRONTEND_LAYER_DEPENDENCIES = {
     "api": frozenset({"api", "core"}),
     "state": frozenset({"state", "core"}),
     "components": frozenset({"components", "state", "core"}),
-    "views": frozenset({"views", "api", "state", "components", "core"}),
+    "settings": frozenset({"settings", "api", "state", "components", "core"}),
+    "views": frozenset({"views", "settings", "api", "state", "components", "core"}),
 }
 FRONTEND_IMPORT_PATTERN = re.compile(
     r'^\s*import\s+(?:.+?\s+from\s+)?["\'](?P<path>\.[^"\']+)["\'];?',
