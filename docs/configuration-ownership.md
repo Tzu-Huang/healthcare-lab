@@ -37,3 +37,23 @@ Persisted values are authoritative after bootstrap. A process restart never
 merges changed environment values into an existing typed profile. Public APIs,
 logs, exceptions, diagnostics, and audits expose only whether a secret is
 configured; SQLite file permissions are the current at-rest protection.
+
+## Typed settings extension contract
+
+Later Settings issues must register a closed integration profile with explicit
+field and secret allowlists, a complete validator, public and effective
+projections, and bootstrap mapping. Runtime consumers receive the effective
+reader through application composition; they must not read migrated values from
+`os.environ`, Flask request state, Lab Server inventory, or raw settings SQL.
+
+`PUT /api/settings/profiles/<profile-type>` accepts complete typed `fields` and
+optional write-only `secrets`. Omitted or blank secret replacements preserve the
+stored value. Removal uses the distinct
+`DELETE /api/settings/profiles/<profile-type>/secrets/<field>` operation.
+Responses expose only `{ "configured": true|false }` for secrets. Validation
+errors contain bounded codes and field paths but never rejected values.
+
+The current SQLite deployment does not provide application-managed encryption
+at rest. Secrets are kept in a structurally separate table and excluded from
+all public projections and audits; operators must protect the database file and
+its backups with deployment filesystem controls.

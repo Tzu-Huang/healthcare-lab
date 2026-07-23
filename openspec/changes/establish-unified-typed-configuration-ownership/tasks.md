@@ -27,6 +27,6 @@
 
 ## 5. Documentation and Verification
 
-- [ ] 5.1 Document typed settings architecture, one-time environment migration, persisted ownership, filesystem secret-storage assumptions, and guidance required for later Settings issues.
-- [ ] 5.2 Verify architecture rules prevent new integration consumers from reading migrated runtime settings directly from `os.environ`, Flask request state, or raw SQL.
-- [ ] 5.3 Run focused settings/migration/composition tests, the complete regression suite, Python compilation, `git diff --check`, and strict OpenSpec validation.
+- [x] 5.1 Document typed settings architecture, one-time environment migration, persisted ownership, filesystem secret-storage assumptions, and guidance required for later Settings issues.
+- [x] 5.2 Verify architecture rules prevent new integration consumers from reading migrated runtime settings directly from `os.environ`, Flask request state, or raw SQL.
+- [x] 5.3 Run focused settings/migration/composition tests, the complete regression suite, Python compilation, `git diff --check`, and strict OpenSpec validation.

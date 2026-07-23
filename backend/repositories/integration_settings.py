@@ -76,20 +76,6 @@ class IntegrationSettingsRepository:
             "bootstrapSource": row["bootstrap_source"],
         }
 
-    def get_public(self, profile_type: str) -> dict[str, Any]:
-        private = self.get_private(profile_type)
-        configured = {
-            field: {"configured": bool(private["secrets"].get(field))}
-            for field in sorted(PROFILE_SECRET_FIELDS[profile_type])
-        }
-        return {
-            "profileType": private["profileType"],
-            "profileName": private["profileName"],
-            "schemaVersion": private["schemaVersion"],
-            "fields": private["fields"],
-            "secrets": configured,
-        }
-
     def create_if_missing(
         self,
         profile: TypedProfile,
@@ -229,7 +215,7 @@ class IntegrationSettingsRepository:
                 changed_fields=sorted(set(changed_fields)),
                 timestamp=timestamp,
             )
-        return self.get_public(profile.profile_type)
+        return self.get_private(profile.profile_type)
 
     def list_audits(self, profile_type: str) -> list[dict[str, Any]]:
         self._require_profile_type(profile_type)
