@@ -34,9 +34,9 @@
 
 ## 6. Live OIE 4.5.2 Convergence
 
-- [ ] 6.1 Verify clean Compose startup creates and starts exactly two approved managed Channels
-- [ ] 6.2 Verify retained-volume restart is a no-op with no duplicate identities or unnecessary revision changes
-- [ ] 6.3 Verify one-Channel-missing repair preserves the unchanged Channel
-- [ ] 6.4 Verify delayed readiness, timeout visibility, and explicit Retry convergence
-- [ ] 6.5 Verify supported local-settings-only, OIE-appdata-only, and combined reset scenarios
-- [ ] 6.6 Record the secret- and PHI-safe verification report and repeatable smoke commands
+- [x] 6.1 Verify clean Compose startup creates and starts exactly two approved managed Channels
+- [x] 6.2 Verify retained-volume restart is a no-op with no duplicate identities or unnecessary revision changes
+- [x] 6.3 Verify one-Channel-missing repair preserves the unchanged Channel
+- [x] 6.4 Verify delayed readiness, timeout visibility, and explicit Retry convergence
+- [x] 6.5 Verify supported local-settings-only, OIE-appdata-only, and combined reset scenarios
+- [x] 6.6 Record the secret- and PHI-safe verification report and repeatable smoke commands
