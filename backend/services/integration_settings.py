@@ -15,6 +15,60 @@ from backend.domain.integration_settings import (
     validate_profile,
 )
 from backend.repositories.integration_settings import IntegrationSettingsRepository
+from backend.services.oie_settings import OieSettingsService
+
+OIE_PROFILE_TYPE = "oie"
+
+
+class OieSettingsAdapter:
+    """Adapt the specialized OIE profile without replacing its persistence model."""
+
+    def __init__(self, service: OieSettingsService, repository: Any) -> None:
+        self._service = service
+        self._repository = repository
+
+    def get_public(self) -> dict[str, Any]:
+        profile = self._service.get_profile()
+        management = profile.get("managementApi", {})
+        configured = bool(management.get("passwordConfigured"))
+        return {
+            "profileType": OIE_PROFILE_TYPE,
+            "profileName": profile.get("profileName", "local-oie"),
+            "schemaVersion": 1,
+            "fields": profile,
+            "secrets": {"managementApi.password": {"configured": configured}},
+        }
+
+    def get_effective(self) -> dict[str, Any]:
+        return {
+            "profileType": OIE_PROFILE_TYPE,
+            "managementApi": dict(
+                self._repository.get_management_api_configuration()
+            ),
+            "resultListener": dict(
+                self._repository.get_result_listener_configuration()
+            ),
+            "managedChannels": self._service.get_profile().get(
+                "managedChannels", []
+            ),
+        }
+
+    def replace(
+        self,
+        fields: Mapping[str, Any],
+        *,
+        secret_replacements: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        payload = dict(fields)
+        management = dict(payload.get("managementApi") or {})
+        replacement = secret_replacements.get("managementApi.password")
+        if replacement is not None and str(replacement).strip():
+            management["password"] = str(replacement)
+        else:
+            management.pop("password", None)
+        payload["managementApi"] = management
+        self._service.update_profile(payload)
+        return self.get_public()
 
 
 @dataclass(frozen=True, repr=False)
@@ -38,8 +92,14 @@ class MedplumEffectiveSettings:
 
 
 class IntegrationSettingsService:
-    def __init__(self, repository: IntegrationSettingsRepository) -> None:
+    def __init__(
+        self,
+        repository: IntegrationSettingsRepository,
+        *,
+        oie_adapter: OieSettingsAdapter | None = None,
+    ) -> None:
         self._repository = repository
+        self._oie = oie_adapter
 
     def bootstrap_medplum(self, configuration: Mapping[str, Any]) -> bool:
         profile = medplum_bootstrap_candidate(configuration)
@@ -50,9 +110,13 @@ class IntegrationSettingsService:
         )
 
     def get_public(self, profile_type: str) -> dict[str, Any]:
+        if profile_type == OIE_PROFILE_TYPE and self._oie is not None:
+            return self._oie.get_public()
         return self._repository.get_public(profile_type)
 
     def get_effective(self, profile_type: str) -> Any:
+        if profile_type == OIE_PROFILE_TYPE and self._oie is not None:
+            return self._oie.get_effective()
         if profile_type != MEDPLUM_PROFILE_TYPE:
             raise KeyError(profile_type)
         private = self._repository.get_private(profile_type)
@@ -75,6 +139,10 @@ class IntegrationSettingsService:
         secret_replacements: Mapping[str, Any] | None = None,
         actor: str = "local-operator",
     ) -> dict[str, Any]:
+        if profile_type == OIE_PROFILE_TYPE and self._oie is not None:
+            return self._oie.replace(
+                fields, secret_replacements=secret_replacements or {}
+            )
         profile = validate_profile(profile_type, fields)
         mutations: dict[str, SecretMutation] = {
             "clientSecret": preserve_secret(),
@@ -92,6 +160,8 @@ class IntegrationSettingsService:
         *,
         actor: str = "local-operator",
     ) -> dict[str, Any]:
+        if profile_type == OIE_PROFILE_TYPE:
+            raise ValueError("OIE Management API password removal is not supported.")
         private = self._repository.get_private(profile_type)
         profile = validate_profile(profile_type, private["fields"])
         return self._repository.replace(

@@ -62,6 +62,7 @@ from backend.api.dcm4chee import create_dcm4chee_profile_blueprint
 from backend.api.patients import create_patients_blueprint
 from backend.api.orders import create_orders_blueprint
 from backend.api.fhir import create_fhir_blueprint
+from backend.api.integration_settings import create_integration_settings_blueprint
 from backend.api.gdt import create_gdt_blueprint
 from backend.api.home import create_home_blueprint
 from backend.services.patient_workflow import (
@@ -329,8 +330,13 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         dependencies.oie_repository, accept_oie_result_payload
     )
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
-    app.extensions["oie_settings_service"] = OieSettingsService(dependencies.oie_settings_repository)
+    app.extensions["oie_settings_service"] = dependencies.oie_settings_service
     app.extensions["integration_settings_service"] = dependencies.integration_settings_service
+    app.register_blueprint(
+        create_integration_settings_blueprint(
+            dependencies.integration_settings_service
+        )
+    )
     app.extensions["oie_channel_lifecycle_service"] = OieManagedChannelLifecycleService(
         None, dependencies.oie_settings_repository,
         ap_host=app.config["OIE_MANAGED_AP_HOST"],

@@ -20,10 +20,10 @@
 
 ## 4. Shared API and OIE Adaptation
 
-- [ ] 4.1 Add shared typed settings service/API projections with stable success envelopes, field-path error codes, unknown-field rejection, and secret configured-state-only responses.
-- [ ] 4.2 Implement the OIE shared-boundary adapter by delegating to the existing OIE settings service/repository without migrating its schema or changing lifecycle mapping operations.
-- [ ] 4.3 Add API/service tests for secret-safe reads and mutations, blank-secret preservation, explicit removal, bounded errors, and value-free diagnostics/exceptions.
-- [ ] 4.4 Run existing OIE settings, managed-Channel lifecycle, startup bootstrap, FHIR, GDT, and dcm4chee regression tests to prove compatibility.
+- [x] 4.1 Add shared typed settings service/API projections with stable success envelopes, field-path error codes, unknown-field rejection, and secret configured-state-only responses.
+- [x] 4.2 Implement the OIE shared-boundary adapter by delegating to the existing OIE settings service/repository without migrating its schema or changing lifecycle mapping operations.
+- [x] 4.3 Add API/service tests for secret-safe reads and mutations, blank-secret preservation, explicit removal, bounded errors, and value-free diagnostics/exceptions.
+- [x] 4.4 Run existing OIE settings, managed-Channel lifecycle, startup bootstrap, FHIR, GDT, and dcm4chee regression tests to prove compatibility.
 
 ## 5. Documentation and Verification
 
