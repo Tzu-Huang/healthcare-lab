@@ -1,11 +1,48 @@
 import sqlite3
 import tempfile
+import threading
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
 
 from backend.repositories.oie_bootstrap_status import OieBootstrapStatusRepository
+from backend.services.oie_bootstrap_coordination import OieBootstrapCoordinator
+
+
+class InlineThread:
+    def __init__(self, *, target, name, daemon):
+        self.target = target
+        self.name = name
+        self.daemon = daemon
+        self.started = False
+
+    def start(self):
+        self.started = True
+        self.target()
+
+
+class UnsupportedVersionBootstrap:
+    attempt_observer = lambda self, _attempts: None
+
+    def run(self):
+        self.attempt_observer(1)
+        channels = [
+            {
+                "logicalType": logical_type,
+                "classification": "unavailable",
+                "outcome": "timeout",
+                "status": "",
+                "errorCategory": "unsupported-version",
+            }
+            for logical_type in ("hlab-orm-to-ap", "hlab-oru-to-hlab")
+        ]
+        return {
+            "outcome": "timeout",
+            "attempts": 1,
+            "errorCategory": "unsupported-version",
+            "channels": channels,
+        }
 
 
 class OieBootstrapStatusRepositoryTests(unittest.TestCase):
@@ -119,6 +156,33 @@ class OieBootstrapStatusRepositoryTests(unittest.TestCase):
         self.assertEqual(
             ["hlab-orm-to-ap", "hlab-oru-to-hlab"],
             [item["logicalType"] for item in status["channels"]],
+        )
+
+    def test_coordinator_persists_unsupported_version_with_canonical_guidance(self):
+        coordinator = OieBootstrapCoordinator(
+            UnsupportedVersionBootstrap(),
+            self.repository,
+            mode="create-missing",
+            thread_factory=InlineThread,
+            run_lock=threading.Lock(),
+            state_lock=threading.Lock(),
+            timestamp_factory=lambda: "2026-07-23T10:00:00+00:00",
+            run_id_factory=lambda: "unsupported-run",
+        )
+
+        coordinator.start_startup()
+        status = coordinator.status()
+
+        self.assertEqual("completed", status["state"])
+        self.assertEqual("unsupported-version", status["errorCategory"])
+        self.assertEqual("verify-oie-version", status["guidanceCode"])
+        self.assertEqual(
+            {"unsupported-version"},
+            {item["errorCategory"] for item in status["channels"]},
+        )
+        self.assertEqual(
+            {"verify-oie-version"},
+            {item["guidanceCode"] for item in status["channels"]},
         )
 
     def test_stale_running_row_is_projected_as_interrupted_without_mutation(self):

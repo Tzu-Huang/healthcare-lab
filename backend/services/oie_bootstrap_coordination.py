@@ -26,7 +26,7 @@ GUIDANCE = {
     "timeout": "retry-when-oie-ready",
     "unexpected-response": "verify-oie-version",
     "authentication": "verify-oie-credentials",
-    "unsupported-version": "use-supported-oie-version",
+    "unsupported-version": "verify-oie-version",
     "conflict": "resolve-ownership-conflict",
     "drifted": "review-managed-channel-drift",
     "external": "review-external-channel",
