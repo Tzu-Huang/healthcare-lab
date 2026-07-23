@@ -103,11 +103,13 @@ class _GdtBridgeProvider:
         watcher_status: Callable[[], dict[str, Any]],
         activation_status: Callable[[], dict[str, str]],
         diagnostics: Callable[[], dict[str, Any]],
+        check_diagnostics: Callable[[], dict[str, Any]],
     ) -> None:
         self._settings = settings
         self._watcher_status = watcher_status
         self._activation_status = activation_status
         self._diagnostics = diagnostics
+        self._check_diagnostics = check_diagnostics
 
     def assess(self) -> ReadinessAssessment:
         fields = self._settings.get_public("gdt-bridge")["fields"]
@@ -132,10 +134,28 @@ class _GdtBridgeProvider:
         readiness = self.assess()
         if readiness.state is ReadinessState.DISABLED:
             return DiagnosticAssessment(DiagnosticState.DISABLED)
+        report = self._check_diagnostics()
+        watcher_running = report.get("watcher", {}).get("state") == "running"
+        checks = [
+            {
+                "role": str(item.get("role", "unknown")),
+                "state": str(item.get("state", "failed")),
+                "code": str(item.get("code", "unavailable")),
+            }
+            for item in report.get("checks", [])
+        ]
+        checks.append(
+            {
+                "role": "watcher",
+                "state": "passed" if watcher_running else "failed",
+                "code": "running" if watcher_running else "stopped",
+            }
+        )
         return DiagnosticAssessment(
             DiagnosticState.HEALTHY
-            if readiness.state is ReadinessState.READY
-            else DiagnosticState.DEGRADED
+            if report.get("state") == "healthy" and watcher_running
+            else DiagnosticState.DEGRADED,
+            tuple(checks),
         )
 
 
@@ -147,6 +167,7 @@ def create_settings_readiness_service(
     gdt_watcher_status: Callable[[], dict[str, Any]] | None = None,
     gdt_activation_status: Callable[[], dict[str, str]] | None = None,
     gdt_diagnostics: Callable[[], dict[str, Any]] | None = None,
+    gdt_check_diagnostics: Callable[[], dict[str, Any]] | None = None,
 ) -> SettingsReadinessService:
     registry = SettingsReadinessRegistry(
         (
@@ -173,6 +194,8 @@ def create_settings_readiness_service(
                     activation_status=gdt_activation_status
                     or (lambda: {"state": "effective", "activation": "immediate"}),
                     diagnostics=gdt_diagnostics
+                    or (lambda: {"state": "unavailable", "checks": []}),
+                    check_diagnostics=gdt_check_diagnostics
                     or (lambda: {"state": "unavailable", "checks": []}),
                 ),
             ),

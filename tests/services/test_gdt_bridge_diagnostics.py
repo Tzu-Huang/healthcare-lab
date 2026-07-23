@@ -8,6 +8,7 @@ from backend.services.gdt_bridge_diagnostics import (
     DOCUMENTED_GDT_DIRECTORY_ROLES,
     confined_gdt_bridge_dirs,
     diagnose_gdt_bridge_dirs,
+    gdt_settings_diagnostics,
     probe_gdt_bridge_write_delete,
     provision_gdt_bridge_dirs,
 )
@@ -92,6 +93,25 @@ class GdtBridgeHealthTest(unittest.TestCase):
                 result,
             )
             self.assertEqual([], list(diagnostic.iterdir()))
+
+    def test_full_settings_diagnostics_runs_probe_and_leaves_no_artifact(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "bridge"
+            provision_gdt_bridge_dirs(root)
+
+            result = gdt_settings_diagnostics(root, {"running": True})
+
+            self.assertEqual("healthy", result["state"])
+            self.assertIn(
+                {
+                    "role": "write-delete",
+                    "state": "passed",
+                    "code": "writable",
+                },
+                result["checks"],
+            )
+            self.assertEqual({"state": "running"}, result["watcher"])
+            self.assertEqual([], list((root / "diagnostic").iterdir()))
 
     def test_write_and_delete_failures_use_distinct_bounded_codes(self):
         with tempfile.TemporaryDirectory() as temporary:

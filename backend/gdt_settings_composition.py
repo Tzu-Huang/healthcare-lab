@@ -56,3 +56,10 @@ def gdt_readiness_diagnostics(settings: Any) -> dict[str, Any]:
     return diagnose_gdt_bridge_dirs(
         settings.get_effective("gdt-bridge").bridge_path
     )
+
+
+def gdt_run_all_diagnostics(settings: Any, watcher: Any) -> dict[str, Any]:
+    return gdt_settings_diagnostics(
+        settings.get_effective("gdt-bridge").bridge_path,
+        watcher.status(),
+    )
