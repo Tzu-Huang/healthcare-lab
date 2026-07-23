@@ -6,17 +6,17 @@
 
 ## 2. Bootstrap Coordination
 
-- [ ] 2.1 Introduce a coordinator that records startup run state around the existing guarded reconciliation workflow
-- [ ] 2.2 Add process-local single-run exclusion and asynchronous Retry execution
-- [ ] 2.3 Define closed Retry eligibility and recovery-guidance mappings for timeout, readiness, policy blockers, disabled mode, and unavailable evidence
-- [ ] 2.4 Extend bootstrap service tests for timestamps, attempts, created/no-op/recovered/blocked outcomes, interrupted execution, concurrency, and persistence failure
+- [x] 2.1 Introduce a coordinator that records startup run state around the existing guarded reconciliation workflow
+- [x] 2.2 Add process-local single-run exclusion and asynchronous Retry execution
+- [x] 2.3 Define closed Retry eligibility and recovery-guidance mappings for timeout, readiness, policy blockers, disabled mode, and unavailable evidence
+- [x] 2.4 Extend bootstrap service tests for timestamps, attempts, created/no-op/recovered/blocked outcomes, interrupted execution, concurrency, and persistence failure
 
 ## 3. API and Diagnostics
 
-- [ ] 3.1 Add side-effect-free bootstrap status and explicit Retry API endpoints with stable success, validation, conflict, and unavailable responses
-- [ ] 3.2 Add a bootstrap Runtime Diagnostics probe sourced only from bootstrap status
-- [ ] 3.3 Return both canonical managed template projections with bounded inventory-unavailable evidence when live OIE inspection fails
-- [ ] 3.4 Add API and diagnostic tests proving GET requests never invoke bootstrap or Channel mutation and Retry preserves lifecycle guards
+- [x] 3.1 Add side-effect-free bootstrap status and explicit Retry API endpoints with stable success, validation, conflict, and unavailable responses
+- [x] 3.2 Add a bootstrap Runtime Diagnostics probe sourced only from bootstrap status
+- [x] 3.3 Return both canonical managed template projections with bounded inventory-unavailable evidence when live OIE inspection fails
+- [x] 3.4 Add API and diagnostic tests proving GET requests never invoke bootstrap or Channel mutation and Retry preserves lifecycle guards
 
 ## 4. Settings Workspace
 

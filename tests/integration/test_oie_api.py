@@ -5,6 +5,82 @@ from ._case_support import *
 class OieApiTests(ApiCaseSupport):
     """Focused assertion owner for OieApiTests."""
 
+    def test_bootstrap_status_reads_are_side_effect_free(self):
+        bootstrap = self.client.application.extensions["oie_channel_bootstrap"]
+        lifecycle = self.client.application.extensions["oie_channel_lifecycle_service"]
+        with patch.object(bootstrap, "run") as run, patch.object(lifecycle, "execute") as execute:
+            first = self.client.get("/api/oie/bootstrap/status")
+            second = self.client.get("/api/oie/bootstrap/status")
+
+        self.assertEqual((200, 200), (first.status_code, second.status_code))
+        item = first.get_json()["item"]
+        self.assertEqual(("create-missing", "idle", "not-run", False), (
+            item["mode"], item["state"], item["outcome"], item["retryEligible"],
+        ))
+        run.assert_not_called()
+        execute.assert_not_called()
+
+    def test_managed_inventory_failure_keeps_both_canonical_templates(self):
+        lifecycle = self.client.application.extensions["oie_channel_lifecycle_service"]
+        with patch.object(lifecycle, "inspect", side_effect=RuntimeError("password=secret")):
+            response = self.client.get("/api/oie/managed-channels")
+
+        self.assertEqual(502, response.status_code)
+        body = response.get_json()
+        self.assertFalse(body["success"])
+        self.assertEqual(
+            {"hlab-orm-to-ap", "hlab-oru-to-hlab"},
+            {item["logicalType"] for item in body["items"]},
+        )
+        self.assertTrue(all(item["classification"] == "unavailable" for item in body["items"]))
+        self.assertNotIn("secret", response.get_data(as_text=True))
+
+    def test_recoverable_bootstrap_retry_starts_one_guarded_worker(self):
+        repository = self.dependencies.oie_bootstrap_status_repository
+        repository.start_run(
+            run_id="timed-out-run",
+            trigger="startup",
+            mode="create-missing",
+            started_at="2026-07-23T01:00:00+00:00",
+        )
+        repository.complete_run(
+            "timed-out-run",
+            completed_at="2026-07-23T01:00:05+00:00",
+            attempts=2,
+            outcome="timeout",
+            error_category="connection",
+            guidance_code="retry-when-oie-ready",
+            channels=[
+                {
+                    "logicalType": logical_type, "classification": "unavailable",
+                    "outcome": "timeout", "status": "", "errorCategory": "connection",
+                    "guidanceCode": "retry-when-oie-ready",
+                }
+                for logical_type in ("hlab-orm-to-ap", "hlab-oru-to-hlab")
+            ],
+        )
+        created = []
+
+        class DeferredThread:
+            def __init__(self, *, target, name, daemon):
+                self.target, self.name, self.daemon, self.started = target, name, daemon, False
+                created.append(self)
+
+            def start(self):
+                self.started = True
+
+        coordinator = self.client.application.extensions["oie_bootstrap_coordinator"]
+        coordinator.thread_factory = DeferredThread
+        response = self.client.post("/api/oie/bootstrap/retry", json={})
+
+        self.assertEqual(202, response.status_code)
+        self.assertEqual(1, len(created))
+        self.assertTrue(created[0].started)
+        item = response.get_json()["item"]
+        self.assertEqual(("retry", "running", False), (
+            item["trigger"], item["state"], item["retryEligible"],
+        ))
+
     def test_oie_settings_api_returns_secret_safe_local_defaults(self):
         response = self.client.get("/api/oie/settings")
 

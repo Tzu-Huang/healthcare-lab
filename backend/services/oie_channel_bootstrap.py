@@ -25,6 +25,7 @@ class OieManagedChannelBootstrap:
         clock: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], None] = time.sleep,
         logger: logging.Logger = LOGGER,
+        attempt_observer: Callable[[int], None] | None = None,
     ) -> None:
         self.lifecycle = lifecycle
         self.timeout_seconds = float(timeout_seconds)
@@ -32,12 +33,17 @@ class OieManagedChannelBootstrap:
         self.clock = clock
         self.sleeper = sleeper
         self.logger = logger
+        self.attempt_observer = attempt_observer or (lambda _attempts: None)
 
     def run(self) -> dict[str, Any]:
         started = self.clock()
         attempts = 0
         while True:
             attempts += 1
+            try:
+                self.attempt_observer(attempts)
+            except Exception:
+                self.logger.error("OIE startup bootstrap attempt evidence is unavailable.")
             try:
                 inventory = self.lifecycle.inspect()
                 break
