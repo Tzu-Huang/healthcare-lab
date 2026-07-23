@@ -46,6 +46,7 @@ ERROR_CATEGORIES = frozenset(
         "deploy-not-permitted",
         "status-verification",
         "audit-unavailable",
+        "audit-failure",
         "ownership",
         "disabled",
         "interrupted",

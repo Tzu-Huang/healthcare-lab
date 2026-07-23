@@ -239,9 +239,32 @@ class OieManagedChannelLifecycleService:
             return self._result(kind, action, operation_id, outcome, steps, snapshot.classification, snapshot.status)
 
     def _create(self, kind, before, operation_id, steps):
-        self.client.create_channel(self._payload(kind)); steps.append({"name": "create", "status": "succeeded"})
-        created = self._created(kind); steps.append({"name": "readback", "status": "succeeded"})
-        self.repository.compare_and_update_managed_channel_mapping(logical_type=kind.value, expected_channel_id="", expected_revision="", channel_id=created.channel_id or "", channel_name=created.name, template_version="1", revision=str(created.revision or ""), audit_event=self._event(operation_id, LifecycleOperation.CREATE, kind, created, "success"))
+        create_result = self.client.create_channel(self._payload(kind))
+        steps.append({"name": "create", "status": "succeeded"})
+        created = self._created(kind, str(create_result.identifier or ""))
+        steps.append({"name": "readback", "status": "succeeded"})
+        expected_revision = str(before.revision or "")
+        if before.channel_id and not expected_revision:
+            expected_revision = next(
+                (
+                    str(item.get("lastKnownRevision") or "")
+                    for item in self.repository.get()["managedChannels"]
+                    if item["logicalType"] == kind.value
+                ),
+                "",
+            )
+        self.repository.compare_and_update_managed_channel_mapping(
+            logical_type=kind.value,
+            expected_channel_id=before.channel_id or "",
+            expected_revision=expected_revision,
+            channel_id=created.channel_id or "",
+            channel_name=created.name,
+            template_version="1",
+            revision=str(created.revision or ""),
+            audit_event=self._event(
+                operation_id, LifecycleOperation.CREATE, kind, created, "success"
+            ),
+        )
         steps.append({"name": "persist", "status": "succeeded"}); return self._result(kind, LifecycleOperation.CREATE, operation_id, "success", steps, ChannelClassification.UNCHANGED, created.status)
 
     def _update(self, kind, before, operation_id, steps):
@@ -305,9 +328,18 @@ class OieManagedChannelLifecycleService:
                                    normalize_payload=normalized_state_from_payload)
 
     def _snapshot(self, kind): return next(item for item in self._snapshots() if item.logical_type is kind)
-    def _created(self, kind):
+    def _created(self, kind, created_id=""):
         snapshot = self._snapshot(kind)
-        if snapshot.classification is ChannelClassification.RECOVERABLE and snapshot.channel_id: return snapshot
+        if snapshot.classification is ChannelClassification.RECOVERABLE and snapshot.channel_id:
+            return snapshot
+        if (
+            created_id
+            and snapshot.channel_id == created_id
+            and snapshot.identity.marker_matches
+            and snapshot.identity.payload_valid
+            and snapshot.blocking_reasons == ("mapped-id-marker-contradiction",)
+        ):
+            return snapshot
         raise LifecycleGuardError("create-readback", "Created Channel identity could not be rediscovered.")
 
     @staticmethod
