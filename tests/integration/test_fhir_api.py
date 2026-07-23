@@ -770,8 +770,11 @@ class FhirApiTests(ApiCaseSupport):
         self.assertEqual(attempts[0]["operationOutcome"], outcome)
 
     def test_fhir_sync_validation_failure_marks_record_failed(self):
-        self.client.application.config["MEDPLUM_CLIENT_ID"] = ""
-        self.client.application.config["MEDPLUM_CLIENT_SECRET"] = ""
+        settings = self.client.application.extensions["integration_settings_service"]
+        fields = dict(settings.get_public("medplum")["fields"])
+        fields["clientId"] = ""
+        settings.replace("medplum", fields)
+        settings.remove_secret("medplum", "clientSecret")
         created = self.client.post(
             "/api/fhir/records",
             json={

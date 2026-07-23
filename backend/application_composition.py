@@ -47,6 +47,8 @@ from backend.services.dcm4chee_coordination import Dcm4cheeMwlAttemptCoordinator
 from backend.services.fhir_coordination import FhirOrderCoordinator, PatientFhirCoordinator
 from backend.services.gdt_coordination import GdtWorkflowCoordinator, build_gdt_order_request
 from backend.services.integration_settings import IntegrationSettingsService
+from backend.services.integration_settings import OieSettingsAdapter
+from backend.services.oie_settings import OieSettingsService
 from backend.services.protocol_compatibility import project_fhir_workflow_record
 from backend.templates import dicom as dicom_templates
 from backend.templates import order as order_templates
@@ -62,6 +64,7 @@ class ApplicationDependencies:
     integration_settings_repository: IntegrationSettingsRepository
     integration_settings_service: IntegrationSettingsService
     oie_settings_repository: OieSettingsRepository
+    oie_settings_service: OieSettingsService
     lab_repository: LabRepository
     oie_repository: OieRepository
     patient_repository: PatientRepository
@@ -126,13 +129,15 @@ def assemble_application_dependencies(
         timestamp_factory=now_iso,
     )
     lab_repository = LabRepository(database.connect, database.lock, timestamp_factory=now_iso)
+    oie_settings_service = OieSettingsService(oie_settings_repository)
     integration_settings_repository = IntegrationSettingsRepository(
         database.connect,
         database.lock,
         timestamp_factory=now_iso,
     )
     integration_settings_service = IntegrationSettingsService(
-        integration_settings_repository
+        integration_settings_repository,
+        oie_adapter=OieSettingsAdapter(oie_settings_service, oie_settings_repository),
     )
     bootstrap_configuration = dict(configuration or {})
     if "MEDPLUM_FHIR_BASE_URL" not in bootstrap_configuration:
@@ -280,6 +285,7 @@ def assemble_application_dependencies(
         integration_settings_repository=integration_settings_repository,
         integration_settings_service=integration_settings_service,
         oie_settings_repository=oie_settings_repository,
+        oie_settings_service=oie_settings_service,
         lab_repository=lab_repository,
         oie_repository=oie_repository,
         patient_repository=patient_repository,
