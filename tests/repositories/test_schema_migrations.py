@@ -53,8 +53,8 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
         legacy = self._schema_inventory(legacy_path)
         migrated = self._schema_inventory(migrated_path)
         self.assertEqual(migrated, legacy)
-        self.assertEqual(len(migrated[0]), 23)
-        self.assertEqual(len(migrated[1]), 21)
+        self.assertEqual(len(migrated[0]), 25)
+        self.assertEqual(len(migrated[1]), 23)
 
     def test_current_unversioned_database_is_recorded_without_data_loss(self):
         database_path = self.root / "current.db"
@@ -86,7 +86,7 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
             preserved = connection.execute(
                 "SELECT mrn FROM local_patient_records WHERE id = ?", (patient["id"],)
             ).fetchone()
-        self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7])
+        self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8])
         self.assertEqual(preserved["mrn"], "MRN-UNVERSIONED-1")
 
     def test_normalized_duplicate_migration_fails_with_actionable_rows_and_rolls_back(self):

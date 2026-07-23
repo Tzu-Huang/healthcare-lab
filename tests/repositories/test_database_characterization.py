@@ -55,6 +55,8 @@ class SQLiteDatabaseCharacterizationTests(unittest.TestCase):
 
         self.assertIs(store.oie_settings_repository._lock, store.database.lock)
         self.assertIs(store.oie_settings_repository._connect.__self__, store.database)
+        self.assertIs(store.oie_bootstrap_status_repository._lock, store.database.lock)
+        self.assertIs(store.oie_bootstrap_status_repository._connect.__self__, store.database)
 
     def test_unversioned_reopen_preserves_rows_and_user_managed_seed_values(self):
         store = assemble_application_dependencies(self.database_path)

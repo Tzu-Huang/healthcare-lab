@@ -28,6 +28,7 @@ class ApplicationCompositionTests(unittest.TestCase):
             {
                 "database",
                 "oie_settings_repository",
+                "oie_bootstrap_status_repository",
                 "lab_repository",
                 "oie_repository",
                 "patient_repository",
@@ -48,6 +49,7 @@ class ApplicationCompositionTests(unittest.TestCase):
         self.assertIs(dependencies.patient_repository.lock, dependencies.database.lock)
         self.assertIs(dependencies.order_repository.lock, dependencies.database.lock)
         self.assertIs(dependencies.lab_repository.lock, dependencies.database.lock)
+        self.assertIs(dependencies.oie_bootstrap_status_repository._lock, dependencies.database.lock)
 
     def test_dependency_result_is_data_only_and_has_no_dynamic_forwarding(self):
         self.assertTrue(dataclasses.is_dataclass(ApplicationDependencies))

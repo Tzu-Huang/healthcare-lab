@@ -38,6 +38,7 @@ from backend.repositories.identifiers import PatientIdentifierRepository
 from backend.repositories.lab import LabRepository
 from backend.repositories.maintenance import seed_lab_servers, seed_oie_settings_profile, seed_patient_mrn_sequence
 from backend.repositories.oie import OieRepository
+from backend.repositories.oie_bootstrap_status import OieBootstrapStatusRepository
 from backend.repositories.oie_settings import OieSettingsRepository, serialize_oie_settings_profile, validate_oie_settings_payload
 from backend.repositories.orders import OrderRepository
 from backend.repositories.patients import PatientRepository
@@ -58,6 +59,7 @@ class ApplicationDependencies:
 
     database: SQLiteDatabase
     oie_settings_repository: OieSettingsRepository
+    oie_bootstrap_status_repository: OieBootstrapStatusRepository
     lab_repository: LabRepository
     oie_repository: OieRepository
     patient_repository: PatientRepository
@@ -116,6 +118,10 @@ def assemble_application_dependencies(path: str | Path) -> ApplicationDependenci
         validator=validate_oie_settings_payload,
         serializer=serialize_oie_settings_profile,
         timestamp_factory=now_iso,
+    )
+    oie_bootstrap_status_repository = OieBootstrapStatusRepository(
+        database.connect,
+        database.lock,
     )
     lab_repository = LabRepository(database.connect, database.lock, timestamp_factory=now_iso)
     oie_repository = OieRepository(
@@ -248,6 +254,7 @@ def assemble_application_dependencies(path: str | Path) -> ApplicationDependenci
     return ApplicationDependencies(
         database=database,
         oie_settings_repository=oie_settings_repository,
+        oie_bootstrap_status_repository=oie_bootstrap_status_repository,
         lab_repository=lab_repository,
         oie_repository=oie_repository,
         patient_repository=patient_repository,

@@ -1,8 +1,8 @@
 ## 1. Operational Persistence
 
-- [ ] 1.1 Add idempotent SQLite schema for bounded bootstrap run and per-logical-type outcome evidence
-- [ ] 1.2 Implement a focused bootstrap status repository with atomic start, progress, completion, and interrupted-run projection
-- [ ] 1.3 Add repository and migration tests for clean install, restart persistence, atomic completion, stale running state, and secret-safe values
+- [x] 1.1 Add idempotent SQLite schema for bounded bootstrap run and per-logical-type outcome evidence
+- [x] 1.2 Implement a focused bootstrap status repository with atomic start, progress, completion, and interrupted-run projection
+- [x] 1.3 Add repository and migration tests for clean install, restart persistence, atomic completion, stale running state, and secret-safe values
 
 ## 2. Bootstrap Coordination
 

@@ -204,6 +204,31 @@ CREATE TABLE IF NOT EXISTS oie_settings_mutation_audits (
     created_at TEXT NOT NULL,
     FOREIGN KEY(profile_id) REFERENCES oie_settings_profiles(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS oie_bootstrap_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL UNIQUE,
+    trigger TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    state TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    completed_at TEXT NOT NULL DEFAULT '',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    outcome TEXT NOT NULL DEFAULT '',
+    error_category TEXT NOT NULL DEFAULT '',
+    guidance_code TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS oie_bootstrap_channel_outcomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    logical_type TEXT NOT NULL,
+    classification TEXT NOT NULL DEFAULT '',
+    outcome TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT '',
+    error_category TEXT NOT NULL DEFAULT '',
+    guidance_code TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY(run_id) REFERENCES oie_bootstrap_runs(run_id) ON DELETE CASCADE,
+    UNIQUE(run_id, logical_type)
+);
 CREATE TABLE IF NOT EXISTS local_gdt_order_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     local_gdt_order_number TEXT NOT NULL UNIQUE,
@@ -558,6 +583,10 @@ CREATE INDEX IF NOT EXISTS idx_dcm4chee_patient_sync_identifier
 ON local_dcm4chee_patient_syncs(profile_name, server_identity, patient_id, issuer_of_patient_id);
 CREATE INDEX IF NOT EXISTS idx_dcm4chee_patient_sync_attempt_patient
 ON local_dcm4chee_patient_sync_attempts(patient_record_id, attempted_at);
+CREATE INDEX IF NOT EXISTS idx_oie_bootstrap_runs_started
+ON oie_bootstrap_runs(started_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_oie_bootstrap_channel_run
+ON oie_bootstrap_channel_outcomes(run_id, logical_type);
 """
 
 ADDITIVE_COLUMNS = (
@@ -709,4 +738,5 @@ APPLICATION_MIGRATIONS = (
     Migration(5, "add-oie-managed-channel-desired-config", ensure_application_schema),
     Migration(6, "add-order-scheduled-time", ensure_application_schema),
     Migration(7, "enforce-normalized-patient-mrn-uniqueness", enforce_normalized_patient_mrn_uniqueness),
+    Migration(8, "add-oie-bootstrap-operational-status", ensure_application_schema),
 )
