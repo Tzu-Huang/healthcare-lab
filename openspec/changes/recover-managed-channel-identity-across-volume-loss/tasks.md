@@ -19,5 +19,5 @@
 ## 4. Persistence Matrix and Operations
 
 - [x] 4.1 Add service/integration tests for retained/retained, retained/reset, reset/retained, and reset/reset persistence combinations plus repeated-start idempotence and one-type-blocked independence.
-- [ ] 4.2 Update bootstrap and OIE operating documentation with recovery behavior, blocked-recovery guidance, stopped-state preservation, and rollback via bootstrap mode `off`.
-- [ ] 4.3 Run focused lifecycle/bootstrap/settings tests, the complete regression suite, Python compilation, `git diff --check`, and strict OpenSpec validation.
+- [x] 4.2 Update bootstrap and OIE operating documentation with recovery behavior, blocked-recovery guidance, stopped-state preservation, and rollback via bootstrap mode `off`.
+- [x] 4.3 Run focused lifecycle/bootstrap/settings tests, the complete regression suite, Python compilation, `git diff --check`, and strict OpenSpec validation.
