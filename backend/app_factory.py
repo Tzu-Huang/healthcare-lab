@@ -345,6 +345,8 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         dependencies.oie_bootstrap_status_repository,
         mode=app.config["OIE_BOOTSTRAP_MODE"],
         thread_factory=bootstrap_thread_factory or threading.Thread,
+        run_lock=threading.Lock(),
+        state_lock=threading.Lock(),
     )
     app.extensions["oie_workflow_service"] = OieWorkflowService(
         dependencies.oie_repository,

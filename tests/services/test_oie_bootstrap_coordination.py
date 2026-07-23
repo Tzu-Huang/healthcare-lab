@@ -1,4 +1,5 @@
 import unittest
+import threading
 
 from backend.services.oie_bootstrap_coordination import (
     BootstrapCommandError,
@@ -100,6 +101,8 @@ class OieBootstrapCoordinatorTests(unittest.TestCase):
             repository or FakeRepository(),
             mode=mode,
             thread_factory=FakeThread,
+            run_lock=threading.Lock(),
+            state_lock=threading.Lock(),
             timestamp_factory=lambda: "2026-07-23T02:00:00+00:00",
             run_id_factory=lambda: "run-1",
         )

@@ -125,6 +125,9 @@ INTEGRATION_OWNER_INVENTORY = {
         "test_parse_oru_summary_extracts_matching_fields",
     ),
     "integration/test_oie_api.py": (
+        "test_bootstrap_status_reads_are_side_effect_free",
+        "test_managed_inventory_failure_keeps_both_canonical_templates",
+        "test_recoverable_bootstrap_retry_starts_one_guarded_worker",
         "test_oie_settings_api_returns_secret_safe_local_defaults",
         "test_oie_settings_api_updates_profile_without_changing_listener_runtime",
         "test_oie_settings_api_validates_fields_and_rejects_atomically",
@@ -230,8 +233,8 @@ class Zac64OwnershipContractTests(unittest.TestCase):
             actual = _test_method_names(tests_root / relative)
             self.assertEqual(actual, expected, relative)
             integration_names.extend(actual)
-        self.assertEqual(len(integration_names), 129)
-        self.assertEqual(len(set(integration_names)), 129)
+        self.assertEqual(len(integration_names), 132)
+        self.assertEqual(len(set(integration_names)), 132)
 
         repository_names = []
         for relative, expected in REPOSITORY_OWNER_INVENTORY.items():
