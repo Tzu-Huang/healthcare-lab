@@ -1,10 +1,10 @@
 ## 1. Readiness Contract and Composition
 
-- [ ] 1.1 Add closed readiness states, section metadata, activation-impact values, provider ports, and secret-safe aggregate projections.
-- [ ] 1.2 Implement the readiness aggregation service and provider registry with explicit required/optional completion rules and no OpenEMR registration.
-- [ ] 1.3 Add bounded readiness providers for the currently supported Settings sections using persisted typed configuration and existing diagnostics.
-- [ ] 1.4 Expose a stable readiness API and compose it into the application with value-free error handling.
-- [ ] 1.5 Add domain, service, API, and composition tests covering every readiness state, partial provider failure, completion rules, and secret/PHI canaries.
+- [x] 1.1 Add closed readiness states, section metadata, activation-impact values, provider ports, and secret-safe aggregate projections.
+- [x] 1.2 Implement the readiness aggregation service and provider registry with explicit required/optional completion rules and no OpenEMR registration.
+- [x] 1.3 Add bounded readiness providers for the currently supported Settings sections using persisted typed configuration and existing diagnostics.
+- [x] 1.4 Expose a stable readiness API and compose it into the application with value-free error handling.
+- [x] 1.5 Add domain, service, API, and composition tests covering every readiness state, partial provider failure, completion rules, and secret/PHI canaries.
 
 ## 2. Modular Settings Shell
 
