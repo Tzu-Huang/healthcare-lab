@@ -197,6 +197,7 @@ class OieInteractionTests(unittest.TestCase):
             "() => import('/static/js/views/settings.js')"
             ".then(({ refreshSettings }) => refreshSettings())"
         )
+        page.locator("#settings-tab-oie").click()
         page.locator("#settings-listener-host").fill("127.0.0.2")
         page.locator("#save-listener-settings").click()
         reminder = page.locator("#settings-listener-reload-reminder")
@@ -321,6 +322,7 @@ class OieInteractionTests(unittest.TestCase):
         page.route("**/api/**", handle_api)
         page.goto(self.base_url, wait_until="networkidle")
         page.locator('[data-nav-target="settings-view"]').click()
+        page.locator("#settings-tab-oie").click()
         page.get_by_text("OPERATOR_CHANNEL", exact=True).wait_for()
         external_card = page.get_by_text("OPERATOR_CHANNEL", exact=True).locator("..")
         self.assertEqual(0, external_card.locator("button[data-operation]").count())

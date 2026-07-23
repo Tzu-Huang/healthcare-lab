@@ -1,6 +1,29 @@
 <section id="settings-view" class="app-view settings-workspace" aria-label="Settings" hidden>
-  <header class="settings-header"><div><p class="eyebrow">OIE Settings</p><h2>Settings</h2></div><button id="settings-refresh" type="button">Refresh all</button></header>
+  <header class="settings-header"><div><p class="eyebrow">Integration workspace</p><h2>Settings</h2></div><button id="settings-refresh" type="button">Refresh all</button></header>
   <p id="settings-status" role="status">Review saved intent and live state before operating.</p>
+  <nav id="settings-tabs" class="settings-tabs" role="tablist" aria-label="Settings sections"></nav>
+
+  <section id="settings-section-overview" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-overview" data-settings-section="overview">
+    <div class="settings-header">
+      <div><h3>Integration readiness</h3><p class="muted">Continue from the first integration that still needs attention.</p></div>
+      <button id="settings-run-all-checks" type="button">Run all checks</button>
+    </div>
+    <p id="settings-guided-summary" role="status">Loading setup readiness…</p>
+    <div id="settings-overview-cards" class="settings-overview-grid"></div>
+    <section aria-labelledby="settings-all-checks-title">
+      <h3 id="settings-all-checks-title">Check results</h3>
+      <p id="settings-all-checks-summary" role="status">Checks have not run.</p>
+      <div id="settings-all-checks-results" class="settings-diagnostics-grid"></div>
+    </section>
+  </section>
+
+  <section id="settings-section-medplum" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-medplum" data-settings-section="medplum" hidden>
+    <h3>Medplum</h3><p>Configure the clinical data service and verify connectivity.</p>
+    <details><summary>Advanced</summary><p class="muted">Advanced fields are integration-owned and shown only when available.</p></details>
+  </section>
+
+  <section id="settings-section-oie" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-oie" data-settings-section="oie" hidden>
+    <h3 class="settings-section-title">OIE</h3>
 
   <section class="lab-panel settings-panel" aria-labelledby="settings-connection-title">
     <h3 id="settings-connection-title">OIE Connection</h3>
@@ -50,5 +73,23 @@
     <label id="settings-delete-confirmation-wrap" hidden>Type the exact displayed Channel name <strong id="settings-delete-name"></strong><input id="settings-delete-confirmation" autocomplete="off"></label>
     <button id="settings-preview-execute" class="primary" type="button" disabled>Execute reviewed operation</button>
     <pre id="settings-operation-steps" aria-live="polite"></pre>
+  </section>
+  </section>
+
+  <section id="settings-section-gdt-bridge" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-gdt-bridge" data-settings-section="gdt-bridge" hidden>
+    <h3>GDT Bridge</h3><p>This optional integration may remain disabled without blocking setup.</p>
+    <details><summary>Advanced</summary><p class="muted">Activation can require a service restart.</p></details>
+  </section>
+  <section id="settings-section-dcm4chee" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-dcm4chee" data-settings-section="dcm4chee" hidden>
+    <h3>dcm4chee</h3><p>This optional imaging integration may remain disabled without blocking setup.</p>
+    <details><summary>Advanced</summary><p class="muted">Use safe local defaults unless the deployment requires overrides.</p></details>
+  </section>
+  <section id="settings-section-external-devices" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-external-devices" data-settings-section="external-devices" hidden>
+    <h3>AP / External Devices</h3><p>Optional device connectivity may remain disabled without blocking setup.</p>
+    <details><summary>Advanced</summary><p class="muted">Network overrides can require container recreation.</p></details>
+  </section>
+  <section id="settings-section-deployment" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-deployment" data-settings-section="deployment" hidden>
+    <h3>Deployment &amp; Diagnostics</h3><p>Review activation impact and bounded checks across registered integrations.</p>
+    <details><summary>Advanced</summary><p class="muted">Diagnostics report partial results when an integration is unavailable.</p></details>
   </section>
 </section>

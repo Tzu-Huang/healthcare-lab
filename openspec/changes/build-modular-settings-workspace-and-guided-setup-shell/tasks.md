@@ -8,23 +8,23 @@
 
 ## 2. Modular Settings Shell
 
-- [ ] 2.1 Add the responsive, keyboard-accessible Settings shell and registry-driven navigation for Overview, Medplum, OIE, GDT Bridge, dcm4chee, AP / External Devices, and Deployment & Diagnostics.
-- [ ] 2.2 Define integration-owned frontend module boundaries for view initialization, API adapters, state, and styling, with architecture tests preventing a new monolithic controller.
-- [ ] 2.3 Implement Overview readiness cards, bounded next actions, activation-impact labels, safe-local-default explanations, and accessible Advanced disclosures.
-- [ ] 2.4 Add explicit tests proving OpenEMR is absent from navigation, registrations, readiness, setup progression, diagnostics, and extension fixtures.
+- [x] 2.1 Add the responsive, keyboard-accessible Settings shell and registry-driven navigation for Overview, Medplum, OIE, GDT Bridge, dcm4chee, AP / External Devices, and Deployment & Diagnostics.
+- [x] 2.2 Define integration-owned frontend module boundaries for view initialization, API adapters, state, and styling, with architecture tests preventing a new monolithic controller.
+- [x] 2.3 Implement Overview readiness cards, bounded next actions, activation-impact labels, safe-local-default explanations, and accessible Advanced disclosures.
+- [x] 2.4 Add explicit tests proving OpenEMR is absent from navigation, registrations, readiness, setup progression, diagnostics, and extension fixtures.
 
 ## 3. OIE Compatibility Extraction
 
-- [ ] 3.1 Move existing OIE connection, result-listener, managed-Channel, preview, and diagnostic presentation behind the OIE Settings module registration.
-- [ ] 3.2 Preserve existing OIE endpoints, write-only secret behavior, persistence-only listener saves, preview confirmation, and lifecycle concurrency safeguards.
-- [ ] 3.3 Update focused frontend and integration tests to prove existing OIE Settings workflows remain functional within the new shell.
+- [x] 3.1 Move existing OIE connection, result-listener, managed-Channel, preview, and diagnostic presentation behind the OIE Settings module registration.
+- [x] 3.2 Preserve existing OIE endpoints, write-only secret behavior, persistence-only listener saves, preview confirmation, and lifecycle concurrency safeguards.
+- [x] 3.3 Update focused frontend and integration tests to prove existing OIE Settings workflows remain functional within the new shell.
 
 ## 4. Guided Setup and Diagnostics
 
-- [ ] 4.1 Implement fresh-instance guided setup and readiness-derived resume behavior without a persisted wizard cursor.
-- [ ] 4.2 Allow GDT Bridge, dcm4chee, and AP / External Devices to remain disabled without blocking overall completion.
-- [ ] 4.3 Implement top-level Run all checks orchestration over registered bounded diagnostic providers with partial and unavailable results.
-- [ ] 4.4 Add frontend tests for first-run, resume, optional disabling, restart-required presentation, Advanced fields, mixed diagnostic outcomes, keyboard navigation, and responsive ownership.
+- [x] 4.1 Implement fresh-instance guided setup and readiness-derived resume behavior without a persisted wizard cursor.
+- [x] 4.2 Allow GDT Bridge, dcm4chee, and AP / External Devices to remain disabled without blocking overall completion.
+- [x] 4.3 Implement top-level Run all checks orchestration over registered bounded diagnostic providers with partial and unavailable results.
+- [x] 4.4 Add frontend tests for first-run, resume, optional disabling, restart-required presentation, Advanced fields, mixed diagnostic outcomes, keyboard navigation, and responsive ownership.
 
 ## 5. Documentation and Verification
 
