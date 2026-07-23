@@ -106,6 +106,8 @@ def create_integration_settings_blueprint(
             )
         try:
             item = settings.remove_secret(profile_type, field)
+        except TypedSettingsValidationError as exc:
+            return validation_error(exc)
         except KeyError:
             return bounded_error(
                 "settings_profile_not_found", "Settings profile was not found.", 404

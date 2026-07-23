@@ -16,6 +16,8 @@ class OieSettingsRepositoryPort(Protocol):
 
     def update(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
+    def remove_management_api_password(self) -> dict[str, Any]: ...
+
     def get_result_listener_configuration(self) -> Mapping[str, Any]: ...
 
 
@@ -75,6 +77,9 @@ class OieSettingsService:
             profile=profile,
             runtime_reload_required=before != profile.get("resultListener"),
         )
+
+    def remove_management_api_password(self) -> dict[str, Any]:
+        return self._repository.remove_management_api_password()
 
     def test_connection(self) -> dict[str, str]:
         """Test persisted OIE credentials and return only presentation-safe fields.

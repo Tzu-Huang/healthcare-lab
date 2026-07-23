@@ -119,3 +119,64 @@ class IntegrationSettingsApiTests(unittest.TestCase):
         self.assertNotIn("oie-secret-canary", existing.get_data(as_text=True))
         effective = self.app.extensions["integration_settings_service"].get_effective("oie")
         self.assertEqual("oie-secret-canary", effective["managementApi"]["password"])
+
+    def test_oie_rejects_unknown_secret_with_stable_field_error(self):
+        fields = self.app.extensions["integration_settings_service"].get_public("oie")[
+            "fields"
+        ]
+        response = self.client.put(
+            "/api/settings/profiles/oie",
+            json={"fields": fields, "secrets": {"arbitrary": "canary"}},
+        )
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(
+            "secrets.arbitrary",
+            response.get_json()["error"]["fields"][0]["field"],
+        )
+        self.assertNotIn("canary", response.get_data(as_text=True))
+
+    def test_oie_validation_returns_stable_field_path(self):
+        fields = self.app.extensions["integration_settings_service"].get_public("oie")[
+            "fields"
+        ]
+        fields["managementApi"]["baseUrl"] = "private-value-canary"
+        response = self.client.put(
+            "/api/settings/profiles/oie", json={"fields": fields}
+        )
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(
+            "managementApi.baseUrl",
+            response.get_json()["error"]["fields"][0]["field"],
+        )
+        self.assertNotIn("private-value-canary", response.get_data(as_text=True))
+
+    def test_oie_password_can_be_explicitly_removed(self):
+        service = self.app.extensions["integration_settings_service"]
+        fields = service.get_public("oie")["fields"]
+        service.replace(
+            "oie",
+            fields,
+            secret_replacements={"managementApi.password": "configured-canary"},
+        )
+
+        response = self.client.delete(
+            "/api/settings/profiles/oie/secrets/managementApi.password", json={}
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertFalse(
+            response.get_json()["item"]["secrets"]["managementApi.password"][
+                "configured"
+            ]
+        )
+        self.assertEqual(
+            "",
+            service.get_effective("oie")["managementApi"]["password"],
+        )
+        existing = self.client.get("/api/oie/settings")
+        self.assertEqual(200, existing.status_code)
+        self.assertFalse(
+            existing.get_json()["item"]["managementApi"]["passwordConfigured"]
+        )

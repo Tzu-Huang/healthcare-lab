@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Mapping, Protocol
 
 from backend.domain.integration_settings import (
     MEDPLUM_PROFILE_TYPE,
     PROFILE_SECRET_FIELDS,
     SecretMutation,
+    SettingsValidationIssue,
+    TypedSettingsValidationError,
     medplum_bootstrap_candidate,
     preserve_secret,
     remove_secret,
     replace_secret,
     validate_profile,
 )
+from backend.domain.errors import SimulatorValidationError
 from backend.services.oie_settings import OieSettingsService
 
 OIE_PROFILE_TYPE = "oie"
@@ -65,6 +69,20 @@ class OieSettingsAdapter:
         *,
         secret_replacements: Mapping[str, Any],
     ) -> dict[str, Any]:
+        unknown_secrets = sorted(
+            set(secret_replacements) - {"managementApi.password"}
+        )
+        if unknown_secrets:
+            raise TypedSettingsValidationError(
+                [
+                    SettingsValidationIssue(
+                        f"secrets.{field}",
+                        "unknown_field",
+                        "The secret field is not supported.",
+                    )
+                    for field in unknown_secrets
+                ]
+            )
         payload = dict(fields)
         management = dict(payload.get("managementApi") or {})
         replacement = secret_replacements.get("managementApi.password")
@@ -73,8 +91,59 @@ class OieSettingsAdapter:
         else:
             management.pop("password", None)
         payload["managementApi"] = management
-        self._service.update_profile(payload)
+        try:
+            self._service.update_profile(payload)
+        except SimulatorValidationError as exc:
+            raise _typed_oie_validation_error(str(exc)) from exc
         return self.get_public()
+
+    def remove_secret(self, field: str) -> dict[str, Any]:
+        if field != "managementApi.password":
+            raise TypedSettingsValidationError(
+                [
+                    SettingsValidationIssue(
+                        f"secrets.{field}",
+                        "unknown_field",
+                        "The secret field is not supported.",
+                    )
+                ]
+            )
+        self._service.remove_management_api_password()
+        return self.get_public()
+
+
+def _typed_oie_validation_error(message: str) -> TypedSettingsValidationError:
+    field = "fields"
+    mappings = (
+        ("baseUrl", "managementApi.baseUrl"),
+        ("username", "managementApi.username"),
+        ("password", "managementApi.password"),
+        ("timeoutSeconds", "managementApi.timeoutSeconds"),
+        ("tlsVerify", "managementApi.tlsVerify"),
+        ("resultListener host", "resultListener.host"),
+        ("resultListener port", "resultListener.port"),
+        ("mllpFraming", "resultListener.mllpFraming"),
+        ("autoStart", "resultListener.autoStart"),
+        ("managedChannels", "managedChannels"),
+        ("managementApi", "managementApi"),
+    )
+    channel_path = re.search(r"managedChannels\[\d+\](?:\.[A-Za-z]+)?", message)
+    if channel_path:
+        field = channel_path.group(0)
+    else:
+        for token, path in mappings:
+            if token in message:
+                field = path
+                break
+    return TypedSettingsValidationError(
+        [
+            SettingsValidationIssue(
+                field,
+                "invalid_value",
+                "The field value is invalid.",
+            )
+        ]
+    )
 
 
 @dataclass(frozen=True, repr=False)
@@ -178,7 +247,9 @@ class IntegrationSettingsService:
         actor: str = "local-operator",
     ) -> dict[str, Any]:
         if profile_type == OIE_PROFILE_TYPE:
-            raise ValueError("OIE Management API password removal is not supported.")
+            if self._oie is None:
+                raise KeyError(profile_type)
+            return self._oie.remove_secret(field)
         private = self._repository.get_private(profile_type)
         profile = validate_profile(profile_type, private["fields"])
         self._repository.replace(
