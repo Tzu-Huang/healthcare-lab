@@ -21,11 +21,11 @@
 
 ## 4. Modular dcm4chee Settings Experience
 
-- [ ] 4.1 Register a dcm4chee-owned Settings module with dedicated view/controller, API adapter, state, styles, and accessible common fields.
-- [ ] 4.2 Add the Advanced disclosure for DICOMweb overrides, viewer, UID, HL7 identities, TLS/authentication, and mounted credential references.
-- [ ] 4.3 Present separate save, validation, activation, and diagnostic outcomes with redacted configured/reference state.
-- [ ] 4.4 Integrate dcm4chee readiness and diagnostics into Overview, guided setup, and Run all checks while preserving optional-disabled completion.
-- [ ] 4.5 Add frontend and API tests for module ownership, accessibility, validation mapping, advanced fields, disabled behavior, and redaction.
+- [x] 4.1 Register a dcm4chee-owned Settings module with dedicated view/controller, API adapter, state, styles, and accessible common fields.
+- [x] 4.2 Add the Advanced disclosure for DICOMweb overrides, viewer, UID, HL7 identities, TLS/authentication, and mounted credential references.
+- [x] 4.3 Present separate save, validation, activation, and diagnostic outcomes with redacted configured/reference state.
+- [x] 4.4 Integrate dcm4chee readiness and diagnostics into Overview, guided setup, and Run all checks while preserving optional-disabled completion.
+- [x] 4.5 Add frontend and API tests for module ownership, accessibility, validation mapping, advanced fields, disabled behavior, and redaction.
 
 ## 5. Verification
 

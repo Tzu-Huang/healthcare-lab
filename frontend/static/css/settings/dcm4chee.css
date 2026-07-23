@@ -1,0 +1,11 @@
+.dcm4chee-settings { display: grid; gap: 18px; }
+.dcm4chee-settings details { margin: 18px 0; }
+.dcm4chee-settings details > summary { cursor: pointer; font-weight: 700; }
+.dcm4chee-settings .settings-field-error { display: block; color: #b42318; }
+.dcm4chee-settings [aria-invalid="true"] { border-color: #b42318; }
+.dcm4chee-reference-state { display: block; margin-top: 4px; color: var(--muted, #667085); }
+.dcm4chee-settings .settings-diagnostic[data-state="failed"],
+.dcm4chee-settings .settings-diagnostic[data-state="degraded"] { border-color: #b42318; }
+@media (max-width: 720px) {
+  .dcm4chee-settings .button-row { align-items: stretch; flex-direction: column; }
+}
