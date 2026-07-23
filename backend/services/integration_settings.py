@@ -18,6 +18,10 @@ from backend.domain.integration_settings import (
     replace_secret,
     validate_profile,
 )
+from backend.domain.gdt_bridge_profile import (
+    GDT_BRIDGE_PROFILE_TYPE,
+    gdt_bridge_bootstrap_candidate,
+)
 from backend.domain.errors import SimulatorValidationError
 from backend.services.oie_settings import OieSettingsService
 
@@ -242,6 +246,18 @@ class MedplumEffectiveSettings:
         )
 
 
+@dataclass(frozen=True)
+class GdtBridgeEffectiveSettings:
+    enabled: bool
+    bridge_path: str
+    receiver_id: str
+    sender_id: str
+    filename_profile: str
+    success_mode: str
+    poll_seconds: float
+    stable_seconds: float
+
+
 class IntegrationSettingsService:
     def __init__(
         self,
@@ -259,6 +275,13 @@ class IntegrationSettingsService:
             profile,
             secrets={"clientSecret": str(configuration.get("MEDPLUM_CLIENT_SECRET", ""))},
             bootstrap_source="legacy-environment-and-inventory",
+        )
+
+    def bootstrap_gdt_bridge(self, configuration: Mapping[str, Any]) -> bool:
+        return self._repository.create_if_missing(
+            gdt_bridge_bootstrap_candidate(configuration),
+            secrets={},
+            bootstrap_source="legacy-environment",
         )
 
     def has_operator_configuration(self, profile_type: str) -> bool:
@@ -287,6 +310,19 @@ class IntegrationSettingsService:
     def get_effective(self, profile_type: str) -> Any:
         if profile_type == OIE_PROFILE_TYPE and self._oie is not None:
             return self._oie.get_effective()
+        if profile_type == GDT_BRIDGE_PROFILE_TYPE:
+            private = self._repository.get_private(profile_type)
+            fields = private["fields"]
+            return GdtBridgeEffectiveSettings(
+                enabled=bool(fields["enabled"]),
+                bridge_path=str(fields["applicationPath"]),
+                receiver_id=str(fields["receiverId"]),
+                sender_id=str(fields["senderId"]),
+                filename_profile=str(fields["filenameProfile"]),
+                success_mode=str(fields["importSuccessMode"]),
+                poll_seconds=float(fields["pollSeconds"]),
+                stable_seconds=float(fields["stableSeconds"]),
+            )
         if profile_type != MEDPLUM_PROFILE_TYPE:
             raise KeyError(profile_type)
         private = self._repository.get_private(profile_type)
@@ -316,9 +352,11 @@ class IntegrationSettingsService:
                 fields, secret_replacements=secret_replacements or {}
             )
         profile = validate_profile(profile_type, fields)
-        mutations: dict[str, SecretMutation] = {
-            "clientSecret": preserve_secret(),
-        }
+        mutations: dict[str, SecretMutation] = (
+            {"clientSecret": preserve_secret()}
+            if profile_type == MEDPLUM_PROFILE_TYPE
+            else {}
+        )
         for field, value in (secret_replacements or {}).items():
             mutations[field] = replace_secret(value)
         self._repository.replace(

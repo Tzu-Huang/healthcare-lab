@@ -35,6 +35,10 @@ def create_integration_settings_blueprint(
     settings: IntegrationSettingsPort,
     *,
     medplum_diagnostics: Callable[[], dict[str, Any]] | None = None,
+    gdt_activate: Callable[[], dict[str, Any]] | None = None,
+    gdt_provision: Callable[[], dict[str, Any]] | None = None,
+    gdt_diagnostics: Callable[[], dict[str, Any]] | None = None,
+    gdt_deployment: Callable[[], dict[str, Any]] | None = None,
 ) -> Blueprint:
     blueprint = Blueprint("integration_settings", __name__)
 
@@ -54,6 +58,8 @@ def create_integration_settings_blueprint(
             return bounded_error(
                 "settings_profile_not_found", "Settings profile was not found.", 404
             )
+        if profile_type == "gdt-bridge" and gdt_deployment is not None:
+            item = {**item, "deployment": gdt_deployment()}
         return jsonify({"success": True, "item": item})
 
     @blueprint.put("/api/settings/profiles/<profile_type>")
@@ -93,7 +99,60 @@ def create_integration_settings_blueprint(
             return bounded_error(
                 "invalid_settings_request", "Settings request was rejected.", 400
             )
-        return jsonify({"success": True, "item": item})
+        activation = (
+            gdt_activate()
+            if profile_type == "gdt-bridge" and gdt_activate is not None
+            else {"state": "effective", "activation": "immediate"}
+        )
+        return jsonify(
+            {
+                "success": True,
+                "item": item,
+                "activation": activation,
+                "watcher": activation.get("watcher", {}),
+            }
+        )
+
+    @blueprint.post("/api/settings/gdt-bridge/provision")
+    def provision_gdt_bridge():
+        if request.get_json(silent=True) not in (None, {}):
+            return bounded_error(
+                "invalid_settings_request",
+                "Directory provisioning accepts no request fields.",
+                400,
+            )
+        try:
+            result = gdt_provision() if gdt_provision is not None else None
+        except SimulatorValidationError:
+            return bounded_error(
+                "gdt_provision_failed",
+                "Documented GDT bridge directories could not be provisioned.",
+                400,
+            )
+        if result is None:
+            return bounded_error(
+                "gdt_provision_unavailable",
+                "GDT bridge provisioning is unavailable.",
+                503,
+            )
+        return jsonify({"success": True, "item": result})
+
+    @blueprint.post("/api/settings/gdt-bridge/diagnostics")
+    def diagnose_gdt_bridge():
+        if request.get_json(silent=True) not in (None, {}):
+            return bounded_error(
+                "invalid_settings_request",
+                "Diagnostics accepts no request fields.",
+                400,
+            )
+        result = gdt_diagnostics() if gdt_diagnostics is not None else None
+        if result is None:
+            return bounded_error(
+                "gdt_diagnostics_unavailable",
+                "GDT bridge diagnostics are unavailable.",
+                503,
+            )
+        return jsonify({"success": True, **result})
 
     @blueprint.post("/api/settings/profiles/medplum/save-and-test")
     def save_and_test_medplum():
