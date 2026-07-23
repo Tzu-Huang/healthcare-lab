@@ -2,15 +2,15 @@
 
 - [x] 1.1 Add the validated persisted GDT Bridge profile schema, repository registration, safe defaults, and idempotent migration.
 - [x] 1.2 Add one-time legacy environment bootstrap and update the configuration ownership documentation for runtime, derived, and deployment-only GDT fields.
-- [ ] 1.3 Add typed GDT profile read/update APIs with stable field errors, value-free audits, and activation metadata.
+- [x] 1.3 Add typed GDT profile read/update APIs with stable field errors, value-free audits, and activation metadata.
 - [x] 1.4 Add profile persistence, validation, bootstrap, rollback, audit, and public-projection tests.
 
 ## 2. Effective Runtime and Watcher Lifecycle
 
 - [x] 2.1 Compose an application-scoped effective GDT profile reader usable outside request context.
-- [ ] 2.2 Migrate order export, result import, directory resolution, filename binding, and post-success handling to one effective profile snapshot.
-- [ ] 2.3 Build a serialized watcher lifecycle coordinator with deterministic startup, immutable per-scan profiles, safe reload, and explicit `restart-required` outcomes.
-- [ ] 2.4 Add compatibility and lifecycle tests for disabled mode, startup defaults, profile changes, reload/restart behavior, and existing order/result flows.
+- [x] 2.2 Migrate order export, result import, directory resolution, filename binding, and post-success handling to one effective profile snapshot.
+- [x] 2.3 Build a serialized watcher lifecycle coordinator with deterministic startup, immutable per-scan profiles, safe reload, and explicit `restart-required` outcomes.
+- [x] 2.4 Add compatibility and lifecycle tests for disabled mode, startup defaults, profile changes, reload/restart behavior, and existing order/result flows.
 
 ## 3. Filesystem Provisioning and Diagnostics
 

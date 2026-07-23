@@ -88,6 +88,7 @@ class GdtBridgeInboundWatcher:
         receiver_id: str | None = None,
         sender_id: str | None = None,
         poll_seconds: float | None = None,
+        stable_seconds: float | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             if self._thread and self._thread.is_alive():
@@ -104,9 +105,46 @@ class GdtBridgeInboundWatcher:
                 self.sender_id = str(sender_id or "").strip()
             if poll_seconds is not None:
                 self.poll_seconds = max(0.25, float(poll_seconds))
+            if stable_seconds is not None:
+                self.stable_seconds = max(0.0, float(stable_seconds))
             self._observations = {}
             self._last_error = ""
             return self.status()
+
+    def apply_profile(self, profile: Any) -> dict[str, Any]:
+        """Serialize a complete effective-profile transition.
+
+        A running watcher is quiesced before its immutable scan configuration is
+        replaced, then restarted only when the new profile is enabled.
+        """
+        was_running = bool(self.status()["running"])
+        if was_running:
+            self.stop()
+        try:
+            self.configure(
+                bridge_root=profile.bridge_path,
+                success_mode=profile.success_mode,
+                filename_profile=profile.filename_profile,
+                receiver_id=profile.receiver_id,
+                sender_id=profile.sender_id,
+                poll_seconds=profile.poll_seconds,
+                stable_seconds=profile.stable_seconds,
+            )
+            if profile.enabled:
+                self.start()
+        except Exception:
+            # The persisted intent remains authoritative, but callers can
+            # present a bounded restart requirement instead of leaking paths.
+            return {
+                "state": "restart-required",
+                "activation": "application-restart",
+                "watcher": self.status(),
+            }
+        return {
+            "state": "effective",
+            "activation": "immediate",
+            "watcher": self.status(),
+        }
 
     def start(self) -> dict[str, Any]:
         with self._lock:
@@ -149,8 +187,8 @@ class GdtBridgeInboundWatcher:
                     self._last_result = result
                     self._last_error = ""
                     self._last_run_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
-            except Exception as exc:  # pragma: no cover - defensive watcher boundary
+            except Exception:  # pragma: no cover - defensive watcher boundary
                 with self._lock:
-                    self._last_error = str(exc)
+                    self._last_error = "gdt_watcher_scan_failed"
                     self._last_run_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
             self._stop_event.wait(self.poll_seconds)
