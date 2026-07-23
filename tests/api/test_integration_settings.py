@@ -167,6 +167,54 @@ class IntegrationSettingsApiTests(unittest.TestCase):
         self.assertEqual(400, response.status_code)
         self.assertEqual("invalid_settings_request", response.get_json()["error"]["code"])
 
+    def test_gdt_profile_save_activates_and_bounded_operations_do_not_list_files(self):
+        service = self.app.extensions["integration_settings_service"]
+        fields = dict(service.get_public("gdt-bridge")["fields"])
+        bridge_root = Path(self.temporary.name) / "gdt-bridge"
+        fields.update(
+            {
+                "enabled": False,
+                "applicationPath": str(bridge_root),
+                "receiverId": "",
+                "senderId": "",
+                "filenameProfile": "permissive",
+                "importSuccessMode": "delete",
+                "pollSeconds": 3,
+                "stableSeconds": 2,
+            }
+        )
+
+        saved = self.client.put(
+            "/api/settings/profiles/gdt-bridge", json={"fields": fields}
+        )
+        self.assertEqual(200, saved.status_code)
+        self.assertEqual("effective", saved.get_json()["activation"]["state"])
+        self.assertFalse(service.get_effective("gdt-bridge").enabled)
+
+        provisioned = self.client.post(
+            "/api/settings/gdt-bridge/provision", json={}
+        )
+        self.assertEqual(200, provisioned.status_code)
+        (bridge_root / "inbox" / "patient-name.gdt").write_text(
+            "patient-canary", encoding="utf-8"
+        )
+        diagnosed = self.client.post(
+            "/api/settings/gdt-bridge/diagnostics", json={}
+        )
+        body = diagnosed.get_data(as_text=True)
+        self.assertEqual(200, diagnosed.status_code)
+        self.assertEqual("healthy", diagnosed.get_json()["state"])
+        self.assertNotIn("patient-name", body)
+        self.assertNotIn("patient-canary", body)
+
+    def test_gdt_profile_read_distinguishes_application_and_host_paths(self):
+        response = self.client.get("/api/settings/profiles/gdt-bridge")
+        body = response.get_json()["item"]
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("gdt-bridge", body["profileType"])
+        self.assertEqual("/data/gdt-bridge", body["deployment"]["applicationPath"])
+        self.assertIn("hostBindMountSource", body["deployment"])
+
     def test_oie_adapter_preserves_existing_endpoint_shape_and_private_secret(self):
         service = self.app.extensions["integration_settings_service"]
         fields = service.get_public("oie")["fields"]

@@ -1,0 +1,77 @@
+<div class="gdt-settings" data-integration-owner="gdt-bridge">
+  <div>
+    <h3>GDT Bridge</h3>
+    <p>This optional integration may remain disabled without blocking setup.</p>
+  </div>
+
+  <section class="lab-panel settings-panel" aria-labelledby="gdt-profile-title">
+    <h4 id="gdt-profile-title">Bridge profile</h4>
+    <label class="checkbox-row">
+      <input id="gdt-bridge-enabled" type="checkbox">
+      Enable automatic GDT result import
+    </label>
+
+    <dl class="gdt-paths">
+      <div>
+        <dt>Application path</dt>
+        <dd><code id="gdt-bridge-application-path">/data/gdt-bridge</code></dd>
+      </div>
+      <div>
+        <dt>Host bind-mount source</dt>
+        <dd id="gdt-bridge-host-path">Unavailable</dd>
+      </div>
+    </dl>
+    <p class="muted">
+      The application path is fixed for supported Docker deployments. The host path is read-only
+      deployment metadata; changing it requires deployment configuration and container recreation.
+    </p>
+
+    <details id="gdt-bridge-advanced">
+      <summary>Advanced</summary>
+      <div class="form-grid settings-form-grid">
+        <label for="gdt-bridge-receiver-id">Receiver ID
+          <input id="gdt-bridge-receiver-id" autocomplete="off" required>
+        </label>
+        <label for="gdt-bridge-sender-id">Sender ID
+          <input id="gdt-bridge-sender-id" autocomplete="off" required>
+        </label>
+        <label for="gdt-bridge-filename-profile">Filename binding
+          <select id="gdt-bridge-filename-profile">
+            <option value="gdt35">GDT 3.5</option>
+            <option value="gdt21">GDT 2.1</option>
+            <option value="permissive">Permissive lab mode</option>
+          </select>
+        </label>
+        <label for="gdt-bridge-success-mode">After successful import
+          <select id="gdt-bridge-success-mode">
+            <option value="delete">Delete exchange file (standard)</option>
+            <option value="archive">Archive (PoC/debug)</option>
+          </select>
+        </label>
+        <label for="gdt-bridge-poll-interval">Poll interval (seconds)
+          <input id="gdt-bridge-poll-interval" type="number" min="0.25" max="300" step="0.25" required>
+        </label>
+        <label for="gdt-bridge-stable-interval">Stable-file wait (seconds)
+          <input id="gdt-bridge-stable-interval" type="number" min="0" max="300" step="0.25" required>
+        </label>
+      </div>
+    </details>
+
+    <div class="button-row">
+      <button id="gdt-bridge-save" class="primary" type="button">Save profile</button>
+      <button id="gdt-bridge-provision" type="button">Create missing directories</button>
+      <button id="gdt-bridge-run-diagnostics" type="button">Run bounded diagnostics</button>
+    </div>
+    <p id="gdt-bridge-save-result" class="settings-result" role="status"></p>
+  </section>
+
+  <section aria-labelledby="gdt-bridge-readiness-title">
+    <h4 id="gdt-bridge-readiness-title">Readiness and watcher</h4>
+    <p id="gdt-bridge-readiness" role="status">Readiness has not been checked.</p>
+    <dl class="gdt-watcher">
+      <div><dt>Watcher</dt><dd id="gdt-bridge-watcher-state">Unknown</dd></div>
+      <div><dt>Activation</dt><dd id="gdt-bridge-activation">Unknown</dd></div>
+    </dl>
+    <div id="gdt-bridge-diagnostics" class="settings-diagnostics-grid" aria-live="polite"></div>
+  </section>
+</div>

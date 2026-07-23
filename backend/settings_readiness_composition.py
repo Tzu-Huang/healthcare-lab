@@ -95,11 +95,79 @@ class _OieProvider:
         return DiagnosticAssessment(DiagnosticState.DEGRADED)
 
 
+class _GdtBridgeProvider:
+    def __init__(
+        self,
+        settings: IntegrationSettingsReader,
+        *,
+        watcher_status: Callable[[], dict[str, Any]],
+        activation_status: Callable[[], dict[str, str]],
+        diagnostics: Callable[[], dict[str, Any]],
+        check_diagnostics: Callable[[], dict[str, Any]],
+    ) -> None:
+        self._settings = settings
+        self._watcher_status = watcher_status
+        self._activation_status = activation_status
+        self._diagnostics = diagnostics
+        self._check_diagnostics = check_diagnostics
+
+    def assess(self) -> ReadinessAssessment:
+        fields = self._settings.get_public("gdt-bridge")["fields"]
+        if not fields.get("enabled"):
+            return ReadinessAssessment(ReadinessState.DISABLED)
+        activation = self._activation_status()
+        if activation.get("state") == "restart-required":
+            impact = (
+                ActivationImpact.CONTAINER_RECREATION
+                if activation.get("activation") == "container-recreation"
+                else ActivationImpact.APPLICATION_RESTART
+            )
+            return ReadinessAssessment(ReadinessState.RESTART_REQUIRED, impact)
+        report = self._diagnostics()
+        if report.get("state") != "healthy":
+            return ReadinessAssessment(ReadinessState.DEGRADED)
+        if not self._watcher_status().get("running"):
+            return ReadinessAssessment(ReadinessState.DEGRADED)
+        return ReadinessAssessment(ReadinessState.READY)
+
+    def check(self) -> DiagnosticAssessment:
+        readiness = self.assess()
+        if readiness.state is ReadinessState.DISABLED:
+            return DiagnosticAssessment(DiagnosticState.DISABLED)
+        report = self._check_diagnostics()
+        watcher_running = report.get("watcher", {}).get("state") == "running"
+        checks = [
+            {
+                "role": str(item.get("role", "unknown")),
+                "state": str(item.get("state", "failed")),
+                "code": str(item.get("code", "unavailable")),
+            }
+            for item in report.get("checks", [])
+        ]
+        checks.append(
+            {
+                "role": "watcher",
+                "state": "passed" if watcher_running else "failed",
+                "code": "running" if watcher_running else "stopped",
+            }
+        )
+        return DiagnosticAssessment(
+            DiagnosticState.HEALTHY
+            if report.get("state") == "healthy" and watcher_running
+            else DiagnosticState.DEGRADED,
+            tuple(checks),
+        )
+
+
 def create_settings_readiness_service(
     settings: IntegrationSettingsReader,
     *,
     listener_status: Callable[[], dict[str, Any]],
     oie_diagnostics: Callable[[], dict[str, Any]],
+    gdt_watcher_status: Callable[[], dict[str, Any]] | None = None,
+    gdt_activation_status: Callable[[], dict[str, str]] | None = None,
+    gdt_diagnostics: Callable[[], dict[str, Any]] | None = None,
+    gdt_check_diagnostics: Callable[[], dict[str, Any]] | None = None,
 ) -> SettingsReadinessService:
     registry = SettingsReadinessRegistry(
         (
@@ -120,7 +188,16 @@ def create_settings_readiness_service(
                 "gdt-bridge",
                 "GDT Bridge",
                 False,
-                _StaticProvider(ReadinessState.DISABLED),
+                _GdtBridgeProvider(
+                    settings,
+                    watcher_status=gdt_watcher_status or (lambda: {"running": False}),
+                    activation_status=gdt_activation_status
+                    or (lambda: {"state": "effective", "activation": "immediate"}),
+                    diagnostics=gdt_diagnostics
+                    or (lambda: {"state": "unavailable", "checks": []}),
+                    check_diagnostics=gdt_check_diagnostics
+                    or (lambda: {"state": "unavailable", "checks": []}),
+                ),
             ),
             ReadinessRegistration(
                 "dcm4chee",

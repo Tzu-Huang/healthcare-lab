@@ -95,6 +95,77 @@ class GdtConfigurationConflict(Exception):
     pass
 
 
+class EffectiveGdtConfiguration(MutableMapping[str, Any]):
+    """Compatibility mapping backed by the authoritative typed profile."""
+
+    _FIELDS = {
+        "GDT_BRIDGE_PATH": "bridge_path",
+        "GDT_BRIDGE_IMPORT_SUCCESS_MODE": "success_mode",
+        "GDT_BRIDGE_FILENAME_PROFILE": "filename_profile",
+        "GDT_BRIDGE_RECEIVER_ID": "receiver_id",
+        "GDT_BRIDGE_SENDER_ID": "sender_id",
+        "GDT_BRIDGE_WATCH_POLL_SECONDS": "poll_seconds",
+        "GDT_BRIDGE_INBOX_POLL_SECONDS": "poll_seconds",
+        "GDT_BRIDGE_STABLE_SECONDS": "stable_seconds",
+        "GDT_BRIDGE_ENABLED": "enabled",
+    }
+
+    _PROFILE_FIELDS = {
+        "GDT_BRIDGE_PATH": "applicationPath",
+        "GDT_BRIDGE_IMPORT_SUCCESS_MODE": "importSuccessMode",
+        "GDT_BRIDGE_FILENAME_PROFILE": "filenameProfile",
+        "GDT_BRIDGE_RECEIVER_ID": "receiverId",
+        "GDT_BRIDGE_SENDER_ID": "senderId",
+        "GDT_BRIDGE_WATCH_POLL_SECONDS": "pollSeconds",
+        "GDT_BRIDGE_INBOX_POLL_SECONDS": "pollSeconds",
+        "GDT_BRIDGE_STABLE_SECONDS": "stableSeconds",
+        "GDT_BRIDGE_ENABLED": "enabled",
+    }
+
+    def __init__(
+        self,
+        profile_reader: Callable[[], Any],
+        profile_updater: Callable[[dict[str, Any]], Any] | None = None,
+    ) -> None:
+        self._profile_reader = profile_reader
+        self._profile_updater = profile_updater
+
+    def __getitem__(self, key: str) -> Any:
+        try:
+            field = self._FIELDS[key]
+        except KeyError as exc:
+            raise KeyError(key) from exc
+        return getattr(self._profile_reader(), field)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        if self._profile_updater is None or key not in self._PROFILE_FIELDS:
+            raise GdtConfigurationConflict(
+                "GDT Bridge configuration is persisted through Settings profiles."
+            )
+        profile = self._profile_reader()
+        fields = {
+            "enabled": profile.enabled,
+            "applicationPath": profile.bridge_path,
+            "receiverId": profile.receiver_id,
+            "senderId": profile.sender_id,
+            "filenameProfile": profile.filename_profile,
+            "importSuccessMode": profile.success_mode,
+            "pollSeconds": profile.poll_seconds,
+            "stableSeconds": profile.stable_seconds,
+        }
+        fields[self._PROFILE_FIELDS[key]] = value
+        self._profile_updater(fields)
+
+    def __delitem__(self, key: str) -> None:
+        raise GdtConfigurationConflict("GDT Bridge configuration cannot be deleted.")
+
+    def __iter__(self):
+        return iter(self._FIELDS)
+
+    def __len__(self) -> int:
+        return len(self._FIELDS)
+
+
 class GdtExportError(Exception):
     def __init__(self, message: str, item: dict[str, Any]) -> None:
         super().__init__(message)

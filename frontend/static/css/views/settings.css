@@ -55,3 +55,4 @@
   .settings-tabs { scroll-snap-type: x proximity; }
   .settings-tabs [role="tab"] { scroll-snap-align: start; }
 }
+@import url("../settings/gdt-bridge.css");

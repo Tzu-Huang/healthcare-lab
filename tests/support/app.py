@@ -61,6 +61,9 @@ class DisposableAppCase(unittest.TestCase):
             medplum_fields,
             secret_replacements={"clientSecret": "demo-secret"},
         )
+        gdt_fields = dict(medplum_settings.get_public("gdt-bridge")["fields"])
+        gdt_fields["applicationPath"] = str(temp_root / "gdt-bridge")
+        medplum_settings.replace("gdt-bridge", gdt_fields)
         self.app = app
         self.client = app.test_client()
         self.lab_repository_view = LabApplicationRepository(

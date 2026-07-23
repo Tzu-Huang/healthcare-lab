@@ -96,6 +96,7 @@ from backend.services.oie_workflow import (
     parse_oru_summary,
 )
 from backend.services.gdt_workflow import (
+    EffectiveGdtConfiguration,
     GdtWorkflowService,
     discover_gdt_inbound_candidates,
     gdt_collision_safe_path,
@@ -107,6 +108,7 @@ from backend.services.gdt_workflow import (
     gdt_path_status,
     import_gdt_bridge_files,
 )
+from backend.gdt_settings_composition import create_gdt_bridge_watcher, gdt_readiness_diagnostics, gdt_run_all_diagnostics, gdt_settings_api_operations
 from backend.services.fhir_workflow import (
     FhirWorkflowService,
     MEDPLUM_INVENTORY_RESOURCE_TYPES,
@@ -300,17 +302,9 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
     )
     if order_coordination_receiver is not None:
         order_coordination_receiver(order_coordination)
-    gdt_bridge_watcher = GdtBridgeInboundWatcher(
-        gdt_workflow,
-        app.config["GDT_BRIDGE_PATH"],
-        import_gdt_bridge_files,
-        poll_seconds=app.config["GDT_BRIDGE_WATCH_POLL_SECONDS"],
-        success_mode=app.config["GDT_BRIDGE_IMPORT_SUCCESS_MODE"],
-        filename_profile=app.config["GDT_BRIDGE_FILENAME_PROFILE"],
-        receiver_id=app.config["GDT_BRIDGE_RECEIVER_ID"],
-        sender_id=app.config["GDT_BRIDGE_SENDER_ID"],
-        stable_seconds=app.config["GDT_BRIDGE_STABLE_SECONDS"],
-    )
+    gdt_bridge_watcher = create_gdt_bridge_watcher(
+        dependencies.integration_settings_service, gdt_workflow,
+        import_gdt_bridge_files, GdtBridgeInboundWatcher)
     openemr_source = OpenEMRProcedureOrderSource(
         host=app.config["OPENEMR_DB_HOST"],
         port=app.config["OPENEMR_DB_PORT"],
@@ -342,6 +336,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         create_integration_settings_blueprint(
             dependencies.integration_settings_service,
             medplum_diagnostics=medplum_runtime.diagnose,
+            **gdt_settings_api_operations(dependencies.integration_settings_service, gdt_bridge_watcher),
         )
     )
     app.extensions["oie_channel_lifecycle_service"] = OieManagedChannelLifecycleService(
@@ -402,6 +397,10 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         dependencies.integration_settings_service,
         listener_status=app.extensions["oie_workflow_service"].listener_status,
         oie_diagnostics=app.extensions["oie_runtime_diagnostics_service"].diagnose,
+        gdt_watcher_status=gdt_bridge_watcher.status,
+        gdt_activation_status=gdt_bridge_watcher.activation_status,
+        gdt_diagnostics=lambda: gdt_readiness_diagnostics(dependencies.integration_settings_service),
+        gdt_check_diagnostics=lambda: gdt_run_all_diagnostics(dependencies.integration_settings_service, gdt_bridge_watcher),
     )
     app.register_blueprint(
         create_settings_readiness_blueprint(
@@ -574,7 +573,9 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         )
     )
     gdt_service = GdtWorkflowService(
-        gdt_workflow, app.config, app.extensions["gdt_bridge_watcher"],
+        gdt_workflow,
+        EffectiveGdtConfiguration(lambda: dependencies.integration_settings_service.get_effective("gdt-bridge"), lambda fields: dependencies.integration_settings_service.replace("gdt-bridge", fields)),
+        app.extensions["gdt_bridge_watcher"],
         is_internal_file=gdt_is_internal_or_temp_file,
         has_supported_extension=gdt_has_supported_exchange_extension,
         filename_binding_matches=gdt_filename_binding_matches,

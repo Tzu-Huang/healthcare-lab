@@ -56,6 +56,7 @@ class ReadinessAssessment:
 @dataclass(frozen=True)
 class DiagnosticAssessment:
     state: DiagnosticState
+    checks: tuple[dict[str, str], ...] = ()
 
 
 class ReadinessProvider(Protocol):
@@ -101,9 +102,12 @@ def project_diagnostic(
         DiagnosticState.UNAVAILABLE: "No bounded diagnostic is available yet.",
         DiagnosticState.DISABLED: "Diagnostics are disabled with this optional integration.",
     }
-    return {
+    result = {
         "id": registration.integration_id,
         "label": registration.label,
         "state": assessment.state.value,
         "summary": summaries[assessment.state],
     }
+    if assessment.checks:
+        result["checks"] = [dict(item) for item in assessment.checks]
+    return result
