@@ -266,6 +266,15 @@ class OieSettingsRepositoryTest(unittest.TestCase):
              "lastKnownRevision": "3"},
         ]))
 
+    def recovery_intent(self, logical_type="hlab-orm-to-ap"):
+        item = next(value for value in self.repository.get()["managedChannels"]
+                    if value["logicalType"] == logical_type)
+        return {
+            "expected_channel_name": item["channelName"],
+            "expected_template_version": item["templateVersion"],
+            "expected_desired_config": item,
+        }
+
     def test_targeted_update_preserves_profile_and_unrelated_mapping(self):
         self.seed_mappings()
         before = self.repository.get()
@@ -347,6 +356,84 @@ class OieSettingsRepositoryTest(unittest.TestCase):
                 channel_id="same-channel", channel_name="HLAB_ORU_TO_HLAB",
                 template_version="1", revision="1",
             )
+
+    def test_recovery_bind_is_atomic_and_preserves_unrelated_state(self):
+        before = self.repository.get()
+        event = self.audit(operation_id="recover-1", actor="startup-bootstrap",
+                           operation="recover-mapping", channel_id="recovered",
+                           before_revision="", after_revision="9",
+                           classification="recoverable", changed_owned_fields=[])
+
+        bound = self.repository.compare_and_bind_recovered_managed_channel_mapping(
+            logical_type="hlab-orm-to-ap", channel_id="recovered",
+            channel_name="HLAB_ORM_TO_AP", template_version="1", revision="9",
+            audit_event=event, **self.recovery_intent(),
+        )
+
+        after = self.repository.get()
+        self.assertEqual(("recovered", "9"), (bound["channelId"], bound["lastKnownRevision"]))
+        self.assertEqual(before["managementApi"], after["managementApi"])
+        self.assertEqual(before["resultListener"], after["resultListener"])
+        self.assertEqual(before["managedChannels"][1], after["managedChannels"][1])
+        self.assertEqual("recover-mapping", self.repository.list_managed_channel_lifecycle_audits()[0]["operation"])
+
+    def test_recovery_bind_rejects_repeat_and_rolls_back_audit(self):
+        event = self.audit(operation_id="recover-1", operation="recover-mapping",
+                           channel_id="recovered", before_revision="", after_revision="9",
+                           classification="recoverable", changed_owned_fields=[])
+        arguments = dict(logical_type="hlab-orm-to-ap", channel_id="recovered",
+                         channel_name="HLAB_ORM_TO_AP", template_version="1", revision="9",
+                         audit_event=event, **self.recovery_intent())
+        self.repository.compare_and_bind_recovered_managed_channel_mapping(**arguments)
+        arguments["audit_event"] = dict(event, operation_id="recover-2")
+        with self.assertRaises(OieMappingConflictError):
+            self.repository.compare_and_bind_recovered_managed_channel_mapping(**arguments)
+        self.assertEqual(1, len(self.repository.list_managed_channel_lifecycle_audits()))
+
+    def test_recovery_bind_audit_failure_rolls_back_mapping(self):
+        event = self.audit(operation_id="duplicate", operation="recover-mapping",
+                           channel_id="recovered", before_revision="", after_revision="9",
+                           classification="recoverable", changed_owned_fields=[])
+        self.repository.append_managed_channel_lifecycle_audit(event)
+        with self.assertRaises(OieMappingConflictError):
+            self.repository.compare_and_bind_recovered_managed_channel_mapping(
+                logical_type="hlab-orm-to-ap", channel_id="recovered",
+                channel_name="HLAB_ORM_TO_AP", template_version="1", revision="9",
+                audit_event=event, **self.recovery_intent(),
+            )
+        self.assertEqual("", self.repository.get()["managedChannels"][0]["channelId"])
+
+    def test_recovery_bind_rejects_non_allowlisted_audit_content(self):
+        event = self.audit(operation="recover-mapping", classification="recoverable",
+                           payload="<channel>secret</channel>")
+        with self.assertRaisesRegex(ValueError, "unsupported fields"):
+            self.repository.compare_and_bind_recovered_managed_channel_mapping(
+                logical_type="hlab-orm-to-ap", channel_id="recovered",
+                channel_name="HLAB_ORM_TO_AP", template_version="1", revision="9",
+                audit_event=event, **self.recovery_intent(),
+            )
+        self.assertEqual("", self.repository.get()["managedChannels"][0]["channelId"])
+
+    def test_recovery_bind_rejects_changed_empty_mapping_intent(self):
+        expected = self.recovery_intent()
+        profile = self.repository.get()
+        changed = [dict(item) for item in profile["managedChannels"]]
+        changed[0]["destinationPort"] = 6672
+        self.repository.update(self.settings_payload(managedChannels=changed))
+        event = self.audit(operation_id="stale-intent", operation="recover-mapping",
+                           channel_id="recovered", before_revision="", after_revision="9",
+                           classification="recoverable", changed_owned_fields=[])
+
+        with self.assertRaises(OieMappingConflictError):
+            self.repository.compare_and_bind_recovered_managed_channel_mapping(
+                logical_type="hlab-orm-to-ap", channel_id="recovered",
+                channel_name="HLAB_ORM_TO_AP", template_version="1", revision="9",
+                audit_event=event, **expected,
+            )
+
+        mapping = self.repository.get()["managedChannels"][0]
+        self.assertEqual(("", 6672), (mapping["channelId"], mapping["destinationPort"]))
+        self.assertEqual([], self.repository.list_managed_channel_lifecycle_audits())
 
 
 if __name__ == "__main__":
