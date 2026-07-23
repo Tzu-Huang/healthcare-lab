@@ -93,6 +93,30 @@ class IntegrationSettingsApiTests(unittest.TestCase):
         self.assertEqual("baseUrl", body["error"]["fields"][0]["field"])
         self.assertNotIn(canary, response.get_data(as_text=True))
 
+    def test_auth_grace_rejects_booleans_and_accepts_integer(self):
+        fields = self.app.extensions["integration_settings_service"].get_public(
+            "medplum"
+        )["fields"]
+        for value in (True, False):
+            invalid = dict(fields)
+            invalid["authGraceSeconds"] = value
+            response = self.client.put(
+                "/api/settings/profiles/medplum", json={"fields": invalid}
+            )
+            self.assertEqual(400, response.status_code)
+            self.assertEqual(
+                "authGraceSeconds",
+                response.get_json()["error"]["fields"][0]["field"],
+            )
+
+        valid = dict(fields)
+        valid["authGraceSeconds"] = 45
+        response = self.client.put(
+            "/api/settings/profiles/medplum", json={"fields": valid}
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(45, response.get_json()["item"]["fields"]["authGraceSeconds"])
+
     def test_unknown_request_fields_are_rejected(self):
         response = self.client.put(
             "/api/settings/profiles/medplum",

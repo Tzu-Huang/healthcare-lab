@@ -128,3 +128,34 @@ class IntegrationSettingsRepositoryTests(unittest.TestCase):
                 profile,
                 secret_mutations={"arbitrary": replace_secret("canary")},
             )
+
+    def test_no_op_replace_audits_no_changed_fields(self):
+        self.seed()
+        private = self.repository.get_private("medplum")
+
+        self.repository.replace(
+            validate_profile("medplum", private["fields"]),
+            secret_mutations={
+                "clientSecret": replace_secret(private["secrets"]["clientSecret"])
+            },
+        )
+
+        self.assertEqual(
+            [],
+            self.repository.list_audits("medplum")[-1]["changedFields"],
+        )
+
+    def test_replace_preserves_secret_whitespace_exactly(self):
+        self.seed()
+        private = self.repository.get_private("medplum")
+        whitespace_sensitive = "  whitespace-sensitive-secret  "
+
+        self.repository.replace(
+            validate_profile("medplum", private["fields"]),
+            secret_mutations={"clientSecret": replace_secret(whitespace_sensitive)},
+        )
+
+        self.assertEqual(
+            whitespace_sensitive,
+            self.repository.get_private("medplum")["secrets"]["clientSecret"],
+        )
