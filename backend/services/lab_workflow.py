@@ -940,14 +940,14 @@ def describe_medplum_token_failure(exc: Exception) -> str:
 
 def describe_medplum_service_request_failure(exc: Exception) -> str:
     message = str(exc)
-    if "Medplum returned HTTP 401:" in message:
+    if getattr(exc, "http_status", None) == 401:
         return f"FHIR data fetch unauthorized: {message}"
     return f"ServiceRequest fetch failed: {message}"
 
 
 def describe_medplum_diagnostic_report_failure(exc: Exception) -> str:
     message = str(exc)
-    if "Medplum returned HTTP 401:" in message:
+    if getattr(exc, "http_status", None) == 401:
         return f"FHIR DiagnosticReport fetch unauthorized: {message}"
     return f"DiagnosticReport fetch failed: {message}"
 
