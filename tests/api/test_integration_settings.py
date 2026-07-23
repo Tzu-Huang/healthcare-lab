@@ -27,6 +27,30 @@ class IntegrationSettingsApiTests(unittest.TestCase):
         self.assertIn("configured", body["item"]["secrets"]["clientSecret"])
         self.assertNotIn("MEDPLUM_CLIENT_SECRET", response.get_data(as_text=True))
 
+    def test_lab_inventory_cannot_mutate_typed_medplum_base_url(self):
+        servers = self.client.get("/api/lab/servers").get_json()["items"]
+        medplum = next(item for item in servers if item["name"] == "Medplum")
+        before = self.app.extensions["integration_settings_service"].get_effective(
+            "medplum"
+        ).base_url
+
+        response = self.client.put(
+            f"/api/lab/servers/{medplum['id']}",
+            json={"baseUrl": "https://competing-owner.example/fhir/R4"},
+        )
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(
+            "Medplum baseUrl is owned by the typed Settings profile.",
+            response.get_json()["error"],
+        )
+        self.assertEqual(
+            before,
+            self.app.extensions["integration_settings_service"].get_effective(
+                "medplum"
+            ).base_url,
+        )
+
     def test_replace_uses_blank_secret_as_preserve(self):
         service = self.app.extensions["integration_settings_service"]
         before = service.get_effective("medplum").client_secret

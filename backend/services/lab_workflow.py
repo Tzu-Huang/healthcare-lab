@@ -212,6 +212,11 @@ class LabRegistryService:
         return self._decorate(self.repository.get_lab_server(server_id))
 
     def update_server(self, server_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        current = self.repository.get_lab_server(server_id)
+        if current.get("name") == "Medplum" and "baseUrl" in payload:
+            raise SimulatorValidationError(
+                "Medplum baseUrl is owned by the typed Settings profile."
+            )
         return self._decorate(self.repository.update_lab_server(server_id, payload))
 
 
