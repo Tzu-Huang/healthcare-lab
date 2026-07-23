@@ -582,6 +582,8 @@ class OieManagementClient:
                 value = next(iter(value.values()))
             else:
                 break
+        if value is None:
+            value = []
         if isinstance(value, Mapping) and all(key in value for key in required):
             value = [value]
         if not isinstance(value, list):

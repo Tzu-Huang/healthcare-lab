@@ -205,6 +205,17 @@ class OieManagementClientTests(unittest.TestCase):
 
         self.assertEqual("only", result.values["items"][0]["id"])
 
+    def test_list_channels_accepts_oie_null_wrapper_as_empty_inventory(self):
+        client, _ = client_with(
+            Step(body={"status": "SUCCESS"}),
+            Step(body={"list": None}),
+        )
+        client.login()
+
+        result = client.list_channels()
+
+        self.assertEqual((), result.values["items"])
+
     def test_destination_statistics_normalizes_totals_without_exposing_payload(self):
         client, transport = client_with(
             Step(body={"status": "SUCCESS"}),

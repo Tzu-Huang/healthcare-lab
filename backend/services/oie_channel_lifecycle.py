@@ -47,6 +47,7 @@ class OieManagedChannelLifecycleService:
     def __init__(self, client, repository, *, ap_host: str, token_codec: PreviewTokenCodec, operation_id=None, client_provider=None):
         self._fixed_client, self._client_provider = client, client_provider
         self._active_client = ContextVar("oie_lifecycle_client", default=None)
+        self._active_actor = ContextVar("oie_lifecycle_actor", default="local-operator")
         self.repository, self.ap_host, self.tokens = repository, ap_host, token_codec
         self.operation_id = operation_id or (lambda: secrets.token_hex(12))
 
@@ -69,13 +70,36 @@ class OieManagedChannelLifecycleService:
             self._active_client.reset(token)
             client.close()
 
+    @contextmanager
+    def _actor_scope(self, actor):
+        actor = self._actor(actor)
+        token = self._active_actor.set(actor)
+        try:
+            yield
+        finally:
+            self._active_actor.reset(token)
+
     def inspect(self):
         with self._client_scope():
             latest = self._latest_operations()
             return [self._project_with_config(item, latest.get(item.logical_type.value) if item.logical_type else None) for item in self._snapshots()]
 
-    def preview(self, logical_type: str, operation: str):
-        with self._client_scope(): return self._preview(logical_type, operation)
+    def record_bootstrap_outcome(self, logical_type: str, classification: str, outcome: str, *, error_category: str = ""):
+        kind = ManagedChannelType(logical_type)
+        event = {
+            "operation_id": self.operation_id(), "actor": "startup-bootstrap",
+            "operation": "startup-bootstrap", "logical_type": kind.value,
+            "channel_id": "", "before_revision": "", "after_revision": "",
+            "classification": str(classification or "")[:80],
+            "outcome": str(outcome or "")[:80],
+            "error_category": str(error_category or "")[:80],
+            "changed_owned_fields": [],
+        }
+        self.repository.append_managed_channel_lifecycle_audit(event)
+        return event
+
+    def preview(self, logical_type: str, operation: str, *, actor: str = "local-operator"):
+        with self._actor_scope(actor), self._client_scope(): return self._preview(logical_type, operation)
 
     def _preview(self, logical_type: str, operation: str):
         kind, action = self._types(logical_type, operation); snapshot = self._snapshot(kind)
@@ -91,8 +115,8 @@ class OieManagedChannelLifecycleService:
             token, expiry = self.tokens.issue(self._claims(snapshot, kind, action)); result.update(previewToken=token, expiresAt=expiry)
         return result
 
-    def execute(self, logical_type: str, operation: str, token: str, *, confirmation: str = ""):
-        with self._client_scope(): return self._execute(logical_type, operation, token, confirmation=confirmation)
+    def execute(self, logical_type: str, operation: str, token: str, *, confirmation: str = "", actor: str = "local-operator"):
+        with self._actor_scope(actor), self._client_scope(): return self._execute(logical_type, operation, token, confirmation=confirmation)
 
     def _execute(self, logical_type: str, operation: str, token: str, *, confirmation: str = ""):
         kind, action = self._types(logical_type, operation)
@@ -187,6 +211,8 @@ class OieManagedChannelLifecycleService:
     def _snapshots(self):
         if not getattr(self.client, "_authenticated", True):
             self.client.login()
+        if hasattr(self.client, "require_supported_version"):
+            self.client.require_supported_version()
         items = self.client.list_channels().values.get("items", ())
         live = [self._complete(str(item["id"])) for item in items]
         allowed = {kind.value for kind in ManagedChannelType}; mappings = []
@@ -328,9 +354,9 @@ class OieManagedChannelLifecycleService:
                 "status": status, "requiresRefresh": outcome != "success"}
     def _event(self, operation_id, action, kind, snapshot, outcome, category="", before=None):
         classification = getattr(snapshot, "classification", None) or getattr(before, "classification", ChannelClassification.UNCHANGED)
-        return {"operation_id": operation_id, "actor": "local-operator", "operation": action.value, "logical_type": kind.value, "channel_id": snapshot.channel_id or "", "before_revision": str(before.revision or "") if before else "", "after_revision": str(snapshot.revision or ""), "classification": classification.value, "outcome": outcome, "error_category": category, "changed_owned_fields": [d.path for d in (before.differences if before else ())]}
+        return {"operation_id": operation_id, "actor": self._active_actor.get(), "operation": action.value, "logical_type": kind.value, "channel_id": snapshot.channel_id or "", "before_revision": str(before.revision or "") if before else "", "after_revision": str(snapshot.revision or ""), "classification": classification.value, "outcome": outcome, "error_category": category, "changed_owned_fields": [d.path for d in (before.differences if before else ())]}
     def _preview_event(self, operation_id, action, kind, snapshot):
-        return {"operation_id": operation_id, "actor": "local-operator", "operation": f"preview-{action.value}",
+        return {"operation_id": operation_id, "actor": self._active_actor.get(), "operation": f"preview-{action.value}",
                 "logical_type": kind.value, "channel_id": snapshot.channel_id or "",
                 "before_revision": str(snapshot.revision or ""), "after_revision": "",
                 "classification": snapshot.classification.value, "outcome": "success",
@@ -340,6 +366,11 @@ class OieManagedChannelLifecycleService:
             self.repository.append_managed_channel_lifecycle_audit(event); return True
         except Exception:
             return False
+    @staticmethod
+    def _actor(actor):
+        if not isinstance(actor, str) or not actor.strip() or len(actor.strip()) > 80:
+            raise LifecycleGuardError("validation", "Lifecycle actor must be a bounded non-empty string.")
+        return actor.strip()
     @staticmethod
     def _deployment_noop(status, action):
         normalized = str(status or "").upper()

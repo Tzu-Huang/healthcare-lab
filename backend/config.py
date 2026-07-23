@@ -21,12 +21,44 @@ DCM4CHEE_PROFILE_NAME = "local-dcm4chee"
 GDT_BRIDGE_SUCCESS_MODES = {"archive", "delete"}
 GDT_FILENAME_PROFILES = {"permissive", "gdt21", "gdt35"}
 OIE_SETTINGS_PROFILE_NAME = "local-oie"
-OIE_MANAGEMENT_API_BASE_URL = "http://oie:8080"
+OIE_MANAGEMENT_API_BASE_URL = "https://oie:8443"
 OIE_MANAGEMENT_API_USERNAME = "admin"
-OIE_MANAGEMENT_API_PASSWORD = "Admin"
+OIE_MANAGEMENT_API_PASSWORD = "admin"
 OIE_MANAGEMENT_API_TIMEOUT_SECONDS = 10
 OIE_RESULT_LISTENER_HOST = "0.0.0.0"
 OIE_RESULT_LISTENER_PORT = 6665
+OIE_BOOTSTRAP_MODES = {"create-missing", "off"}
+OIE_BOOTSTRAP_DEFAULT_TIMEOUT_SECONDS = 120.0
+OIE_BOOTSTRAP_DEFAULT_RETRY_INTERVAL_SECONDS = 2.0
+
+OIE_MANAGED_CHANNEL_DEFAULTS = (
+    {
+        "logicalType": "hlab-orm-to-ap",
+        "channelName": "HLAB_ORM_TO_AP",
+        "templateVersion": "1",
+        "sourceHost": "0.0.0.0",
+        "sourcePort": 6600,
+        "destinationHost": "hl7tester",
+        "destinationPort": 6671,
+        "timeoutSeconds": 5,
+        "queueEnabled": False,
+        "retryCount": 0,
+        "retryIntervalMs": 10000,
+    },
+    {
+        "logicalType": "hlab-oru-to-hlab",
+        "channelName": "HLAB_ORU_TO_HLAB",
+        "templateVersion": "1",
+        "sourceHost": "0.0.0.0",
+        "sourcePort": 6661,
+        "destinationHost": "lab-app",
+        "destinationPort": 6665,
+        "timeoutSeconds": 5,
+        "queueEnabled": True,
+        "retryCount": 0,
+        "retryIntervalMs": 10000,
+    },
+)
 
 DEFAULT_LAB_SERVERS = (
     {
@@ -196,6 +228,24 @@ def normalize_gdt_filename_profile(value: Any) -> str:
     return profile
 
 
+def normalize_oie_bootstrap_mode(value: Any) -> str:
+    mode = str(value or "create-missing").strip().lower()
+    if mode not in OIE_BOOTSTRAP_MODES:
+        raise ValidationError("OIE bootstrap mode must be create-missing or off.")
+    return mode
+
+
+def parse_positive_config_seconds(value: Any, *, field: str, default: float) -> float:
+    raw = str(default) if value is None or not str(value).strip() else str(value).strip()
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"{field} must be a positive number.") from exc
+    if seconds <= 0 or seconds == float("inf") or seconds != seconds:
+        raise ValidationError(f"{field} must be a positive number.")
+    return seconds
+
+
 def parse_app_port(value: str | None = None, default: int = 5000) -> int:
     raw_value = value if value is not None else os.environ.get("LAB_APP_PORT", "")
     raw = str(raw_value).strip() or str(default)
@@ -269,6 +319,17 @@ def load_application_config(
         "OIE_AP_RESULT_INGRESS_HOST_PORT": int(env.get("OIE_AP_RESULT_INGRESS_HOST_PORT", "6661")),
         "OIE_ORDER_INGRESS_HOST_PORT": int(env.get("OIE_ORDER_INGRESS_HOST_PORT", "6600")),
         "OIE_MANAGED_AP_HOST": env.get("OIE_MANAGED_AP_HOST", "hl7tester").strip() or "hl7tester",
+        "OIE_BOOTSTRAP_MODE": normalize_oie_bootstrap_mode(env.get("OIE_BOOTSTRAP_MODE")),
+        "OIE_BOOTSTRAP_TIMEOUT_SECONDS": parse_positive_config_seconds(
+            env.get("OIE_BOOTSTRAP_TIMEOUT_SECONDS"),
+            field="OIE_BOOTSTRAP_TIMEOUT_SECONDS",
+            default=OIE_BOOTSTRAP_DEFAULT_TIMEOUT_SECONDS,
+        ),
+        "OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS": parse_positive_config_seconds(
+            env.get("OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS"),
+            field="OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS",
+            default=OIE_BOOTSTRAP_DEFAULT_RETRY_INTERVAL_SECONDS,
+        ),
         "DCM4CHEE_PROFILE_NAME": profile_name,
         "DCM4CHEE_DISPLAY_NAME": env.get("DCM4CHEE_DISPLAY_NAME", "dcm4chee Local Archive").strip(),
         "DCM4CHEE_ENVIRONMENT_NAME": env.get("DCM4CHEE_ENVIRONMENT_NAME", "local-docker").strip(),
