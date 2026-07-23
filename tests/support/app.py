@@ -47,6 +47,20 @@ class DisposableAppCase(unittest.TestCase):
                 "http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs"
             ),
         )
+        medplum_settings = app.extensions["integration_settings_service"]
+        medplum_fields = dict(medplum_settings.get_public("medplum")["fields"])
+        medplum_fields.update(
+            {
+                "clientId": "demo-client",
+                "scope": "openid",
+                "tokenUrl": "",
+            }
+        )
+        medplum_settings.replace(
+            "medplum",
+            medplum_fields,
+            secret_replacements={"clientSecret": "demo-secret"},
+        )
         self.app = app
         self.client = app.test_client()
         self.lab_repository_view = LabApplicationRepository(

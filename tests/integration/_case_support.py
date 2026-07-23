@@ -153,9 +153,14 @@ class ApiCaseSupport(DisposableAppCase):
         return response.get_json()["item"]
 
     def set_medplum_base_url(self, base_url):
-        store = self.dependencies.lab_repository
-        medplum = next(item for item in store.list_servers() if item["name"] == "Medplum")
-        store.update_server(medplum["id"], {"baseUrl": base_url})
+        settings = self.app.extensions["integration_settings_service"]
+        fields = dict(settings.get_public("medplum")["fields"])
+        if base_url:
+            fields["baseUrl"] = base_url
+            fields["enabled"] = True
+        else:
+            fields["enabled"] = False
+        settings.replace("medplum", fields)
 
     def create_synced_fhir_patient(self):
         store = self.dependencies

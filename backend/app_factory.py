@@ -62,6 +62,7 @@ from backend.api.dcm4chee import create_dcm4chee_profile_blueprint
 from backend.api.patients import create_patients_blueprint
 from backend.api.orders import create_orders_blueprint
 from backend.api.fhir import create_fhir_blueprint
+from backend.api.integration_settings import create_integration_settings_blueprint
 from backend.api.gdt import create_gdt_blueprint
 from backend.api.home import create_home_blueprint
 from backend.services.patient_workflow import (
@@ -231,7 +232,9 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
     app.config.update(load_application_config(app.instance_path, database_path))
     Path(app.config["DATABASE_PATH"]).parent.mkdir(parents=True, exist_ok=True)
-    dependencies = assemble_application_dependencies(app.config["DATABASE_PATH"])
+    dependencies = assemble_application_dependencies(
+        app.config["DATABASE_PATH"], configuration=dict(app.config)
+    )
     if dependency_receiver is not None:
         dependency_receiver(dependencies)
     fhir_ledger = dependencies.fhir_ledger
@@ -327,7 +330,13 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         dependencies.oie_repository, accept_oie_result_payload
     )
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
-    app.extensions["oie_settings_service"] = OieSettingsService(dependencies.oie_settings_repository)
+    app.extensions["oie_settings_service"] = dependencies.oie_settings_service
+    app.extensions["integration_settings_service"] = dependencies.integration_settings_service
+    app.register_blueprint(
+        create_integration_settings_blueprint(
+            dependencies.integration_settings_service
+        )
+    )
     app.extensions["oie_channel_lifecycle_service"] = OieManagedChannelLifecycleService(
         None, dependencies.oie_settings_repository,
         ap_host=app.config["OIE_MANAGED_AP_HOST"],
@@ -405,7 +414,12 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
             *lab_server_services(
                 app,
                 lab_operations,
-                operation_runner=lambda **values: run_lab_operation(**values),
+                operation_runner=lambda **values: run_lab_operation(
+                    **values,
+                    medplum_settings_provider=lambda: dependencies.integration_settings_service.get_effective(
+                        "medplum"
+                    ),
+                ),
                 health_checker=lambda repository, server_id: run_lab_server_health_check(repository, server_id),
             )
         )
@@ -415,29 +429,32 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
             *dashboard_services(
                 app,
                 lab_operations,
-                operation_runner=lambda **values: run_lab_operation(**values),
+                operation_runner=lambda **values: run_lab_operation(
+                    **values,
+                    medplum_settings_provider=lambda: dependencies.integration_settings_service.get_effective(
+                        "medplum"
+                    ),
+                ),
                 health_checker=lambda repository, server_id: run_lab_server_health_check(repository, server_id),
             )
         )
     )
     def get_auth_manager() -> MedplumAuthManager:
+        medplum_settings = dependencies.integration_settings_service.get_effective("medplum")
         return MedplumAuthManager(
-            client_id=app.config["MEDPLUM_CLIENT_ID"],
-            client_secret=app.config["MEDPLUM_CLIENT_SECRET"],
-            scope=app.config["MEDPLUM_SCOPE"],
-            token_url=app.config["MEDPLUM_TOKEN_URL"],
-            refresh_grace_seconds=app.config["MEDPLUM_AUTH_GRACE_SECONDS"],
+            client_id=medplum_settings.client_id,
+            client_secret=medplum_settings.client_secret,
+            scope=medplum_settings.scope,
+            token_url=medplum_settings.token_url,
+            refresh_grace_seconds=medplum_settings.auth_grace_seconds,
         )
 
     def get_openemr_source() -> OpenEMRProcedureOrderSource:
         return app.extensions["openemr_procedure_order_source"]
 
     def configured_medplum_base_url() -> str:
-        medplum = next(
-            (item for item in dependencies.lab_repository.list_servers() if item["name"] == "Medplum"),
-            None,
-        )
-        return str((medplum or {}).get("baseUrl") or "").strip()
+        settings = dependencies.integration_settings_service.get_effective("medplum")
+        return settings.base_url if settings.enabled else ""
 
     workflow_operations = ConfiguredWorkflowOperations(
         patient=patient_coordination,

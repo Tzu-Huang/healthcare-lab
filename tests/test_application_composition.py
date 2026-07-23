@@ -27,7 +27,10 @@ class ApplicationCompositionTests(unittest.TestCase):
             {field.name for field in dataclasses.fields(ApplicationDependencies)},
             {
                 "database",
+                "integration_settings_repository",
+                "integration_settings_service",
                 "oie_settings_repository",
+                "oie_settings_service",
                 "lab_repository",
                 "oie_repository",
                 "patient_repository",
