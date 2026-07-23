@@ -15,6 +15,9 @@ from backend.services.settings_readiness import (
     SettingsReadinessRegistry,
     SettingsReadinessService,
 )
+from backend.settings_readiness_composition import (
+    create_settings_readiness_service,
+)
 
 
 class _Provider:
@@ -120,3 +123,41 @@ class SettingsReadinessServiceTests(unittest.TestCase):
             ["healthy", "unavailable", "disabled"],
             [item["state"] for item in service.run_checks()["results"]],
         )
+
+    def test_gdt_restart_required_activation_survives_later_readiness_read(self):
+        class _Settings:
+            def get_public(self, profile_type):
+                if profile_type == "gdt-bridge":
+                    return {"fields": {"enabled": True}}
+                if profile_type == "medplum":
+                    return {"fields": {"enabled": False, "baseUrl": ""}}
+                return {
+                    "fields": {
+                        "managementApi": {},
+                        "resultListener": {},
+                    },
+                    "secrets": {},
+                }
+
+            def has_operator_configuration(self, _profile_type):
+                return False
+
+        service = create_settings_readiness_service(
+            _Settings(),
+            listener_status=lambda: {"running": False},
+            oie_diagnostics=lambda: {"state": "degraded"},
+            gdt_watcher_status=lambda: {"running": True},
+            gdt_activation_status=lambda: {
+                "state": "restart-required",
+                "activation": "application-restart",
+            },
+            gdt_diagnostics=lambda: {"state": "healthy"},
+        )
+
+        section = next(
+            item
+            for item in service.get_readiness()["sections"]
+            if item["id"] == "gdt-bridge"
+        )
+        self.assertEqual("restart-required", section["state"])
+        self.assertEqual("application-restart", section["activationImpact"])

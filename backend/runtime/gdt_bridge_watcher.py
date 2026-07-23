@@ -62,6 +62,10 @@ class GdtBridgeInboundWatcher:
         self._last_result: dict[str, Any] = {"imported": [], "skipped": [], "failures": [], "processedCount": 0}
         self._last_error = ""
         self._last_run_at = ""
+        self._activation = {
+            "state": "effective",
+            "activation": "immediate",
+        }
 
     def status(self) -> dict[str, Any]:
         with self._lock:
@@ -78,6 +82,10 @@ class GdtBridgeInboundWatcher:
                 "lastError": self._last_error,
                 "lastRunAt": self._last_run_at,
             }
+
+    def activation_status(self) -> dict[str, str]:
+        with self._lock:
+            return dict(self._activation)
 
     def configure(
         self,
@@ -121,11 +129,11 @@ class GdtBridgeInboundWatcher:
         if was_running:
             stopped = self.stop()
             if stopped["running"]:
-                return {
+                return self._record_activation({
                     "state": "restart-required",
                     "activation": "application-restart",
                     "watcher": stopped,
-                }
+                })
         try:
             self.configure(
                 bridge_root=profile.bridge_path,
@@ -141,16 +149,24 @@ class GdtBridgeInboundWatcher:
         except Exception:
             # The persisted intent remains authoritative, but callers can
             # present a bounded restart requirement instead of leaking paths.
-            return {
+            return self._record_activation({
                 "state": "restart-required",
                 "activation": "application-restart",
                 "watcher": self.status(),
-            }
-        return {
+            })
+        return self._record_activation({
             "state": "effective",
             "activation": "immediate",
             "watcher": self.status(),
-        }
+        })
+
+    def _record_activation(self, outcome: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            self._activation = {
+                "state": str(outcome["state"]),
+                "activation": str(outcome["activation"]),
+            }
+        return outcome
 
     def start(self) -> dict[str, Any]:
         with self._lock:

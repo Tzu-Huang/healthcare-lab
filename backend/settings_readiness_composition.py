@@ -101,16 +101,26 @@ class _GdtBridgeProvider:
         settings: IntegrationSettingsReader,
         *,
         watcher_status: Callable[[], dict[str, Any]],
+        activation_status: Callable[[], dict[str, str]],
         diagnostics: Callable[[], dict[str, Any]],
     ) -> None:
         self._settings = settings
         self._watcher_status = watcher_status
+        self._activation_status = activation_status
         self._diagnostics = diagnostics
 
     def assess(self) -> ReadinessAssessment:
         fields = self._settings.get_public("gdt-bridge")["fields"]
         if not fields.get("enabled"):
             return ReadinessAssessment(ReadinessState.DISABLED)
+        activation = self._activation_status()
+        if activation.get("state") == "restart-required":
+            impact = (
+                ActivationImpact.CONTAINER_RECREATION
+                if activation.get("activation") == "container-recreation"
+                else ActivationImpact.APPLICATION_RESTART
+            )
+            return ReadinessAssessment(ReadinessState.RESTART_REQUIRED, impact)
         report = self._diagnostics()
         if report.get("state") != "healthy":
             return ReadinessAssessment(ReadinessState.DEGRADED)
@@ -135,6 +145,7 @@ def create_settings_readiness_service(
     listener_status: Callable[[], dict[str, Any]],
     oie_diagnostics: Callable[[], dict[str, Any]],
     gdt_watcher_status: Callable[[], dict[str, Any]] | None = None,
+    gdt_activation_status: Callable[[], dict[str, str]] | None = None,
     gdt_diagnostics: Callable[[], dict[str, Any]] | None = None,
 ) -> SettingsReadinessService:
     registry = SettingsReadinessRegistry(
@@ -159,6 +170,8 @@ def create_settings_readiness_service(
                 _GdtBridgeProvider(
                     settings,
                     watcher_status=gdt_watcher_status or (lambda: {"running": False}),
+                    activation_status=gdt_activation_status
+                    or (lambda: {"state": "effective", "activation": "immediate"}),
                     diagnostics=gdt_diagnostics
                     or (lambda: {"state": "unavailable", "checks": []}),
                 ),
