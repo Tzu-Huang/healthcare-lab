@@ -28,7 +28,7 @@
 
 ## 5. Automated Verification and Documentation
 
-- [ ] 5.1 Run focused repository, service, API, diagnostics, and frontend test suites and fix regressions
+- [x] 5.1 Run focused repository, service, API, diagnostics, and frontend test suites and fix regressions
 - [x] 5.2 Update bootstrap configuration and operator recovery documentation without recommending container recreation for ordinary lifecycle failures
 - [x] 5.3 Extend the OIE live verification runbook with exclusive Compose ownership, resolved volume targets, non-PHI evidence fields, and safe cleanup
 
