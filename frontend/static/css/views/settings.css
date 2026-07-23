@@ -1,6 +1,19 @@
 .settings-workspace[data-module-owner="settings"] { --settings-module-owner: "settings"; display: grid; gap: 18px; }
 .settings-workspace[hidden] { display: none; }
 .settings-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.settings-tabs { display: flex; gap: .4rem; overflow-x: auto; padding: .25rem 0; border-bottom: 1px solid var(--border-color, #ccd4dc); }
+.settings-tabs [role="tab"] { flex: 0 0 auto; border-bottom: 3px solid transparent; }
+.settings-tabs [role="tab"][aria-selected="true"] { border-bottom-color: #175cd3; font-weight: 700; }
+.settings-section { display: grid; gap: 18px; min-width: 0; }
+.settings-section[hidden] { display: none; }
+.settings-section-title { margin-bottom: 0; }
+.settings-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+.settings-readiness-card { border: 1px solid var(--border-color, #ccd4dc); border-left: 5px solid #667085; border-radius: 10px; padding: 1rem; }
+.settings-readiness-card[data-state="ready"], .settings-readiness-card[data-state="complete"] { border-left-color: #16803c; }
+.settings-readiness-card[data-state="restart-required"], .settings-readiness-card[data-state="degraded"] { border-left-color: #b54708; }
+.settings-readiness-card p { overflow-wrap: anywhere; }
+.settings-activation-impact { font-weight: 700; }
+.settings-section details > summary { cursor: pointer; font-weight: 700; }
 .settings-panel, .settings-preview { min-width: 0; }
 .settings-form-grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); margin-bottom: 18px; }
 .settings-two-column { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(240px, .8fr); gap: 24px; }
@@ -37,4 +50,6 @@
   .settings-form-grid, .settings-channel-grid, .settings-channel-editor { grid-template-columns: minmax(0, 1fr); }
   .settings-actions, .settings-workspace .button-row { align-items: stretch; flex-direction: column; }
   .settings-actions button, .settings-workspace .button-row button { width: 100%; }
+  .settings-tabs { scroll-snap-type: x proximity; }
+  .settings-tabs [role="tab"] { scroll-snap-align: start; }
 }

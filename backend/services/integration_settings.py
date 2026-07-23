@@ -60,6 +60,7 @@ OIE_MANAGED_CHANNEL_FIELDS = frozenset(
 class IntegrationSettingsRepositoryPort(Protocol):
     def create_if_missing(self, profile, *, secrets, bootstrap_source, actor="startup-bootstrap") -> bool: ...
     def get_private(self, profile_type: str) -> dict[str, Any]: ...
+    def list_audits(self, profile_type: str) -> list[dict[str, Any]]: ...
     def replace(self, profile, *, secret_mutations, actor="local-operator") -> dict[str, Any]: ...
 
 
@@ -252,6 +253,14 @@ class IntegrationSettingsService:
             profile,
             secrets={"clientSecret": str(configuration.get("MEDPLUM_CLIENT_SECRET", ""))},
             bootstrap_source="legacy-environment-and-inventory",
+        )
+
+    def has_operator_configuration(self, profile_type: str) -> bool:
+        if profile_type == OIE_PROFILE_TYPE:
+            return True
+        return any(
+            item["operation"] != "bootstrap"
+            for item in self._repository.list_audits(profile_type)
         )
 
     def get_public(self, profile_type: str) -> dict[str, Any]:
