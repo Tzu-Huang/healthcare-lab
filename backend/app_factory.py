@@ -400,9 +400,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         gdt_watcher_status=gdt_bridge_watcher.status,
         gdt_activation_status=gdt_bridge_watcher.activation_status,
         gdt_diagnostics=lambda: gdt_readiness_diagnostics(dependencies.integration_settings_service),
-        gdt_check_diagnostics=lambda: gdt_run_all_diagnostics(
-            dependencies.integration_settings_service, gdt_bridge_watcher
-        ),
+        gdt_check_diagnostics=lambda: gdt_run_all_diagnostics(dependencies.integration_settings_service, gdt_bridge_watcher),
     )
     app.register_blueprint(
         create_settings_readiness_blueprint(
