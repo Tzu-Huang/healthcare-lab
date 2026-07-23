@@ -94,12 +94,12 @@ class ProtocolRepositoryWiringTests(unittest.TestCase):
     def test_composition_root_routes_protocols_to_named_owners(self):
         source = (ROOT / "backend" / "app_factory.py").read_text(encoding="utf-8")
         self.assertIn("FhirWorkflowService(\n                fhir_ledger,", source)
-        self.assertIn("GdtWorkflowService(\n        gdt_workflow, app.config,", source)
+        self.assertIn("GdtWorkflowService(\n        gdt_workflow,", source)
         self.assertIn(
             "gdt_workflow, gdt_service.bridge_service, gdt_service.result_service,",
             source,
         )
-        self.assertIn("GdtBridgeInboundWatcher(\n        gdt_workflow,", source)
+        self.assertIn("create_gdt_bridge_watcher(", source)
         self.assertLessEqual(len(source.splitlines()), 600)
 
 

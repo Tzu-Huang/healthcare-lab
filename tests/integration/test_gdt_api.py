@@ -26,7 +26,7 @@ class GdtApiTests(ApiCaseSupport):
         current = self.client.get("/api/gdt/bridge/config").get_json()["item"]
         self.assertEqual(current["outboxPath"], str(target / "outbox"))
         self.assertIn("watcher", current)
-        self.assertEqual(current["inboxPollSeconds"], 3)
+        self.assertEqual(current["inboxPollSeconds"], 4)
         self.assertEqual(current["watcher"]["pollSeconds"], 4)
 
     def test_gdt_bridge_config_rejects_missing_folders_without_creating_them(self):
@@ -131,7 +131,10 @@ class GdtApiTests(ApiCaseSupport):
         patient = self.create_local_patient()
         order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
         inbound = self.write_gdt_result_file(order, "delete-result.gdt")
-        self.client.application.config["GDT_BRIDGE_IMPORT_SUCCESS_MODE"] = "delete"
+        settings = self.client.application.extensions["integration_settings_service"]
+        fields = dict(settings.get_public("gdt-bridge")["fields"])
+        fields["importSuccessMode"] = "delete"
+        settings.replace("gdt-bridge", fields)
 
         imported = self.client.post("/api/gdt/bridge/import", json={"filename": inbound.name})
 
@@ -209,7 +212,16 @@ class GdtApiTests(ApiCaseSupport):
         patient = self.create_local_patient()
         order = self.client.post("/api/gdt/orders", json={"patientRecordId": patient["id"]}).get_json()["item"]
         inbound = self.write_gdt_result_file(order, "EDV1EKG1.001")
-        self.client.application.config["GDT_BRIDGE_FILENAME_PROFILE"] = "gdt21"
+        settings = self.client.application.extensions["integration_settings_service"]
+        fields = dict(settings.get_public("gdt-bridge")["fields"])
+        fields.update(
+            {
+                "filenameProfile": "gdt21",
+                "receiverId": "EDV1",
+                "senderId": "EKG1",
+            }
+        )
+        settings.replace("gdt-bridge", fields)
         self.client.application.config["GDT_BRIDGE_RECEIVER_ID"] = "EDV1"
         self.client.application.config["GDT_BRIDGE_SENDER_ID"] = "EKG1"
 

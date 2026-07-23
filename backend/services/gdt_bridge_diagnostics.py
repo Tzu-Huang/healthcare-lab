@@ -101,6 +101,24 @@ def probe_gdt_bridge_write_delete(base_path: str | Path) -> dict[str, str]:
     return _result("write-delete", "passed", "writable")
 
 
+def gdt_settings_diagnostics(
+    base_path: str | Path, watcher: dict[str, Any]
+) -> dict[str, Any]:
+    report = diagnose_gdt_bridge_dirs(base_path)
+    checks = [*report.get("checks", []), probe_gdt_bridge_write_delete(base_path)]
+    return {
+        "state": (
+            "healthy"
+            if all(item.get("state") == "passed" for item in checks)
+            else "degraded"
+        ),
+        "checks": checks,
+        "watcher": {
+            "state": "running" if watcher.get("running") else "stopped"
+        },
+    }
+
+
 def _path_result(role: str, path: Path) -> dict[str, str]:
     if not path.exists():
         return _result(role, "failed", "missing")
