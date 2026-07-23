@@ -167,17 +167,24 @@ class _Dcm4cheeProvider:
     ) -> None:
         self._settings = settings
         self._diagnostics = diagnostics
+        self._latest_diagnostic: DiagnosticAssessment | None = None
 
     def assess(self) -> ReadinessAssessment:
         fields = self._settings.get_public("dcm4chee")["fields"]
         if not fields.get("enabled"):
             return ReadinessAssessment(ReadinessState.DISABLED)
+        if (
+            self._latest_diagnostic is not None
+            and self._latest_diagnostic.state is DiagnosticState.DEGRADED
+        ):
+            return ReadinessAssessment(ReadinessState.DEGRADED)
         return ReadinessAssessment(ReadinessState.READY)
 
     def check(self) -> DiagnosticAssessment:
         fields = self._settings.get_public("dcm4chee")["fields"]
         if not fields.get("enabled"):
-            return DiagnosticAssessment(DiagnosticState.DISABLED)
+            self._latest_diagnostic = DiagnosticAssessment(DiagnosticState.DISABLED)
+            return self._latest_diagnostic
         report = self._diagnostics()
         checks = tuple(
             {
@@ -187,12 +194,13 @@ class _Dcm4cheeProvider:
             }
             for item in report.get("checks", [])
         )
-        return DiagnosticAssessment(
+        self._latest_diagnostic = DiagnosticAssessment(
             DiagnosticState.HEALTHY
             if report.get("state") == "healthy"
             else DiagnosticState.DEGRADED,
             checks,
         )
+        return self._latest_diagnostic
 
 
 def create_settings_readiness_service(
