@@ -29,6 +29,10 @@ _AUDIT_LIMITS = {
     "channel_id": 128, "before_revision": 40, "after_revision": 40,
     "classification": 40, "outcome": 40, "error_category": 80,
 }
+_DESIRED_MAPPING_FIELDS = (
+    "sourceHost", "sourcePort", "destinationHost", "destinationPort",
+    "timeoutSeconds", "queueEnabled", "retryCount", "retryIntervalMs",
+)
 
 
 class OieSettingsRepository:
@@ -240,7 +244,9 @@ class OieSettingsRepository:
 
     def compare_and_bind_recovered_managed_channel_mapping(
         self, *, logical_type: str, channel_id: str, channel_name: str,
-        template_version: str, revision: str, audit_event: Mapping[str, Any],
+        template_version: str, revision: str, expected_channel_name: str,
+        expected_template_version: str, expected_desired_config: Mapping[str, Any],
+        audit_event: Mapping[str, Any],
     ) -> dict[str, Any]:
         """Bind a validated live identity only while the canonical mapping is empty."""
         logical_type = self._required_text(logical_type, "logical_type", 80).lower()
@@ -251,6 +257,17 @@ class OieSettingsRepository:
             "revision": self._bounded_text(revision, "revision", 40),
         }
         safe_audit = self._validate_audit(audit_event)
+        expected_channel_name = self._required_text(
+            expected_channel_name, "expected_channel_name", 160
+        )
+        expected_template_version = self._bounded_text(
+            expected_template_version, "expected_template_version", 40
+        )
+        expected_desired_json = json.dumps(
+            {key: expected_desired_config[key] for key in _DESIRED_MAPPING_FIELDS
+             if key in expected_desired_config},
+            sort_keys=True, separators=(",", ":"),
+        )
         timestamp = self._timestamp()
         try:
             with self._lock, self._connect() as connection:
@@ -260,9 +277,12 @@ class OieSettingsRepository:
                     SET oie_channel_id = ?, channel_name = ?, template_version = ?,
                         last_known_revision = ?, updated_at = ?
                     WHERE profile_id = ? AND logical_type = ?
-                      AND oie_channel_id = '' AND last_known_revision = ''""",
+                      AND oie_channel_id = '' AND last_known_revision = ''
+                      AND channel_name = ? AND template_version = ?
+                      AND desired_config_json = ?""",
                     (values["channel_id"], values["channel_name"], values["template_version"],
-                     values["revision"], timestamp, profile_id, logical_type),
+                     values["revision"], timestamp, profile_id, logical_type,
+                     expected_channel_name, expected_template_version, expected_desired_json),
                 )
                 if cursor.rowcount != 1:
                     raise OieMappingConflictError(

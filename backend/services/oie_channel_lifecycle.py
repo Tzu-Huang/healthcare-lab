@@ -105,6 +105,10 @@ class OieManagedChannelLifecycleService:
             observed = self._snapshot(kind)
             if observed.classification is not ChannelClassification.RECOVERABLE:
                 raise LifecycleGuardError("recovery-blocked", "Managed Channel identity is not uniquely recoverable.", fresh=True)
+            expected_mapping = next(
+                item for item in self.repository.get()["managedChannels"]
+                if item["logicalType"] == kind.value
+            )
             refreshed = self._snapshot(kind)
             if (refreshed.classification is not ChannelClassification.RECOVERABLE
                     or refreshed.channel_id != observed.channel_id
@@ -123,7 +127,11 @@ class OieManagedChannelLifecycleService:
             mapping = self.repository.compare_and_bind_recovered_managed_channel_mapping(
                 logical_type=kind.value, channel_id=refreshed.channel_id or "",
                 channel_name=refreshed.name, template_version="1",
-                revision=str(refreshed.revision or ""), audit_event=event,
+                revision=str(refreshed.revision or ""),
+                expected_channel_name=expected_mapping["channelName"],
+                expected_template_version=expected_mapping["templateVersion"],
+                expected_desired_config=expected_mapping,
+                audit_event=event,
             )
             return {
                 "outcome": "success", "operationId": operation_id,
