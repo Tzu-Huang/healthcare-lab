@@ -152,20 +152,29 @@ class IntegrationSettingsRepository:
         if set(secret_mutations) - secret_fields:
             raise ValueError("Unsupported secret field.")
         timestamp = self._timestamp()
-        changed_fields = list(profile.fields)
-        changed_fields.extend(
-            field
-            for field, mutation in secret_mutations.items()
-            if mutation.action is not SecretAction.PRESERVE
-        )
         with self._lock, self._connect() as connection:
             row = connection.execute(
-                "SELECT id FROM integration_settings_profiles WHERE profile_type = ?",
+                """SELECT id, public_payload_json
+                FROM integration_settings_profiles WHERE profile_type = ?""",
                 (profile.profile_type,),
             ).fetchone()
             if row is None:
                 raise KeyError(profile.profile_type)
             profile_id = int(row["id"])
+            previous_fields = json.loads(row["public_payload_json"])
+            changed_fields = [
+                field
+                for field, value in profile.fields.items()
+                if previous_fields.get(field) != value
+            ]
+            secret_rows = connection.execute(
+                """SELECT field_name, secret_value
+                FROM integration_settings_secrets WHERE profile_id = ?""",
+                (profile_id,),
+            ).fetchall()
+            previous_secrets = {
+                item["field_name"]: item["secret_value"] for item in secret_rows
+            }
             connection.execute(
                 """
                 UPDATE integration_settings_profiles
@@ -184,11 +193,15 @@ class IntegrationSettingsRepository:
                 if mutation.action is SecretAction.PRESERVE:
                     continue
                 if mutation.action is SecretAction.REMOVE:
+                    if field in previous_secrets:
+                        changed_fields.append(field)
                     connection.execute(
                         "DELETE FROM integration_settings_secrets WHERE profile_id = ? AND field_name = ?",
                         (profile_id, field),
                     )
                     continue
+                if previous_secrets.get(field) != mutation.value:
+                    changed_fields.append(field)
                 connection.execute(
                     """
                     INSERT INTO integration_settings_secrets (

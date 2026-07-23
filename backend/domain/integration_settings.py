@@ -65,8 +65,8 @@ def preserve_secret() -> SecretMutation:
 
 
 def replace_secret(value: Any) -> SecretMutation:
-    normalized = str(value or "").strip()
-    return preserve_secret() if not normalized else SecretMutation(SecretAction.REPLACE, normalized)
+    text = "" if value is None else str(value)
+    return preserve_secret() if not text.strip() else SecretMutation(SecretAction.REPLACE, text)
 
 
 def remove_secret() -> SecretMutation:
@@ -108,11 +108,12 @@ def validate_medplum_profile(payload: Mapping[str, Any]) -> TypedProfile:
     token_url_issue = _url_issue("tokenUrl", payload.get("tokenUrl"), required=False)
     issues.extend(issue for issue in (base_url_issue, token_url_issue) if issue)
 
-    try:
-        auth_grace = int(payload.get("authGraceSeconds"))
-        if auth_grace <= 0:
-            raise ValueError
-    except (TypeError, ValueError):
+    raw_auth_grace = payload.get("authGraceSeconds")
+    if (
+        not isinstance(raw_auth_grace, int)
+        or isinstance(raw_auth_grace, bool)
+        or raw_auth_grace <= 0
+    ):
         auth_grace = 0
         issues.append(
             SettingsValidationIssue(
@@ -121,6 +122,8 @@ def validate_medplum_profile(payload: Mapping[str, Any]) -> TypedProfile:
                 "authGraceSeconds must be a positive integer.",
             )
         )
+    else:
+        auth_grace = raw_auth_grace
     enabled = payload.get("enabled")
     if not isinstance(enabled, bool):
         issues.append(
