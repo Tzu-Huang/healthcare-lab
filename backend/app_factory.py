@@ -108,7 +108,7 @@ from backend.services.gdt_workflow import (
     gdt_path_status,
     import_gdt_bridge_files,
 )
-from backend.gdt_settings_composition import create_gdt_bridge_watcher, gdt_readiness_diagnostics, gdt_settings_api_operations
+from backend.gdt_settings_composition import create_gdt_bridge_watcher, gdt_readiness_diagnostics, gdt_run_all_diagnostics, gdt_settings_api_operations
 from backend.services.fhir_workflow import (
     FhirWorkflowService,
     MEDPLUM_INVENTORY_RESOURCE_TYPES,
@@ -400,6 +400,9 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         gdt_watcher_status=gdt_bridge_watcher.status,
         gdt_activation_status=gdt_bridge_watcher.activation_status,
         gdt_diagnostics=lambda: gdt_readiness_diagnostics(dependencies.integration_settings_service),
+        gdt_check_diagnostics=lambda: gdt_run_all_diagnostics(
+            dependencies.integration_settings_service, gdt_bridge_watcher
+        ),
     )
     app.register_blueprint(
         create_settings_readiness_blueprint(

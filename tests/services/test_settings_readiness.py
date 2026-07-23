@@ -152,6 +152,11 @@ class SettingsReadinessServiceTests(unittest.TestCase):
                 "activation": "application-restart",
             },
             gdt_diagnostics=lambda: {"state": "healthy"},
+            gdt_check_diagnostics=lambda: {
+                "state": "healthy",
+                "checks": [],
+                "watcher": {"state": "running"},
+            },
         )
 
         section = next(
@@ -161,3 +166,62 @@ class SettingsReadinessServiceTests(unittest.TestCase):
         )
         self.assertEqual("restart-required", section["state"])
         self.assertEqual("application-restart", section["activationImpact"])
+
+    def test_gdt_run_all_checks_projects_bounded_probe_and_watcher_outcomes(self):
+        class _Settings:
+            def get_public(self, profile_type):
+                if profile_type == "gdt-bridge":
+                    return {"fields": {"enabled": True}}
+                if profile_type == "medplum":
+                    return {"fields": {"enabled": False, "baseUrl": ""}}
+                return {
+                    "fields": {
+                        "managementApi": {},
+                        "resultListener": {},
+                    },
+                    "secrets": {},
+                }
+
+            def has_operator_configuration(self, _profile_type):
+                return False
+
+        service = create_settings_readiness_service(
+            _Settings(),
+            listener_status=lambda: {"running": False},
+            oie_diagnostics=lambda: {"state": "degraded"},
+            gdt_watcher_status=lambda: {"running": True},
+            gdt_activation_status=lambda: {
+                "state": "effective",
+                "activation": "immediate",
+            },
+            gdt_diagnostics=lambda: {"state": "healthy"},
+            gdt_check_diagnostics=lambda: {
+                "state": "healthy",
+                "checks": [
+                    {
+                        "role": "write-delete",
+                        "state": "passed",
+                        "code": "writable",
+                    }
+                ],
+                "watcher": {"state": "running"},
+            },
+        )
+
+        result = next(
+            item
+            for item in service.run_checks()["results"]
+            if item["id"] == "gdt-bridge"
+        )
+        self.assertEqual("healthy", result["state"])
+        self.assertEqual(
+            [
+                {
+                    "role": "write-delete",
+                    "state": "passed",
+                    "code": "writable",
+                },
+                {"role": "watcher", "state": "passed", "code": "running"},
+            ],
+            result["checks"],
+        )
