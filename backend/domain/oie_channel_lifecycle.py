@@ -206,8 +206,7 @@ def reconcile_inventory(
                     continue
                 listener = listeners[item.channel_id]
                 if listener is None:
-                    if parsed[item.channel_id][0] == "ParseError":
-                        reasons.append("ambiguous-route-ownership")
+                    reasons.append("ambiguous-route-ownership")
                 elif listener[1] == config.listener.port:
                     reasons.append("listener-route-owned-by-another-channel")
         evidence = IdentityEvidence(

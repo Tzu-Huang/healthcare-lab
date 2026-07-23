@@ -104,6 +104,24 @@ class ReconcileManagedChannelTests(unittest.TestCase):
         self.assertEqual(ChannelClassification.CONFLICT, result.classification)
         self.assertIn("ambiguous-route-ownership", result.blocking_reasons)
 
+    def test_well_formed_external_without_listener_blocks_ambiguous_recovery(self):
+        external = LiveChannel(
+            "external", "OTHER", 1,
+            "<channel><description>Operator owned</description></channel>",
+        )
+        result = self.managed([live(), external])
+        self.assertEqual(ChannelClassification.CONFLICT, result.classification)
+        self.assertIn("ambiguous-route-ownership", result.blocking_reasons)
+
+    def test_external_with_invalid_listener_port_blocks_ambiguous_recovery(self):
+        root = ET.fromstring(compile_orm_to_ap("ap.internal"))
+        root.find("description").text = "Operator owned"
+        root.find("sourceConnector/properties/listenerConnectorProperties/port").text = "unknown"
+        external = live("external", ET.tostring(root, encoding="unicode"), "OTHER")
+        result = self.managed([live(), external])
+        self.assertEqual(ChannelClassification.CONFLICT, result.classification)
+        self.assertIn("ambiguous-route-ownership", result.blocking_reasons)
+
     def test_malformed_managed_payload_conflicts(self):
         malformed = '<channel><name>HLAB_ORM_TO_AP</name><description>Managed by Healthcare Lab; logical_type=hlab-orm-to-ap; template_version=1</description></channel>'
         result = self.managed([LiveChannel("oie-1", "HLAB_ORM_TO_AP", 7, malformed)], [mapping()])
