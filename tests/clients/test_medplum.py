@@ -1,5 +1,7 @@
 import json
+import io
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 from backend.clients.medplum import (
@@ -83,6 +85,30 @@ class MedplumClientTest(unittest.TestCase):
         )
 
         self.assertEqual(3, urlopen.call_args.kwargs["timeout"])
+
+    @patch("backend.clients.medplum.urllib.request.urlopen")
+    def test_upstream_error_body_is_not_exposed_or_retained(self, urlopen):
+        canary = "secret-canary Authorization: Bearer token-canary"
+        urlopen.side_effect = urllib.error.HTTPError(
+            "https://example.test/fhir/R4/Patient",
+            403,
+            "Forbidden",
+            hdrs=None,
+            fp=io.BytesIO(
+                json.dumps(
+                    {"resourceType": "OperationOutcome", "diagnostics": canary}
+                ).encode("utf-8")
+            ),
+        )
+
+        with self.assertRaises(Exception) as caught:
+            request_fhir_json(
+                "https://example.test/fhir/R4/Patient", "token-canary"
+            )
+
+        self.assertEqual("Medplum returned HTTP 403.", str(caught.exception))
+        self.assertEqual({}, caught.exception.response_payload)
+        self.assertNotIn(canary, repr(caught.exception))
 
 
 if __name__ == "__main__":

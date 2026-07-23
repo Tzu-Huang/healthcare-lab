@@ -124,10 +124,13 @@ class MedplumAuthManager:
             with urllib.request.urlopen(api_request, timeout=self.timeout_seconds) as response:
                 response_body = response.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
-            error_body = exc.read().decode("utf-8", errors="replace")
-            raise UpstreamFhirError(f"Medplum token request returned HTTP {exc.code}: {error_body}") from exc
+            exc.read()
+            raise UpstreamFhirError(
+                f"Medplum token request returned HTTP {exc.code}.",
+                http_status=exc.code,
+            ) from exc
         except urllib.error.URLError as exc:
-            raise UpstreamFhirError(f"Medplum token request failed: {exc.reason}") from exc
+            raise UpstreamFhirError("Medplum token request failed.") from exc
         try:
             parsed_body = json.loads(response_body) if response_body else {}
         except json.JSONDecodeError as exc:
@@ -167,10 +170,13 @@ def request_fhir_raw(
                 status_code = response.status
                 response_headers = dict(response.headers.items())
         except urllib.error.HTTPError as exc:
-            error_body = exc.read().decode("utf-8", errors="replace")
-            raise UpstreamFhirError(f"Medplum returned HTTP {exc.code}: {error_body}") from exc
+            exc.read()
+            raise UpstreamFhirError(
+                f"Medplum returned HTTP {exc.code}.",
+                http_status=exc.code,
+            ) from exc
         except urllib.error.URLError as exc:
-            raise UpstreamFhirError(f"Medplum request failed: {exc.reason}") from exc
+            raise UpstreamFhirError("Medplum request failed.") from exc
         try:
             parsed_body = json.loads(response_body) if response_body else {}
         except json.JSONDecodeError:
@@ -181,7 +187,7 @@ def request_fhir_raw(
     try:
         return perform_request(access_token)
     except UpstreamFhirError as exc:
-        if auth_manager is None or "Medplum returned HTTP 401:" not in str(exc):
+        if auth_manager is None or exc.http_status != 401:
             raise
         auth_manager.invalidate(base_url or url)
         return perform_request(auth_manager.get_access_token(base_url or url, force_refresh=True))
@@ -213,18 +219,13 @@ def request_fhir_json(
                 response_body = response.read().decode("utf-8")
                 status_code = response.status
         except urllib.error.HTTPError as exc:
-            error_body = exc.read().decode("utf-8", errors="replace")
-            try:
-                error_payload = json.loads(error_body) if error_body else {}
-            except json.JSONDecodeError:
-                error_payload = {"raw": error_body}
+            exc.read()
             raise UpstreamFhirError(
-                f"Medplum returned HTTP {exc.code}: {error_body}",
+                f"Medplum returned HTTP {exc.code}.",
                 http_status=exc.code,
-                response_payload=error_payload,
             ) from exc
         except urllib.error.URLError as exc:
-            raise UpstreamFhirError(f"Medplum request failed: {exc.reason}") from exc
+            raise UpstreamFhirError("Medplum request failed.") from exc
         try:
             parsed_body = json.loads(response_body) if response_body else {}
         except json.JSONDecodeError:
@@ -235,7 +236,7 @@ def request_fhir_json(
     try:
         return perform_request(access_token)
     except UpstreamFhirError as exc:
-        if auth_manager is None or "Medplum returned HTTP 401:" not in str(exc):
+        if auth_manager is None or exc.http_status != 401:
             raise
         auth_manager.invalidate(base_url or url)
         return perform_request(auth_manager.get_access_token(base_url or url, force_refresh=True))

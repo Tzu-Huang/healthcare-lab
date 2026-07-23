@@ -186,7 +186,8 @@ class FhirApiTests(ApiCaseSupport):
         body = preview.get_json()
         self.assertEqual(body["source"], "local-submitted-fallback")
         self.assertFalse(body["live"]["fetched"])
-        self.assertIn("medplum down", body["live"]["error"])
+        self.assertEqual("Medplum request failed.", body["live"]["error"])
+        self.assertNotIn("medplum down", json.dumps(body))
         self.assertTrue(body["resource"]["active"])
 
     @patch("backend.app_factory.urllib.request.urlopen")
@@ -374,7 +375,8 @@ class FhirApiTests(ApiCaseSupport):
         self.assertEqual(response.status_code, 200)
         body = response.get_json()
         self.assertEqual(body["strategy"], "patient-filter")
-        self.assertIn("based-on", body["fallbackReason"])
+        self.assertEqual("Medplum returned HTTP 400.", body["fallbackReason"])
+        self.assertNotIn("Unknown search parameter based-on", json.dumps(body))
         self.assertEqual([item["id"] for item in body["reports"]], ["linked", "patient-level"])
         self.assertEqual(body["reports"][0]["relationshipType"], "order-linked")
         self.assertEqual(body["reports"][1]["relationshipType"], "patient-level")
@@ -469,7 +471,8 @@ class FhirApiTests(ApiCaseSupport):
         body = response.get_json()
         self.assertFalse(body["success"])
         self.assertEqual(body["statusCode"], 401)
-        self.assertEqual(body["operationOutcome"]["resourceType"], "OperationOutcome")
+        self.assertEqual({}, body["operationOutcome"])
+        self.assertNotIn("OperationOutcome", json.dumps(body))
 
     @patch("backend.app_factory.urllib.request.urlopen")
     def test_fhir_diagnostic_reports_rejects_malformed_bundle(self, urlopen):
@@ -716,7 +719,7 @@ class FhirApiTests(ApiCaseSupport):
         self.assertFalse(put_payloads[0]["active"])
 
     @patch("backend.app_factory.urllib.request.urlopen")
-    def test_fhir_sync_failure_preserves_operation_outcome(self, urlopen):
+    def test_fhir_sync_failure_does_not_persist_upstream_operation_outcome(self, urlopen):
         created = self.client.post(
             "/api/fhir/records",
             json={
@@ -762,12 +765,14 @@ class FhirApiTests(ApiCaseSupport):
         body = synced.get_json()
         self.assertFalse(body["success"])
         self.assertEqual(body["item"]["sync"]["status"], "Sync failed")
-        self.assertEqual(body["item"]["sync"]["operationOutcome"], outcome)
+        self.assertEqual({}, body["item"]["sync"]["operationOutcome"])
+        self.assertNotIn("bad identifier", json.dumps(body))
         attempts = self.client.get(f"/api/fhir/records/{created['id']}/attempts").get_json()["items"]
         self.assertEqual(attempts[0]["method"], "GET")
         self.assertEqual(attempts[0]["httpStatus"], 400)
-        self.assertEqual(attempts[0]["responsePayload"], outcome)
-        self.assertEqual(attempts[0]["operationOutcome"], outcome)
+        self.assertEqual({}, attempts[0]["responsePayload"])
+        self.assertEqual({}, attempts[0]["operationOutcome"])
+        self.assertNotIn("bad identifier", json.dumps(attempts))
 
     def test_fhir_sync_validation_failure_marks_record_failed(self):
         settings = self.client.application.extensions["integration_settings_service"]
