@@ -133,6 +133,37 @@ class OieSettingsRepository:
             )
         return self.get()
 
+    def remove_management_api_password(self) -> dict[str, Any]:
+        timestamp = self._timestamp()
+        with self._lock, self._connect() as connection:
+            profile = connection.execute(
+                "SELECT id, management_api_password FROM oie_settings_profiles WHERE profile_name = ?",
+                (self._profile_name,),
+            ).fetchone()
+            if not profile:
+                raise KeyError(self._profile_name)
+            changed_fields = (
+                ["managementApi.password"]
+                if profile["management_api_password"]
+                else []
+            )
+            connection.execute(
+                """UPDATE oie_settings_profiles
+                SET management_api_password = '', updated_at = ? WHERE id = ?""",
+                (timestamp, profile["id"]),
+            )
+            connection.execute(
+                """INSERT INTO oie_settings_mutation_audits (
+                    profile_id, actor, operation, changed_fields_json, outcome, created_at
+                ) VALUES (?, 'local-operator', 'remove-secret', ?, 'success', ?)""",
+                (
+                    profile["id"],
+                    json.dumps(changed_fields, separators=(",", ":")),
+                    timestamp,
+                ),
+            )
+        return self.get()
+
     def list_settings_mutation_audits(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
