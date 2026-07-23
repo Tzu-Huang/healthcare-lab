@@ -212,6 +212,11 @@ class LabRegistryService:
         return self._decorate(self.repository.get_lab_server(server_id))
 
     def update_server(self, server_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        current = self.repository.get_lab_server(server_id)
+        if current.get("name") == "Medplum" and "baseUrl" in payload:
+            raise SimulatorValidationError(
+                "Medplum baseUrl is owned by the typed Settings profile."
+            )
         return self._decorate(self.repository.update_lab_server(server_id, payload))
 
 
@@ -454,6 +459,7 @@ def run_lab_operation(
     backing_services: list[str] | None = None,
     operation_service_name: str = "",
     refresh_health: bool = True,
+    medplum_settings_provider: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
     server = store.get_lab_server(server_id)
     normalized_action = action.strip().lower()
@@ -471,16 +477,41 @@ def run_lab_operation(
     error_text = ""
     try:
         if normalized_action == "smoke":
+            medplum_settings = (
+                medplum_settings_provider()
+                if medplum_settings_provider is not None
+                else None
+            )
             smoke_result = run_lab_smoke_check(
                 app,
                 store,
                 server,
                 auth_manager=MedplumAuthManager(
-                    client_id=app.config["MEDPLUM_CLIENT_ID"],
-                    client_secret=app.config["MEDPLUM_CLIENT_SECRET"],
-                    scope=app.config["MEDPLUM_SCOPE"],
-                    token_url=app.config["MEDPLUM_TOKEN_URL"],
-                    refresh_grace_seconds=app.config["MEDPLUM_AUTH_GRACE_SECONDS"],
+                    client_id=(
+                        medplum_settings.client_id
+                        if medplum_settings is not None
+                        else ""
+                    ),
+                    client_secret=(
+                        medplum_settings.client_secret
+                        if medplum_settings is not None
+                        else ""
+                    ),
+                    scope=(
+                        medplum_settings.scope
+                        if medplum_settings is not None
+                        else ""
+                    ),
+                    token_url=(
+                        medplum_settings.token_url
+                        if medplum_settings is not None
+                        else ""
+                    ),
+                    refresh_grace_seconds=(
+                        medplum_settings.auth_grace_seconds
+                        if medplum_settings is not None
+                        else 300
+                    ),
                 ),
             )
             output = json.dumps(smoke_result, indent=2)
@@ -864,7 +895,7 @@ def smoke_status_from_steps(steps: list[dict[str, Any]]) -> str:
 
 
 MEDPLUM_AUTH_NOT_CONFIGURED_MESSAGE = (
-    "Auth not configured: set MEDPLUM_CLIENT_ID and MEDPLUM_CLIENT_SECRET on lab-app."
+    "Auth not configured: configure the Medplum client ID and client secret in Settings."
 )
 
 

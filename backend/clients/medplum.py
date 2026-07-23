@@ -85,7 +85,7 @@ class MedplumAuthManager:
         if not self.is_configured():
             raise ValidationError(
                 "Medplum client credentials are not configured. "
-                "Set MEDPLUM_CLIENT_ID and MEDPLUM_CLIENT_SECRET on the Flask server."
+                "Configure the Medplum client ID and client secret in Settings."
             )
         token_url = derive_medplum_token_url(base_url, self.token_url)
         now = time.time()
