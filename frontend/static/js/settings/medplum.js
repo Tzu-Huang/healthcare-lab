@@ -5,6 +5,44 @@ import { byId } from "../core/dom.js";
 
 const state = { initialized: false, profile: null, busy: false };
 const element = (id) => byId(id);
+const fieldControls = {
+  baseUrl: "medplum-fhir-url",
+  webUiUrl: "medplum-web-ui-url",
+  clientId: "medplum-client-id",
+  scope: "medplum-scope",
+  tokenUrl: "medplum-token-url",
+  authGraceSeconds: "medplum-auth-grace",
+  timeoutSeconds: "medplum-timeout",
+  enabled: "medplum-enabled",
+};
+
+function clearFieldErrors() {
+  Object.values(fieldControls).forEach((controlId) => {
+    const control = element(controlId);
+    control.removeAttribute("aria-invalid");
+    control.removeAttribute("aria-errormessage");
+    element(`${controlId}-error`)?.remove();
+  });
+}
+
+function renderFieldErrors(error) {
+  const issues = error?.payload?.error?.fields;
+  if (!Array.isArray(issues)) return false;
+  issues.forEach((issue) => {
+    const controlId = fieldControls[issue.field];
+    const control = controlId ? element(controlId) : null;
+    if (!control) return;
+    const message = document.createElement("span");
+    message.id = `${controlId}-error`;
+    message.className = "settings-field-error";
+    message.setAttribute("role", "alert");
+    message.textContent = issue.reason || "This value is invalid.";
+    control.setAttribute("aria-invalid", "true");
+    control.setAttribute("aria-errormessage", message.id);
+    control.insertAdjacentElement("afterend", message);
+  });
+  return issues.length > 0;
+}
 
 function publicProfile(response = {}) {
   const profile = response.item || response.profile || response;
@@ -101,6 +139,7 @@ export async function refreshMedplumSettings() {
 export async function saveAndTestMedplumSettings() {
   if (state.busy) return undefined;
   setBusy(true);
+  clearFieldErrors();
   element("medplum-save-result").textContent = "Saving profile and running bounded checks…";
   try {
     const response = await saveAndTestMedplumProfile(profilePayload());
@@ -112,7 +151,10 @@ export async function saveAndTestMedplumSettings() {
     renderStages(response);
     return response;
   } catch (error) {
-    element("medplum-save-result").textContent = `Profile could not be saved: ${error.message}`;
+    const mapped = renderFieldErrors(error);
+    element("medplum-save-result").textContent = mapped
+      ? "Profile was not saved. Correct the highlighted fields."
+      : `Profile could not be saved: ${error.message}`;
     throw error;
   } finally {
     setBusy(false);

@@ -45,6 +45,20 @@ class MedplumSettingsTests(unittest.TestCase):
         self.assertIn('id="medplum-save-result"', self.template)
         self.assertIn('id="medplum-test-results"', self.template)
 
+    def test_validation_issues_map_to_accessible_owned_controls(self):
+        self.assertIn("error?.payload?.error?.fields", self.view)
+        self.assertIn('baseUrl: "medplum-fhir-url"', self.view)
+        self.assertIn('timeoutSeconds: "medplum-timeout"', self.view)
+        self.assertIn('control.setAttribute("aria-invalid", "true")', self.view)
+        self.assertIn('control.setAttribute("aria-errormessage", message.id)', self.view)
+        self.assertIn("clearFieldErrors();", self.view)
+
+    def test_api_errors_preserve_structured_validation_payload(self):
+        client = (
+            ROOT / "frontend/static/js/api/client.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("error.payload = payload", client)
+
 
 if __name__ == "__main__":
     unittest.main()
