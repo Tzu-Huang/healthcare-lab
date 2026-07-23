@@ -8,17 +8,26 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from backend.clients.dcm4chee import open_secured
+
 MAX_QIDO_RESPONSE_BYTES = 65_536
 
 
-def http_get(url: str, timeout: float) -> Mapping[str, Any]:
+def http_get(
+    url: str, timeout: float, profile: dict[str, Any] | None = None
+) -> Mapping[str, Any]:
     request = Request(
         url,
         headers={"Accept": "application/dicom+json, application/json"},
         method="GET",
     )
     try:
-        with urlopen(request, timeout=timeout) as response:
+        response_context = (
+            open_secured(request, profile, timeout=timeout)
+            if profile is not None
+            else urlopen(request, timeout=timeout)
+        )
+        with response_context as response:
             return {
                 "status": response.status,
                 "body": response.read(MAX_QIDO_RESPONSE_BYTES + 1),

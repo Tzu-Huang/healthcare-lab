@@ -17,7 +17,7 @@ from backend.clients.dcm4chee_diagnostics import (
 
 DEFAULT_DIAGNOSTIC_TIMEOUT_SECONDS = 2.0
 
-HttpProbe = Callable[[str, float], Mapping[str, Any]]
+HttpProbe = Callable[..., Mapping[str, Any]]
 TcpProbe = Callable[[str, int, float], Any]
 
 
@@ -38,6 +38,11 @@ class Dcm4cheeDiagnostics:
         self._timeout_seconds = float(timeout_seconds)
         self._http_probe = http_probe or http_get
         self._tcp_probe = tcp_probe or tcp_connect
+
+    def _probe_http(self, url: str) -> Mapping[str, Any]:
+        if self._http_probe is http_get:
+            return self._http_probe(url, self._timeout_seconds, self._profile)
+        return self._http_probe(url, self._timeout_seconds)
 
     def run(self, profile: Any | None = None) -> dict[str, Any]:
         effective_profile = self._profile if profile is None else profile
@@ -69,7 +74,7 @@ class Dcm4cheeDiagnostics:
         if not url:
             return _result("web-ui-http", "failed", "not-configured")
         try:
-            response = self._http_probe(url, self._timeout_seconds)
+            response = self._probe_http(url)
             status = _http_status(response)
             if 100 <= status <= 499:
                 return _result(
@@ -88,7 +93,7 @@ class Dcm4cheeDiagnostics:
         if not url:
             return _result("qido-rs", "failed", "not-configured")
         try:
-            response = self._http_probe(_qido_metadata_url(url), self._timeout_seconds)
+            response = self._probe_http(_qido_metadata_url(url))
             status = _http_status(response)
             if not 200 <= status <= 299:
                 return _result(

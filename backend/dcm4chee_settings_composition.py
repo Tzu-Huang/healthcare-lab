@@ -11,7 +11,7 @@ def dcm4chee_settings_operations(
     settings: Any,
 ) -> tuple[Callable[..., dict[str, Any]], Callable[[], dict[str, Any]]]:
     def profile(_configuration=None) -> dict[str, Any]:
-        return settings.get_effective("dcm4chee").profile
+        return settings.get_effective("dcm4chee").runtime_profile()
 
     def diagnostics() -> dict[str, Any]:
         current = profile()

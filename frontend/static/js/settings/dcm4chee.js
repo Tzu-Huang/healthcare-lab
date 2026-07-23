@@ -37,6 +37,7 @@ const controls = Object.freeze({
   "security.tokenUrl": "dcm4chee-token-url",
   "security.certificatePath": "dcm4chee-certificate-path",
   "security.privateKeyPath": "dcm4chee-private-key-path",
+  "secrets.clientSecret": "dcm4chee-client-secret",
 });
 
 export function fetchDcm4cheeProfile() {
@@ -107,17 +108,21 @@ function renderProfile(root, profile) {
     "dicomweb.wadoRsUrl": dicomweb.wadoRsUrl, "dicomweb.stowRsUrl": dicomweb.stowRsUrl,
     "viewer.studyUrlTemplate": viewer.studyUrlTemplate, uidRoot: profile.uidRoot,
     "security.authMode": security.authMode || "none", "security.username": security.username,
-    "security.tokenUrl": security.tokenUrl, "security.certificatePath": security.certificatePath,
-    "security.privateKeyPath": security.privateKeyPath,
+    "security.tokenUrl": security.tokenUrl,
   }).forEach(([field, value]) => setValue(root, controls[field], value));
   find(root, controls["security.tlsEnabled"]).checked = security.tlsEnabled === true;
   find(root, controls["security.tlsVerify"]).checked = security.tlsVerify !== false;
   find(root, "dcm4chee-password").value = "";
   find(root, "dcm4chee-token").value = "";
+  find(root, "dcm4chee-client-secret").value = "";
+  find(root, "dcm4chee-certificate-path").value = "";
+  find(root, "dcm4chee-private-key-path").value = "";
   const password = profile.secrets?.password || profile.secrets?.["security.password"];
   const token = profile.secrets?.token || profile.secrets?.["security.token"];
+  const clientSecret = profile.secrets?.clientSecret;
   find(root, "dcm4chee-password-configured").textContent = configured(password) ? "(configured)" : "(not configured)";
   find(root, "dcm4chee-token-configured").textContent = configured(token) ? "(configured)" : "(not configured)";
+  find(root, "dcm4chee-client-secret-configured").textContent = configured(clientSecret) ? "(configured)" : "(not configured)";
   const certificate = profile.references?.certificatePath || profile.references?.["security.certificatePath"];
   const privateKey = profile.references?.privateKeyPath || profile.references?.["security.privateKeyPath"];
   find(root, "dcm4chee-certificate-state").textContent = referenceSummary(certificate);
@@ -171,8 +176,10 @@ function profilePayload(root) {
   const secrets = {};
   const password = find(root, "dcm4chee-password").value;
   const token = find(root, "dcm4chee-token").value;
+  const clientSecret = find(root, "dcm4chee-client-secret").value;
   if (password) secrets.password = password;
   if (token) secrets.token = token;
+  if (clientSecret) secrets.clientSecret = clientSecret;
   return { fields, secrets };
 }
 

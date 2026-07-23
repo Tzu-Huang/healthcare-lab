@@ -396,3 +396,45 @@ class IntegrationSettingsApiTests(unittest.TestCase):
             unreadable.get_json()["error"]["fields"][0]["code"],
         )
         self.assertNotIn("missing-cert", unreadable.get_data(as_text=True))
+
+    def test_dcm4chee_oauth_secret_and_mounted_paths_are_write_only(self):
+        service = self.app.extensions["integration_settings_service"]
+        certificate = Path(self.temporary.name) / "certificate-canary.pem"
+        private_key = Path(self.temporary.name) / "private-key-canary.pem"
+        certificate.write_text("certificate", encoding="utf-8")
+        private_key.write_text("private-key", encoding="utf-8")
+        fields = copy.deepcopy(service.get_public("dcm4chee")["fields"])
+        fields["security"].update(
+            {
+                "authMode": "oauth2",
+                "username": "client-id",
+                "tokenUrl": "https://identity.example/token",
+                "tlsEnabled": True,
+                "certificatePath": str(certificate),
+                "privateKeyPath": str(private_key),
+            }
+        )
+        saved = self.client.put(
+            "/api/settings/profiles/dcm4chee",
+            json={"fields": fields, "secrets": {"clientSecret": "oauth-secret-canary"}},
+        )
+        self.assertEqual(200, saved.status_code)
+        rendered = saved.get_data(as_text=True)
+        for canary in ("oauth-secret-canary", str(certificate), str(private_key), certificate.name, private_key.name):
+            self.assertNotIn(canary, rendered)
+        item = saved.get_json()["item"]
+        self.assertNotIn("certificatePath", item["fields"]["security"])
+        self.assertNotIn("privateKeyPath", item["fields"]["security"])
+        self.assertTrue(item["secrets"]["clientSecret"]["configured"])
+        self.assertEqual(
+            {"configured": True, "readable": True}, item["references"]["certificatePath"]
+        )
+
+        preserved = self.client.put(
+            "/api/settings/profiles/dcm4chee", json={"fields": item["fields"]}
+        )
+        self.assertEqual(200, preserved.status_code)
+        effective = service.get_effective("dcm4chee")
+        self.assertEqual("oauth-secret-canary", effective.secrets["clientSecret"])
+        self.assertEqual(certificate, Path(effective.profile["security"]["certificatePath"]))
+        self.assertEqual(private_key, Path(effective.profile["security"]["privateKeyPath"]))
