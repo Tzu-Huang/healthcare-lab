@@ -13,10 +13,10 @@
 
 ## 3. Bootstrap and Effective Configuration
 
-- [ ] 3.1 Implement create-only environment/default bootstrap for missing registered profiles with complete pre-validation and durable persisted-profile authority.
-- [ ] 3.2 Add clean-install, legacy-environment, persisted-override, changed-environment restart, invalid-bootstrap, and transaction-rollback migration tests.
-- [ ] 3.3 Compose request-context-independent effective-settings readers and migrate the foundation-owned runtime consumer seams away from competing environment, Flask request, inventory, or raw SQL reads.
-- [ ] 3.4 Add service/composition tests proving HTTP and background consumers receive the same effective typed settings and persisted overrides remain authoritative after restart.
+- [x] 3.1 Implement create-only environment/default bootstrap for missing registered profiles with complete pre-validation and durable persisted-profile authority.
+- [x] 3.2 Add clean-install, legacy-environment, persisted-override, changed-environment restart, invalid-bootstrap, and transaction-rollback migration tests.
+- [x] 3.3 Compose request-context-independent effective-settings readers and migrate the foundation-owned runtime consumer seams away from competing environment, Flask request, inventory, or raw SQL reads.
+- [x] 3.4 Add service/composition tests proving HTTP and background consumers receive the same effective typed settings and persisted overrides remain authoritative after restart.
 
 ## 4. Shared API and OIE Adaptation
 

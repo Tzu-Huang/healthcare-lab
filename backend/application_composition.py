@@ -35,6 +35,7 @@ from backend.repositories.enrichment import OrderEnrichmentLoader, PatientEnrich
 from backend.repositories.fhir_ledger import FhirLedgerRepository
 from backend.repositories.gdt_workflow import GdtWorkflowRepository
 from backend.repositories.identifiers import PatientIdentifierRepository
+from backend.repositories.integration_settings import IntegrationSettingsRepository
 from backend.repositories.lab import LabRepository
 from backend.repositories.maintenance import seed_lab_servers, seed_oie_settings_profile, seed_patient_mrn_sequence
 from backend.repositories.oie import OieRepository
@@ -45,6 +46,7 @@ from backend.repositories.schema import APPLICATION_MIGRATIONS, ensure_applicati
 from backend.services.dcm4chee_coordination import Dcm4cheeMwlAttemptCoordinator, Dcm4cheeWorkflowCoordinator
 from backend.services.fhir_coordination import FhirOrderCoordinator, PatientFhirCoordinator
 from backend.services.gdt_coordination import GdtWorkflowCoordinator, build_gdt_order_request
+from backend.services.integration_settings import IntegrationSettingsService
 from backend.services.protocol_compatibility import project_fhir_workflow_record
 from backend.templates import dicom as dicom_templates
 from backend.templates import order as order_templates
@@ -57,6 +59,8 @@ class ApplicationDependencies:
     """Declared construction results; never passed to workflow consumers."""
 
     database: SQLiteDatabase
+    integration_settings_repository: IntegrationSettingsRepository
+    integration_settings_service: IntegrationSettingsService
     oie_settings_repository: OieSettingsRepository
     lab_repository: LabRepository
     oie_repository: OieRepository
@@ -74,7 +78,11 @@ class ApplicationDependencies:
     gdt_workflow: GdtWorkflowCoordinator
 
 
-def assemble_application_dependencies(path: str | Path) -> ApplicationDependencies:
+def assemble_application_dependencies(
+    path: str | Path,
+    *,
+    configuration: dict[str, object] | None = None,
+) -> ApplicationDependencies:
     database = SQLiteDatabase(
         path,
         migrations=APPLICATION_MIGRATIONS,
@@ -118,6 +126,28 @@ def assemble_application_dependencies(path: str | Path) -> ApplicationDependenci
         timestamp_factory=now_iso,
     )
     lab_repository = LabRepository(database.connect, database.lock, timestamp_factory=now_iso)
+    integration_settings_repository = IntegrationSettingsRepository(
+        database.connect,
+        database.lock,
+        timestamp_factory=now_iso,
+    )
+    integration_settings_service = IntegrationSettingsService(
+        integration_settings_repository
+    )
+    bootstrap_configuration = dict(configuration or {})
+    if "MEDPLUM_FHIR_BASE_URL" not in bootstrap_configuration:
+        medplum = next(
+            (
+                item
+                for item in lab_repository.list_servers()
+                if item["name"] == "Medplum"
+            ),
+            None,
+        )
+        bootstrap_configuration["MEDPLUM_FHIR_BASE_URL"] = str(
+            (medplum or {}).get("baseUrl") or "http://medplum:8103/fhir/R4"
+        )
+    integration_settings_service.bootstrap_medplum(bootstrap_configuration)
     oie_repository = OieRepository(
         database.connect,
         database.lock,
@@ -247,6 +277,8 @@ def assemble_application_dependencies(path: str | Path) -> ApplicationDependenci
     )
     return ApplicationDependencies(
         database=database,
+        integration_settings_repository=integration_settings_repository,
+        integration_settings_service=integration_settings_service,
         oie_settings_repository=oie_settings_repository,
         lab_repository=lab_repository,
         oie_repository=oie_repository,
