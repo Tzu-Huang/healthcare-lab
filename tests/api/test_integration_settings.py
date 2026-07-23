@@ -333,3 +333,66 @@ class IntegrationSettingsApiTests(unittest.TestCase):
         self.assertFalse(
             existing.get_json()["item"]["managementApi"]["passwordConfigured"]
         )
+
+    def test_dcm4chee_profile_is_persisted_secret_safe_and_canonical(self):
+        service = self.app.extensions["integration_settings_service"]
+        response = self.client.get("/api/settings/profiles/dcm4chee")
+        self.assertEqual(200, response.status_code)
+        item = response.get_json()["item"]
+        self.assertEqual("dcm4chee", item["profileType"])
+        self.assertIn("password", item["secrets"])
+        self.assertIn("privateKeyPath", item["references"])
+
+        fields = copy.deepcopy(item["fields"])
+        fields["displayName"] = "External archive"
+        fields["dimse"]["host"] = "pacs.example"
+        saved = self.client.put(
+            "/api/settings/profiles/dcm4chee",
+            json={"fields": fields, "secrets": {"token": "token-canary"}},
+        )
+        self.assertEqual(200, saved.status_code)
+        effective = service.get_effective("dcm4chee")
+        self.assertEqual("pacs.example", effective.profile["dimse"]["host"])
+        self.assertEqual("token-canary", effective.secrets["token"])
+        self.assertNotIn("token-canary", saved.get_data(as_text=True))
+
+    def test_disabled_dcm4chee_diagnostics_are_bounded(self):
+        service = self.app.extensions["integration_settings_service"]
+        fields = copy.deepcopy(service.get_public("dcm4chee")["fields"])
+        fields["enabled"] = False
+        service.replace("dcm4chee", fields)
+
+        response = self.client.post("/api/settings/dcm4chee/diagnostics", json={})
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("disabled", response.get_json()["state"])
+        self.assertEqual([], response.get_json()["checks"])
+
+    def test_dcm4chee_rejects_missing_auth_secret_and_unreadable_reference(self):
+        service = self.app.extensions["integration_settings_service"]
+        fields = copy.deepcopy(service.get_public("dcm4chee")["fields"])
+        fields["security"]["authMode"] = "basic"
+        fields["security"]["username"] = "operator"
+        missing_secret = self.client.put(
+            "/api/settings/profiles/dcm4chee", json={"fields": fields}
+        )
+        self.assertEqual(400, missing_secret.status_code)
+        self.assertEqual(
+            "secrets.password",
+            missing_secret.get_json()["error"]["fields"][0]["field"],
+        )
+
+        fields["security"]["authMode"] = "none"
+        fields["security"]["tlsEnabled"] = True
+        fields["security"]["tlsVerify"] = True
+        fields["security"]["certificatePath"] = "/mounted/missing-cert.pem"
+        fields["security"]["privateKeyPath"] = "/mounted/missing-key.pem"
+        unreadable = self.client.put(
+            "/api/settings/profiles/dcm4chee", json={"fields": fields}
+        )
+        self.assertEqual(400, unreadable.status_code)
+        self.assertEqual(
+            "unreadable_mounted_reference",
+            unreadable.get_json()["error"]["fields"][0]["code"],
+        )
+        self.assertNotIn("missing-cert", unreadable.get_data(as_text=True))

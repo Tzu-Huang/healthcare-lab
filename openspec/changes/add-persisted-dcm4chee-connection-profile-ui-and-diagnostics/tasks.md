@@ -1,23 +1,23 @@
-## 1. Typed Profile and Persistence
+﻿## 1. Typed Profile and Persistence
 
-- [ ] 1.1 Register the closed dcm4chee profile schema, defaults, validators, public fields, secret fields, and stable field-level errors.
-- [ ] 1.2 Add idempotent missing-profile bootstrap from eligible `DCM4CHEE_*` values and document browser-facing versus application-facing Docker defaults.
-- [ ] 1.3 Add typed profile read/update APIs with atomic persistence, write-only secret mutations, mounted-reference projections, value-free audits, and stable identity conflict handling.
-- [ ] 1.4 Add validation, bootstrap, migration, persistence, rollback, audit, redaction, and identity-conflict tests.
+- [x] 1.1 Register the closed dcm4chee profile schema, defaults, validators, public fields, secret fields, and stable field-level errors.
+- [x] 1.2 Add idempotent missing-profile bootstrap from eligible `DCM4CHEE_*` values and document browser-facing versus application-facing Docker defaults.
+- [x] 1.3 Add typed profile read/update APIs with atomic persistence, write-only secret mutations, mounted-reference projections, value-free audits, and stable identity conflict handling.
+- [x] 1.4 Add validation, bootstrap, migration, persistence, rollback, audit, redaction, and identity-conflict tests.
 
 ## 2. Canonical Effective Runtime
 
-- [ ] 2.1 Compose an application-scoped effective dcm4chee profile reader that supplies immutable operation snapshots outside request context.
-- [ ] 2.2 Migrate Patient ADT sync and MWL create/readback to the effective persisted profile.
-- [ ] 2.3 Migrate result reconciliation, viewer links, fixture behavior, and remaining dcm4chee consumers to the same effective profile.
-- [ ] 2.4 Add compatibility tests proving built-in defaults and external profiles are used consistently across every workflow.
+- [x] 2.1 Compose an application-scoped effective dcm4chee profile reader that supplies immutable operation snapshots outside request context.
+- [x] 2.2 Migrate Patient ADT sync and MWL create/readback to the effective persisted profile.
+- [x] 2.3 Migrate result reconciliation, viewer links, fixture behavior, and remaining dcm4chee consumers to the same effective profile.
+- [x] 2.4 Add compatibility tests proving built-in defaults and external profiles are used consistently across every workflow.
 
 ## 3. Bounded Diagnostics and Readiness
 
-- [ ] 3.1 Implement independent timeout-bounded Web UI HTTP, QIDO-RS metadata, HL7 TCP, and DIMSE TCP checks with allowlisted redacted outcomes.
-- [ ] 3.2 Distinguish transport reachability from protocol success and preserve partial results across check failures and timeouts.
-- [ ] 3.3 Replace the static-disabled readiness provider with dcm4chee-owned disabled, needs-setup, ready, and degraded assessments.
-- [ ] 3.4 Add diagnostic and readiness tests for built-in Docker, external PACS, partial connectivity, disabled state, timeouts, and sensitive canaries.
+- [x] 3.1 Implement independent timeout-bounded Web UI HTTP, QIDO-RS metadata, HL7 TCP, and DIMSE TCP checks with allowlisted redacted outcomes.
+- [x] 3.2 Distinguish transport reachability from protocol success and preserve partial results across check failures and timeouts.
+- [x] 3.3 Replace the static-disabled readiness provider with dcm4chee-owned disabled, needs-setup, ready, and degraded assessments.
+- [x] 3.4 Add diagnostic and readiness tests for built-in Docker, external PACS, partial connectivity, disabled state, timeouts, and sensitive canaries.
 
 ## 4. Modular dcm4chee Settings Experience
 

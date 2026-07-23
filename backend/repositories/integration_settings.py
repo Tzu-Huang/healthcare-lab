@@ -50,6 +50,19 @@ class IntegrationSettingsRepository:
             ).fetchone()
         return row is not None
 
+    def has_dcm4chee_dependencies(self) -> bool:
+        tables = (
+            "local_dcm4chee_mwl_mappings",
+            "local_dcm4chee_patient_syncs",
+            "local_dcm4chee_result_records",
+        )
+        with self._connect() as connection:
+            return any(
+                connection.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
+                is not None
+                for table in tables
+            )
+
     def migrate_medplum_profile(self) -> bool:
         """Idempotently evolve pre-ZAC-73 JSON without consulting environment."""
         timestamp = self._timestamp()

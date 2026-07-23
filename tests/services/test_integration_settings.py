@@ -126,3 +126,47 @@ class IntegrationSettingsServiceTests(unittest.TestCase):
             .get_effective("medplum")
             .base_url,
         )
+
+    def test_dcm4chee_bootstrap_is_persisted_once_and_effective_is_redacted(self):
+        first = assemble_application_dependencies(
+            self.path,
+            configuration={
+                "DCM4CHEE_DIMSE_HOST": "archive-one",
+                "DCM4CHEE_HL7_HOST": "archive-one",
+                "DCM4CHEE_PASSWORD": "password-canary",
+                "DCM4CHEE_AUTH_MODE": "basic",
+                "DCM4CHEE_USERNAME": "operator",
+            },
+        )
+        effective = first.integration_settings_service.get_effective("dcm4chee")
+        self.assertEqual("archive-one", effective.profile["dimse"]["host"])
+        self.assertEqual("password-canary", effective.secrets["password"])
+        self.assertNotIn("password-canary", repr(effective))
+
+        fields = dict(first.integration_settings_service.get_public("dcm4chee")["fields"])
+        fields["displayName"] = "Operator archive"
+        first.integration_settings_service.replace("dcm4chee", fields)
+
+        restarted = assemble_application_dependencies(
+            self.path,
+            configuration={"DCM4CHEE_DIMSE_HOST": "archive-two"},
+        )
+        persisted = restarted.integration_settings_service.get_effective("dcm4chee")
+        self.assertEqual("archive-one", persisted.profile["dimse"]["host"])
+        self.assertEqual("Operator archive", persisted.profile["displayName"])
+
+    def test_dcm4chee_identity_change_is_blocked_when_records_depend_on_it(self):
+        dependencies = assemble_application_dependencies(self.path)
+        service = dependencies.integration_settings_service
+        dependencies.integration_settings_repository.has_dcm4chee_dependencies = (
+            lambda: True
+        )
+        fields = service.get_public("dcm4chee")["fields"]
+        fields["profileName"] = "renamed-archive"
+
+        with self.assertRaises(TypedSettingsValidationError) as raised:
+            service.replace("dcm4chee", fields)
+
+        self.assertEqual(
+            "identity_migration_required", raised.exception.issues[0].code
+        )
