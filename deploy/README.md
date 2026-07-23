@@ -237,11 +237,24 @@ OIE 4.5.2 does not expose the Client API on its HTTP port.
 | `HLAB_ORM_TO_AP` | `OIE:6600 -> hl7tester:6671` |
 | `HLAB_ORU_TO_HLAB` | `OIE:6661 -> lab-app:6665` |
 
-Only a Channel classified as missing is created, read back, persisted, deployed,
-and verified as started. An ordinary restart leaves existing unchanged Channels,
-including stopped unchanged Channels, untouched. Drift, duplicate markers,
-same-name external Channels, and ownership conflicts are recorded as bounded
-no-mutation outcomes. Unrelated external Channels are never changed.
+Bootstrap also recovers identity when the `lab-app-instance` mapping state and
+OIE appdata have different retention histories:
+
+| lab-app mapping | OIE Channel | Startup result |
+| --- | --- | --- |
+| retained | retained | No mapping or OIE mutation |
+| retained | missing after OIE appdata reset | Recreate, bind, deploy, and verify only the missing Channel |
+| empty after lab-app state reset | retained | Rebind exactly one valid owned Channel without changing its deployment state |
+| empty | missing | Create, bind, deploy, and verify a new Channel |
+
+Recovery requires one exact Healthcare Lab ownership marker and logical type,
+a parseable owned payload, the expected listener route, and no duplicate,
+same-name external, or listener-port claimant. Channel name alone is never
+ownership evidence. Ambiguous, malformed, stale, or conflicting evidence is a
+bounded no-mutation outcome. A recovered stopped or undeployed Channel remains
+stopped or undeployed; bootstrap deploys only a Channel it created during that
+run. Repeated restarts are idempotent, and a blocker for one logical type does
+not broaden or prevent safe reconciliation of the other.
 
 Configure the bounded startup behavior in `.env`:
 
@@ -251,13 +264,15 @@ OIE_BOOTSTRAP_TIMEOUT_SECONDS=120
 OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS=2
 ```
 
-Set `OIE_BOOTSTRAP_MODE=off` and recreate `lab-app` to disable readiness checks
-and automatic creation. This is also the rollback switch; disabling bootstrap
-does not delete or undeploy Channels that were already created. Bootstrap
-timeout or failure never makes the lab-app HTTP service unhealthy. Inspect the
-Settings managed-Channel inventory and lifecycle audit history for bounded
-`startup-bootstrap` evidence, correct the reported OIE connectivity or ownership
-condition, and restart `lab-app` to make another bounded attempt.
+Set `OIE_BOOTSTRAP_MODE=off` and recreate `lab-app` to disable readiness checks,
+identity recovery, and automatic creation. This is also the rollback switch;
+disabling bootstrap does not clear recovered mappings or delete, deploy, or
+undeploy Channels. Bootstrap timeout or failure never makes the lab-app HTTP
+service unhealthy. Inspect the Settings managed-Channel inventory and lifecycle
+audit history for bounded `startup-bootstrap` evidence. For blocked recovery,
+preserve both volumes, resolve duplicate markers, malformed payloads, external
+name/port ownership, or stale identity explicitly, then restart `lab-app` for a
+fresh bounded attempt. Never rename an external Channel as a recovery shortcut.
 
 The supported container uses one Gunicorn worker. Multiple workers or replicas
 require leader election and are outside this bootstrap contract.

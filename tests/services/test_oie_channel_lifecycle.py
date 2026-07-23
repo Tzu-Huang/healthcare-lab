@@ -16,11 +16,16 @@ def value(channel_id="c1", revision=7, payload=None, status="STARTED"):
 
 class FakeRepository:
     def __init__(self, mapped=True, fail_audit_after=None):
-        self.mapping = {"logicalType": "hlab-orm-to-ap", "channelId": "c1" if mapped else "", "channelName": "HLAB_ORM_TO_AP", "templateVersion": "1", "lastKnownRevision": "7" if mapped else ""}
-        self.audits, self.fail_audit_after = [], fail_audit_after
-    def get(self): return {"managedChannels": [self.mapping]}
+        self.mapping = {"logicalType": "hlab-orm-to-ap", "channelId": "c1" if mapped else "", "channelName": "HLAB_ORM_TO_AP", "templateVersion": "1", "lastKnownRevision": "7" if mapped else "", "destinationPort": 6671}
+        self.audits, self.fail_audit_after, self.race_intent_on_bind = [], fail_audit_after, False
+    def get(self): return {"managedChannels": [dict(self.mapping)]}
     def compare_and_update_managed_channel_mapping(self, **kwargs):
         self.mapping.update(channelId=kwargs["channel_id"], lastKnownRevision=kwargs["revision"]); self.audits.append(kwargs["audit_event"]); return self.mapping
+    def compare_and_bind_recovered_managed_channel_mapping(self, **kwargs):
+        if self.race_intent_on_bind: self.mapping["destinationPort"] = 6672
+        if self.mapping["channelId"] or self.mapping["lastKnownRevision"]: raise RuntimeError("mapping is not empty")
+        if self.mapping["destinationPort"] != kwargs["expected_desired_config"]["destinationPort"]: raise RuntimeError("mapping intent changed")
+        self.mapping.update(channelId=kwargs["channel_id"], channelName=kwargs["channel_name"], templateVersion=kwargs["template_version"], lastKnownRevision=kwargs["revision"]); self.audits.append(kwargs["audit_event"]); return self.mapping
     def compare_and_clear_managed_channel_mapping(self, **kwargs):
         self.mapping.update(channelId="", lastKnownRevision=""); self.audits.append(kwargs["audit_event"]); return self.mapping
     def append_managed_channel_lifecycle_audit(self, event):
@@ -143,6 +148,44 @@ class LifecycleServiceTests(unittest.TestCase):
         preview = service.preview("hlab-orm-to-ap", "create")
         self.assertFalse(preview["permitted"]); self.assertNotIn("previewToken", preview)
         self.assertFalse(any(call[0] == "create" for call in client.calls))
+
+    def test_recover_mapping_revalidates_and_preserves_stopped_state_without_mutation(self):
+        client, repository = FakeClient([value(status="STOPPED")]), FakeRepository(mapped=False)
+        result = self.service(client, repository).recover_mapping("hlab-orm-to-ap")
+
+        self.assertEqual("success", result["outcome"])
+        self.assertEqual("STOPPED", result["status"])
+        self.assertEqual("c1", repository.mapping["channelId"])
+        self.assertEqual("recover-mapping", repository.audits[-1]["operation"])
+        self.assertFalse(any(call[0] in {"create", "update", "deploy", "undeploy", "delete"} for call in client.calls))
+
+    def test_recover_mapping_fails_closed_when_revision_changes(self):
+        client, repository = FakeClient([value()]), FakeRepository(mapped=False)
+        service = self.service(client, repository)
+        original_snapshot = service._snapshot
+        calls = 0
+        def racing_snapshot(kind):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                client.channels[0] = value(revision=8)
+            return original_snapshot(kind)
+        service._snapshot = racing_snapshot
+
+        with self.assertRaisesRegex(LifecycleGuardError, "changed before binding"):
+            service.recover_mapping("hlab-orm-to-ap")
+        self.assertEqual("", repository.mapping["channelId"])
+
+    def test_recover_mapping_fails_closed_when_mapping_intent_races_bind(self):
+        client, repository = FakeClient([value()]), FakeRepository(mapped=False)
+        repository.race_intent_on_bind = True
+
+        with self.assertRaisesRegex(RuntimeError, "mapping intent changed"):
+            self.service(client, repository).recover_mapping("hlab-orm-to-ap")
+
+        self.assertEqual("", repository.mapping["channelId"])
+        self.assertEqual(6672, repository.mapping["destinationPort"])
+        self.assertEqual([], repository.audits)
 
     def test_update_preserves_unowned_fields_and_never_overrides(self):
         drift = compile_orm_to_ap("ap.internal", destination_port=6672); root = ET.fromstring(drift)

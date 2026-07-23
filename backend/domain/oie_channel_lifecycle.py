@@ -17,6 +17,7 @@ class OieMappingConflictError(RuntimeError):
 
 class ChannelClassification(StrEnum):
     MISSING = "missing"
+    RECOVERABLE = "recoverable"
     UNCHANGED = "unchanged"
     DRIFTED = "drifted"
     CONFLICT = "conflict"
@@ -167,6 +168,7 @@ def reconcile_inventory(
     mappings = {item.logical_type: item for item in persisted}
     live = sorted(live_channels, key=lambda item: (item.channel_id, item.name))
     parsed = {item.channel_id: _parse_identity(item, normalize_payload) for item in live}
+    listeners = {item.channel_id: _parse_listener(item.payload) for item in live}
     associated_ids: set[str] = set()
     snapshots: list[ChannelSnapshot] = []
 
@@ -186,8 +188,6 @@ def reconcile_inventory(
             reasons.append("mapped-id-marker-contradiction")
         if mapped is not None and parsed[mapped.channel_id][1] != config.marker:
             reasons.append("mapped-id-marker-contradiction")
-        if not mapped_id and marker_matches:
-            reasons.append("unmapped-managed-marker")
         if any(parsed[item.channel_id][1] != config.marker for item in name_matches):
             reasons.append("same-name-channel-is-not-owned")
         malformed = [item for item in candidates.values() if parsed[item.channel_id][0] is not None]
@@ -195,13 +195,27 @@ def reconcile_inventory(
             reasons.append("malformed-managed-candidate")
 
         observed = mapped or (marker_matches[0] if len(marker_matches) == 1 else None)
+        recoverable = bool(not mapped_id and len(marker_matches) == 1 and observed is not None)
+        if recoverable and not reasons:
+            expected_listener = (config.listener.host, config.listener.port)
+            observed_listener = listeners[observed.channel_id]
+            if observed_listener != expected_listener:
+                reasons.append("managed-route-identity-mismatch")
+            for item in live:
+                if item.channel_id == observed.channel_id:
+                    continue
+                listener = listeners[item.channel_id]
+                if listener is None:
+                    reasons.append("ambiguous-route-ownership")
+                elif listener[1] == config.listener.port:
+                    reasons.append("listener-route-owned-by-another-channel")
         evidence = IdentityEvidence(
             expected_marker=config.marker,
             observed_marker=parsed[observed.channel_id][1] if observed else None,
             mapped_channel_id=mapped_id,
             observed_channel_id=observed.channel_id if observed else None,
             marker_matches=bool(observed and parsed[observed.channel_id][1] == config.marker),
-            id_matches=bool(observed and mapped_id and observed.channel_id == mapped_id),
+            id_matches=bool(observed and (not mapped_id or observed.channel_id == mapped_id)),
             duplicate_marker=len(marker_matches) > 1,
             name_collision=any(parsed[item.channel_id][1] != config.marker for item in name_matches),
             payload_valid=not malformed,
@@ -211,6 +225,9 @@ def reconcile_inventory(
             diffs: tuple[OwnedFieldDiff, ...] = ()
         elif observed is None:
             classification = ChannelClassification.MISSING
+            diffs = ()
+        elif recoverable:
+            classification = ChannelClassification.RECOVERABLE
             diffs = ()
         else:
             actual = normalize_payload(observed.payload)
@@ -263,6 +280,7 @@ def _diff(path: str, desired: Any, observed: Any, output: list[OwnedFieldDiff]) 
 
 
 def _parse_identity(channel: LiveChannel, normalize_payload) -> tuple[str | None, str | None]:
+    marker: str | None = None
     try:
         root = ET.fromstring(channel.payload)
         marker = root.findtext("description")
@@ -273,4 +291,19 @@ def _parse_identity(channel: LiveChannel, normalize_payload) -> tuple[str | None
             normalize_payload(channel.payload)
         return None, marker
     except (ET.ParseError, ValueError, TypeError) as exc:
-        return type(exc).__name__, None
+        return type(exc).__name__, marker
+
+
+def _parse_listener(payload: str) -> tuple[str, int] | None:
+    try:
+        root = ET.fromstring(payload)
+        properties = root.find("sourceConnector/properties/listenerConnectorProperties")
+        if properties is None:
+            return None
+        host = properties.findtext("host")
+        port = properties.findtext("port")
+        if not host or not port:
+            return None
+        return host, int(port)
+    except (ET.ParseError, TypeError, ValueError):
+        return None
