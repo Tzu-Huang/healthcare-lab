@@ -10,6 +10,7 @@ INTEGRATION_OWNER_INVENTORY = {
         "test_frontend_exposes_dashboard_children_and_gdt_workspace_order_action",
         "test_sidebar_views_hide_inactive_pages",
         "test_only_healthcare_lab_routes_are_registered",
+        "test_settings_readiness_is_composed_without_openemr",
     ),
     "integration/test_cross_feature_workflows.py": (
         "test_patient_api_creates_dicom_patient_and_syncs_dcm4chee",
@@ -230,8 +231,8 @@ class Zac64OwnershipContractTests(unittest.TestCase):
             actual = _test_method_names(tests_root / relative)
             self.assertEqual(actual, expected, relative)
             integration_names.extend(actual)
-        self.assertEqual(len(integration_names), 129)
-        self.assertEqual(len(set(integration_names)), 129)
+        self.assertEqual(len(integration_names), 130)
+        self.assertEqual(len(set(integration_names)), 130)
 
         repository_names = []
         for relative, expected in REPOSITORY_OWNER_INVENTORY.items():

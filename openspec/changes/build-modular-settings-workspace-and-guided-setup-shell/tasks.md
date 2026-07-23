@@ -28,6 +28,6 @@
 
 ## 5. Documentation and Verification
 
-- [ ] 5.1 Document the Settings registration, readiness-provider, activation-impact, and bounded-diagnostics extension contracts for later integration tickets.
-- [ ] 5.2 Run focused readiness, Settings, OIE lifecycle, and architecture tests plus the complete regression suite.
-- [ ] 5.3 Run Python compilation, JavaScript syntax checks, `git diff --check`, and strict OpenSpec validation.
+- [x] 5.1 Document the Settings registration, readiness-provider, activation-impact, and bounded-diagnostics extension contracts for later integration tickets.
+- [x] 5.2 Run focused readiness, Settings, OIE lifecycle, and architecture tests plus the complete regression suite.
+- [x] 5.3 Run Python compilation, JavaScript syntax checks, `git diff --check`, and strict OpenSpec validation.
