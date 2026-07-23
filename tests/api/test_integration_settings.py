@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import tempfile
 import unittest
 from pathlib import Path
@@ -159,6 +160,45 @@ class IntegrationSettingsApiTests(unittest.TestCase):
             response.get_json()["error"]["fields"][0]["field"],
         )
         self.assertNotIn("canary", response.get_data(as_text=True))
+
+    def test_oie_rejects_unknown_fields_at_every_schema_level(self):
+        original = self.app.extensions["integration_settings_service"].get_public(
+            "oie"
+        )["fields"]
+        cases = (
+            ("arbitrary", lambda fields: fields.__setitem__("arbitrary", "value-canary")),
+            (
+                "managementApi.arbitrary",
+                lambda fields: fields["managementApi"].__setitem__(
+                    "arbitrary", "value-canary"
+                ),
+            ),
+            (
+                "resultListener.arbitrary",
+                lambda fields: fields["resultListener"].__setitem__(
+                    "arbitrary", "value-canary"
+                ),
+            ),
+            (
+                "managedChannels[0].arbitrary",
+                lambda fields: fields["managedChannels"][0].__setitem__(
+                    "arbitrary", "value-canary"
+                ),
+            ),
+        )
+        for expected_path, mutate in cases:
+            with self.subTest(field=expected_path):
+                fields = copy.deepcopy(original)
+                mutate(fields)
+                response = self.client.put(
+                    "/api/settings/profiles/oie", json={"fields": fields}
+                )
+
+                self.assertEqual(400, response.status_code)
+                issue = response.get_json()["error"]["fields"][0]
+                self.assertEqual(expected_path, issue["field"])
+                self.assertEqual("unknown_field", issue["code"])
+                self.assertNotIn("value-canary", response.get_data(as_text=True))
 
     def test_oie_validation_returns_stable_field_path(self):
         fields = self.app.extensions["integration_settings_service"].get_public("oie")[
