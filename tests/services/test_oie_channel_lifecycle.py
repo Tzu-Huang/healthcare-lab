@@ -80,6 +80,19 @@ class LifecycleServiceTests(unittest.TestCase):
             audit["actor"] for audit in repository.audits
         ])
 
+    def test_bootstrap_non_mutation_outcome_uses_secret_safe_audit_allowlist(self):
+        repository = FakeRepository()
+        service = self.service(FakeClient(), repository)
+
+        event = service.record_bootstrap_outcome(
+            "hlab-orm-to-ap", "drifted", "blocked", error_category="ownership"
+        )
+
+        self.assertEqual("startup-bootstrap", event["actor"])
+        self.assertEqual("startup-bootstrap", event["operation"])
+        self.assertEqual([], event["changed_owned_fields"])
+        self.assertEqual(event, repository.audits[-1])
+
     def test_actor_must_be_bounded_and_non_empty(self):
         service = self.service(FakeClient(), FakeRepository(mapped=False))
         for actor in ("", "x" * 81):

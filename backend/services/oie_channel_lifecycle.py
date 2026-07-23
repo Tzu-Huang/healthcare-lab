@@ -84,6 +84,20 @@ class OieManagedChannelLifecycleService:
             latest = self._latest_operations()
             return [self._project_with_config(item, latest.get(item.logical_type.value) if item.logical_type else None) for item in self._snapshots()]
 
+    def record_bootstrap_outcome(self, logical_type: str, classification: str, outcome: str, *, error_category: str = ""):
+        kind = ManagedChannelType(logical_type)
+        event = {
+            "operation_id": self.operation_id(), "actor": "startup-bootstrap",
+            "operation": "startup-bootstrap", "logical_type": kind.value,
+            "channel_id": "", "before_revision": "", "after_revision": "",
+            "classification": str(classification or "")[:80],
+            "outcome": str(outcome or "")[:80],
+            "error_category": str(error_category or "")[:80],
+            "changed_owned_fields": [],
+        }
+        self.repository.append_managed_channel_lifecycle_audit(event)
+        return event
+
     def preview(self, logical_type: str, operation: str, *, actor: str = "local-operator"):
         with self._actor_scope(actor), self._client_scope(): return self._preview(logical_type, operation)
 

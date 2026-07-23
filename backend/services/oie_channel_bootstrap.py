@@ -45,11 +45,15 @@ class OieManagedChannelBootstrap:
                 category = self._category(exc)
                 remaining = self.timeout_seconds - (self.clock() - started)
                 if remaining <= 0:
+                    channels = [
+                        self._durable_outcome(kind.value, "unavailable", "timeout", category)
+                        for kind in ManagedChannelType
+                    ]
                     self.logger.warning(
                         "OIE startup bootstrap timed out attempts=%s category=%s",
                         attempts, category,
                     )
-                    return {"outcome": "timeout", "attempts": attempts, "errorCategory": category, "channels": []}
+                    return {"outcome": "timeout", "attempts": attempts, "errorCategory": category, "channels": channels}
                 self.sleeper(min(self.retry_interval_seconds, remaining))
 
         indexed = {
@@ -65,9 +69,9 @@ class OieManagedChannelBootstrap:
     def _reconcile(self, logical_type: str, snapshot: dict[str, Any] | None) -> dict[str, Any]:
         classification = str((snapshot or {}).get("classification") or "conflict").lower()
         if classification == "unchanged":
-            return self._outcome(logical_type, classification, "no-op")
+            return self._durable_outcome(logical_type, classification, "no-op")
         if classification != "missing":
-            return self._outcome(logical_type, classification, "blocked")
+            return self._durable_outcome(logical_type, classification, "blocked")
         try:
             create_preview = self.lifecycle.preview(logical_type, "create", actor=BOOTSTRAP_ACTOR)
             if not create_preview.get("permitted") or not create_preview.get("previewToken"):
@@ -103,6 +107,19 @@ class OieManagedChannelBootstrap:
             "errorCategory": category,
             "status": status,
         }
+
+    def _durable_outcome(self, logical_type, classification, outcome, category=""):
+        try:
+            self.lifecycle.record_bootstrap_outcome(
+                logical_type, classification, outcome, error_category=category
+            )
+        except Exception as exc:
+            self.logger.error(
+                "OIE startup bootstrap evidence failed logical_type=%s category=%s",
+                logical_type, self._category(exc),
+            )
+            return self._outcome(logical_type, classification, "failure", "audit-unavailable")
+        return self._outcome(logical_type, classification, outcome, category)
 
     @staticmethod
     def _category(exc: Exception) -> str:
