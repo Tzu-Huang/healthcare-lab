@@ -98,6 +98,39 @@ class OieManagedChannelLifecycleService:
         self.repository.append_managed_channel_lifecycle_audit(event)
         return event
 
+    def recover_mapping(self, logical_type: str, *, actor: str = "startup-bootstrap"):
+        """Revalidate and atomically bind one recoverable identity without OIE mutation."""
+        kind = ManagedChannelType(logical_type)
+        with self._actor_scope(actor), self._client_scope():
+            observed = self._snapshot(kind)
+            if observed.classification is not ChannelClassification.RECOVERABLE:
+                raise LifecycleGuardError("recovery-blocked", "Managed Channel identity is not uniquely recoverable.", fresh=True)
+            refreshed = self._snapshot(kind)
+            if (refreshed.classification is not ChannelClassification.RECOVERABLE
+                    or refreshed.channel_id != observed.channel_id
+                    or refreshed.revision != observed.revision):
+                raise LifecycleGuardError("stale-recovery", "Managed Channel recovery evidence changed before binding.", fresh=True)
+            operation_id = self.operation_id()
+            event = {
+                "operation_id": operation_id, "actor": self._active_actor.get(),
+                "operation": "recover-mapping", "logical_type": kind.value,
+                "channel_id": refreshed.channel_id or "", "before_revision": "",
+                "after_revision": str(refreshed.revision or ""),
+                "classification": ChannelClassification.RECOVERABLE.value,
+                "outcome": "success", "error_category": "",
+                "changed_owned_fields": [],
+            }
+            mapping = self.repository.compare_and_bind_recovered_managed_channel_mapping(
+                logical_type=kind.value, channel_id=refreshed.channel_id or "",
+                channel_name=refreshed.name, template_version="1",
+                revision=str(refreshed.revision or ""), audit_event=event,
+            )
+            return {
+                "outcome": "success", "operationId": operation_id,
+                "logicalType": kind.value, "channelId": mapping["channelId"],
+                "revision": mapping["lastKnownRevision"], "status": refreshed.status,
+            }
+
     def preview(self, logical_type: str, operation: str, *, actor: str = "local-operator"):
         with self._actor_scope(actor), self._client_scope(): return self._preview(logical_type, operation)
 
@@ -228,7 +261,7 @@ class OieManagedChannelLifecycleService:
     def _snapshot(self, kind): return next(item for item in self._snapshots() if item.logical_type is kind)
     def _created(self, kind):
         snapshot = self._snapshot(kind)
-        if snapshot.classification is ChannelClassification.CONFLICT and snapshot.channel_id and snapshot.blocking_reasons == ("unmapped-managed-marker",): return snapshot
+        if snapshot.classification is ChannelClassification.RECOVERABLE and snapshot.channel_id: return snapshot
         raise LifecycleGuardError("create-readback", "Created Channel identity could not be rediscovered.")
 
     @staticmethod

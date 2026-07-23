@@ -6,9 +6,9 @@
 
 ## 2. Atomic Mapping Recovery
 
-- [ ] 2.1 Add a single-logical-type expected-empty compare-and-bind repository operation that persists recovered identity and bounded audit evidence atomically while preserving unrelated settings and mappings.
-- [ ] 2.2 Add repository tests for successful binding, concurrent/stale rejection, repeat idempotence, transaction rollback, and audit payload allowlisting.
-- [ ] 2.3 Add a guarded lifecycle recovery operation that refreshes complete inventory, revalidates candidate identity and route ownership, and invokes only the atomic mapping bind without OIE mutation.
+- [x] 2.1 Add a single-logical-type expected-empty compare-and-bind repository operation that persists recovered identity and bounded audit evidence atomically while preserving unrelated settings and mappings.
+- [x] 2.2 Add repository tests for successful binding, concurrent/stale rejection, repeat idempotence, transaction rollback, and audit payload allowlisting.
+- [x] 2.3 Add a guarded lifecycle recovery operation that refreshes complete inventory, revalidates candidate identity and route ownership, and invokes only the atomic mapping bind without OIE mutation.
 
 ## 3. Startup Convergence
 

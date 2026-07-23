@@ -238,6 +238,43 @@ class OieSettingsRepository:
             ) from exc
         return self._mapping(logical_type)
 
+    def compare_and_bind_recovered_managed_channel_mapping(
+        self, *, logical_type: str, channel_id: str, channel_name: str,
+        template_version: str, revision: str, audit_event: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Bind a validated live identity only while the canonical mapping is empty."""
+        logical_type = self._required_text(logical_type, "logical_type", 80).lower()
+        values = {
+            "channel_id": self._required_text(channel_id, "channel_id", 128),
+            "channel_name": self._required_text(channel_name, "channel_name", 160),
+            "template_version": self._required_text(template_version, "template_version", 40),
+            "revision": self._bounded_text(revision, "revision", 40),
+        }
+        safe_audit = self._validate_audit(audit_event)
+        timestamp = self._timestamp()
+        try:
+            with self._lock, self._connect() as connection:
+                profile_id = self._profile_id(connection)
+                cursor = connection.execute(
+                    """UPDATE oie_managed_channel_mappings
+                    SET oie_channel_id = ?, channel_name = ?, template_version = ?,
+                        last_known_revision = ?, updated_at = ?
+                    WHERE profile_id = ? AND logical_type = ?
+                      AND oie_channel_id = '' AND last_known_revision = ''""",
+                    (values["channel_id"], values["channel_name"], values["template_version"],
+                     values["revision"], timestamp, profile_id, logical_type),
+                )
+                if cursor.rowcount != 1:
+                    raise OieMappingConflictError(
+                        f"Managed Channel mapping {logical_type!r} is no longer empty."
+                    )
+                self._insert_audit(connection, profile_id, safe_audit, timestamp)
+        except sqlite3.IntegrityError as exc:
+            raise OieMappingConflictError(
+                f"Managed Channel mapping {logical_type!r} conflicts with current identity."
+            ) from exc
+        return self._mapping(logical_type)
+
     def compare_and_clear_managed_channel_mapping(
         self, *, logical_type: str, expected_channel_id: str,
         expected_revision: str, audit_event: Mapping[str, Any] | None = None,
