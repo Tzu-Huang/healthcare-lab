@@ -9,8 +9,20 @@ from typing import Any, Mapping
 
 MEDPLUM_PROFILE_TYPE = "medplum"
 MEDPLUM_PROFILE_NAME = "local-medplum"
+MEDPLUM_DEFAULT_WEB_UI_URL = "http://127.0.0.1:3000"
+MEDPLUM_DEFAULT_TIMEOUT_SECONDS = 10
+MEDPLUM_MAX_TIMEOUT_SECONDS = 300
 MEDPLUM_FIELDS = frozenset(
-    {"baseUrl", "clientId", "scope", "tokenUrl", "authGraceSeconds", "enabled"}
+    {
+        "baseUrl",
+        "webUiUrl",
+        "clientId",
+        "scope",
+        "tokenUrl",
+        "authGraceSeconds",
+        "timeoutSeconds",
+        "enabled",
+    }
 )
 MEDPLUM_SECRET_FIELDS = frozenset({"clientSecret"})
 
@@ -105,8 +117,11 @@ def validate_medplum_profile(payload: Mapping[str, Any]) -> TypedProfile:
         for field in missing
     )
     base_url_issue = _url_issue("baseUrl", payload.get("baseUrl"), required=True)
+    web_ui_url_issue = _url_issue("webUiUrl", payload.get("webUiUrl"), required=True)
     token_url_issue = _url_issue("tokenUrl", payload.get("tokenUrl"), required=False)
-    issues.extend(issue for issue in (base_url_issue, token_url_issue) if issue)
+    issues.extend(
+        issue for issue in (base_url_issue, web_ui_url_issue, token_url_issue) if issue
+    )
 
     raw_auth_grace = payload.get("authGraceSeconds")
     if (
@@ -124,6 +139,25 @@ def validate_medplum_profile(payload: Mapping[str, Any]) -> TypedProfile:
         )
     else:
         auth_grace = raw_auth_grace
+    raw_timeout = payload.get("timeoutSeconds")
+    if (
+        not isinstance(raw_timeout, int)
+        or isinstance(raw_timeout, bool)
+        or not 1 <= raw_timeout <= MEDPLUM_MAX_TIMEOUT_SECONDS
+    ):
+        timeout_seconds = 0
+        issues.append(
+            SettingsValidationIssue(
+                "timeoutSeconds",
+                "invalid_bounded_integer",
+                (
+                    "timeoutSeconds must be an integer between "
+                    f"1 and {MEDPLUM_MAX_TIMEOUT_SECONDS}."
+                ),
+            )
+        )
+    else:
+        timeout_seconds = raw_timeout
     enabled = payload.get("enabled")
     if not isinstance(enabled, bool):
         issues.append(
@@ -142,10 +176,12 @@ def validate_medplum_profile(payload: Mapping[str, Any]) -> TypedProfile:
         schema_version=1,
         fields={
             "baseUrl": str(payload["baseUrl"]).strip().rstrip("/"),
+            "webUiUrl": str(payload["webUiUrl"]).strip().rstrip("/"),
             "clientId": str(payload["clientId"]).strip(),
             "scope": str(payload["scope"]).strip(),
             "tokenUrl": str(payload["tokenUrl"]).strip().rstrip("/"),
             "authGraceSeconds": auth_grace,
+            "timeoutSeconds": timeout_seconds,
             "enabled": enabled,
         },
     )
@@ -176,10 +212,16 @@ def medplum_bootstrap_candidate(configuration: Mapping[str, Any]) -> TypedProfil
             "baseUrl": configuration.get(
                 "MEDPLUM_FHIR_BASE_URL", "http://medplum:8103/fhir/R4"
             ),
+            "webUiUrl": configuration.get(
+                "MEDPLUM_WEB_UI_URL", MEDPLUM_DEFAULT_WEB_UI_URL
+            ),
             "clientId": configuration.get("MEDPLUM_CLIENT_ID", ""),
             "scope": configuration.get("MEDPLUM_SCOPE", ""),
             "tokenUrl": configuration.get("MEDPLUM_TOKEN_URL", ""),
             "authGraceSeconds": configuration.get("MEDPLUM_AUTH_GRACE_SECONDS", 300),
+            "timeoutSeconds": configuration.get(
+                "MEDPLUM_TIMEOUT_SECONDS", MEDPLUM_DEFAULT_TIMEOUT_SECONDS
+            ),
             "enabled": True,
         }
     )

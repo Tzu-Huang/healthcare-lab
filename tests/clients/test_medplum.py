@@ -49,6 +49,41 @@ class MedplumClientTest(unittest.TestCase):
         request = urlopen.call_args.args[0]
         self.assertEqual("Bearer token", request.headers["Authorization"])
 
+    @patch("backend.clients.medplum.urllib.request.urlopen")
+    def test_auth_and_fhir_requests_use_configured_timeout(self, urlopen):
+        urlopen.side_effect = [
+            FakeResponse({"access_token": "token", "token_type": "Bearer", "expires_in": 60}),
+            FakeResponse({"resourceType": "Bundle"}),
+        ]
+        manager = MedplumAuthManager(
+            client_id="client", client_secret="secret", timeout_seconds=7
+        )
+
+        request_fhir_json(
+            "https://example.test/fhir/R4/Patient",
+            "",
+            auth_manager=manager,
+            base_url="https://example.test/fhir/R4",
+        )
+
+        self.assertEqual([7, 7], [call.kwargs["timeout"] for call in urlopen.call_args_list])
+
+    @patch("backend.clients.medplum.urllib.request.urlopen")
+    def test_explicit_fhir_timeout_overrides_auth_manager_timeout(self, urlopen):
+        urlopen.return_value = FakeResponse({"resourceType": "Bundle"})
+        manager = MedplumAuthManager(
+            client_id="client", client_secret="secret", timeout_seconds=7
+        )
+
+        request_fhir_json(
+            "https://example.test/fhir/R4/Patient",
+            "token",
+            auth_manager=None,
+            timeout_seconds=3,
+        )
+
+        self.assertEqual(3, urlopen.call_args.kwargs["timeout"])
+
 
 if __name__ == "__main__":
     unittest.main()

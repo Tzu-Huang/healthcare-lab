@@ -64,6 +64,20 @@ class IntegrationSettingsApiTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual(before, service.get_effective("medplum").client_secret)
 
+    def test_lab_inventory_projects_canonical_medplum_urls(self):
+        service = self.app.extensions["integration_settings_service"]
+        fields = dict(service.get_public("medplum")["fields"])
+        fields["baseUrl"] = "https://canonical.example/fhir/R4"
+        fields["webUiUrl"] = "https://canonical.example/app"
+        service.replace("medplum", fields)
+
+        servers = self.client.get("/api/lab/servers").get_json()["items"]
+        medplum = next(item for item in servers if item["name"] == "Medplum")
+
+        self.assertEqual("https://canonical.example/fhir/R4", medplum["baseUrl"])
+        self.assertEqual("https://canonical.example/app", medplum["webUiUrl"])
+        self.assertEqual("medplum", medplum["settingsProfile"])
+
     def test_explicit_remove_is_distinct_and_value_free(self):
         response = self.client.delete(
             "/api/settings/profiles/medplum/secrets/clientSecret", json={}
@@ -80,10 +94,12 @@ class IntegrationSettingsApiTests(unittest.TestCase):
             json={
                 "fields": {
                     "baseUrl": canary,
+                    "webUiUrl": "http://127.0.0.1:3000",
                     "clientId": "",
                     "scope": "",
                     "tokenUrl": "",
                     "authGraceSeconds": 300,
+                    "timeoutSeconds": 10,
                     "enabled": True,
                 }
             },
@@ -117,6 +133,31 @@ class IntegrationSettingsApiTests(unittest.TestCase):
         )
         self.assertEqual(200, response.status_code)
         self.assertEqual(45, response.get_json()["item"]["fields"]["authGraceSeconds"])
+
+    def test_save_and_test_persists_profile_and_returns_independent_stages(self):
+        service = self.app.extensions["integration_settings_service"]
+        fields = dict(service.get_public("medplum")["fields"])
+        fields["enabled"] = False
+
+        response = self.client.post(
+            "/api/settings/profiles/medplum/save-and-test",
+            json={"fields": fields, "secrets": {"clientSecret": ""}},
+        )
+
+        self.assertEqual(200, response.status_code)
+        body = response.get_json()
+        self.assertTrue(body["saved"])
+        self.assertFalse(service.get_effective("medplum").enabled)
+        self.assertEqual(
+            ["metadata", "oauth", "authenticated-read"],
+            [stage["stage"] for stage in body["diagnostics"]["stages"]],
+        )
+        self.assertTrue(
+            all(
+                stage["state"] == "disabled"
+                for stage in body["diagnostics"]["stages"]
+            )
+        )
 
     def test_unknown_request_fields_are_rejected(self):
         response = self.client.put(
