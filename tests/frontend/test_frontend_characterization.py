@@ -134,6 +134,7 @@ class FrontendCharacterizationTests(unittest.TestCase):
                 '@import url("./css/views/oie.css");',
                 '@import url("./css/views/gdt.css");',
                 '@import url("./css/views/settings.css");',
+                '@import url("./css/settings/dcm4chee.css");',
             ],
             self.style_loader.splitlines(),
         )
