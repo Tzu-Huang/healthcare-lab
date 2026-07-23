@@ -192,7 +192,12 @@ class DcmMwlSyncService:
         return item
 
     def sync(self, order_id: int) -> dict[str, Any]:
-        self._dcm_sync(self.get_order(order_id), self._dcm_profile(self._configuration), uid_root=self._configuration["DCM4CHEE_UID_ROOT"])
+        profile = self._dcm_profile(self._configuration)
+        self._dcm_sync(
+            self.get_order(order_id),
+            profile,
+            uid_root=str(profile["uidRoot"]),
+        )
         item = self._repository.get_order_record(order_id)
         mwl = (item.get("dcm4chee") or {}).get("mwl") or {}
         return {"success": (mwl.get("mapping") or {}).get("status") == DCM4CHEE_MWL_STATUS_CREATED, "item": item, "mwl": mwl, "latestAttempt": mwl if mwl.get("id") else None}
@@ -310,10 +315,11 @@ class OrderWorkflowService:
             return self._repository.get_order_record(int(item["id"]))
         if mode == "dicom":
             item = self._dcm_order.create_dcm4chee_order_record(payload)
+            profile = self._dcm_profile(self._configuration)
             self._dcm_sync(
                 item,
-                self._dcm_profile(self._configuration),
-                uid_root=self._configuration["DCM4CHEE_UID_ROOT"],
+                profile,
+                uid_root=str(profile["uidRoot"]),
             )
             return self._repository.get_order_record(int(item["id"]))
         return self._repository.create_order_record(payload)

@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 import re
 from typing import Any, Mapping, Protocol
 
 from backend.domain.integration_settings import (
+    DCM4CHEE_PROFILE_TYPE,
+    DCM4CHEE_SECRET_FIELDS,
     MEDPLUM_PROFILE_TYPE,
     PROFILE_SECRET_FIELDS,
     SecretMutation,
     SettingsValidationIssue,
     TypedSettingsValidationError,
+    dcm4chee_bootstrap_candidate,
     medplum_bootstrap_candidate,
     preserve_secret,
     remove_secret,
@@ -67,6 +71,7 @@ class IntegrationSettingsRepositoryPort(Protocol):
     def get_private(self, profile_type: str) -> dict[str, Any]: ...
     def list_audits(self, profile_type: str) -> list[dict[str, Any]]: ...
     def replace(self, profile, *, secret_mutations, actor="local-operator") -> dict[str, Any]: ...
+    def has_dcm4chee_dependencies(self) -> bool: ...
 
 
 class OieSettingsAdapter:
@@ -258,6 +263,28 @@ class GdtBridgeEffectiveSettings:
     stable_seconds: float
 
 
+@dataclass(frozen=True, repr=False)
+class Dcm4cheeEffectiveSettings:
+    profile: dict[str, Any]
+    secrets: dict[str, str]
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.profile["enabled"])
+
+    @property
+    def uid_root(self) -> str:
+        return str(self.profile["uidRoot"])
+
+    def __repr__(self) -> str:
+        return (
+            "Dcm4cheeEffectiveSettings("
+            f"profile_name={self.profile.get('profileName')!r}, "
+            f"enabled={self.enabled!r}, "
+            f"configured_secrets={sorted(key for key, value in self.secrets.items() if value)!r})"
+        )
+
+
 class IntegrationSettingsService:
     def __init__(
         self,
@@ -284,6 +311,22 @@ class IntegrationSettingsService:
             bootstrap_source="legacy-environment",
         )
 
+    def bootstrap_dcm4chee(self, configuration: Mapping[str, Any]) -> bool:
+        secret_names = {
+            "password": "DCM4CHEE_PASSWORD",
+            "token": "DCM4CHEE_TOKEN",
+            "clientSecret": "DCM4CHEE_CLIENT_SECRET",
+        }
+        return self._repository.create_if_missing(
+            dcm4chee_bootstrap_candidate(configuration),
+            secrets={
+                field: str(configuration.get(config_name, ""))
+                for field, config_name in secret_names.items()
+                if str(configuration.get(config_name, ""))
+            },
+            bootstrap_source="legacy-environment",
+        )
+
     def has_operator_configuration(self, profile_type: str) -> bool:
         if profile_type == OIE_PROFILE_TYPE:
             return True
@@ -296,7 +339,7 @@ class IntegrationSettingsService:
         if profile_type == OIE_PROFILE_TYPE and self._oie is not None:
             return self._oie.get_public()
         private = self._repository.get_private(profile_type)
-        return {
+        public = {
             "profileType": private["profileType"],
             "profileName": private["profileName"],
             "schemaVersion": private["schemaVersion"],
@@ -305,6 +348,21 @@ class IntegrationSettingsService:
                 field: {"configured": bool(private["secrets"].get(field))}
                 for field in sorted(PROFILE_SECRET_FIELDS[profile_type])
             },
+        }
+        if profile_type == DCM4CHEE_PROFILE_TYPE:
+            security = private["fields"].get("security", {})
+            public["references"] = {
+                field: self._mounted_reference_projection(security.get(field))
+                for field in ("certificatePath", "privateKeyPath")
+            }
+        return public
+
+    @staticmethod
+    def _mounted_reference_projection(value: Any) -> dict[str, bool]:
+        path = str(value or "").strip()
+        return {
+            "configured": bool(path),
+            "readable": bool(path and os.path.isfile(path) and os.access(path, os.R_OK)),
         }
 
     def get_effective(self, profile_type: str) -> Any:
@@ -322,6 +380,15 @@ class IntegrationSettingsService:
                 success_mode=str(fields["importSuccessMode"]),
                 poll_seconds=float(fields["pollSeconds"]),
                 stable_seconds=float(fields["stableSeconds"]),
+            )
+        if profile_type == DCM4CHEE_PROFILE_TYPE:
+            private = self._repository.get_private(profile_type)
+            return Dcm4cheeEffectiveSettings(
+                profile=dict(private["fields"]),
+                secrets={
+                    field: str(private["secrets"].get(field, ""))
+                    for field in DCM4CHEE_SECRET_FIELDS
+                },
             )
         if profile_type != MEDPLUM_PROFILE_TYPE:
             raise KeyError(profile_type)
@@ -352,6 +419,8 @@ class IntegrationSettingsService:
                 fields, secret_replacements=secret_replacements or {}
             )
         profile = validate_profile(profile_type, fields)
+        if profile_type == DCM4CHEE_PROFILE_TYPE:
+            self._validate_dcm4chee_mutation(profile.fields, secret_replacements or {})
         mutations: dict[str, SecretMutation] = (
             {"clientSecret": preserve_secret()}
             if profile_type == MEDPLUM_PROFILE_TYPE
@@ -363,6 +432,90 @@ class IntegrationSettingsService:
             profile, secret_mutations=mutations, actor=actor
         )
         return self.get_public(profile_type)
+
+    def _validate_dcm4chee_mutation(
+        self,
+        fields: Mapping[str, Any],
+        replacements: Mapping[str, Any],
+    ) -> None:
+        previous = self._repository.get_private(DCM4CHEE_PROFILE_TYPE)
+        previous_fields = previous["fields"]
+        identity_paths = (
+            ("profileName",),
+            ("uidRoot",),
+            ("hl7", "patientAssigningAuthority"),
+        )
+        changed_identity = any(
+            self._nested_value(previous_fields, path) != self._nested_value(fields, path)
+            for path in identity_paths
+        )
+        if changed_identity and self._repository.has_dcm4chee_dependencies():
+            raise TypedSettingsValidationError(
+                [
+                    SettingsValidationIssue(
+                        "profileName",
+                        "identity_migration_required",
+                        "Profile identity cannot change while dependent DICOM records exist.",
+                    )
+                ]
+            )
+        effective_secrets = dict(previous["secrets"])
+        effective_secrets.update(
+            {
+                field: str(value)
+                for field, value in replacements.items()
+                if str(value).strip()
+            }
+        )
+        auth_mode = str(fields.get("security", {}).get("authMode", "none"))
+        security = fields.get("security", {})
+        for field in ("certificatePath", "privateKeyPath"):
+            reference = str(security.get(field, "")).strip()
+            if reference and not (
+                os.path.isfile(reference) and os.access(reference, os.R_OK)
+            ):
+                raise TypedSettingsValidationError(
+                    [
+                        SettingsValidationIssue(
+                            f"security.{field}",
+                            "unreadable_mounted_reference",
+                            "The mounted reference is not readable by the application.",
+                        )
+                    ]
+                )
+        required_secret = {
+            "basic": "password",
+            "bearer": "token",
+            "oauth2": "clientSecret",
+        }.get(auth_mode)
+        if required_secret and not effective_secrets.get(required_secret):
+            raise TypedSettingsValidationError(
+                [
+                    SettingsValidationIssue(
+                        f"secrets.{required_secret}",
+                        "required_for_auth_mode",
+                        "A configured secret is required for the selected authentication mode.",
+                    )
+                ]
+            )
+        for field in replacements:
+            if field not in DCM4CHEE_SECRET_FIELDS:
+                raise TypedSettingsValidationError(
+                    [
+                        SettingsValidationIssue(
+                            f"secrets.{field}",
+                            "unknown_field",
+                            "The secret field is not supported.",
+                        )
+                    ]
+                )
+
+    @staticmethod
+    def _nested_value(values: Mapping[str, Any], path: tuple[str, ...]) -> Any:
+        value: Any = values
+        for part in path:
+            value = value.get(part) if isinstance(value, Mapping) else None
+        return value
 
     def remove_secret(
         self,

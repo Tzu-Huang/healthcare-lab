@@ -38,6 +38,16 @@ class TypedSettingsArchitectureTests(unittest.TestCase):
                 violations[str(relative)] = tables
         self.assertEqual({}, violations)
 
+    def test_dcm4chee_workflow_services_do_not_read_legacy_flask_configuration(self):
+        for relative in (
+            "backend/app_factory.py",
+            "backend/services/order_workflow.py",
+            "backend/services/patient_workflow.py",
+        ):
+            text = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertNotIn("dcm4chee_profile_from_config(", text, relative)
+            self.assertNotIn('["DCM4CHEE_UID_ROOT"]', text, relative)
+
     def test_settings_api_does_not_depend_on_flask_request_context_for_reads(self):
         service = (
             ROOT / "backend/services/integration_settings.py"

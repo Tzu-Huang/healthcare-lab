@@ -159,6 +159,42 @@ class _GdtBridgeProvider:
         )
 
 
+class _Dcm4cheeProvider:
+    def __init__(
+        self,
+        settings: IntegrationSettingsReader,
+        diagnostics: Callable[[], dict[str, Any]],
+    ) -> None:
+        self._settings = settings
+        self._diagnostics = diagnostics
+
+    def assess(self) -> ReadinessAssessment:
+        fields = self._settings.get_public("dcm4chee")["fields"]
+        if not fields.get("enabled"):
+            return ReadinessAssessment(ReadinessState.DISABLED)
+        return ReadinessAssessment(ReadinessState.READY)
+
+    def check(self) -> DiagnosticAssessment:
+        fields = self._settings.get_public("dcm4chee")["fields"]
+        if not fields.get("enabled"):
+            return DiagnosticAssessment(DiagnosticState.DISABLED)
+        report = self._diagnostics()
+        checks = tuple(
+            {
+                "role": str(item.get("role", "unknown")),
+                "state": str(item.get("state", "failed")),
+                "code": str(item.get("code", "unavailable")),
+            }
+            for item in report.get("checks", [])
+        )
+        return DiagnosticAssessment(
+            DiagnosticState.HEALTHY
+            if report.get("state") == "healthy"
+            else DiagnosticState.DEGRADED,
+            checks,
+        )
+
+
 def create_settings_readiness_service(
     settings: IntegrationSettingsReader,
     *,
@@ -168,6 +204,7 @@ def create_settings_readiness_service(
     gdt_activation_status: Callable[[], dict[str, str]] | None = None,
     gdt_diagnostics: Callable[[], dict[str, Any]] | None = None,
     gdt_check_diagnostics: Callable[[], dict[str, Any]] | None = None,
+    dcm4chee_diagnostics: Callable[[], dict[str, Any]] | None = None,
 ) -> SettingsReadinessService:
     registry = SettingsReadinessRegistry(
         (
@@ -203,7 +240,11 @@ def create_settings_readiness_service(
                 "dcm4chee",
                 "dcm4chee",
                 False,
-                _StaticProvider(ReadinessState.DISABLED),
+                _Dcm4cheeProvider(
+                    settings,
+                    dcm4chee_diagnostics
+                    or (lambda: {"state": "degraded", "checks": []}),
+                ),
             ),
             ReadinessRegistration(
                 "external-devices",

@@ -177,7 +177,10 @@ class DcmFixtureService:
         self._dcm_profile = dcm_profile
 
     def create(self) -> dict[str, Any]:
-        return self._capability.create_dcm4chee_e2e_demo_fixture(self._dcm_profile(self._configuration), uid_root=str(self._configuration["DCM4CHEE_UID_ROOT"]))
+        profile = self._dcm_profile(self._configuration)
+        return self._capability.create_dcm4chee_e2e_demo_fixture(
+            profile, uid_root=str(profile["uidRoot"])
+        )
 
 
 class PatientWorkflowService:

@@ -1125,7 +1125,12 @@ def run_lab_smoke_check(
     elif profile == "gdt-bridge":
         steps = run_gdt_bridge_smoke(app, server)
     elif profile == "dcm4chee":
-        dcm4chee_profile = dcm4chee_profile_from_config(app.config)
+        settings = getattr(app, "extensions", {}).get("integration_settings_service")
+        dcm4chee_profile = (
+            settings.get_effective("dcm4chee").profile
+            if settings is not None
+            else dcm4chee_profile_from_config(app.config)
+        )
         diagnostics = validate_dcm4chee_profile(dcm4chee_profile)
         dimse = dcm4chee_profile["dimse"]
         steps = [

@@ -23,19 +23,9 @@ except ModuleNotFoundError:  # pragma: no cover - optional in minimal test envs
         return False
 
 from backend.config import (
-    DCM4CHEE_AUTH_MODES,
-    DCM4CHEE_PROFILE_NAME,
-    MEDPLUM_DEFAULT_AUTH_GRACE_SECONDS,
-    coerce_config_bool,
-    coerce_config_int,
-    dcm4chee_archive_dicomweb_url_from_base,
-    dcm4chee_profile_from_config,
     load_application_config,
-    normalize_gdt_bridge_success_mode,
-    normalize_gdt_filename_profile,
     parse_app_host,
     parse_app_port,
-    parse_config_bool,
 )
 from backend.clients.medplum import (
     MedplumAccessToken,
@@ -134,6 +124,7 @@ from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieR
 from backend.runtime.lazy_wsgi import LazyWsgiApplication
 from backend.services.oie_settings import OieSettingsService, create_oie_management_client
 from backend.services.oie_diagnostics import OieRuntimeDiagnosticService
+from backend.dcm4chee_settings_composition import dcm4chee_settings_operations
 from backend.settings_readiness_composition import create_settings_readiness_service
 from backend.services.oie_channel_lifecycle import OieManagedChannelLifecycleService, PreviewTokenCodec
 from backend.services.oie_channel_bootstrap import OieManagedChannelBootstrap
@@ -330,12 +321,17 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
     app.extensions["oie_settings_service"] = dependencies.oie_settings_service
     app.extensions["integration_settings_service"] = dependencies.integration_settings_service
+    effective_dcm4chee_profile, run_dcm4chee_diagnostics = (
+        dcm4chee_settings_operations(dependencies.integration_settings_service)
+    )
+
     medplum_runtime = MedplumRuntimeProvider(dependencies.integration_settings_service)
     app.extensions["medplum_runtime"] = medplum_runtime
     app.register_blueprint(
         create_integration_settings_blueprint(
             dependencies.integration_settings_service,
             medplum_diagnostics=medplum_runtime.diagnose,
+            dcm4chee_diagnostics=run_dcm4chee_diagnostics,
             **gdt_settings_api_operations(dependencies.integration_settings_service, gdt_bridge_watcher),
         )
     )
@@ -401,6 +397,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         gdt_activation_status=gdt_bridge_watcher.activation_status,
         gdt_diagnostics=lambda: gdt_readiness_diagnostics(dependencies.integration_settings_service),
         gdt_check_diagnostics=lambda: gdt_run_all_diagnostics(dependencies.integration_settings_service, gdt_bridge_watcher),
+        dcm4chee_diagnostics=run_dcm4chee_diagnostics,
     )
     app.register_blueprint(
         create_settings_readiness_blueprint(
@@ -507,7 +504,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
     app.register_blueprint(
         create_dcm4chee_profile_blueprint(
             app.config,
-            profile_builder=dcm4chee_profile_from_config,
+            profile_builder=effective_dcm4chee_profile,
             profile_validator=validate_dcm4chee_profile,
         )
     )
@@ -521,7 +518,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         fhir_sync=workflow_operations.sync_patient_fhir,
         dicom_patient_sync=workflow_operations.sync_patient_dicom,
         dcm_result_refresh=workflow_operations.refresh_results,
-        dcm_profile=dcm4chee_profile_from_config,
+        dcm_profile=effective_dcm4chee_profile,
     )
     app.register_blueprint(create_patients_blueprint(
         patient_service.record_service, patient_service.fhir_sync_service,
@@ -538,7 +535,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
                 fhir_sync=workflow_operations.sync_order_fhir,
                 dcm_sync=workflow_operations.sync_order_dicom,
                 dcm_verify=workflow_operations.verify_order_dicom,
-                dcm_profile=dcm4chee_profile_from_config,
+                dcm_profile=effective_dcm4chee_profile,
     )
     app.register_blueprint(
         create_orders_blueprint(
