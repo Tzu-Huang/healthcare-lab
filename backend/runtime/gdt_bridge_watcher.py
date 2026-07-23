@@ -119,7 +119,13 @@ class GdtBridgeInboundWatcher:
         """
         was_running = bool(self.status()["running"])
         if was_running:
-            self.stop()
+            stopped = self.stop()
+            if stopped["running"]:
+                return {
+                    "state": "restart-required",
+                    "activation": "application-restart",
+                    "watcher": stopped,
+                }
         try:
             self.configure(
                 bridge_root=profile.bridge_path,
@@ -164,7 +170,7 @@ class GdtBridgeInboundWatcher:
         if thread:
             thread.join(timeout=max(1.0, self.poll_seconds + 0.5))
         with self._lock:
-            if self._thread is thread:
+            if self._thread is thread and not thread.is_alive():
                 self._thread = None
         return self.status()
 
