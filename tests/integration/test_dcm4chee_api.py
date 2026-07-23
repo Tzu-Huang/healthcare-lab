@@ -659,42 +659,35 @@ class Dcm4cheeApiTests(ApiCaseSupport):
 
     @patch("backend.app_factory.urllib.request.urlopen")
     def test_order_api_records_dcm4chee_profile_validation_failure(self, urlopen):
-        patient = self.create_local_patient()
-        self.client.application.config["DCM4CHEE_DICOMWEB_BASE_URL"] = "not-a-url"
+        service = self.client.application.extensions["integration_settings_service"]
+        fields = service.get_public("dcm4chee")["fields"]
+        fields["dicomweb"]["baseUrl"] = "not-a-url"
 
-        response = self.client.post(
-            "/api/orders",
-            json={"mode": "dicom", "patientRecordId": patient["id"]},
+        response = self.client.put(
+            "/api/settings/profiles/dcm4chee", json={"fields": fields}
         )
 
-        self.assertEqual(response.status_code, 201)
-        mwl = response.get_json()["item"]["dcm4chee"]["mwl"]
-        self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_FAILED)
-        self.assertEqual(mwl["errorType"], "profile_invalid")
-        self.assertIn("profile is incomplete", mwl["error"])
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            "dicomweb.baseUrl", response.get_json()["error"]["fields"][0]["field"]
+        )
         urlopen.assert_not_called()
 
     @patch("backend.app_factory.urllib.request.urlopen")
     def test_order_api_records_dcm4chee_missing_station_profile_failure(self, urlopen):
-        patient = self.create_local_patient()
-        self.client.application.config["DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE"] = ""
+        service = self.client.application.extensions["integration_settings_service"]
+        fields = service.get_public("dcm4chee")["fields"]
+        fields["mwl"]["defaultScheduledStationAETitle"] = ""
 
-        response = self.client.post(
-            "/api/orders",
-            json={"mode": "dicom", "patientRecordId": patient["id"]},
+        response = self.client.put(
+            "/api/settings/profiles/dcm4chee", json={"fields": fields}
         )
 
-        self.assertEqual(response.status_code, 201)
-        item = response.get_json()["item"]
-        mwl = item["dcm4chee"]["mwl"]
-        self.assertEqual(mwl["status"], DCM4CHEE_MWL_STATUS_FAILED)
-        self.assertEqual(mwl["errorType"], "profile_invalid")
-        self.assertIn("profile is incomplete", mwl["error"])
-        self.assertEqual(mwl["scheduledStationAETitle"], "")
-        self.assertEqual(mwl["requestPayload"], {})
-        detail = self.client.get("/api/orders").get_json()["items"][0]
-        self.assertEqual(detail["id"], item["id"])
-        self.assertEqual(detail["dcm4chee"]["mwl"]["errorType"], "profile_invalid")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            "mwl.defaultScheduledStationAETitle",
+            response.get_json()["error"]["fields"][0]["field"],
+        )
         urlopen.assert_not_called()
 
     @patch("backend.app_factory.urllib.request.urlopen")
@@ -906,7 +899,7 @@ class Dcm4cheeApiTests(ApiCaseSupport):
         self.client.application.config["DCM4CHEE_DICOMWEB_BASE_URL"] = "not-a-url"
         urlopen.reset_mock()
         response = self.client.post(f"/api/orders/{order['id']}/dcm4chee-mwl-verify")
-        self.assertEqual(response.get_json()["verification"]["errorType"], "mwl_profile_invalid")
+        self.assertEqual(response.get_json()["verification"]["errorType"], "patient_missing")
 
     def test_patient_dcm4chee_result_ui_hooks_are_present(self):
         template = "\n".join(

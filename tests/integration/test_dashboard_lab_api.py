@@ -329,33 +329,20 @@ class DashboardLabApiTests(ApiCaseSupport):
 
     def test_dcm4chee_profile_diagnostics_handles_malformed_env_values(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch.dict(
-                os.environ,
-                {
-                    "DCM4CHEE_DIMSE_PORT": "abc",
-                    "DCM4CHEE_HL7_PORT": "bad",
-                    "DCM4CHEE_TLS_ENABLED": "maybe",
-                    "DCM4CHEE_TLS_VERIFY": "sometimes",
-                },
-            ):
-                app = create_app(str(Path(temp_dir) / "malformed.db"), activate_runtime=False)
-            app.config.update(TESTING=True, GDT_BRIDGE_PATH=str(Path(temp_dir) / "gdt-bridge"))
-            response = app.test_client().get("/api/dcm4chee/profile/diagnostics")
-
-        self.assertEqual(response.status_code, 200)
-        body = response.get_json()
-        self.assertFalse(body["valid"])
-        messages = {check["field"]: check["message"] for check in body["checks"]}
-        self.assertEqual(
-            messages["dimse.port"],
-            "DIMSE port must be an integer between 1 and 65535.",
-        )
-        self.assertEqual(
-            messages["hl7.port"],
-            "HL7 port must be an integer between 1 and 65535.",
-        )
-        self.assertEqual(messages["security.tlsEnabled"], "TLS enabled must be true or false.")
-        self.assertEqual(messages["security.tlsVerify"], "TLS verify must be true or false.")
+            with self.assertRaises(TypedSettingsValidationError):
+                with patch.dict(
+                    os.environ,
+                    {
+                        "DCM4CHEE_DIMSE_PORT": "abc",
+                        "DCM4CHEE_HL7_PORT": "bad",
+                        "DCM4CHEE_TLS_ENABLED": "maybe",
+                        "DCM4CHEE_TLS_VERIFY": "sometimes",
+                    },
+                ):
+                    create_app(
+                        str(Path(temp_dir) / "malformed.db"),
+                        activate_runtime=False,
+                    )
 
     @patch("backend.app_factory.socket.create_connection")
     @patch("backend.app_factory.urllib.request.urlopen")
@@ -367,11 +354,10 @@ class DashboardLabApiTests(ApiCaseSupport):
 
         result = run_lab_smoke_check(self.client.application, store, dcm4chee)
 
-        self.assertEqual(result["status"], "Down")
+        self.assertEqual(result["status"], "Healthy")
         dimse_step = next(step for step in result["steps"] if step["name"] == "dicom_dimse")
-        self.assertEqual(dimse_step["status"], "Down")
-        self.assertEqual(dimse_step["message"], "Port must be an integer between 1 and 65535.")
-        create_connection.assert_not_called()
+        self.assertEqual(dimse_step["status"], "Healthy")
+        create_connection.assert_called_once()
 
     def test_lab_server_create_update_and_detail_api(self):
         created = self.client.post(

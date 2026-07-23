@@ -39,6 +39,7 @@ def create_integration_settings_blueprint(
     gdt_provision: Callable[[], dict[str, Any]] | None = None,
     gdt_diagnostics: Callable[[], dict[str, Any]] | None = None,
     gdt_deployment: Callable[[], dict[str, Any]] | None = None,
+    dcm4chee_diagnostics: Callable[[], dict[str, Any]] | None = None,
 ) -> Blueprint:
     blueprint = Blueprint("integration_settings", __name__)
 
@@ -150,6 +151,23 @@ def create_integration_settings_blueprint(
             return bounded_error(
                 "gdt_diagnostics_unavailable",
                 "GDT bridge diagnostics are unavailable.",
+                503,
+            )
+        return jsonify({"success": True, **result})
+
+    @blueprint.post("/api/settings/dcm4chee/diagnostics")
+    def diagnose_dcm4chee():
+        if request.get_json(silent=True) not in (None, {}):
+            return bounded_error(
+                "invalid_settings_request",
+                "Diagnostics accepts no request fields.",
+                400,
+            )
+        result = dcm4chee_diagnostics() if dcm4chee_diagnostics is not None else None
+        if result is None:
+            return bounded_error(
+                "dcm4chee_diagnostics_unavailable",
+                "dcm4chee diagnostics are unavailable.",
                 503,
             )
         return jsonify({"success": True, **result})
