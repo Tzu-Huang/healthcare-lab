@@ -12,12 +12,12 @@
 
 ## 3. Startup Convergence
 
-- [ ] 3.1 Sequence recoverable identity binding before existing create-missing handling, refresh classification after binding, and reconcile the two logical types independently.
-- [ ] 3.2 Preserve the current deployment state of rebound Channels, including deliberately stopped or undeployed Channels, while retaining create-and-deploy behavior for genuinely missing Channels.
-- [ ] 3.3 Record per-logical-type startup recovery, blocked, stale, and failure outcomes using secret- and PHI-safe bounded metadata.
+- [x] 3.1 Sequence recoverable identity binding before existing create-missing handling, refresh classification after binding, and reconcile the two logical types independently.
+- [x] 3.2 Preserve the current deployment state of rebound Channels, including deliberately stopped or undeployed Channels, while retaining create-and-deploy behavior for genuinely missing Channels.
+- [x] 3.3 Record per-logical-type startup recovery, blocked, stale, and failure outcomes using secret- and PHI-safe bounded metadata.
 
 ## 4. Persistence Matrix and Operations
 
-- [ ] 4.1 Add service/integration tests for retained/retained, retained/reset, reset/retained, and reset/reset persistence combinations plus repeated-start idempotence and one-type-blocked independence.
+- [x] 4.1 Add service/integration tests for retained/retained, retained/reset, reset/retained, and reset/reset persistence combinations plus repeated-start idempotence and one-type-blocked independence.
 - [ ] 4.2 Update bootstrap and OIE operating documentation with recovery behavior, blocked-recovery guidance, stopped-state preservation, and rollback via bootstrap mode `off`.
 - [ ] 4.3 Run focused lifecycle/bootstrap/settings tests, the complete regression suite, Python compilation, `git diff --check`, and strict OpenSpec validation.

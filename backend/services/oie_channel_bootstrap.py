@@ -68,6 +68,26 @@ class OieManagedChannelBootstrap:
 
     def _reconcile(self, logical_type: str, snapshot: dict[str, Any] | None) -> dict[str, Any]:
         classification = str((snapshot or {}).get("classification") or "conflict").lower()
+        if classification == "recoverable":
+            try:
+                recovered = self.lifecycle.recover_mapping(logical_type, actor=BOOTSTRAP_ACTOR)
+                refreshed = next(
+                    (item for item in self.lifecycle.inspect() if item.get("logicalType") == logical_type),
+                    None,
+                )
+                refreshed_classification = str((refreshed or {}).get("classification") or "conflict").lower()
+                if refreshed_classification not in {"unchanged", "drifted"}:
+                    return self._durable_outcome(
+                        logical_type, refreshed_classification, "failure", "recovery-readback"
+                    )
+                return self._outcome(
+                    logical_type, classification, "success",
+                    status=str(recovered.get("status") or (refreshed or {}).get("status") or ""),
+                )
+            except Exception as exc:
+                category = self._category(exc)
+                outcome = "blocked" if category in {"recovery-blocked", "stale-recovery"} else "failure"
+                return self._durable_outcome(logical_type, classification, outcome, category)
         if classification == "unchanged":
             return self._durable_outcome(logical_type, classification, "no-op")
         if classification != "missing":
