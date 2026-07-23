@@ -63,6 +63,19 @@ class IntegrationSettingsServiceTests(unittest.TestCase):
         self.assertEqual("https://operator.example/fhir/R4", effective.base_url)
         self.assertEqual("operator-client", effective.client_id)
         self.assertEqual("operator-secret", effective.client_secret)
+        self.assertTrue(
+            restarted.integration_settings_service.has_operator_configuration(
+                "medplum"
+            )
+        )
+
+    def test_bootstrap_profile_is_not_operator_confirmed(self):
+        dependencies = assemble_application_dependencies(self.path)
+        self.assertFalse(
+            dependencies.integration_settings_service.has_operator_configuration(
+                "medplum"
+            )
+        )
 
     def test_blank_secret_replacement_preserves_and_explicit_remove_clears(self):
         dependencies = assemble_application_dependencies(

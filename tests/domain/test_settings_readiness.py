@@ -4,10 +4,13 @@ import unittest
 
 from backend.domain.settings_readiness import (
     ActivationImpact,
+    DiagnosticAssessment,
+    DiagnosticState,
     ReadinessAssessment,
     ReadinessRegistration,
     ReadinessState,
     project_section,
+    project_diagnostic,
 )
 
 
@@ -42,3 +45,14 @@ class SettingsReadinessDomainTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ReadinessRegistration("openemr", "OpenEMR", False, _Provider())
 
+    def test_diagnostic_projection_has_closed_value_free_states(self):
+        registration = ReadinessRegistration("medplum", "Medplum", True, _Provider())
+        item = project_diagnostic(
+            registration, DiagnosticAssessment(DiagnosticState.UNAVAILABLE)
+        )
+        self.assertEqual(
+            {"healthy", "degraded", "unavailable", "disabled"},
+            {state.value for state in DiagnosticState},
+        )
+        self.assertEqual("unavailable", item["state"])
+        self.assertNotIn("required", item)

@@ -7,9 +7,12 @@ from typing import Any
 
 from backend.domain.settings_readiness import (
     ActivationImpact,
+    DiagnosticAssessment,
+    DiagnosticState,
     ReadinessAssessment,
     ReadinessRegistration,
     ReadinessState,
+    project_diagnostic,
     project_section,
 )
 
@@ -86,12 +89,21 @@ class SettingsReadinessService:
         for registration in self._registry.registrations():
             try:
                 check = getattr(registration.provider, "check", None)
-                assessment = check() if callable(check) else registration.provider.assess()
-                if not isinstance(assessment, ReadinessAssessment):
-                    raise TypeError("Provider returned an unsupported assessment.")
+                if callable(check):
+                    assessment = check()
+                else:
+                    readiness = registration.provider.assess()
+                    state = (
+                        DiagnosticState.DISABLED
+                        if readiness.state is ReadinessState.DISABLED
+                        else DiagnosticState.UNAVAILABLE
+                    )
+                    assessment = DiagnosticAssessment(state)
+                if not isinstance(assessment, DiagnosticAssessment):
+                    raise TypeError("Provider returned an unsupported diagnostic.")
             except Exception:
-                assessment = ReadinessAssessment(ReadinessState.DEGRADED)
-            results.append(project_section(registration, assessment))
+                assessment = DiagnosticAssessment(DiagnosticState.DEGRADED)
+            results.append(project_diagnostic(registration, assessment))
         return {
             "summary": "Registered bounded checks completed.",
             "results": results,

@@ -7,6 +7,8 @@ from typing import Any, Protocol
 
 from backend.domain.settings_readiness import (
     ActivationImpact,
+    DiagnosticAssessment,
+    DiagnosticState,
     ReadinessAssessment,
     ReadinessRegistration,
     ReadinessState,
@@ -19,6 +21,7 @@ from backend.services.settings_readiness import (
 
 class IntegrationSettingsReader(Protocol):
     def get_public(self, profile_type: str) -> dict[str, Any]: ...
+    def has_operator_configuration(self, profile_type: str) -> bool: ...
 
 
 class _StaticProvider:
@@ -35,7 +38,11 @@ class _MedplumProvider:
 
     def assess(self) -> ReadinessAssessment:
         fields = self._settings.get_public("medplum")["fields"]
-        if not fields.get("enabled") or not fields.get("baseUrl"):
+        if (
+            not fields.get("enabled")
+            or not fields.get("baseUrl")
+            or not self._settings.has_operator_configuration("medplum")
+        ):
             return ReadinessAssessment(ReadinessState.NEEDS_SETUP)
         return ReadinessAssessment(ReadinessState.READY)
 
@@ -65,6 +72,8 @@ class _OieProvider:
             return ReadinessAssessment(ReadinessState.NEEDS_SETUP)
         desired = fields.get("resultListener", {})
         runtime = self._listener_status()
+        if desired.get("autoStart") and not runtime.get("running"):
+            return ReadinessAssessment(ReadinessState.NEEDS_SETUP)
         if runtime.get("running") and (
             str(runtime.get("host")) != str(desired.get("host"))
             or int(runtime.get("port", 0)) != int(desired.get("port", 0))
@@ -76,14 +85,14 @@ class _OieProvider:
             )
         return ReadinessAssessment(ReadinessState.READY)
 
-    def check(self) -> ReadinessAssessment:
+    def check(self) -> DiagnosticAssessment:
         current = self.assess()
         if current.state is not ReadinessState.READY:
-            return current
+            return DiagnosticAssessment(DiagnosticState.DEGRADED)
         report = self._diagnostics()
         if report.get("state") == "healthy":
-            return current
-        return ReadinessAssessment(ReadinessState.DEGRADED)
+            return DiagnosticAssessment(DiagnosticState.HEALTHY)
+        return DiagnosticAssessment(DiagnosticState.DEGRADED)
 
 
 def create_settings_readiness_service(
