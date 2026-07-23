@@ -13,8 +13,10 @@ class SharedComponentOwnershipTests(unittest.TestCase):
         map_source = (ROOT / "docs/frontend-module-map.md").read_text(encoding="utf-8")
         component_root = ROOT / "frontend/static/js/components"
         view_sources = {
-            path.name: path.read_text(encoding="utf-8")
-            for path in (ROOT / "frontend/static/js/views").glob("*.js")
+            str(path.relative_to(ROOT / "frontend/static/js")).replace("\\", "/"):
+            path.read_text(encoding="utf-8")
+            for directory in ("views", "settings")
+            for path in (ROOT / "frontend/static/js" / directory).glob("*.js")
         }
 
         for component in component_root.glob("*.js"):
@@ -22,7 +24,7 @@ class SharedComponentOwnershipTests(unittest.TestCase):
             consumers = [name for name, source in view_sources.items() if relative_import in source]
             self.assertIn(f"`components/{component.name}`", map_source)
             if component.name == "settings-shell.js":
-                self.assertEqual(["settings.js"], consumers)
+                self.assertEqual(["settings/oie.js"], consumers)
             else:
                 self.assertGreaterEqual(len(consumers), 2, component.name)
 

@@ -30,7 +30,7 @@ their old read path is removed.
 | dcm4chee | profile, selections, MWL actions, results and attempts | `dcm4chee-view` | `js/api/dcm4chee.js`, `js/state/dcm4chee.js`, `js/views/dcm4chee.js` | `css/views/dcm4chee.css` | `views/dcm4chee.html` |
 | oie | inventory, selection, payloads, send and listener controls | `oie-view` | `js/api/oie.js`, `js/views/oie.js` | `css/views/oie.css` | `views/oie.html` |
 | gdt | bridge settings/watcher, patients, orders, results and artifacts | `gdt-view` | `js/api/gdt.js`, `js/views/gdt.js` | `css/views/gdt.css` | `views/gdt.html` |
-| settings | reserved for ZAC-50; no product behavior in ZAC-63 | `settings-view` | `js/api/settings.js`, `js/views/settings.js` | `css/views/settings.css` | `views/settings.html` |
+| settings | modular readiness shell and integration-owned configuration sections | `settings-view` | `js/api/readiness.js`, `js/api/settings.js`, `js/settings`, `js/views/settings.js` | `css/views/settings.css` | `views/settings.html` |
 
 Shared component ownership is earned by use from at least two feature contracts;
 otherwise presentation remains inside its feature. Cross-view patient/order
@@ -42,7 +42,7 @@ state remain with the feature.
 | Shared owner | Consumers | Decision |
 |---|---|---|
 | `components/status.js` | dashboard, patient, order, FHIR, OIE, and GDT views | Retain: all consumers use the same status text/state presentation contract without feature branching. |
-| `components/settings-shell.js` | Settings view only | Reserved destination rather than a reusable component; it contains only the ZAC-50 boundary message and must not acquire cross-feature behavior. |
+| `components/settings-shell.js` | OIE Settings module only | Reserved OIE Settings presentation boundary; it must not acquire cross-feature behavior. |
 | `core/dom.js` | every implemented feature view | Retain: generic element lookup/construction and table-cell helpers. |
 | `core/clipboard.js` | FHIR, OIE, and GDT views plus the compatibility coordinator | Retain: shared clipboard interaction with no feature branching. |
 | `core/formatting.js` | patient, order, FHIR, OIE, and GDT views plus the compatibility coordinator | Retain: protocol/display formatting primitives shared without workflow ownership. |
@@ -55,7 +55,7 @@ bootstrap temporarily coordinates it during extraction.
 ## Dependency direction
 
 ```text
-js/app.js -> views -> api / state / components -> core
+js/app.js -> views -> settings modules / api / state / components -> core
 ```
 
 - API modules do not manipulate DOM.
