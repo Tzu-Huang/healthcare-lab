@@ -106,7 +106,7 @@ INTEGRATION_OWNER_INVENTORY = {
         "test_fhir_sync_reuses_existing_medplum_resource_by_identifier",
         "test_fhir_sync_creates_once_when_identifier_is_missing",
         "test_fhir_sync_updates_existing_medplum_resource_after_local_change",
-        "test_fhir_sync_failure_preserves_operation_outcome",
+        "test_fhir_sync_failure_does_not_persist_upstream_operation_outcome",
         "test_fhir_sync_validation_failure_marks_record_failed",
     ),
     "integration/test_gdt_api.py": (
@@ -144,7 +144,7 @@ INTEGRATION_OWNER_INVENTORY = {
     "integration/test_order_api.py": (
         "test_order_api_creates_and_lists_local_orm_order",
         "test_order_api_creates_only_fhir_service_request",
-        "test_order_api_preserves_fhir_service_request_sync_failure",
+        "test_order_api_preserves_safe_fhir_service_request_sync_failure",
         "test_historical_fhir_task_is_excluded_from_active_api_contracts",
         "test_order_api_rejects_missing_patient",
     ),
