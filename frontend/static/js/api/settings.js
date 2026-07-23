@@ -2,6 +2,7 @@ import { requestJson, requestJsonAllowBusinessFailure } from "./client.js";
 
 export const SETTINGS_API_NAMESPACE = "/api/oie/settings";
 export const MANAGED_CHANNELS_API = "/api/oie/managed-channels";
+export const BOOTSTRAP_API_NAMESPACE = "/api/oie/bootstrap";
 
 export function fetchSettings() { return requestJson(SETTINGS_API_NAMESPACE); }
 export function saveSettings(payload) {
@@ -15,9 +16,13 @@ export function fetchSettingsListenerStatus() { return requestJson("/api/oie/res
 export function startSettingsListener() { return requestJson("/api/oie/result-listener/start", { method: "POST" }); }
 export function stopSettingsListener() { return requestJson("/api/oie/result-listener/stop", { method: "POST" }); }
 export function retrySettingsListener() { return requestJson("/api/oie/result-listener/retry", { method: "POST" }); }
+export function fetchBootstrapStatus() { return requestJson(`${BOOTSTRAP_API_NAMESPACE}/status`); }
+export function retryBootstrap() {
+  return requestJsonAllowBusinessFailure(`${BOOTSTRAP_API_NAMESPACE}/retry`, { method: "POST", body: "{}" });
+}
 
 export async function inspectManagedChannels() {
-  return (await requestJson(MANAGED_CHANNELS_API)).items || [];
+  return requestJsonAllowBusinessFailure(MANAGED_CHANNELS_API);
 }
 export async function previewManagedChannel(logicalType, operation) {
   const wireOperation = operation === "recreate" ? "create" : operation === "apply" ? "update" : operation;

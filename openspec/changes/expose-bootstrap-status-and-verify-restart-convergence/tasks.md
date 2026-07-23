@@ -20,11 +20,11 @@
 
 ## 4. Settings Workspace
 
-- [ ] 4.1 Add frontend bootstrap status and Retry API functions plus isolated Settings state
-- [ ] 4.2 Render bootstrap mode, state, timing, attempts, per-template outcomes, and allowlisted guidance separately from listener state
-- [ ] 4.3 Keep both approved managed template cards visible for missing and inventory-unavailable states
-- [ ] 4.4 Enable Retry only when eligible and prevent duplicate execution while a run is active
-- [ ] 4.5 Add frontend tests for state distinctions, read-only refresh, inventory errors, Retry eligibility, and listener/bootstrap separation
+- [x] 4.1 Add frontend bootstrap status and Retry API functions plus isolated Settings state
+- [x] 4.2 Render bootstrap mode, state, timing, attempts, per-template outcomes, and allowlisted guidance separately from listener state
+- [x] 4.3 Keep both approved managed template cards visible for missing and inventory-unavailable states
+- [x] 4.4 Enable Retry only when eligible and prevent duplicate execution while a run is active
+- [x] 4.5 Add frontend tests for state distinctions, read-only refresh, inventory errors, Retry eligibility, and listener/bootstrap separation
 
 ## 5. Automated Verification and Documentation
 

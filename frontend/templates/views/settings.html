@@ -32,6 +32,26 @@
     <p class="muted">Save is persistence-only and never restarts the listener.</p>
   </section>
 
+  <section class="lab-panel settings-panel" aria-labelledby="settings-bootstrap-title">
+    <div class="settings-header">
+      <div>
+        <h3 id="settings-bootstrap-title">Managed Channel Bootstrap</h3>
+        <p class="muted">Startup reconciliation status is independent from the HLAB result listener.</p>
+      </div>
+      <button id="retry-settings-bootstrap" type="button" disabled>Retry bootstrap</button>
+    </div>
+    <dl class="settings-runtime">
+      <div><dt>State</dt><dd id="settings-bootstrap-state">Unknown</dd></div>
+      <div><dt>Outcome</dt><dd id="settings-bootstrap-outcome">-</dd></div>
+      <div><dt>Mode / trigger</dt><dd id="settings-bootstrap-mode">-</dd></div>
+      <div><dt>Attempts</dt><dd id="settings-bootstrap-attempts">-</dd></div>
+      <div><dt>Started</dt><dd id="settings-bootstrap-started">-</dd></div>
+      <div><dt>Completed</dt><dd id="settings-bootstrap-completed">-</dd></div>
+    </dl>
+    <p id="settings-bootstrap-guidance" role="status"></p>
+    <div id="settings-bootstrap-channels" class="settings-diagnostics-grid"></div>
+  </section>
+
   <section class="lab-panel settings-panel" aria-labelledby="settings-diagnostics-title">
     <div class="settings-header"><div><h3 id="settings-diagnostics-title">Runtime Diagnostics</h3><p class="muted">Independent checks for OIE API, HLAB listener, managed Channel, ports, and queued delivery.</p></div><button id="settings-refresh-diagnostics" type="button">Run diagnostics</button></div>
     <p id="settings-diagnostics-summary" role="status">Diagnostics have not run.</p>
