@@ -238,3 +238,7 @@ def _send(
         ) from exc
     except urllib.error.URLError as exc:
         raise UpstreamDcm4cheeError(f"{transport_operation} failed: {exc.reason}") from exc
+    except (OSError, ValueError) as exc:
+        raise UpstreamDcm4cheeError(
+            f"{transport_operation} failed: TLS configuration is invalid."
+        ) from exc
