@@ -79,6 +79,7 @@ from backend.services.order_workflow import (
     sync_order_to_dcm4chee_mwl,
     verify_order_dcm4chee_mwl,
 )
+from backend.services.medplum_runtime import MedplumRuntimeProvider
 from backend.services.coordination import (
     ConfiguredWorkflowOperations,
     OrderProtocolCoordinator,
@@ -143,6 +144,7 @@ from backend.services.lab_workflow import (
     dashboard_group_item,
     dashboard_summary,
     derive_lab_overall_status,
+    decorate_lab_operation_availability,
     run_lab_smoke_check,
     run_lab_operation,
     run_lab_server_health_check,
@@ -334,9 +336,12 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
     app.extensions["oie_settings_service"] = dependencies.oie_settings_service
     app.extensions["integration_settings_service"] = dependencies.integration_settings_service
+    medplum_runtime = MedplumRuntimeProvider(dependencies.integration_settings_service)
+    app.extensions["medplum_runtime"] = medplum_runtime
     app.register_blueprint(
         create_integration_settings_blueprint(
-            dependencies.integration_settings_service
+            dependencies.integration_settings_service,
+            medplum_diagnostics=medplum_runtime.diagnose,
         )
     )
     app.extensions["oie_channel_lifecycle_service"] = OieManagedChannelLifecycleService(
@@ -421,6 +426,26 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
             )
             app.extensions["oie_channel_bootstrap_thread"] = bootstrap_thread
             bootstrap_thread.start()
+    def configured_lab_health_check(repository, server_id):
+        server = repository.get_lab_server(server_id)
+        if server.get("name") == "Medplum":
+            return run_lab_server_health_check(
+                repository,
+                server_id,
+                medplum_settings_provider=medplum_runtime.settings,
+            )
+        return run_lab_server_health_check(repository, server_id)
+
+    def configured_lab_inventory(app_context, server):
+        item = decorate_lab_operation_availability(app_context, server)
+        if item.get("name") == "Medplum":
+            settings = medplum_runtime.settings()
+            item["baseUrl"] = settings.base_url
+            item["webUiUrl"] = settings.web_ui_url
+            item["enabled"] = settings.enabled
+            item["settingsProfile"] = "medplum"
+        return item
+
     app.register_blueprint(
         create_lab_servers_blueprint(
             *lab_server_services(
@@ -432,7 +457,8 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
                         "medplum"
                     ),
                 ),
-                health_checker=lambda repository, server_id: run_lab_server_health_check(repository, server_id),
+                health_checker=configured_lab_health_check,
+                availability_decorator=configured_lab_inventory,
             )
         )
     )
@@ -447,26 +473,18 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
                         "medplum"
                     ),
                 ),
-                health_checker=lambda repository, server_id: run_lab_server_health_check(repository, server_id),
+                health_checker=configured_lab_health_check,
             )
         )
     )
     def get_auth_manager() -> MedplumAuthManager:
-        medplum_settings = dependencies.integration_settings_service.get_effective("medplum")
-        return MedplumAuthManager(
-            client_id=medplum_settings.client_id,
-            client_secret=medplum_settings.client_secret,
-            scope=medplum_settings.scope,
-            token_url=medplum_settings.token_url,
-            refresh_grace_seconds=medplum_settings.auth_grace_seconds,
-        )
+        return medplum_runtime.auth_manager()
 
     def get_openemr_source() -> OpenEMRProcedureOrderSource:
         return app.extensions["openemr_procedure_order_source"]
 
     def configured_medplum_base_url() -> str:
-        settings = dependencies.integration_settings_service.get_effective("medplum")
-        return settings.base_url if settings.enabled else ""
+        return medplum_runtime.base_url()
 
     workflow_operations = ConfiguredWorkflowOperations(
         patient=patient_coordination,

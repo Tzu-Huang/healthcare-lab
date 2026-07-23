@@ -72,12 +72,18 @@ def smoke_step(name: str, status: str, message: str = "", *, required: bool = Tr
     }
 
 
-def run_http_smoke(url: str, name: str, *, required: bool = True) -> dict[str, Any]:
+def run_http_smoke(
+    url: str,
+    name: str,
+    *,
+    required: bool = True,
+    timeout_seconds: float = 3,
+) -> dict[str, Any]:
     if not url:
         return smoke_step(name, "Unknown", "Endpoint is not configured.", required=required)
     try:
         request_obj = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(request_obj, timeout=3) as response:
+        with urllib.request.urlopen(request_obj, timeout=timeout_seconds) as response:
             if 200 <= int(response.status) < 500:
                 return smoke_step(name, "Healthy", f"HTTP {response.status}", required=required)
             return smoke_step(name, "Down", f"HTTP {response.status}", required=required)

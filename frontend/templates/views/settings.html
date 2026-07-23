@@ -18,8 +18,32 @@
   </section>
 
   <section id="settings-section-medplum" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-medplum" data-settings-section="medplum" hidden>
-    <h3>Medplum</h3><p>Configure the clinical data service and verify connectivity.</p>
-    <details><summary>Advanced</summary><p class="muted">Advanced fields are integration-owned and shown only when available.</p></details>
+    <div><h3>Medplum</h3><p>Configure the clinical data service and verify each connection stage.</p></div>
+    <section class="lab-panel settings-panel" aria-labelledby="medplum-connection-title">
+      <h4 id="medplum-connection-title">Connection and OAuth</h4>
+      <div class="form-grid settings-form-grid">
+        <label class="checkbox-row"><input id="medplum-enabled" type="checkbox">Enable Medplum workflows</label>
+        <label for="medplum-fhir-url">Internal FHIR R4 URL<input id="medplum-fhir-url" type="url" autocomplete="url" required></label>
+        <label for="medplum-web-ui-url">Browser Web UI URL<input id="medplum-web-ui-url" type="url" autocomplete="url" required></label>
+        <label for="medplum-client-id">OAuth client ID<input id="medplum-client-id" autocomplete="off" required></label>
+        <label for="medplum-client-secret">Replace OAuth client secret <span id="medplum-secret-configured" class="muted">(not configured)</span><input id="medplum-client-secret" type="password" autocomplete="new-password" placeholder="Leave blank to preserve"></label>
+        <label for="medplum-scope">OAuth scope<input id="medplum-scope" autocomplete="off"></label>
+        <label for="medplum-token-url">OAuth token URL<input id="medplum-token-url" type="url" autocomplete="url" required></label>
+        <label for="medplum-auth-grace">Token refresh grace (seconds)<input id="medplum-auth-grace" type="number" min="0" max="3600" required></label>
+        <label for="medplum-timeout">Request timeout (seconds)<input id="medplum-timeout" type="number" min="1" max="120" required></label>
+      </div>
+      <div class="button-row">
+        <button id="medplum-save-and-test" class="primary" type="button">Save and test</button>
+        <button id="medplum-remove-secret" type="button">Remove saved secret</button>
+      </div>
+      <p id="medplum-save-result" class="settings-result" role="status"></p>
+      <details><summary>Advanced</summary><p class="muted">Token refresh grace and request timeout bound authentication and FHIR requests.</p></details>
+    </section>
+    <section aria-labelledby="medplum-test-results-title">
+      <h4 id="medplum-test-results-title">Connection test results</h4>
+      <p class="muted">Saving and testing are reported separately; a failed check does not hide a successful save.</p>
+      <div id="medplum-test-results" class="settings-diagnostics-grid" aria-live="polite"></div>
+    </section>
   </section>
 
   <section id="settings-section-oie" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-oie" data-settings-section="oie" hidden>

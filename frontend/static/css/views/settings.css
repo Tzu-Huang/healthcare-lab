@@ -21,6 +21,8 @@
 .settings-runtime-reminder { border: 1px solid #d9b35c; background: #fff4cf; color: #6d5111; font-weight: 700; }
 .settings-port-warning { border: 1px solid #ef9a44; background: #fff7ed; color: #7c2d12; }
 .settings-result:not(:empty) { border: 1px solid var(--border-color, #ccd4dc); background: #f8fafc; }
+#medplum-remove-secret:disabled { opacity: .55; cursor: not-allowed; }
+#medplum-test-results:empty::before { content: "Save the profile to run connection checks."; color: #667085; }
 .settings-runtime { display: grid; gap: 10px; margin: 0; }
 .settings-runtime div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; }
 .settings-runtime dt { font-weight: 700; }

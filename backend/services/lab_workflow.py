@@ -482,6 +482,16 @@ def run_lab_operation(
                 if medplum_settings_provider is not None
                 else None
             )
+            if server.get("name") == "Medplum" and medplum_settings is not None:
+                server = {
+                    **server,
+                    "enabled": bool(medplum_settings.enabled),
+                    "baseUrl": (
+                        medplum_settings.base_url
+                        if medplum_settings.enabled
+                        else ""
+                    ),
+                }
             smoke_result = run_lab_smoke_check(
                 app,
                 store,
@@ -511,6 +521,11 @@ def run_lab_operation(
                         medplum_settings.auth_grace_seconds
                         if medplum_settings is not None
                         else 300
+                    ),
+                    timeout_seconds=(
+                        medplum_settings.timeout_seconds
+                        if medplum_settings is not None
+                        else 10
                     ),
                 ),
             )
@@ -565,7 +580,11 @@ def run_lab_operation(
             output = adapter_result["output"]
             command = adapter_result["command"]
         if refresh_health and normalized_action in {"start", "stop", "restart"}:
-            run_lab_server_health_check(store, server_id)
+            run_lab_server_health_check(
+                store,
+                server_id,
+                medplum_settings_provider=medplum_settings_provider,
+            )
     except (LabOperationError, ValidationError, UpstreamFhirError) as exc:
         result = "failed"
         error_text = str(exc)
@@ -599,8 +618,22 @@ def run_lab_operation(
     return response
 
 
-def run_lab_server_health_check(store: LabRepositoryPort, server_id: int) -> dict[str, Any]:
+def run_lab_server_health_check(
+    store: LabRepositoryPort,
+    server_id: int,
+    *,
+    medplum_settings_provider: Callable[[], Any] | None = None,
+) -> dict[str, Any]:
     server = store.get_lab_server(server_id)
+    timeout_seconds = 2.0
+    if server.get("name") == "Medplum" and medplum_settings_provider is not None:
+        settings = medplum_settings_provider()
+        timeout_seconds = float(settings.timeout_seconds)
+        server = {
+            **server,
+            "enabled": bool(settings.enabled),
+            "baseUrl": settings.base_url,
+        }
     if not server["enabled"]:
         return store.update_lab_server_health(
             server_id,
@@ -610,7 +643,9 @@ def run_lab_server_health_check(store: LabRepositoryPort, server_id: int) -> dic
             protocol_status="Unknown",
             recent_error="Server is disabled.",
         )
-    application_status, application_error = run_lab_application_check(server)
+    application_status, application_error = run_lab_application_check(
+        server, timeout_seconds=timeout_seconds
+    )
     protocol_status, protocol_note = run_lab_protocol_check(server, application_status)
     process_status = "Unknown"
     operation = server.get("operation") or {}
@@ -1027,9 +1062,19 @@ def run_lab_smoke_check(
     steps: list[dict[str, Any]]
     if profile == "medplum":
         metadata_url = f"{base_url}/metadata" if base_url else ""
+        timeout_seconds = (
+            auth_manager.timeout_seconds if auth_manager is not None else 3
+        )
         steps = [
-            run_http_smoke(base_url, "http_reachability"),
-            run_http_smoke(metadata_url, "fhir_metadata", required=True),
+            run_http_smoke(
+                base_url, "http_reachability", timeout_seconds=timeout_seconds
+            ),
+            run_http_smoke(
+                metadata_url,
+                "fhir_metadata",
+                required=True,
+                timeout_seconds=timeout_seconds,
+            ),
         ]
         if auth_manager is not None and auth_manager.is_configured() and base_url:
             try:
