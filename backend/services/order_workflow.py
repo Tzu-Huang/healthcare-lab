@@ -23,7 +23,7 @@ from backend.domain.statuses import (
     DCM4CHEE_PATIENT_SYNC_STATUS_SYNCED,
     DCM4CHEE_MWL_VERIFICATION_VERIFIED,
 )
-from backend.services.patient_workflow import sync_patient_to_dcm4chee
+from backend.services.patient_workflow import require_dcm4chee_enabled, sync_patient_to_dcm4chee
 
 request_dcm4chee_mwl_create = dcm4chee_client.request_dcm4chee_mwl_create
 request_dcm4chee_mwl_readback = dcm4chee_client.request_dcm4chee_mwl_readback
@@ -193,6 +193,7 @@ class DcmMwlSyncService:
 
     def sync(self, order_id: int) -> dict[str, Any]:
         profile = self._dcm_profile(self._configuration)
+        require_dcm4chee_enabled(profile)
         self._dcm_sync(
             self.get_order(order_id),
             profile,
@@ -217,7 +218,9 @@ class DcmMwlVerificationService:
         item = self._repository.get_order_record(order_id)
         if item["protocolVersion"] != "DICOM":
             raise ValueError("Order record is not DICOM MWL mode.")
-        result = self._dcm_verify(item, self._dcm_profile(self._configuration))
+        profile = self._dcm_profile(self._configuration)
+        require_dcm4chee_enabled(profile)
+        result = self._dcm_verify(item, profile)
         item = self._repository.get_order_record(order_id)
         mwl = (item.get("dcm4chee") or {}).get("mwl") or {}
         verification = (mwl.get("mapping") or {}).get("verification") or mwl.get("verification") or {}
@@ -241,11 +244,15 @@ class DcmEvidenceService:
 
     def evidence(self, order_id: int) -> dict[str, Any]:
         self._order(order_id)
-        return self._capability.dcm4chee_e2e_evidence_for_order(order_id, self._dcm_profile(self._configuration))
+        profile = self._dcm_profile(self._configuration)
+        require_dcm4chee_enabled(profile)
+        return self._capability.dcm4chee_e2e_evidence_for_order(order_id, profile)
 
     def simulated_return(self, order_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         item = self._order(order_id)
-        result = self._capability.create_simulated_dcm4chee_ap_return(order_id, self._dcm_profile(self._configuration), result_type=str(payload.get("type") or "both"), artifact_url=str(payload.get("artifactUrl") or ""), artifact_path=str(payload.get("artifactPath") or ""))
+        profile = self._dcm_profile(self._configuration)
+        require_dcm4chee_enabled(profile)
+        result = self._capability.create_simulated_dcm4chee_ap_return(order_id, profile, result_type=str(payload.get("type") or "both"), artifact_url=str(payload.get("artifactUrl") or ""), artifact_path=str(payload.get("artifactPath") or ""))
         return {"patient": self._capability.get_patient_record(int(item["patientRecordId"])), **result}
 
 
@@ -314,8 +321,9 @@ class OrderWorkflowService:
                 )
             return self._repository.get_order_record(int(item["id"]))
         if mode == "dicom":
-            item = self._dcm_order.create_dcm4chee_order_record(payload)
             profile = self._dcm_profile(self._configuration)
+            require_dcm4chee_enabled(profile)
+            item = self._dcm_order.create_dcm4chee_order_record(payload)
             self._dcm_sync(
                 item,
                 profile,
@@ -351,6 +359,7 @@ def sync_order_to_dcm4chee_mwl(
     uid_root: str,
     patient_syncer: Callable[..., dict[str, Any]] = sync_patient_to_dcm4chee,
 ) -> dict[str, Any]:
+    require_dcm4chee_enabled(profile)
     diagnostics = validate_dcm4chee_profile(profile)
     dicomweb = profile.get("dicomweb") if isinstance(profile.get("dicomweb"), dict) else {}
     base_url = str(dicomweb.get("baseUrl") or "").strip().rstrip("/")
@@ -733,6 +742,7 @@ def verify_order_dcm4chee_mwl(
     order: dict[str, Any],
     profile: dict[str, Any],
 ) -> dict[str, Any]:
+    require_dcm4chee_enabled(profile)
     diagnostics = validate_dcm4chee_profile(profile)
     mapping = store.get_dcm4chee_mwl_mapping_for_order(int(order["id"]))
     if not mapping:
