@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 import os
 import re
@@ -284,6 +285,26 @@ class Dcm4cheeEffectiveSettings:
             f"configured_secrets={sorted(key for key, value in self.secrets.items() if value)!r})"
         )
 
+    def runtime_profile(self) -> "Dcm4cheeRuntimeProfile":
+        return Dcm4cheeRuntimeProfile(self.profile, self.secrets)
+
+
+class Dcm4cheeRuntimeProfile(dict[str, Any]):
+    """Dict-compatible runtime profile whose credentials cannot leak via mapping output."""
+
+    def __init__(self, fields: Mapping[str, Any], secrets: Mapping[str, str]) -> None:
+        import copy
+
+        super().__init__(copy.deepcopy(dict(fields)))
+        self._secrets = dict(secrets)
+
+    @property
+    def secrets(self) -> dict[str, str]:
+        return dict(self._secrets)
+
+    def __repr__(self) -> str:
+        return dict.__repr__(self)
+
 
 class IntegrationSettingsService:
     def __init__(
@@ -339,11 +360,12 @@ class IntegrationSettingsService:
         if profile_type == OIE_PROFILE_TYPE and self._oie is not None:
             return self._oie.get_public()
         private = self._repository.get_private(profile_type)
+        public_fields = copy.deepcopy(private["fields"])
         public = {
             "profileType": private["profileType"],
             "profileName": private["profileName"],
             "schemaVersion": private["schemaVersion"],
-            "fields": private["fields"],
+            "fields": public_fields,
             "secrets": {
                 field: {"configured": bool(private["secrets"].get(field))}
                 for field in sorted(PROFILE_SECRET_FIELDS[profile_type])
@@ -351,6 +373,9 @@ class IntegrationSettingsService:
         }
         if profile_type == DCM4CHEE_PROFILE_TYPE:
             security = private["fields"].get("security", {})
+            public_security = public_fields.get("security", {})
+            public_security.pop("certificatePath", None)
+            public_security.pop("privateKeyPath", None)
             public["references"] = {
                 field: self._mounted_reference_projection(security.get(field))
                 for field in ("certificatePath", "privateKeyPath")
@@ -418,7 +443,15 @@ class IntegrationSettingsService:
             return self._oie.replace(
                 fields, secret_replacements=secret_replacements or {}
             )
-        profile = validate_profile(profile_type, fields)
+        candidate_fields = fields
+        if profile_type == DCM4CHEE_PROFILE_TYPE:
+            candidate_fields = copy.deepcopy(dict(fields))
+            submitted_security = candidate_fields.setdefault("security", {})
+            previous_security = self._repository.get_private(profile_type)["fields"]["security"]
+            for field in ("certificatePath", "privateKeyPath"):
+                if not str(submitted_security.get(field) or "").strip():
+                    submitted_security[field] = previous_security.get(field, "")
+        profile = validate_profile(profile_type, candidate_fields)
         if profile_type == DCM4CHEE_PROFILE_TYPE:
             self._validate_dcm4chee_mutation(profile.fields, secret_replacements or {})
         mutations: dict[str, SecretMutation] = (

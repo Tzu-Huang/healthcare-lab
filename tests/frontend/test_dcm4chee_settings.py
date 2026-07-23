@@ -46,12 +46,16 @@ class Dcm4cheeSettingsTests(unittest.TestCase):
         self.assertIn("requestJsonAllowBusinessFailure", self.module)
 
     def test_secrets_are_write_only_and_blank_preserves_them(self):
-        self.assertGreaterEqual(self.template.count('type="password"'), 2)
-        self.assertGreaterEqual(self.template.count('placeholder="Leave blank to preserve"'), 2)
+        self.assertGreaterEqual(self.template.count('type="password"'), 3)
+        self.assertGreaterEqual(self.template.count('placeholder="Leave blank to preserve"'), 3)
         self.assertIn('find(root, "dcm4chee-password").value = ""', self.module)
         self.assertIn('find(root, "dcm4chee-token").value = ""', self.module)
+        self.assertIn('find(root, "dcm4chee-client-secret").value = ""', self.module)
         self.assertIn("if (password) secrets.password = password", self.module)
         self.assertIn("if (token) secrets.token = token", self.module)
+        self.assertIn("if (clientSecret) secrets.clientSecret = clientSecret", self.module)
+        self.assertIn('find(root, "dcm4chee-certificate-path").value = ""', self.module)
+        self.assertIn('find(root, "dcm4chee-private-key-path").value = ""', self.module)
         self.assertNotIn("security.password ||", self.module)
         self.assertNotIn("security.token ||", self.module)
 
