@@ -1,0 +1,15 @@
+.gdt-settings { display: grid; gap: 18px; }
+.gdt-paths, .gdt-watcher { display: grid; gap: 10px; }
+.gdt-paths div, .gdt-watcher div {
+  display: grid;
+  grid-template-columns: minmax(150px, .4fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.gdt-paths dt, .gdt-watcher dt { font-weight: 700; }
+.gdt-paths dd, .gdt-watcher dd { margin: 0; overflow-wrap: anywhere; }
+.gdt-settings details { margin: 18px 0; }
+.gdt-settings .settings-field-error { display: block; color: #b42318; }
+.gdt-settings [aria-invalid="true"] { border-color: #b42318; }
+@media (max-width: 720px) {
+  .gdt-paths div, .gdt-watcher div { grid-template-columns: 1fr; gap: 4px; }
+}

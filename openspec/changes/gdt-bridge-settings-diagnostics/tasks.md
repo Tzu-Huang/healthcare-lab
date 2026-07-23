@@ -21,11 +21,11 @@
 
 ## 4. Modular GDT Settings Experience
 
-- [ ] 4.1 Register a GDT-owned Settings module with typed profile API adapter, state, accessible form, Advanced controls, and activation messaging.
-- [ ] 4.2 Present `/data/gdt-bridge` as the supported Docker application path and optional discovered host bind-mount source as read-only deployment metadata.
-- [ ] 4.3 Add explicit directory provisioning, bounded diagnostic actions, and watcher/readiness presentation to the GDT module.
-- [ ] 4.4 Register the GDT readiness and diagnostic providers with guided setup and Run all checks while preserving optional-disabled completion behavior.
-- [ ] 4.5 Add frontend/API tests for navigation ownership, form validation, disabled/readiness states, host/application path distinction, diagnostics, and keyboard accessibility.
+- [x] 4.1 Register a GDT-owned Settings module with typed profile API adapter, state, accessible form, Advanced controls, and activation messaging.
+- [x] 4.2 Present `/data/gdt-bridge` as the supported Docker application path and optional discovered host bind-mount source as read-only deployment metadata.
+- [x] 4.3 Add explicit directory provisioning, bounded diagnostic actions, and watcher/readiness presentation to the GDT module.
+- [x] 4.4 Register the GDT readiness and diagnostic providers with guided setup and Run all checks while preserving optional-disabled completion behavior.
+- [x] 4.5 Add frontend/API tests for navigation ownership, form validation, disabled/readiness states, host/application path distinction, diagnostics, and keyboard accessibility.
 
 ## 5. Verification
 

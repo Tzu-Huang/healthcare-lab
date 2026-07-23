@@ -95,11 +95,47 @@ class _OieProvider:
         return DiagnosticAssessment(DiagnosticState.DEGRADED)
 
 
+class _GdtBridgeProvider:
+    def __init__(
+        self,
+        settings: IntegrationSettingsReader,
+        *,
+        watcher_status: Callable[[], dict[str, Any]],
+        diagnostics: Callable[[], dict[str, Any]],
+    ) -> None:
+        self._settings = settings
+        self._watcher_status = watcher_status
+        self._diagnostics = diagnostics
+
+    def assess(self) -> ReadinessAssessment:
+        fields = self._settings.get_public("gdt-bridge")["fields"]
+        if not fields.get("enabled"):
+            return ReadinessAssessment(ReadinessState.DISABLED)
+        report = self._diagnostics()
+        if report.get("state") != "healthy":
+            return ReadinessAssessment(ReadinessState.DEGRADED)
+        if not self._watcher_status().get("running"):
+            return ReadinessAssessment(ReadinessState.DEGRADED)
+        return ReadinessAssessment(ReadinessState.READY)
+
+    def check(self) -> DiagnosticAssessment:
+        readiness = self.assess()
+        if readiness.state is ReadinessState.DISABLED:
+            return DiagnosticAssessment(DiagnosticState.DISABLED)
+        return DiagnosticAssessment(
+            DiagnosticState.HEALTHY
+            if readiness.state is ReadinessState.READY
+            else DiagnosticState.DEGRADED
+        )
+
+
 def create_settings_readiness_service(
     settings: IntegrationSettingsReader,
     *,
     listener_status: Callable[[], dict[str, Any]],
     oie_diagnostics: Callable[[], dict[str, Any]],
+    gdt_watcher_status: Callable[[], dict[str, Any]] | None = None,
+    gdt_diagnostics: Callable[[], dict[str, Any]] | None = None,
 ) -> SettingsReadinessService:
     registry = SettingsReadinessRegistry(
         (
@@ -120,7 +156,12 @@ def create_settings_readiness_service(
                 "gdt-bridge",
                 "GDT Bridge",
                 False,
-                _StaticProvider(ReadinessState.DISABLED),
+                _GdtBridgeProvider(
+                    settings,
+                    watcher_status=gdt_watcher_status or (lambda: {"running": False}),
+                    diagnostics=gdt_diagnostics
+                    or (lambda: {"state": "unavailable", "checks": []}),
+                ),
             ),
             ReadinessRegistration(
                 "dcm4chee",

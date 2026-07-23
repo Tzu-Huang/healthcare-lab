@@ -6,6 +6,10 @@ import {
   initializeMedplumSettingsSection,
   refreshMedplumSettings,
 } from "./medplum.js";
+import {
+  initializeGdtBridgeSettingsSection,
+  refreshGdtBridgeSettings,
+} from "./gdt-bridge.js";
 
 const noOpInitialize = () => {};
 const noOpRefresh = async () => undefined;
@@ -56,7 +60,9 @@ export const SETTINGS_MODULES = Object.freeze([
   }),
   integrationModule({
     id: "gdt-bridge", label: "GDT Bridge", required: false,
-    owners: { view: "settings/gdt-bridge.js", api: "api/settings.js", state: "state/settings.js", style: "css/views/settings.css" },
+    owners: { view: "settings/gdt-bridge.js", api: "settings/gdt-bridge.js", state: "settings/gdt-bridge.js", style: "css/settings/gdt-bridge.css" },
+    initialize: initializeGdtBridgeSettingsSection,
+    refresh: refreshGdtBridgeSettings,
   }),
   integrationModule({
     id: "dcm4chee", label: "dcm4chee", required: false,
