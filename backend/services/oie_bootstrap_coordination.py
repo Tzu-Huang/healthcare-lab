@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import secrets
-import threading
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -56,7 +55,9 @@ class OieBootstrapCoordinator:
         repository: Any,
         *,
         mode: str,
-        thread_factory: Callable[..., object] = threading.Thread,
+        thread_factory: Callable[..., object],
+        run_lock: Any,
+        state_lock: Any,
         timestamp_factory: Callable[[], str] = now_iso,
         run_id_factory: Callable[[], str] | None = None,
         logger: logging.Logger = LOGGER,
@@ -68,9 +69,9 @@ class OieBootstrapCoordinator:
         self.timestamp_factory = timestamp_factory
         self.run_id_factory = run_id_factory or (lambda: secrets.token_hex(12))
         self.logger = logger
-        self._run_lock = threading.Lock()
+        self._run_lock = run_lock
         self._active_run_id = ""
-        self._state_lock = threading.Lock()
+        self._state_lock = state_lock
 
     def status(self) -> dict[str, Any]:
         try:
