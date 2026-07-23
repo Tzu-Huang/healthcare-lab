@@ -66,6 +66,29 @@ class SettingsFoundationTests(unittest.TestCase):
         for forbidden in ("redeploy-all", "override: true", "force: true", "adopt"):
             self.assertNotIn(forbidden, combined)
 
+    def test_bootstrap_status_is_separate_and_retry_is_explicit(self):
+        for element_id in (
+            "settings-bootstrap-state", "settings-bootstrap-outcome", "settings-bootstrap-mode",
+            "settings-bootstrap-attempts", "settings-bootstrap-started", "settings-bootstrap-completed",
+            "settings-bootstrap-guidance", "settings-bootstrap-channels", "retry-settings-bootstrap",
+        ):
+            self.assertIn(f'id="{element_id}"', self.template)
+        self.assertIn('export function fetchBootstrapStatus()', self.api)
+        self.assertIn('export function retryBootstrap()', self.api)
+        self.assertIn('renderBootstrap(bootstrap.item)', self.view)
+        self.assertIn('running || !status.retryEligible', self.view)
+        self.assertIn('bind("retry-settings-bootstrap", retryBootstrapFromSettings)', self.view)
+        self.assertIn("Startup reconciliation status is independent", self.template)
+
+    def test_refresh_is_read_only_and_inventory_failure_keeps_backend_cards(self):
+        refresh_start = self.view.index("export async function refreshSettings()")
+        refresh_end = self.view.index("async function persistProfile", refresh_start)
+        refresh_body = self.view[refresh_start:refresh_end]
+        self.assertIn("fetchBootstrapStatus()", refresh_body)
+        self.assertNotIn("retryBootstrap(", refresh_body)
+        self.assertIn("requestJsonAllowBusinessFailure(MANAGED_CHANNELS_API)", self.api)
+        self.assertIn("state.items = result.items || []", self.view)
+
     def test_external_cards_have_no_mutation_controls(self):
         external_guard = 'if (item.classification === "external") return card;'
         self.assertIn(external_guard, self.view)

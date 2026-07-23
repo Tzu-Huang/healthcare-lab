@@ -1,7 +1,7 @@
 import {
-  fetchRuntimeDiagnostics, fetchSettings, fetchSettingsListenerStatus, inspectManagedChannels, mutateManagedChannel,
-  previewManagedChannel, retrySettingsListener, saveSettings, startSettingsListener,
-  stopSettingsListener, testSettingsConnection,
+  fetchBootstrapStatus, fetchRuntimeDiagnostics, fetchSettings, fetchSettingsListenerStatus, inspectManagedChannels,
+  mutateManagedChannel, previewManagedChannel, retryBootstrap, retrySettingsListener, saveSettings,
+  startSettingsListener, stopSettingsListener, testSettingsConnection,
 } from "../api/settings.js";
 import { listenerPortWarning, listenerReloadMessage, safeConnectionResult, settingsUnavailableMessage } from "../components/settings-shell.js";
 import { byId } from "../core/dom.js";
@@ -70,6 +70,40 @@ function renderReminder() {
   reminder.textContent = state.runtimeReloadRequired ? listenerReloadMessage() : "";
 }
 
+function bootstrapGuidance(status = {}) {
+  return status.guidanceCode || status.errorCategory || "";
+}
+
+function renderBootstrap(status = {}) {
+  state.bootstrap = status;
+  const running = status.state === "running" || status.state === "waiting";
+  element("settings-bootstrap-state").textContent = status.state || "unknown";
+  element("settings-bootstrap-outcome").textContent = status.outcome || "-";
+  const modeAndTrigger = [];
+  if (status.mode) modeAndTrigger.push(status.mode);
+  if (status.trigger) modeAndTrigger.push(status.trigger);
+  element("settings-bootstrap-mode").textContent = modeAndTrigger.join(" / ") || "-";
+  element("settings-bootstrap-attempts").textContent = Number.isInteger(status.attempts) ? String(status.attempts) : "-";
+  element("settings-bootstrap-started").textContent = status.startedAt || "-";
+  element("settings-bootstrap-completed").textContent = status.completedAt || "-";
+  element("settings-bootstrap-guidance").textContent = bootstrapGuidance(status);
+  element("retry-settings-bootstrap").disabled = running || !status.retryEligible;
+  const channels = element("settings-bootstrap-channels"); channels.replaceChildren();
+  (status.channels || []).forEach((channel) => {
+    const card = document.createElement("article"); card.className = "settings-diagnostic";
+    card.dataset.state = String(channel.outcome || channel.status || "unknown").toLowerCase();
+    const title = document.createElement("h4"); title.textContent = channel.logicalType || "Managed Channel";
+    card.append(title);
+    appendFact(card, "Classification", channel.classification);
+    appendFact(card, "Outcome", channel.outcome);
+    appendFact(card, "Status", channel.status);
+    const guidance = bootstrapGuidance(channel);
+    if (guidance) appendFact(card, "Guidance", guidance);
+    channels.append(card);
+  });
+  if (!channels.children.length) channels.textContent = "No per-Channel bootstrap results reported.";
+}
+
 function renderPortWarning() {
   const warning = element("settings-listener-port-warning");
   warning.hidden = !state.originalListenerPort || Number(element("settings-listener-port").value) === state.originalListenerPort;
@@ -111,8 +145,9 @@ export async function refreshRuntimeDiagnostics() {
 }
 
 export async function refreshSettings() {
-  const [profile, runtime] = await Promise.all([fetchSettings(), fetchSettingsListenerStatus()]);
+  const [profile, runtime, bootstrap] = await Promise.all([fetchSettings(), fetchSettingsListenerStatus(), fetchBootstrapStatus()]);
   renderProfile(profile.item); renderRuntime(runtime.item);
+  renderBootstrap(bootstrap.item);
   state.runtimeReloadRequired = !listenerSettingsMatchStatus(state.profile, runtime.item); renderReminder();
   await refreshSettingsChannels();
   await refreshRuntimeDiagnostics().catch(() => undefined);
@@ -145,8 +180,32 @@ export function retryListenerFromSettings() { return controlListener("retry"); }
 
 export async function refreshSettingsChannels() {
   element("settings-status").textContent = "Refreshing managed Channels…";
-  try { state.items = await inspectManagedChannels(); clearSettingsPreview(state); renderChannels(); element("settings-status").textContent = "Channel inventory refreshed."; }
+  try {
+    const result = await inspectManagedChannels();
+    state.items = result.items || [];
+    clearSettingsPreview(state); renderChannels();
+    element("settings-status").textContent = result.success === false
+      ? `Channel inventory unavailable: ${result.error || result.errorCategory || "live inspection failed"}.`
+      : "Channel inventory refreshed.";
+  }
   catch (error) { reportError(error); }
+}
+
+export async function retryBootstrapFromSettings() {
+  const button = element("retry-settings-bootstrap"); button.disabled = true;
+  element("settings-bootstrap-guidance").textContent = "Requesting bootstrap retry...";
+  try {
+    const result = await retryBootstrap();
+    if (result.item) renderBootstrap(result.item);
+    if (result.success === false) {
+      element("settings-bootstrap-guidance").textContent = result.error || result.errorCategory || "Bootstrap retry was not accepted.";
+    }
+    return result;
+  } catch (error) {
+    element("settings-bootstrap-guidance").textContent = `Bootstrap retry unavailable: ${error.message}`;
+    await fetchBootstrapStatus().then((result) => renderBootstrap(result.item)).catch(() => undefined);
+    throw error;
+  }
 }
 
 function appendFact(card, label, value) {
@@ -265,6 +324,7 @@ export function initializeSettingsView(root) {
   root.dataset.moduleOwner = "settings"; root.dataset.emptyState = settingsUnavailableMessage();
   bind("save-connection-settings", saveConnectionSettings); bind("test-settings-connection", testConnectionFromSettings);
   bind("save-listener-settings", saveListenerSettings); bind("start-settings-listener", () => controlListener("start")); bind("stop-settings-listener", () => controlListener("stop")); bind("retry-settings-listener", retryListenerFromSettings);
+  bind("retry-settings-bootstrap", retryBootstrapFromSettings);
   bind("settings-refresh", refreshSettings); bind("settings-refresh-diagnostics", refreshRuntimeDiagnostics); element("settings-listener-port").addEventListener("input", renderPortWarning);
   element("settings-managed-list").addEventListener("click", handleAction); element("settings-preview-execute").addEventListener("click", executePreview);
   element("settings-delete-confirmation").addEventListener("input", (event) => { state.confirmation = event.target.value; updateExecuteState(); });

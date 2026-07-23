@@ -1,5 +1,6 @@
 const initialSettingsState = Object.freeze({
   initialized: false, profile: null, runtime: null, runtimeReloadRequired: false,
+  bootstrap: null,
   items: [], selected: null, operation: "", preview: null, confirmation: "",
   busy: false, refreshRequired: false, originalListenerPort: null,
 });
