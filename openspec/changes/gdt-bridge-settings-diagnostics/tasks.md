@@ -14,10 +14,10 @@
 
 ## 3. Filesystem Provisioning and Diagnostics
 
-- [ ] 3.1 Implement bridge-root confinement and explicit provisioning for documented inbox, outbox, processing, archive, error, and diagnostic directories.
-- [ ] 3.2 Implement bounded checks for root/mount existence, directory existence, read access, watcher state, and healthy empty folders.
-- [ ] 3.3 Implement the generated empty diagnostic-file write/delete probe with guaranteed cleanup and watcher exclusion.
-- [ ] 3.4 Add tests for missing paths, permission failures, path escape rejection, provisioning, probe cleanup failures, and PHI-safe output/logging.
+- [x] 3.1 Implement bridge-root confinement and explicit provisioning for documented inbox, outbox, processing, archive, error, and diagnostic directories.
+- [x] 3.2 Implement bounded checks for root/mount existence, directory existence, read access, watcher state, and healthy empty folders.
+- [x] 3.3 Implement the generated empty diagnostic-file write/delete probe with guaranteed cleanup and watcher exclusion.
+- [x] 3.4 Add tests for missing paths, permission failures, path escape rejection, provisioning, probe cleanup failures, and PHI-safe output/logging.
 
 ## 4. Modular GDT Settings Experience
 
