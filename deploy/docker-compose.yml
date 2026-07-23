@@ -28,6 +28,9 @@ services:
       GDT_BRIDGE_PATH: /data/gdt-bridge
       OIE_MLLP_ORDER_HOST: ${OIE_MLLP_ORDER_HOST:-oie}
       OIE_MLLP_ORDER_PORT: ${OIE_MLLP_ORDER_PORT:-6600}
+      OIE_BOOTSTRAP_MODE: ${OIE_BOOTSTRAP_MODE:-create-missing}
+      OIE_BOOTSTRAP_TIMEOUT_SECONDS: ${OIE_BOOTSTRAP_TIMEOUT_SECONDS:-120}
+      OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS: ${OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS:-2}
       # The application still consumes the historical OIE_MLLP_RESULT_* names.
       # Compose maps the unambiguous HLAB listener settings to them. The legacy
       # aliases are accepted for one migration window and affect lab-app only.

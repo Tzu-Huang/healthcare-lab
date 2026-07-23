@@ -221,6 +221,47 @@ published host port by default.
 | dcm4chee DICOM | `dcm4chee:11112` | `DCM4CHEE_DICOM_PORT` (default `11112`) |
 | dcm4chee HL7 Patient sync | `dcm4chee:2575` | `DCM4CHEE_HL7_PORT` (default `2575`) |
 
+## OIE Managed Channel Startup Bootstrap
+
+The single-worker `lab-app` runtime starts one background bootstrap run before
+it serves the first browser request. The default mode, `create-missing`, waits
+up to 120 seconds for the authenticated OIE 4.5.2 Management API, retrying
+every 2 seconds. Once OIE is ready it evaluates the two fixed routes separately:
+
+Fresh profiles target the OIE Client API base at `https://oie:8443` using the
+image's `admin` / `admin` local-lab credentials and local self-signed TLS mode.
+OIE 4.5.2 does not expose the Client API on its HTTP port.
+
+| Managed Channel | Route |
+| --- | --- |
+| `HLAB_ORM_TO_AP` | `OIE:6600 -> hl7tester:6671` |
+| `HLAB_ORU_TO_HLAB` | `OIE:6661 -> lab-app:6665` |
+
+Only a Channel classified as missing is created, read back, persisted, deployed,
+and verified as started. An ordinary restart leaves existing unchanged Channels,
+including stopped unchanged Channels, untouched. Drift, duplicate markers,
+same-name external Channels, and ownership conflicts are recorded as bounded
+no-mutation outcomes. Unrelated external Channels are never changed.
+
+Configure the bounded startup behavior in `.env`:
+
+```text
+OIE_BOOTSTRAP_MODE=create-missing
+OIE_BOOTSTRAP_TIMEOUT_SECONDS=120
+OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS=2
+```
+
+Set `OIE_BOOTSTRAP_MODE=off` and recreate `lab-app` to disable readiness checks
+and automatic creation. This is also the rollback switch; disabling bootstrap
+does not delete or undeploy Channels that were already created. Bootstrap
+timeout or failure never makes the lab-app HTTP service unhealthy. Inspect the
+Settings managed-Channel inventory and lifecycle audit history for bounded
+`startup-bootstrap` evidence, correct the reported OIE connectivity or ownership
+condition, and restart `lab-app` to make another bounded attempt.
+
+The supported container uses one Gunicorn worker. Multiple workers or replicas
+require leader election and are outside this bootstrap contract.
+
 For the full Healthcare Lab -> dcm4chee MWL -> AP -> C-STORE -> Healthcare Lab
 verification procedure, see
 [`docs/dcm4chee-production-e2e-verification.md`](../docs/dcm4chee-production-e2e-verification.md).

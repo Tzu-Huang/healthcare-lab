@@ -12,7 +12,7 @@ class OieApiTests(ApiCaseSupport):
         body = response.get_json()
         self.assertTrue(body["success"])
         item = body["item"]
-        self.assertEqual(item["managementApi"]["baseUrl"], "http://oie:8080")
+        self.assertEqual(item["managementApi"]["baseUrl"], "https://oie:8443")
         self.assertEqual(item["managementApi"]["username"], "admin")
         self.assertTrue(item["managementApi"]["passwordConfigured"])
         self.assertNotIn("password", item["managementApi"])

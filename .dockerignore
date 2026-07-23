@@ -17,6 +17,10 @@ __pycache__
 instance
 contexts
 docs
+!docs/
+docs/*
+!docs/Dashboard_to_OIE_to_AP.xml
+!docs/AP_RESULT_TO_LAB.xml
 openspec
 repo
 tests
