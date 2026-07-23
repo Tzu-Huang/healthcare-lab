@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Mapping, Protocol
 
 from backend.domain.integration_settings import (
     MEDPLUM_PROFILE_TYPE,
+    PROFILE_SECRET_FIELDS,
     SecretMutation,
     medplum_bootstrap_candidate,
     preserve_secret,
@@ -14,10 +15,15 @@ from backend.domain.integration_settings import (
     replace_secret,
     validate_profile,
 )
-from backend.repositories.integration_settings import IntegrationSettingsRepository
 from backend.services.oie_settings import OieSettingsService
 
 OIE_PROFILE_TYPE = "oie"
+
+
+class IntegrationSettingsRepositoryPort(Protocol):
+    def create_if_missing(self, profile, *, secrets, bootstrap_source, actor="startup-bootstrap") -> bool: ...
+    def get_private(self, profile_type: str) -> dict[str, Any]: ...
+    def replace(self, profile, *, secret_mutations, actor="local-operator") -> dict[str, Any]: ...
 
 
 class OieSettingsAdapter:
@@ -94,7 +100,7 @@ class MedplumEffectiveSettings:
 class IntegrationSettingsService:
     def __init__(
         self,
-        repository: IntegrationSettingsRepository,
+        repository: IntegrationSettingsRepositoryPort,
         *,
         oie_adapter: OieSettingsAdapter | None = None,
     ) -> None:
@@ -112,7 +118,17 @@ class IntegrationSettingsService:
     def get_public(self, profile_type: str) -> dict[str, Any]:
         if profile_type == OIE_PROFILE_TYPE and self._oie is not None:
             return self._oie.get_public()
-        return self._repository.get_public(profile_type)
+        private = self._repository.get_private(profile_type)
+        return {
+            "profileType": private["profileType"],
+            "profileName": private["profileName"],
+            "schemaVersion": private["schemaVersion"],
+            "fields": private["fields"],
+            "secrets": {
+                field: {"configured": bool(private["secrets"].get(field))}
+                for field in sorted(PROFILE_SECRET_FIELDS[profile_type])
+            },
+        }
 
     def get_effective(self, profile_type: str) -> Any:
         if profile_type == OIE_PROFILE_TYPE and self._oie is not None:
@@ -149,9 +165,10 @@ class IntegrationSettingsService:
         }
         for field, value in (secret_replacements or {}).items():
             mutations[field] = replace_secret(value)
-        return self._repository.replace(
+        self._repository.replace(
             profile, secret_mutations=mutations, actor=actor
         )
+        return self.get_public(profile_type)
 
     def remove_secret(
         self,
@@ -164,8 +181,9 @@ class IntegrationSettingsService:
             raise ValueError("OIE Management API password removal is not supported.")
         private = self._repository.get_private(profile_type)
         profile = validate_profile(profile_type, private["fields"])
-        return self._repository.replace(
+        self._repository.replace(
             profile,
             secret_mutations={field: remove_secret()},
             actor=actor,
         )
+        return self.get_public(profile_type)

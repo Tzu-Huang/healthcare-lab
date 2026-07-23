@@ -414,7 +414,12 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
             *lab_server_services(
                 app,
                 lab_operations,
-                operation_runner=lambda **values: run_lab_operation(**values),
+                operation_runner=lambda **values: run_lab_operation(
+                    **values,
+                    medplum_settings_provider=lambda: dependencies.integration_settings_service.get_effective(
+                        "medplum"
+                    ),
+                ),
                 health_checker=lambda repository, server_id: run_lab_server_health_check(repository, server_id),
             )
         )
@@ -424,7 +429,12 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
             *dashboard_services(
                 app,
                 lab_operations,
-                operation_runner=lambda **values: run_lab_operation(**values),
+                operation_runner=lambda **values: run_lab_operation(
+                    **values,
+                    medplum_settings_provider=lambda: dependencies.integration_settings_service.get_effective(
+                        "medplum"
+                    ),
+                ),
                 health_checker=lambda repository, server_id: run_lab_server_health_check(repository, server_id),
             )
         )

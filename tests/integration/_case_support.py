@@ -155,7 +155,11 @@ class ApiCaseSupport(DisposableAppCase):
     def set_medplum_base_url(self, base_url):
         settings = self.app.extensions["integration_settings_service"]
         fields = dict(settings.get_public("medplum")["fields"])
-        fields["baseUrl"] = base_url
+        if base_url:
+            fields["baseUrl"] = base_url
+            fields["enabled"] = True
+        else:
+            fields["enabled"] = False
         settings.replace("medplum", fields)
 
     def create_synced_fhir_patient(self):

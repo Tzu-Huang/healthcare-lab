@@ -15,6 +15,7 @@ from backend.domain.integration_settings import (
 from backend.repositories.database import SQLiteDatabase
 from backend.repositories.integration_settings import IntegrationSettingsRepository
 from backend.repositories.schema import APPLICATION_MIGRATIONS
+from backend.services.integration_settings import IntegrationSettingsService
 
 
 class IntegrationSettingsRepositoryTests(unittest.TestCase):
@@ -30,6 +31,7 @@ class IntegrationSettingsRepositoryTests(unittest.TestCase):
             self.database.lock,
             timestamp_factory=lambda: "2026-07-23T00:00:00+00:00",
         )
+        self.service = IntegrationSettingsService(self.repository)
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -44,7 +46,7 @@ class IntegrationSettingsRepositoryTests(unittest.TestCase):
     def test_create_and_public_private_round_trip(self):
         self.assertTrue(self.seed())
         self.assertFalse(self.seed("must-not-overwrite"))
-        public = self.repository.get_public("medplum")
+        public = self.service.get_public("medplum")
         private = self.repository.get_private("medplum")
         self.assertEqual({"configured": True}, public["secrets"]["clientSecret"])
         self.assertNotIn("initial-secret", json.dumps(public))
@@ -56,9 +58,10 @@ class IntegrationSettingsRepositoryTests(unittest.TestCase):
         fields = dict(self.repository.get_private("medplum")["fields"])
         fields["clientId"] = "operator-client"
         profile = validate_profile("medplum", fields)
-        preserved = self.repository.replace(
+        self.repository.replace(
             profile, secret_mutations={"clientSecret": preserve_secret()}
         )
+        preserved = self.service.get_public("medplum")
         self.assertTrue(preserved["secrets"]["clientSecret"]["configured"])
         self.assertEqual(
             "initial-secret",
@@ -71,9 +74,10 @@ class IntegrationSettingsRepositoryTests(unittest.TestCase):
             "replacement-canary",
             self.repository.get_private("medplum")["secrets"]["clientSecret"],
         )
-        removed = self.repository.replace(
+        self.repository.replace(
             profile, secret_mutations={"clientSecret": remove_secret()}
         )
+        removed = self.service.get_public("medplum")
         self.assertFalse(removed["secrets"]["clientSecret"]["configured"])
 
     def test_audits_are_allowlisted_and_value_free(self):
