@@ -61,6 +61,8 @@ def create_patients_blueprint(records: PatientRecordPort, fhir_sync: PatientFhir
             result = result_refresh.refresh(record_id)
         except KeyError:
             return error("Patient record was not found.", 404)
+        except SimulatorValidationError as exc:
+            return error(str(exc), 400)
         return jsonify(result)
 
     @blueprint.post("/api/dcm4chee/e2e-fixture")

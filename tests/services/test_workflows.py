@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from backend.domain.errors import LabOperationError
+from backend.domain.errors import LabOperationError, SimulatorValidationError
 from backend.domain.statuses import (
     FHIR_SYNC_STATUS_SYNCED,
     ORDER_STATUS_ACCEPTED,
@@ -21,8 +21,8 @@ from backend.services.lab_workflow import (
     LabSmokeService,
 )
 from backend.services.oie_workflow import OieTransportError, OieWorkflowService
-from backend.services.order_workflow import OrderWorkflowService
-from backend.services.patient_workflow import PatientWorkflowService
+from backend.services.order_workflow import OrderWorkflowService, sync_order_to_dcm4chee_mwl
+from backend.services.patient_workflow import PatientWorkflowService, sync_patient_to_dcm4chee
 
 
 class PatientRepository:
@@ -41,6 +41,19 @@ class PatientRepository:
 
     def get_patient_record(self, _record_id):
         return {"id": 1, "protocolVersion": "FHIR R4"}
+
+
+class Dcm4cheeDisabledWorkflowTests(unittest.TestCase):
+    def test_low_level_patient_and_order_sync_refuse_disabled_profile_without_transport(self):
+        store = Mock()
+        sender = Mock()
+        profile = {"enabled": False}
+        with self.assertRaisesRegex(SimulatorValidationError, "dcm4chee integration is disabled"):
+            sync_patient_to_dcm4chee(store, {"id": 1}, profile, sender=sender)
+        with self.assertRaisesRegex(SimulatorValidationError, "dcm4chee integration is disabled"):
+            sync_order_to_dcm4chee_mwl(store, {"id": 2}, profile, uid_root="1.2.3")
+        sender.assert_not_called()
+        store.assert_not_called()
 
 
 class OrderRepository:

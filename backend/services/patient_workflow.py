@@ -25,6 +25,11 @@ from backend.services.oie_workflow import parse_hl7_ack
 request_dcm4chee_qido = dcm4chee_client.request_dcm4chee_qido
 
 
+def require_dcm4chee_enabled(profile: Mapping[str, Any]) -> None:
+    if profile.get("enabled") is False:
+        raise SimulatorValidationError("dcm4chee integration is disabled.")
+
+
 class PatientLedgerPort(Protocol):
     def list_patient_records(self, protocol_version: str = "") -> list[dict[str, Any]]: ...
 
@@ -110,7 +115,9 @@ class DcmResultRefreshService:
         self._dcm_profile = dcm_profile
 
     def refresh(self, record_id: int) -> dict[str, Any]:
-        return self._result_refresh(record_id, self._dcm_profile(self._configuration))
+        profile = self._dcm_profile(self._configuration)
+        require_dcm4chee_enabled(profile)
+        return self._result_refresh(record_id, profile)
 
 
 class PatientRecordService:
@@ -130,6 +137,8 @@ class PatientRecordService:
         return self._repository.list_patient_records(protocol_version)
 
     def create(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if str(payload.get("protocolVersion") or "").strip() == "DICOM":
+            require_dcm4chee_enabled(self._dcm_profile(self._configuration))
         item = self._repository.create_patient_record(payload)
         if item["protocolVersion"] == "FHIR R4":
             record = self._fhir.create_patient_fhir_workflow_record(item)
@@ -140,7 +149,9 @@ class PatientRecordService:
                 self._fhir.mark_fhir_sync_failure(int(record["id"]), error_text="Medplum FHIR base URL is required.")
             return self._repository.get_patient_record(int(item["id"]))
         if item["protocolVersion"] == "DICOM":
-            self._dicom_patient_sync(item, self._dcm_profile(self._configuration))
+            profile = self._dcm_profile(self._configuration)
+            require_dcm4chee_enabled(profile)
+            self._dicom_patient_sync(item, profile)
             return self._repository.get_patient_record(int(item["id"]))
         return item
 
@@ -178,6 +189,7 @@ class DcmFixtureService:
 
     def create(self) -> dict[str, Any]:
         profile = self._dcm_profile(self._configuration)
+        require_dcm4chee_enabled(profile)
         return self._capability.create_dcm4chee_e2e_demo_fixture(
             profile, uid_root=str(profile["uidRoot"])
         )
@@ -241,6 +253,7 @@ def sync_patient_to_dcm4chee(
     timeout_seconds: float = 10,
     sender: Callable[..., str] = send_hl7_mllp_message,
 ) -> dict[str, Any]:
+    require_dcm4chee_enabled(profile)
     hl7 = profile.get("hl7") if isinstance(profile.get("hl7"), dict) else {}
     host = str(hl7.get("host") or "").strip()
     port = int(hl7.get("port") or 0)
@@ -336,6 +349,7 @@ def refresh_patient_dcm4chee_results(
     patient_record_id: int,
     profile: dict[str, Any],
 ) -> dict[str, Any]:
+    require_dcm4chee_enabled(profile)
     store.get_patient_record(patient_record_id)
     mappings = store.list_dcm4chee_mwl_mappings_for_patient(patient_record_id)
     refreshed: list[dict[str, Any]] = []
