@@ -398,6 +398,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         listener_status=app.extensions["oie_workflow_service"].listener_status,
         oie_diagnostics=app.extensions["oie_runtime_diagnostics_service"].diagnose,
         gdt_watcher_status=gdt_bridge_watcher.status,
+        gdt_activation_status=gdt_bridge_watcher.activation_status,
         gdt_diagnostics=lambda: gdt_readiness_diagnostics(dependencies.integration_settings_service),
     )
     app.register_blueprint(

@@ -100,6 +100,13 @@ class GdtBridgeInboundWatcherTest(unittest.TestCase):
 
             self.assertEqual("restart-required", outcome["state"])
             self.assertEqual("application-restart", outcome["activation"])
+            self.assertEqual(
+                {
+                    "state": "restart-required",
+                    "activation": "application-restart",
+                },
+                watcher.activation_status(),
+            )
             self.assertTrue(outcome["watcher"]["running"])
             self.assertEqual(["scan"], calls)
 
