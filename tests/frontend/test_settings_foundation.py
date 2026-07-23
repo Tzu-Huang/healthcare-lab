@@ -81,7 +81,9 @@ class SettingsFoundationTests(unittest.TestCase):
 
     def test_view_initialization_is_idempotent_and_uses_api_module(self):
         self.assertIn("export function initializeSettingsView(root)", self.view)
-        self.assertIn("initializeOieSettingsSection(root)", self.view)
+        self.assertIn("SETTINGS_MODULES.forEach", self.view)
+        registry = (ROOT / "frontend/static/js/settings/registry.js").read_text(encoding="utf-8")
+        self.assertIn("initialize: initializeOieSettingsSection", registry)
         self.assertIn("state.initialized", self.oie_view)
         self.assertNotIn("fetch(", self.view + self.oie_view)
 

@@ -1,7 +1,4 @@
-import {
-  initializeOieSettingsSection,
-  refreshSettings as refreshOieSettings,
-} from "../settings/oie.js";
+import { SETTINGS_MODULES } from "../settings/registry.js";
 import {
   initializeSettingsWorkspace,
   refreshSettingsWorkspace,
@@ -14,17 +11,17 @@ export {
 
 export async function refreshSettings() {
   const root = document.getElementById("settings-view");
-  const [oie] = await Promise.all([
-    refreshOieSettings(),
+  const results = await Promise.all([
+    ...SETTINGS_MODULES.map((module) => module.refresh(root)),
     refreshSettingsWorkspace(root),
   ]);
-  return oie;
+  return results[SETTINGS_MODULES.findIndex((module) => module.id === "oie")];
 }
 
 export function initializeSettingsView(root) {
   if (!root || root.dataset.moduleOwner === "settings") return;
   root.dataset.moduleOwner = "settings";
   initializeSettingsWorkspace(root);
-  initializeOieSettingsSection(root);
+  SETTINGS_MODULES.forEach((module) => module.initialize(root));
   refreshSettingsWorkspace(root);
 }

@@ -42,9 +42,21 @@ class SettingsWorkspaceTests(unittest.TestCase):
         self.assertIn("unavailable providers do not hide successful results", self.workspace)
         self.assertIn("initializeSettingsWorkspace(root)", self.view)
         self.assertIn("refreshSettingsWorkspace(root)", self.view)
-        self.assertIn("initializeOieSettingsSection(root)", self.view)
+        self.assertIn("SETTINGS_MODULES.forEach", self.view)
+        self.assertIn("module.initialize(root)", self.view)
+        self.assertIn("module.refresh(root)", self.view)
         self.assertNotIn("managementPayload", self.view)
         self.assertIn("managementPayload", self.oie)
+
+    def test_registry_contract_owns_integration_lifecycle_and_layers(self):
+        self.assertIn("export function defineSettingsModule", self.registry)
+        self.assertIn('id: "oie", label: "OIE", required: true', self.registry)
+        self.assertIn("initialize: initializeOieSettingsSection", self.registry)
+        self.assertIn("refresh: refreshOieSettings", self.registry)
+        for owner in ("view", "api", "state", "style"):
+            self.assertIn(f"{owner}:", self.registry)
+        self.assertIn("export function moduleById", self.registry)
+        self.assertNotIn("initializeOieSettingsSection(root)", self.view)
 
     def test_activation_advanced_and_responsive_contracts(self):
         for label in ("Applies immediately", "Restart required", "Apply / Redeploy required", "Container recreation required"):
