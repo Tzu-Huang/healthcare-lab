@@ -300,7 +300,7 @@ class ApplicationShellTests(ApiCaseSupport):
         self.assertEqual(
             {
                 "gdt-bridge": "disabled",
-                "dcm4chee": "disabled",
+                "dcm4chee": "ready",
                 "external-devices": "disabled",
             },
             optional,
