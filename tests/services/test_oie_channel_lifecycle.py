@@ -18,8 +18,10 @@ class FakeRepository:
     def __init__(self, mapped=True, fail_audit_after=None):
         self.mapping = {"logicalType": "hlab-orm-to-ap", "channelId": "c1" if mapped else "", "channelName": "HLAB_ORM_TO_AP", "templateVersion": "1", "lastKnownRevision": "7" if mapped else "", "destinationPort": 6671}
         self.audits, self.fail_audit_after, self.race_intent_on_bind = [], fail_audit_after, False
+        self.mapping_updates = []
     def get(self): return {"managedChannels": [dict(self.mapping)]}
     def compare_and_update_managed_channel_mapping(self, **kwargs):
+        self.mapping_updates.append(kwargs)
         self.mapping.update(channelId=kwargs["channel_id"], lastKnownRevision=kwargs["revision"]); self.audits.append(kwargs["audit_event"]); return self.mapping
     def compare_and_bind_recovered_managed_channel_mapping(self, **kwargs):
         if self.race_intent_on_bind: self.mapping["destinationPort"] = 6672
@@ -35,14 +37,19 @@ class FakeRepository:
 
 
 class FakeClient:
-    def __init__(self, channels=(), fail_delete=False, fail_deploy=False): self.channels, self.calls, self.fail_delete, self.fail_deploy, self.closed = list(channels), [], fail_delete, fail_deploy, False
+    def __init__(self, channels=(), fail_delete=False, fail_deploy=False, create_id="c1"):
+        self.channels, self.calls, self.fail_delete, self.fail_deploy, self.closed = list(channels), [], fail_delete, fail_deploy, False
+        self.create_id = create_id
     def close(self): self.closed = True
     def list_channels(self): return SimpleNamespace(values={"items": tuple(self.channels)})
     def get_channel(self, channel_id): self.calls.append(("get", channel_id)); return SimpleNamespace(values=next(v for v in self.channels if v["id"] == channel_id))
     def get_channel_complete(self, channel_id):
         self.calls.append(("get-complete", channel_id)); item = next(v for v in self.channels if v["id"] == channel_id)
         return SimpleNamespace(identifier=item["id"], name=item["name"], revision=item["revision"], payload=item["payload"], status=item["status"])
-    def create_channel(self, payload): self.calls.append(("create", payload)); self.channels.append(value())
+    def create_channel(self, payload):
+        self.calls.append(("create", payload))
+        self.channels.append(value(channel_id=self.create_id))
+        return SimpleNamespace(identifier=self.create_id)
     def update_channel(self, channel_id, payload, *, override=False): self.calls.append(("update", channel_id, payload, override)); self.channels[0] = value(revision=8, payload=payload)
     def deploy(self, channel_id):
         self.calls.append(("deploy", channel_id))
@@ -71,6 +78,19 @@ class LifecycleServiceTests(unittest.TestCase):
         self.assertEqual("success", result["outcome"]); self.assertEqual("c1", repository.mapping["channelId"])
         self.assertEqual("create", client.calls[0][0])
         self.assertEqual("preview-create", repository.audits[0]["operation"])
+
+    def test_create_replaces_only_the_missing_persisted_identity(self):
+        client, repository = FakeClient(create_id="replacement"), FakeRepository(mapped=True)
+        service = self.service(client, repository)
+
+        preview = service.preview("hlab-orm-to-ap", "create")
+        result = service.execute(
+            "hlab-orm-to-ap", "create", preview["previewToken"]
+        )
+
+        self.assertEqual("success", result["outcome"])
+        self.assertEqual("c1", repository.mapping_updates[-1]["expected_channel_id"])
+        self.assertEqual("7", repository.mapping_updates[-1]["expected_revision"])
 
     def test_bootstrap_actor_is_applied_to_preview_and_mutation_audits(self):
         client, repository = FakeClient(), FakeRepository(mapped=False)
