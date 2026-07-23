@@ -9,12 +9,13 @@ def item(logical_type, classification="missing", status=""):
 
 
 class FakeLifecycle:
-    def __init__(self, inventories, *, create_outcome="success", deploy_outcome="success", deploy_status="STARTED", audit_failure=False):
+    def __init__(self, inventories, *, create_outcome="success", deploy_outcome="success", deploy_status="STARTED", audit_failure=False, recover_error=None):
         self.inventories = list(inventories)
         self.create_outcome = create_outcome
         self.deploy_outcome = deploy_outcome
         self.deploy_status = deploy_status
         self.audit_failure = audit_failure
+        self.recover_error = recover_error
         self.calls = []
 
     def inspect(self):
@@ -38,6 +39,12 @@ class FakeLifecycle:
         self.calls.append(("audit", logical_type, classification, outcome, error_category))
         if self.audit_failure:
             raise RuntimeError("audit unavailable with secret details")
+
+    def recover_mapping(self, logical_type, *, actor):
+        self.calls.append(("recover", logical_type, actor))
+        if self.recover_error is not None:
+            raise self.recover_error
+        return {"outcome": "success", "status": "STOPPED"}
 
 
 class FakeTime:
@@ -85,6 +92,75 @@ class OieManagedChannelBootstrapTests(unittest.TestCase):
 
         self.assertEqual(["no-op", "success"], [value["outcome"] for value in result["channels"]])
         self.assertFalse(any(call[0] == "execute" and call[1] == "hlab-orm-to-ap" for call in lifecycle.calls))
+
+    def test_local_state_reset_rebinds_both_without_oie_mutation(self):
+        lifecycle = FakeLifecycle([
+            [item("hlab-orm-to-ap", "recoverable", "STOPPED"), item("hlab-oru-to-hlab", "recoverable", "STARTED")],
+            [item("hlab-orm-to-ap", "unchanged", "STOPPED"), item("hlab-oru-to-hlab", "recoverable", "STARTED")],
+            [item("hlab-orm-to-ap", "unchanged", "STOPPED"), item("hlab-oru-to-hlab", "unchanged", "STARTED")],
+        ])
+
+        result = self.bootstrap(lifecycle).run()
+
+        self.assertEqual(["success", "success"], [value["outcome"] for value in result["channels"]])
+        self.assertEqual(["STOPPED", "STOPPED"], [value["status"] for value in result["channels"]])
+        self.assertEqual(2, len([call for call in lifecycle.calls if call[0] == "recover"]))
+        self.assertFalse(any(call[0] == "execute" for call in lifecycle.calls))
+
+    def test_persistence_matrix_reset_both_creates_while_retained_both_is_noop(self):
+        retained = FakeLifecycle([[
+            item("hlab-orm-to-ap", "unchanged"), item("hlab-oru-to-hlab", "unchanged"),
+        ]])
+        reset = FakeLifecycle([[
+            item("hlab-orm-to-ap", "missing"), item("hlab-oru-to-hlab", "missing"),
+        ]])
+
+        retained_result = self.bootstrap(retained).run()
+        reset_result = self.bootstrap(reset).run()
+
+        self.assertEqual(["no-op", "no-op"], [value["outcome"] for value in retained_result["channels"]])
+        self.assertFalse(any(call[0] in {"recover", "execute"} for call in retained.calls))
+        self.assertEqual(4, len([call for call in reset.calls if call[0] == "execute"]))
+
+    def test_recovery_blocker_does_not_prevent_other_logical_type(self):
+        lifecycle = FakeLifecycle([
+            [item("hlab-orm-to-ap", "conflict"), item("hlab-oru-to-hlab", "recoverable")],
+            [item("hlab-orm-to-ap", "conflict"), item("hlab-oru-to-hlab", "unchanged")],
+        ])
+
+        result = self.bootstrap(lifecycle).run()
+
+        self.assertEqual(["blocked", "success"], [value["outcome"] for value in result["channels"]])
+        self.assertEqual(["hlab-oru-to-hlab"], [call[1] for call in lifecycle.calls if call[0] == "recover"])
+
+    def test_recovery_is_idempotent_on_next_restart(self):
+        first = FakeLifecycle([
+            [item("hlab-orm-to-ap", "recoverable"), item("hlab-oru-to-hlab", "unchanged")],
+            [item("hlab-orm-to-ap", "unchanged"), item("hlab-oru-to-hlab", "unchanged")],
+        ])
+        second = FakeLifecycle([[
+            item("hlab-orm-to-ap", "unchanged"), item("hlab-oru-to-hlab", "unchanged"),
+        ]])
+
+        self.bootstrap(first).run()
+        result = self.bootstrap(second).run()
+
+        self.assertEqual(["no-op", "no-op"], [value["outcome"] for value in result["channels"]])
+        self.assertFalse(any(call[0] in {"recover", "execute"} for call in second.calls))
+
+    def test_failed_recovery_records_only_safe_category(self):
+        failure = OieManagementError(OieErrorCategory.SERVER, "password=secret payload=<channel />")
+        lifecycle = FakeLifecycle([[
+            item("hlab-orm-to-ap", "recoverable"), item("hlab-oru-to-hlab", "unchanged"),
+        ]], recover_error=failure)
+
+        result = self.bootstrap(lifecycle).run()
+
+        self.assertEqual("failure", result["channels"][0]["outcome"])
+        self.assertEqual("server", result["channels"][0]["errorCategory"])
+        self.assertNotIn("secret", str(result))
+        audit = next(call for call in lifecycle.calls if call[0] == "audit" and call[1] == "hlab-orm-to-ap")
+        self.assertEqual(("recoverable", "failure", "server"), audit[2:])
 
     def test_delayed_readiness_retries_until_inventory_is_available(self):
         unavailable = OieManagementError(OieErrorCategory.CONNECTION, "secret upstream body")
