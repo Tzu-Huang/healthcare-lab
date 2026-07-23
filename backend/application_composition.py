@@ -153,6 +153,7 @@ def assemble_application_dependencies(
             (medplum or {}).get("baseUrl") or "http://medplum:8103/fhir/R4"
         )
     integration_settings_service.bootstrap_medplum(bootstrap_configuration)
+    integration_settings_service.bootstrap_gdt_bridge(bootstrap_configuration)
     oie_repository = OieRepository(
         database.connect,
         database.lock,

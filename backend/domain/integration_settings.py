@@ -25,6 +25,19 @@ MEDPLUM_FIELDS = frozenset(
     }
 )
 MEDPLUM_SECRET_FIELDS = frozenset({"clientSecret"})
+GDT_BRIDGE_PROFILE_TYPE = "gdt-bridge"
+GDT_BRIDGE_FIELDS = frozenset(
+    {
+        "enabled",
+        "applicationPath",
+        "receiverId",
+        "senderId",
+        "filenameProfile",
+        "importSuccessMode",
+        "pollSeconds",
+        "stableSeconds",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -188,11 +201,23 @@ def validate_medplum_profile(payload: Mapping[str, Any]) -> TypedProfile:
 
 
 PROFILE_VALIDATORS = {MEDPLUM_PROFILE_TYPE: validate_medplum_profile}
-PROFILE_FIELDS = {MEDPLUM_PROFILE_TYPE: MEDPLUM_FIELDS}
-PROFILE_SECRET_FIELDS = {MEDPLUM_PROFILE_TYPE: MEDPLUM_SECRET_FIELDS}
+PROFILE_FIELDS = {
+    MEDPLUM_PROFILE_TYPE: MEDPLUM_FIELDS,
+    GDT_BRIDGE_PROFILE_TYPE: GDT_BRIDGE_FIELDS,
+}
+PROFILE_SECRET_FIELDS = {
+    MEDPLUM_PROFILE_TYPE: MEDPLUM_SECRET_FIELDS,
+    GDT_BRIDGE_PROFILE_TYPE: frozenset(),
+}
 
 
 def validate_profile(profile_type: str, payload: Mapping[str, Any]) -> TypedProfile:
+    if profile_type == GDT_BRIDGE_PROFILE_TYPE:
+        # Lazy import keeps the feature profile dependent on the shared
+        # validation primitives without creating an import cycle.
+        from backend.domain.gdt_bridge_profile import validate_gdt_bridge_profile
+
+        return validate_gdt_bridge_profile(payload)
     try:
         validator = PROFILE_VALIDATORS[profile_type]
     except KeyError as exc:

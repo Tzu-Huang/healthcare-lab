@@ -24,7 +24,7 @@ line lists keys sharing the exact same owner, bootstrap, and activation policy.
 | `DCM4CHEE_PRIVATE_KEY_PATH` | secret | typed dcm4chee settings | seed missing profile once | next effective read |
 | `MEDPLUM_CLIENT_ID`, `MEDPLUM_SCOPE`, `MEDPLUM_TOKEN_URL`, `MEDPLUM_AUTH_GRACE_SECONDS`, `MEDPLUM_TIMEOUT_SECONDS`, `MEDPLUM_WEB_UI_URL` | runtime-persisted | typed Medplum settings | seed missing profile once | next effective read |
 | `OPENEMR_DB_HOST`, `OPENEMR_DB_NAME`, `OPENEMR_DB_PORT`, `OPENEMR_DB_USER`, `OPENEMR_GDT_PROCEDURE_CODES` | runtime-persisted | typed OpenEMR settings | seed missing profile once | next effective read |
-| `GDT_BRIDGE_FILENAME_PROFILE`, `GDT_BRIDGE_IMPORT_SUCCESS_MODE`, `GDT_BRIDGE_RECEIVER_ID`, `GDT_BRIDGE_SENDER_ID`, `GDT_BRIDGE_STABLE_SECONDS`, `GDT_BRIDGE_WATCH_POLL_SECONDS` | runtime-persisted | typed GDT settings | seed missing profile once | watcher restart |
+| `GDT_BRIDGE_FILENAME_PROFILE`, `GDT_BRIDGE_IMPORT_SUCCESS_MODE`, `GDT_BRIDGE_RECEIVER_ID`, `GDT_BRIDGE_SENDER_ID`, `GDT_BRIDGE_STABLE_SECONDS`, `GDT_BRIDGE_WATCH_POLL_SECONDS` | runtime-persisted | typed GDT settings | seed missing profile once | immediate serialized watcher reload or application restart |
 | `DCM4CHEE_AUTH_MODE`, `DCM4CHEE_CALLED_AE_TITLE`, `DCM4CHEE_CALLING_AE_TITLE`, `DCM4CHEE_CERTIFICATE_PATH`, `DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE`, `DCM4CHEE_DICOMWEB_BASE_URL`, `DCM4CHEE_DIMSE_HOST`, `DCM4CHEE_DIMSE_PORT`, `DCM4CHEE_DISPLAY_NAME`, `DCM4CHEE_ENVIRONMENT_NAME`, `DCM4CHEE_HL7_HOST`, `DCM4CHEE_HL7_PORT`, `DCM4CHEE_HL7_RECEIVING_APPLICATION`, `DCM4CHEE_HL7_RECEIVING_FACILITY`, `DCM4CHEE_HL7_SENDING_APPLICATION`, `DCM4CHEE_HL7_SENDING_FACILITY`, `DCM4CHEE_MWL_AE_TITLE`, `DCM4CHEE_PATIENT_ASSIGNING_AUTHORITY`, `DCM4CHEE_PROFILE_NAME`, `DCM4CHEE_QIDO_RS_URL`, `DCM4CHEE_STOW_RS_URL`, `DCM4CHEE_TLS_ENABLED`, `DCM4CHEE_TLS_VERIFY`, `DCM4CHEE_TOKEN_URL`, `DCM4CHEE_UID_ROOT`, `DCM4CHEE_USERNAME`, `DCM4CHEE_VIEWER_STUDY_URL_TEMPLATE`, `DCM4CHEE_WADO_RS_URL`, `DCM4CHEE_WEB_UI_URL` | runtime-persisted | typed dcm4chee settings | seed missing profile once | next effective read |
 | `HLAB_RESULT_LISTENER_HOST`, `HLAB_RESULT_LISTENER_PORT`, `OIE_MLLP_ORDER_HOST`, `OIE_MLLP_ORDER_PORT` | runtime-persisted | typed OIE settings | existing OIE profile | listener retry or app restart |
 | `OIE_BOOTSTRAP_MODE`, `OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS`, `OIE_BOOTSTRAP_TIMEOUT_SECONDS` | derived/default | lab-app startup policy | process environment/default | app restart |
@@ -37,6 +37,10 @@ Persisted values are authoritative after bootstrap. A process restart never
 merges changed environment values into an existing typed profile. Public APIs,
 logs, exceptions, diagnostics, and audits expose only whether a secret is
 configured; SQLite file permissions are the current at-rest protection.
+
+The GDT profile also owns its enabled state and application-visible path.
+Supported Docker deployments fix that application path at `/data/gdt-bridge`;
+the host bind mount remains the deployment-only `GDT_BRIDGE_HOST_PATH`.
 
 ## Typed settings extension contract
 
