@@ -347,3 +347,100 @@ Known limitations for the gate:
 - The live gate is environment-specific. Automated unit/integration tests and
   Compose health checks are supporting evidence, not substitutes for the
   end-to-end ledger.
+
+## ZAC-69 bootstrap convergence addendum
+
+This addendum extends the live gate for bootstrap status and restart
+convergence. It is a procedure and evidence contract only; no ZAC-69 scenario
+is accepted until its run-specific report is completed. Start from
+`docs/oie-bootstrap-convergence-evidence-template.md`.
+
+### Exclusive ownership and resolved targets
+
+Only one operator and one worktree may own the Compose project during this
+gate. Before any lifecycle action:
+
+1. Announce the maintenance window and record the operator, worktree,
+   repository revision, Compose project name, compose file, and intended
+   scenario.
+2. Confirm no other session, CI job, worktree, or operator is starting,
+   stopping, recreating, or inspecting the same mutable lab as part of another
+   test. A shared project, named volume, bind mount, port, or OIE instance
+   blocks the run until exclusive ownership is established.
+3. Resolve the effective Compose configuration and record the actual container
+   IDs, networks, host publications, named-volume names, mount types, and
+   absolute bind-mount sources. Record port ownership for host `5000`, `6600`,
+   `6661`, and AP `6671`; record that HLAB `6665` is internal unless explicitly
+   published.
+4. Inspect the OIE container mounts and map `/opt/connect/appdata` to exactly
+   one resolved named volume or absolute bind-mount target. Resolve the
+   Healthcare Lab local settings target separately. Never infer either target
+   from a default name, an unresolved environment variable, a wildcard, or a
+   different worktree.
+5. Stop with `BLOCKED` if a target is absent, broad, ambiguous, shared,
+   unexpected, or contains non-lab data. Record the blocker without attempting
+   cleanup.
+
+Container recreation is not ordinary bootstrap recovery. Use the explicit
+**Retry bootstrap** action after correcting a recoverable Management API
+readiness or connectivity problem. Ordinary recovery must preserve the
+container, OIE appdata, Channel identities, message history, and queues.
+Recreate a container only when applying an image, process-start environment,
+published-port, or mount change. Reset local settings or OIE appdata only for
+the named destructive reset scenarios below.
+
+### Bootstrap status observations
+
+For every observation, record the bootstrap run ID, configured mode, state,
+start/completion timestamps with offsets, attempt count, bounded safe error
+category, Retry eligibility, allowlisted recovery guidance, and each approved
+logical type's classification, outcome, and safe status. Record both
+`HLAB_ORM_TO_AP` and `HLAB_ORU_TO_HLAB`, including Channel ID and revision when
+available. Do not capture credentials, authorization headers, raw Channel
+configuration, message payloads, patient data, or free-form exception text.
+
+Settings refresh, bootstrap status GET, browser refresh, and Runtime
+Diagnostics are observation-only. They must not create, update, deploy,
+undeploy, or delete a Channel. Only startup bootstrap and the explicit Retry
+action may enter the guarded reconciliation workflow.
+
+### Scenario order and recovery boundaries
+
+Run each scenario with a fresh run token and retain before/after inventories:
+
+1. **Clean startup:** with the approved clean targets, start the stack and
+   verify one completed startup run creates and starts exactly the two approved
+   managed Channels.
+2. **Retained-volume restart:** restart with both state targets retained.
+   Verify a completed no-op result, stable Channel IDs/revisions, and no
+   duplicates or unnecessary writes.
+3. **One managed Channel missing:** remove only the selected managed Channel
+   through the guarded lifecycle UI, preserve the peer Channel baseline, then
+   invoke explicit Retry if startup is not being exercised. Verify only the
+   missing Channel is recreated and the peer remains unchanged.
+4. **Delayed readiness:** make Management API readiness unavailable using the
+   pre-approved, reversible test method. Observe bounded attempts, timing,
+   timeout category, guidance, and Retry eligibility. Restore readiness and use
+   **Retry bootstrap** once; verify convergence without recreating containers
+   or deleting volumes.
+5. **Local-settings-only reset:** reset only the exactly resolved Healthcare
+   Lab local settings target. Retain OIE appdata and prove the resulting status
+   and Channel identity behavior.
+6. **OIE-appdata-only reset:** quiesce the lab and reset only the exactly
+   resolved OIE appdata target. Retain Healthcare Lab local settings and verify
+   controlled creation of exactly two managed Channels.
+7. **Both reset:** in a new controlled window, reset both independently
+   resolved targets and verify clean convergence.
+
+The reset scenarios are destructive. Before cleanup, display and record each
+exact resolved target, its owning Compose project/service, mount destination,
+backup/recovery decision, and operator approval. Stop the affected services
+and ensure the database/appdata is quiesced. Remove only the recorded target;
+never use `docker compose down -v`, a wildcard, a project-wide volume prune,
+workspace/home directories, or a computed target that has not been checked
+against the recorded identity. Re-resolve mounts after recreation and confirm
+the new target belongs to the expected lab before continuing.
+
+If a scenario fails, preserve the status snapshot and inventories, mark it
+`FAIL` or `BLOCKED`, and do not erase evidence by broad cleanup. A later Retry
+or rerun is a separate observation and does not replace the failure.
