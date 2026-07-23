@@ -8,11 +8,13 @@ from backend.domain.errors import SimulatorValidationError, ValidationError
 from backend.domain.oie_management import OieManagementError
 from backend.services.oie_settings import OieSettingsService
 from backend.services.oie_channel_lifecycle import LifecycleGuardError
+from backend.services.oie_bootstrap_coordination import BootstrapCommandError
 from backend.services.oie_workflow import OieTransportError, OieWorkflowService
 
 
 def create_oie_blueprint(
-    settings: OieSettingsService, workflow: OieWorkflowService, lifecycle=None, diagnostics=None
+    settings: OieSettingsService, workflow: OieWorkflowService, lifecycle=None, diagnostics=None,
+    bootstrap=None,
 ) -> Blueprint:
     blueprint = Blueprint("oie", __name__)
 
@@ -96,6 +98,27 @@ def create_oie_blueprint(
         def oie_runtime_diagnostics():
             return jsonify({"success": True, "item": diagnostics.diagnose()})
 
+    if bootstrap is not None:
+        @blueprint.get("/api/oie/bootstrap/status")
+        def oie_bootstrap_status():
+            return jsonify({"success": True, "item": bootstrap.status()})
+
+        @blueprint.post("/api/oie/bootstrap/retry")
+        def retry_oie_bootstrap():
+            body = request.get_json(silent=True)
+            if body not in (None, {}):
+                return error("Bootstrap Retry accepts no mutation options.", 400)
+            try:
+                item = bootstrap.retry()
+            except BootstrapCommandError as exc:
+                return jsonify({
+                    "success": False,
+                    "errorCategory": exc.category,
+                    "error": exc.detail,
+                    "item": bootstrap.status(),
+                }), exc.status_code
+            return jsonify({"success": True, "item": item}), 202
+
     @blueprint.post("/api/oie/result-listener/start")
     def start_oie_result_listener():
         try:
@@ -135,7 +158,12 @@ def create_oie_blueprint(
                 return jsonify({"success": True, "items": lifecycle.inspect()})
             except Exception as exc:
                 category = getattr(getattr(exc, "category", None), "value", None) or getattr(exc, "category", "upstream")
-                return jsonify({"success": False, "errorCategory": category, "error": "Managed Channel inspection failed."}), 502
+                return jsonify({
+                    "success": False,
+                    "items": lifecycle.unavailable_inventory(category=category),
+                    "errorCategory": category,
+                    "error": "Managed Channel inspection failed.",
+                }), 502
 
         @blueprint.post("/api/oie/managed-channels/<logical_type>/previews/<operation>")
         def preview_managed_channel(logical_type: str, operation: str):

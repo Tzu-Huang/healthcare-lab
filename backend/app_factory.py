@@ -131,6 +131,7 @@ from backend.services.oie_settings import OieSettingsService, create_oie_managem
 from backend.services.oie_diagnostics import OieRuntimeDiagnosticService
 from backend.services.oie_channel_lifecycle import OieManagedChannelLifecycleService, PreviewTokenCodec
 from backend.services.oie_channel_bootstrap import OieManagedChannelBootstrap
+from backend.services.oie_bootstrap_coordination import OieBootstrapCoordinator
 from backend.application_composition import assemble_application_dependencies
 from backend.lab_composition import LabApplicationRepository, dashboard_services, lab_server_services
 from backend.services.lab_workflow import (
@@ -339,6 +340,12 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         timeout_seconds=app.config["OIE_BOOTSTRAP_TIMEOUT_SECONDS"],
         retry_interval_seconds=app.config["OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS"],
     )
+    app.extensions["oie_bootstrap_coordinator"] = OieBootstrapCoordinator(
+        app.extensions["oie_channel_bootstrap"],
+        dependencies.oie_bootstrap_status_repository,
+        mode=app.config["OIE_BOOTSTRAP_MODE"],
+        thread_factory=bootstrap_thread_factory or threading.Thread,
+    )
     app.extensions["oie_workflow_service"] = OieWorkflowService(
         dependencies.oie_repository,
         oie_coordination,
@@ -381,6 +388,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         listener_status=app.extensions["oie_workflow_service"].listener_status,
         port_contract=oie_port_contract,
         channel_id=managed_oru_channel_id,
+        bootstrap_status=app.extensions["oie_bootstrap_coordinator"].status,
     )
     app.register_blueprint(
         create_oie_blueprint(
@@ -388,18 +396,14 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
             app.extensions["oie_workflow_service"],
             app.extensions["oie_channel_lifecycle_service"],
             app.extensions["oie_runtime_diagnostics_service"],
+            app.extensions["oie_bootstrap_coordinator"],
         )
     )
     if activate_runtime:
         app.extensions["oie_workflow_service"].auto_start_listener()
         if app.config["OIE_BOOTSTRAP_MODE"] == "create-missing":
-            bootstrap_thread = (bootstrap_thread_factory or threading.Thread)(
-                target=app.extensions["oie_channel_bootstrap"].run,
-                name="oie-managed-channel-bootstrap",
-                daemon=True,
-            )
+            bootstrap_thread = app.extensions["oie_bootstrap_coordinator"].start_startup()
             app.extensions["oie_channel_bootstrap_thread"] = bootstrap_thread
-            bootstrap_thread.start()
     app.register_blueprint(
         create_lab_servers_blueprint(
             *lab_server_services(

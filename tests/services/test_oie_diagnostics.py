@@ -35,16 +35,41 @@ class FakeClient:
         return SimpleNamespace(values={"items": self.live_ports})
 
 
-def service(client, listener=None, ports=None):
+def service(client, listener=None, ports=None, bootstrap=None):
     return OieRuntimeDiagnosticService(
         lambda: client,
         lambda: listener or {"state": "running", "running": True},
         lambda: ports or {"valid": True, "conflicts": [], "expectedPorts": []},
         channel_id="oru-channel", clock=lambda: NOW,
+        bootstrap_status=(lambda: bootstrap) if bootstrap is not None else None,
     )
 
 
 class OieRuntimeDiagnosticTests(unittest.TestCase):
+    def test_bootstrap_probe_is_independent_and_read_only(self):
+        calls = []
+        status = {
+            "mode": "create-missing", "state": "completed", "outcome": "timeout",
+            "attempts": 3, "errorCategory": "connection", "retryEligible": True,
+            "channels": [],
+        }
+        report = OieRuntimeDiagnosticService(
+            lambda: FakeClient(),
+            lambda: {"state": "running", "running": True},
+            lambda: {"valid": True, "conflicts": [], "expectedPorts": []},
+            channel_id="oru-channel",
+            bootstrap_status=lambda: calls.append("status") or status,
+            clock=lambda: NOW,
+        ).diagnose()
+
+        bootstrap = next(item for item in report["probes"] if item["layer"] == "bootstrap")
+        self.assertEqual(("degraded", "connection"), (
+            bootstrap["state"], bootstrap["category"],
+        ))
+        self.assertEqual({"mode": "create-missing", "outcome": "timeout", "attempts": 3, "retryEligible": True},
+                         bootstrap["evidence"])
+        self.assertEqual(["status"], calls)
+
     def test_partial_probe_failure_preserves_other_layers_and_redacts_error(self):
         client = FakeClient(failure=OieManagementError(OieErrorCategory.CONNECTION, "MSH|^~\\&|PATIENT password-canary"))
         report = service(client).diagnose()

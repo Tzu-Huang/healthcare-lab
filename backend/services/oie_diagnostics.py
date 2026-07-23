@@ -24,6 +24,7 @@ GUIDANCE = {
     "managed-channel": "Apply or redeploy the managed ORU Channel in OIE.",
     "port-contract": "Correct the endpoint ownership; recreate containers only for published-port changes.",
     "delivery-state": "Inspect retained OIE messages and restore the destination before retrying delivery.",
+    "bootstrap": "Review bootstrap status and use Retry only when the reported outcome is eligible.",
 }
 
 
@@ -35,17 +36,20 @@ class OieRuntimeDiagnosticService:
         port_contract: Callable[[], Mapping[str, Any]],
         *,
         channel_id: str | Callable[[], str],
+        bootstrap_status: Callable[[], Mapping[str, Any]] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._management_client = management_client
         self._listener_status = listener_status
         self._port_contract = port_contract
         self._channel_id = channel_id
+        self._bootstrap_status = bootstrap_status
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def diagnose(self) -> dict[str, Any]:
         observed_at = self._timestamp()
         probes = [
+            *([self._probe("bootstrap", self._bootstrap)] if self._bootstrap_status is not None else []),
             self._probe("management-api", self._management),
             self._probe("hlab-listener", self._listener),
             self._probe("managed-channel", self._channel),
@@ -54,6 +58,40 @@ class OieRuntimeDiagnosticService:
         ]
         state = "healthy" if all(p["state"] == "healthy" for p in probes) else "degraded"
         return {"state": state, "observedAt": observed_at, "probes": probes}
+
+    def _bootstrap(self) -> dict[str, Any]:
+        status = self._bootstrap_status() if self._bootstrap_status is not None else {}
+        state = str(status.get("state") or "unavailable").lower()
+        outcome = str(status.get("outcome") or "")
+        category = str(status.get("errorCategory") or outcome or state)
+        if state == "running":
+            diagnostic_state, summary = "running", "OIE bootstrap is running."
+        elif state == "disabled":
+            diagnostic_state, summary = "unavailable", "OIE bootstrap is disabled."
+        elif state == "idle":
+            diagnostic_state, summary = "unavailable", "OIE bootstrap has not run."
+        elif state == "unavailable":
+            diagnostic_state, summary = "unavailable", "OIE bootstrap status is unavailable."
+        elif outcome in {"blocked"} or any(
+            item.get("outcome") == "blocked" for item in status.get("channels", [])
+            if isinstance(item, Mapping)
+        ):
+            diagnostic_state, summary = "blocked", "OIE bootstrap was safely blocked."
+        elif outcome in {"success", "no-op"}:
+            diagnostic_state, summary = "healthy", "OIE bootstrap converged."
+        else:
+            diagnostic_state, summary = "degraded", "OIE bootstrap requires attention."
+        return {
+            "state": diagnostic_state,
+            "category": category,
+            "summary": summary,
+            "evidence": {
+                "mode": str(status.get("mode") or ""),
+                "outcome": outcome,
+                "attempts": int(status.get("attempts") or 0),
+                "retryEligible": bool(status.get("retryEligible")),
+            },
+        }
 
     def _timestamp(self) -> str:
         value = self._clock()

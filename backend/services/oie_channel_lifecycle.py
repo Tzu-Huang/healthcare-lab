@@ -84,6 +84,44 @@ class OieManagedChannelLifecycleService:
             latest = self._latest_operations()
             return [self._project_with_config(item, latest.get(item.logical_type.value) if item.logical_type else None) for item in self._snapshots()]
 
+    def unavailable_inventory(self, *, category: str = "upstream"):
+        """Project canonical intent without opening an OIE client or mutating state."""
+        latest = self._latest_operations()
+        items = []
+        for kind in ManagedChannelType:
+            config = self._config(kind)
+            timeout_seconds = config.send_timeout_ms / 1000
+            item = {
+                "logicalType": kind.value,
+                "classification": "unavailable",
+                "name": config.display_name,
+                "channelName": config.display_name,
+                "channelId": "",
+                "revision": None,
+                "status": "",
+                "differences": [],
+                "blockingReasons": ["inventory-unavailable"],
+                "permittedActions": [],
+                "inventoryErrorCategory": str(category or "upstream")[:80],
+                "source": f"{config.listener.host}:{config.listener.port}",
+                "destination": f"{config.destination.host}:{config.destination.port}",
+                "route": f"OIE:{config.listener.port} -> {config.destination.host}:{config.destination.port}",
+                "editableFields": {
+                    "sourceHost": config.listener.host,
+                    "sourcePort": config.listener.port,
+                    "destinationHost": config.destination.host,
+                    "destinationPort": config.destination.port,
+                    "timeoutSeconds": int(timeout_seconds) if timeout_seconds.is_integer() else timeout_seconds,
+                    "queueEnabled": config.queue.enabled,
+                    "retryCount": config.queue.retry_count,
+                    "retryIntervalMs": config.queue.retry_interval_ms,
+                },
+            }
+            if kind.value in latest:
+                item["lastOperation"] = latest[kind.value]
+            items.append(item)
+        return items
+
     def record_bootstrap_outcome(self, logical_type: str, classification: str, outcome: str, *, error_category: str = ""):
         kind = ManagedChannelType(logical_type)
         event = {
