@@ -1,8 +1,8 @@
 ## 1. Configuration Ownership Contract
 
-- [ ] 1.1 Inventory every Medplum, OIE, GDT, dcm4chee, OpenEMR, AP-facing, Flask, and Compose configuration key with its current source and runtime consumers.
-- [ ] 1.2 Publish the ownership matrix classifying each key exactly once as deployment-only, runtime persisted, secret, or derived/default, including bootstrap and restart/activation behavior.
-- [ ] 1.3 Add contract tests that keep the matrix aligned with supported environment/Compose keys and reject duplicate or missing ownership classifications.
+- [x] 1.1 Inventory every Medplum, OIE, GDT, dcm4chee, OpenEMR, AP-facing, Flask, and Compose configuration key with its current source and runtime consumers.
+- [x] 1.2 Publish the ownership matrix classifying each key exactly once as deployment-only, runtime persisted, secret, or derived/default, including bootstrap and restart/activation behavior.
+- [x] 1.3 Add contract tests that keep the matrix aligned with supported environment/Compose keys and reject duplicate or missing ownership classifications.
 
 ## 2. Typed Settings Domain and Persistence
 
