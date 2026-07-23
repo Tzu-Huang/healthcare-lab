@@ -21,6 +21,13 @@ class ActivationImpact(str, Enum):
     CONTAINER_RECREATION = "container-recreation"
 
 
+class DiagnosticState(str, Enum):
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNAVAILABLE = "unavailable"
+    DISABLED = "disabled"
+
+
 _SUMMARIES = {
     ReadinessState.READY: "Configured and available.",
     ReadinessState.NEEDS_SETUP: "Setup is required.",
@@ -44,6 +51,11 @@ class ReadinessAssessment:
 
     state: ReadinessState
     activation_impact: ActivationImpact = ActivationImpact.IMMEDIATE
+
+
+@dataclass(frozen=True)
+class DiagnosticAssessment:
+    state: DiagnosticState
 
 
 class ReadinessProvider(Protocol):
@@ -79,3 +91,19 @@ def project_section(
         "action": _ACTIONS[assessment.state],
     }
 
+
+def project_diagnostic(
+    registration: ReadinessRegistration, assessment: DiagnosticAssessment
+) -> dict[str, Any]:
+    summaries = {
+        DiagnosticState.HEALTHY: "Bounded checks passed.",
+        DiagnosticState.DEGRADED: "A bounded check needs attention.",
+        DiagnosticState.UNAVAILABLE: "No bounded diagnostic is available yet.",
+        DiagnosticState.DISABLED: "Diagnostics are disabled with this optional integration.",
+    }
+    return {
+        "id": registration.integration_id,
+        "label": registration.label,
+        "state": assessment.state.value,
+        "summary": summaries[assessment.state],
+    }

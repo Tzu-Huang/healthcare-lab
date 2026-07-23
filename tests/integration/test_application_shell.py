@@ -290,6 +290,8 @@ class ApplicationShellTests(ApiCaseSupport):
             [item["id"] for item in sections],
         )
         self.assertNotIn("openemr", response.get_data(as_text=True).lower())
+        self.assertFalse(body["item"]["complete"])
+        self.assertEqual("oie", body["item"]["nextAction"]["sectionId"])
         optional = {
             item["id"]: item["state"]
             for item in sections
@@ -302,6 +304,32 @@ class ApplicationShellTests(ApiCaseSupport):
                 "external-devices": "disabled",
             },
             optional,
+        )
+
+        checks = self.client.post("/api/settings/readiness/checks").get_json()
+        states = {
+            item["id"]: item["state"] for item in checks["item"]["results"]
+        }
+        self.assertEqual("unavailable", states["medplum"])
+        self.assertEqual("disabled", states["gdt-bridge"])
+        self.assertEqual("unavailable", states["deployment"])
+
+    def test_fresh_settings_readiness_requires_operator_setup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fresh_app = create_app(
+                str(Path(directory) / "fresh.db"), activate_runtime=False
+            )
+            response = fresh_app.test_client().get("/api/settings/readiness")
+        body = response.get_json()["item"]
+        self.assertFalse(body["complete"])
+        self.assertEqual("medplum", body["nextAction"]["sectionId"])
+        self.assertEqual(
+            "needs-setup",
+            next(
+                item["state"]
+                for item in body["sections"]
+                if item["id"] == "medplum"
+            ),
         )
 
 

@@ -5,6 +5,8 @@ import unittest
 
 from backend.domain.settings_readiness import (
     ActivationImpact,
+    DiagnosticAssessment,
+    DiagnosticState,
     ReadinessAssessment,
     ReadinessRegistration,
     ReadinessState,
@@ -26,6 +28,11 @@ class _Provider:
 class _FailingProvider:
     def assess(self):
         raise RuntimeError("secret-canary patient-canary")
+
+
+class _CheckedProvider(_Provider):
+    def check(self):
+        return DiagnosticAssessment(DiagnosticState.HEALTHY)
 
 
 class SettingsReadinessServiceTests(unittest.TestCase):
@@ -93,3 +100,23 @@ class SettingsReadinessServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             SettingsReadinessRegistry((registration, registration))
 
+    def test_checks_distinguish_registered_unavailable_and_disabled(self):
+        service = SettingsReadinessService(
+            SettingsReadinessRegistry(
+                (
+                    ReadinessRegistration(
+                        "oie", "OIE", True, _CheckedProvider(ReadinessState.READY)
+                    ),
+                    ReadinessRegistration(
+                        "medplum", "Medplum", True, _Provider(ReadinessState.READY)
+                    ),
+                    ReadinessRegistration(
+                        "gdt", "GDT", False, _Provider(ReadinessState.DISABLED)
+                    ),
+                )
+            )
+        )
+        self.assertEqual(
+            ["healthy", "unavailable", "disabled"],
+            [item["state"] for item in service.run_checks()["results"]],
+        )
