@@ -1,8 +1,8 @@
 ## 1. Recovery Classification
 
-- [ ] 1.1 Extend managed Channel reconciliation with an explicit recoverable identity outcome and bounded evidence for an exact unique marker, logical type, template version, parseable owned payload, and empty local identity.
-- [ ] 1.2 Validate listener-route ownership against the complete live inventory and block duplicate markers, same-name external Channels, malformed payloads, identity contradictions, and known or ambiguous port claims.
-- [ ] 1.3 Add pure domain tests for successful recovery classification and every identity and route blocking case without weakening existing external/read-only behavior.
+- [x] 1.1 Extend managed Channel reconciliation with an explicit recoverable identity outcome and bounded evidence for an exact unique marker, logical type, template version, parseable owned payload, and empty local identity.
+- [x] 1.2 Validate listener-route ownership against the complete live inventory and block duplicate markers, same-name external Channels, malformed payloads, identity contradictions, and known or ambiguous port claims.
+- [x] 1.3 Add pure domain tests for successful recovery classification and every identity and route blocking case without weakening existing external/read-only behavior.
 
 ## 2. Atomic Mapping Recovery
 

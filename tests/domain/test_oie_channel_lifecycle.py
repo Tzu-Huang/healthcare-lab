@@ -38,6 +38,13 @@ class ReconcileManagedChannelTests(unittest.TestCase):
     def test_missing(self):
         self.assertEqual(ChannelClassification.MISSING, self.managed().classification)
 
+    def test_unique_valid_unmapped_marker_is_recoverable(self):
+        result = self.managed([live()], [])
+        self.assertEqual(ChannelClassification.RECOVERABLE, result.classification)
+        self.assertEqual("oie-1", result.channel_id)
+        self.assertEqual("STARTED", result.status)
+        self.assertTrue(result.identity.owned)
+
     def test_redeploy_is_an_explicit_single_channel_operation(self):
         self.assertEqual("redeploy", LifecycleOperation.REDEPLOY.value)
         with self.assertRaises(ValueError):
@@ -76,6 +83,26 @@ class ReconcileManagedChannelTests(unittest.TestCase):
         result = self.managed([live("one"), live("two")], [mapping("one")])
         self.assertEqual(ChannelClassification.CONFLICT, result.classification)
         self.assertTrue(result.identity.duplicate_marker)
+
+    def test_unmapped_marker_with_wrong_logical_route_conflicts(self):
+        candidate = live(payload=compile_orm_to_ap("ap.internal", listener_port=6601))
+        result = self.managed([candidate])
+        self.assertEqual(ChannelClassification.CONFLICT, result.classification)
+        self.assertIn("managed-route-identity-mismatch", result.blocking_reasons)
+
+    def test_external_listener_port_owner_blocks_recovery(self):
+        root = ET.fromstring(compile_orm_to_ap("ap.internal"))
+        root.find("description").text = "Operator owned"
+        external = live("external", ET.tostring(root, encoding="unicode"), "EXTERNAL")
+        result = self.managed([live(), external])
+        self.assertEqual(ChannelClassification.CONFLICT, result.classification)
+        self.assertIn("listener-route-owned-by-another-channel", result.blocking_reasons)
+
+    def test_malformed_external_inventory_blocks_ambiguous_recovery(self):
+        malformed = LiveChannel("external", "OTHER", 1, "<channel>")
+        result = self.managed([live(), malformed])
+        self.assertEqual(ChannelClassification.CONFLICT, result.classification)
+        self.assertIn("ambiguous-route-ownership", result.blocking_reasons)
 
     def test_malformed_managed_payload_conflicts(self):
         malformed = '<channel><name>HLAB_ORM_TO_AP</name><description>Managed by Healthcare Lab; logical_type=hlab-orm-to-ap; template_version=1</description></channel>'
