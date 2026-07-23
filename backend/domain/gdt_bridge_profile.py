@@ -32,7 +32,7 @@ GDT_BRIDGE_FIELDS = frozenset(
 )
 GDT_BRIDGE_SECRET_FIELDS = frozenset()
 GDT_BRIDGE_DEFAULT_FIELDS: dict[str, Any] = {
-    "enabled": True,
+    "enabled": False,
     "applicationPath": GDT_BRIDGE_APPLICATION_PATH,
     "receiverId": "",
     "senderId": "",
@@ -186,7 +186,7 @@ def gdt_bridge_bootstrap_candidate(configuration: Mapping[str, Any]) -> TypedPro
     """Build the one-time persisted candidate from legacy runtime configuration."""
     return validate_gdt_bridge_profile(
         {
-            "enabled": configuration.get("GDT_BRIDGE_ENABLED", True),
+            "enabled": configuration.get("GDT_BRIDGE_ENABLED", False),
             "applicationPath": configuration.get(
                 "GDT_BRIDGE_PATH", GDT_BRIDGE_APPLICATION_PATH
             ),

@@ -32,16 +32,6 @@ class GdtBridgeProfileRepository:
     def get_private(self) -> dict[str, Any]:
         return self._typed_profiles.get_private(GDT_BRIDGE_PROFILE_TYPE)
 
-    def get_public(self) -> dict[str, Any]:
-        private = self.get_private()
-        return {
-            "profileType": private["profileType"],
-            "profileName": private["profileName"],
-            "schemaVersion": private["schemaVersion"],
-            "fields": private["fields"],
-            "secrets": {},
-        }
-
     def replace(
         self, fields: Mapping[str, Any], *, actor: str = "local-operator"
     ) -> dict[str, Any]:

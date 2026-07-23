@@ -29,6 +29,6 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Run focused GDT profile, filesystem, watcher, API, and Settings module tests and record passing evidence.
-- [ ] 5.2 Run the existing GDT order/result and Settings regression suites and resolve compatibility failures.
-- [ ] 5.3 Validate the OpenSpec change strictly and confirm diagnostics, errors, logs, and readiness expose no GDT contents or PHI-bearing filenames.
+- [x] 5.1 Run focused GDT profile, filesystem, watcher, API, and Settings module tests and record passing evidence.
+- [x] 5.2 Run the existing GDT order/result and Settings regression suites and resolve compatibility failures.
+- [x] 5.3 Validate the OpenSpec change strictly and confirm diagnostics, errors, logs, and readiness expose no GDT contents or PHI-bearing filenames.
