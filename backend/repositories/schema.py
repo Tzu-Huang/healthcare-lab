@@ -204,6 +204,36 @@ CREATE TABLE IF NOT EXISTS oie_settings_mutation_audits (
     created_at TEXT NOT NULL,
     FOREIGN KEY(profile_id) REFERENCES oie_settings_profiles(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS integration_settings_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_type TEXT NOT NULL UNIQUE,
+    profile_name TEXT NOT NULL,
+    schema_version INTEGER NOT NULL CHECK(schema_version > 0),
+    public_payload_json TEXT NOT NULL,
+    bootstrap_source TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS integration_settings_secrets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL,
+    field_name TEXT NOT NULL,
+    secret_value TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(profile_id) REFERENCES integration_settings_profiles(id) ON DELETE CASCADE,
+    UNIQUE(profile_id, field_name)
+);
+CREATE TABLE IF NOT EXISTS integration_settings_mutation_audits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL,
+    actor TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    changed_fields_json TEXT NOT NULL DEFAULT '[]',
+    outcome TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(profile_id) REFERENCES integration_settings_profiles(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS local_gdt_order_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     local_gdt_order_number TEXT NOT NULL UNIQUE,
@@ -522,6 +552,8 @@ CREATE INDEX IF NOT EXISTS idx_oie_lifecycle_audit_profile_created
 ON oie_managed_channel_lifecycle_audits(profile_id, created_at, id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_oie_lifecycle_audit_operation
 ON oie_managed_channel_lifecycle_audits(profile_id, operation_id);
+CREATE INDEX IF NOT EXISTS idx_integration_settings_audit_profile_created
+ON integration_settings_mutation_audits(profile_id, created_at, id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fhir_record_identifier
 ON local_fhir_workflow_records(resource_type, identifier_system, identifier_value);
 CREATE INDEX IF NOT EXISTS idx_fhir_record_source
@@ -709,4 +741,5 @@ APPLICATION_MIGRATIONS = (
     Migration(5, "add-oie-managed-channel-desired-config", ensure_application_schema),
     Migration(6, "add-order-scheduled-time", ensure_application_schema),
     Migration(7, "enforce-normalized-patient-mrn-uniqueness", enforce_normalized_patient_mrn_uniqueness),
+    Migration(8, "add-typed-integration-settings", ensure_application_schema),
 )

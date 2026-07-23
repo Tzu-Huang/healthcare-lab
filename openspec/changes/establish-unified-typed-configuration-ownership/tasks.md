@@ -6,10 +6,10 @@
 
 ## 2. Typed Settings Domain and Persistence
 
-- [ ] 2.1 Add closed integration profile registrations, typed public/effective projections, explicit preserve/replace/remove secret commands, and stable value-free validation error types.
-- [ ] 2.2 Add ordered SQLite migration(s) for typed profile identity/version, separated secret storage, bootstrap provenance, and allowlisted mutation audits without creating a generic key-value mutation interface.
-- [ ] 2.3 Implement repository transactions that validate complete typed candidates and atomically persist profile fields, secret changes, provenance, and audit records.
-- [ ] 2.4 Add repository tests for valid round trips, unknown profile/field rejection, atomic validation failure, secret preserve/replace/remove, audit rollback, and prohibited-value canaries.
+- [x] 2.1 Add closed integration profile registrations, typed public/effective projections, explicit preserve/replace/remove secret commands, and stable value-free validation error types.
+- [x] 2.2 Add ordered SQLite migration(s) for typed profile identity/version, separated secret storage, bootstrap provenance, and allowlisted mutation audits without creating a generic key-value mutation interface.
+- [x] 2.3 Implement repository transactions that validate complete typed candidates and atomically persist profile fields, secret changes, provenance, and audit records.
+- [x] 2.4 Add repository tests for valid round trips, unknown profile/field rejection, atomic validation failure, secret preserve/replace/remove, audit rollback, and prohibited-value canaries.
 
 ## 3. Bootstrap and Effective Configuration
 
