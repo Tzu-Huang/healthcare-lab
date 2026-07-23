@@ -22,6 +22,39 @@ from backend.domain.errors import SimulatorValidationError
 from backend.services.oie_settings import OieSettingsService
 
 OIE_PROFILE_TYPE = "oie"
+OIE_PUBLIC_FIELDS = frozenset(
+    {
+        "profileName",
+        "managementApi",
+        "resultListener",
+        "managedChannels",
+        "createdAt",
+        "updatedAt",
+    }
+)
+OIE_MANAGEMENT_FIELDS = frozenset(
+    {"baseUrl", "username", "passwordConfigured", "tlsVerify", "timeoutSeconds"}
+)
+OIE_RESULT_LISTENER_FIELDS = frozenset(
+    {"host", "port", "mllpFraming", "autoStart"}
+)
+OIE_MANAGED_CHANNEL_FIELDS = frozenset(
+    {
+        "logicalType",
+        "channelId",
+        "channelName",
+        "templateVersion",
+        "lastKnownRevision",
+        "sourceHost",
+        "sourcePort",
+        "destinationHost",
+        "destinationPort",
+        "timeoutSeconds",
+        "queueEnabled",
+        "retryCount",
+        "retryIntervalMs",
+    }
+)
 
 
 class IntegrationSettingsRepositoryPort(Protocol):
@@ -69,12 +102,14 @@ class OieSettingsAdapter:
         *,
         secret_replacements: Mapping[str, Any],
     ) -> dict[str, Any]:
+        field_issues = _unknown_oie_field_issues(fields)
         unknown_secrets = sorted(
             set(secret_replacements) - {"managementApi.password"}
         )
-        if unknown_secrets:
+        if field_issues or unknown_secrets:
             raise TypedSettingsValidationError(
-                [
+                field_issues
+                + [
                     SettingsValidationIssue(
                         f"secrets.{field}",
                         "unknown_field",
@@ -110,6 +145,41 @@ class OieSettingsAdapter:
             )
         self._service.remove_management_api_password()
         return self.get_public()
+
+
+def _unknown_oie_field_issues(
+    fields: Mapping[str, Any],
+) -> list[SettingsValidationIssue]:
+    paths = [str(field) for field in set(fields) - OIE_PUBLIC_FIELDS]
+    management = fields.get("managementApi")
+    if isinstance(management, Mapping):
+        paths.extend(
+            f"managementApi.{field}"
+            for field in set(management) - OIE_MANAGEMENT_FIELDS
+        )
+    listener = fields.get("resultListener")
+    if isinstance(listener, Mapping):
+        paths.extend(
+            f"resultListener.{field}"
+            for field in set(listener) - OIE_RESULT_LISTENER_FIELDS
+        )
+    channels = fields.get("managedChannels")
+    if isinstance(channels, list):
+        for index, channel in enumerate(channels):
+            if not isinstance(channel, Mapping):
+                continue
+            paths.extend(
+                f"managedChannels[{index}].{field}"
+                for field in set(channel) - OIE_MANAGED_CHANNEL_FIELDS
+            )
+    return [
+        SettingsValidationIssue(
+            path,
+            "unknown_field",
+            "The field is not supported.",
+        )
+        for path in sorted(paths)
+    ]
 
 
 def _typed_oie_validation_error(message: str) -> TypedSettingsValidationError:
