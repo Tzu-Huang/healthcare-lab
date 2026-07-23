@@ -29,6 +29,6 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Run focused typed-settings, dcm4chee client/workflow, diagnostics, readiness, API, and frontend tests and record evidence.
-- [ ] 5.2 Run existing Patient, Order, MWL, result reconciliation, Settings, and configuration-architecture regression suites.
-- [ ] 5.3 Validate the OpenSpec change strictly and confirm APIs, diagnostics, readiness, logs, and errors expose no secrets, private-key material, raw upstream payloads, or PHI.
+- [x] 5.1 Run focused typed-settings, dcm4chee client/workflow, diagnostics, readiness, API, and frontend tests and record evidence.
+- [x] 5.2 Run existing Patient, Order, MWL, result reconciliation, Settings, and configuration-architecture regression suites.
+- [x] 5.3 Validate the OpenSpec change strictly and confirm APIs, diagnostics, readiness, logs, and errors expose no secrets, private-key material, raw upstream payloads, or PHI.
