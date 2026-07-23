@@ -9,11 +9,12 @@ def item(logical_type, classification="missing", status=""):
 
 
 class FakeLifecycle:
-    def __init__(self, inventories, *, create_outcome="success", deploy_outcome="success", deploy_status="STARTED"):
+    def __init__(self, inventories, *, create_outcome="success", deploy_outcome="success", deploy_status="STARTED", audit_failure=False):
         self.inventories = list(inventories)
         self.create_outcome = create_outcome
         self.deploy_outcome = deploy_outcome
         self.deploy_status = deploy_status
+        self.audit_failure = audit_failure
         self.calls = []
 
     def inspect(self):
@@ -32,6 +33,11 @@ class FakeLifecycle:
         if operation == "create":
             return {"outcome": self.create_outcome, "steps": []}
         return {"outcome": self.deploy_outcome, "status": self.deploy_status, "steps": []}
+
+    def record_bootstrap_outcome(self, logical_type, classification, outcome, *, error_category=""):
+        self.calls.append(("audit", logical_type, classification, outcome, error_category))
+        if self.audit_failure:
+            raise RuntimeError("audit unavailable with secret details")
 
 
 class FakeTime:
@@ -102,8 +108,10 @@ class OieManagedChannelBootstrapTests(unittest.TestCase):
 
         self.assertEqual("timeout", result["outcome"])
         self.assertEqual("authentication", result["errorCategory"])
+        self.assertEqual(2, len([call for call in lifecycle.calls if call[0] == "audit"]))
+        self.assertTrue(all(call[3] == "timeout" for call in lifecycle.calls if call[0] == "audit"))
         self.assertNotIn("secret", str(result))
-        self.assertFalse(any(call[0] != "inspect" for call in lifecycle.calls))
+        self.assertFalse(any(call[0] in {"preview", "execute"} for call in lifecycle.calls))
 
     def test_unsupported_version_is_retried_and_reported_safely(self):
         unsupported = OieManagementError(
@@ -126,7 +134,21 @@ class OieManagedChannelBootstrapTests(unittest.TestCase):
         result = self.bootstrap(lifecycle).run()
 
         self.assertEqual(["blocked", "blocked"], [value["outcome"] for value in result["channels"]])
-        self.assertEqual([("inspect",)], lifecycle.calls)
+        self.assertEqual(2, len([call for call in lifecycle.calls if call[0] == "audit"]))
+        self.assertFalse(any(call[0] in {"preview", "execute"} for call in lifecycle.calls))
+
+    def test_restart_no_ops_are_persisted_and_audit_failure_is_visible(self):
+        inventory = [[item("hlab-orm-to-ap", "unchanged"), item("hlab-oru-to-hlab", "unchanged")]]
+        lifecycle = FakeLifecycle(inventory)
+
+        result = self.bootstrap(lifecycle).run()
+
+        self.assertEqual(["no-op", "no-op"], [value["outcome"] for value in result["channels"]])
+        self.assertEqual(2, len([call for call in lifecycle.calls if call[0] == "audit"]))
+
+        failed = self.bootstrap(FakeLifecycle(inventory, audit_failure=True)).run()
+        self.assertEqual("partial-failure", failed["outcome"])
+        self.assertEqual(["audit-unavailable", "audit-unavailable"], [value["errorCategory"] for value in failed["channels"]])
 
     def test_create_or_deploy_failure_stops_replay_for_that_channel(self):
         for create_outcome, deploy_outcome, expected_calls in (
