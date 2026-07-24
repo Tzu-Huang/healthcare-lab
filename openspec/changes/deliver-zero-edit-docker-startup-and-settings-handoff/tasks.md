@@ -1,16 +1,16 @@
 ## 1. Zero-Edit Compose Contract
 
-- [ ] 1.1 Add contract tests that render the supported Compose file with a deliberately absent repository-root `.env` and assert pinned images, local ports, volumes, networks, and safe defaults.
-- [ ] 1.2 Remove the mandatory `lab-app` env-file injection and normalize Compose interpolation so direct repository-root startup succeeds without manual files.
-- [ ] 1.3 Add bounded override fixtures proving documented image, host-port, bind-mount, service credential, and security-hardening values still interpolate correctly.
-- [ ] 1.4 Add recreate-persistence coverage proving the instance database and GDT bridge content survive compatible `lab-app` replacement.
+- [x] 1.1 Add contract tests that render the supported Compose file with a deliberately absent repository-root `.env` and assert pinned images, local ports, volumes, networks, and safe defaults.
+- [x] 1.2 Remove the mandatory `lab-app` env-file injection and normalize Compose interpolation so direct repository-root startup succeeds without manual files.
+- [x] 1.3 Add bounded override fixtures proving documented image, host-port, bind-mount, service credential, and security-hardening values still interpolate correctly.
+- [x] 1.4 Add recreate-persistence coverage proving the instance database and GDT bridge content survive compatible `lab-app` replacement.
 
 ## 2. Supported Wrapper and Directory Provisioning
 
-- [ ] 2.1 Add wrapper contract tests using a fake Docker command boundary for every supported action with and without a repository-root `.env`.
-- [ ] 2.2 Make `deploy/lab.ps1` use absolute Compose inputs, conditionally pass only an existing `.env`, and report bounded failures without printing file contents or values.
-- [ ] 2.3 Implement safe provisioning for the default repository-local instance/GDT directory contract before start and applicable restart actions.
-- [ ] 2.4 Define and test exact-path safety behavior for an advanced GDT bind override, rejecting empty or broad targets without deletion, movement, or YAML edits.
+- [x] 2.1 Add wrapper contract tests using a fake Docker command boundary for every supported action with and without a repository-root `.env`.
+- [x] 2.2 Make `deploy/lab.ps1` use absolute Compose inputs, conditionally pass only an existing `.env`, and report bounded failures without printing file contents or values.
+- [x] 2.3 Implement safe provisioning for the default repository-local instance/GDT directory contract before start and applicable restart actions.
+- [x] 2.4 Define and test exact-path safety behavior for an advanced GDT bind override, rejecting empty or broad targets without deletion, movement, or YAML edits.
 
 ## 3. Configuration Migration and Ownership
 
