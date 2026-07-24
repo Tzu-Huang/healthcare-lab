@@ -105,6 +105,11 @@ function Resolve-GdtBridgeHostPath {
 function Initialize-LabDirectories {
     $GdtBridgePath = Resolve-GdtBridgeHostPath
     New-Item -ItemType Directory -Path $GdtBridgePath -Force | Out-Null
+    [Environment]::SetEnvironmentVariable(
+        "GDT_BRIDGE_HOST_PATH",
+        $GdtBridgePath,
+        [EnvironmentVariableTarget]::Process
+    )
 }
 
 function Invoke-DockerCompose {

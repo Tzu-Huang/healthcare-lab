@@ -113,7 +113,9 @@ services:
       - "5000"
     volumes:
       - lab-app-instance:/app/instance
-      - ${GDT_BRIDGE_HOST_PATH:-../instance/gdt-bridge}:/data/gdt-bridge
+      - type: bind
+        source: ${GDT_BRIDGE_HOST_PATH:-../instance/gdt-bridge}
+        target: /data/gdt-bridge
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - lab

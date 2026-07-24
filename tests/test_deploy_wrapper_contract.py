@@ -28,9 +28,11 @@ class DeployWrapperContractTests(unittest.TestCase):
         self.bin = self.root / "fake-bin"
         self.bin.mkdir()
         self.invocations = self.root / "docker-arguments.txt"
+        self.docker_environment = self.root / "docker-environment.txt"
         (self.bin / "docker.cmd").write_text(
             "@echo off\r\n"
             "echo %*>>\"%FAKE_DOCKER_INVOCATIONS%\"\r\n"
+            "echo %GDT_BRIDGE_HOST_PATH%>>\"%FAKE_DOCKER_ENVIRONMENT%\"\r\n"
             "exit /b 0\r\n",
             encoding="utf-8",
         )
@@ -39,6 +41,7 @@ class DeployWrapperContractTests(unittest.TestCase):
         env = os.environ.copy()
         env["PATH"] = f"{self.bin}{os.pathsep}{env['PATH']}"
         env["FAKE_DOCKER_INVOCATIONS"] = str(self.invocations)
+        env["FAKE_DOCKER_ENVIRONMENT"] = str(self.docker_environment)
         env.pop("GDT_BRIDGE_HOST_PATH", None)
         if extra_env:
             env.update(extra_env)
@@ -60,6 +63,9 @@ class DeployWrapperContractTests(unittest.TestCase):
 
     def recorded_arguments(self):
         return self.invocations.read_text(encoding="utf-8").splitlines()
+
+    def recorded_gdt_paths(self):
+        return self.docker_environment.read_text(encoding="utf-8").splitlines()
 
     def test_supported_actions_have_deterministic_absolute_compose_arguments(self):
         cases = {
@@ -137,6 +143,10 @@ class DeployWrapperContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue((self.root / "exchange" / "clinic-a").is_dir())
         self.assertFalse((self.root / "instance").exists())
+        self.assertEqual(
+            str((self.root / "exchange" / "clinic-a").resolve()),
+            self.recorded_gdt_paths()[0],
+        )
 
     def test_environment_override_takes_precedence_over_env_file(self):
         (self.root / ".env").write_text(
