@@ -29,6 +29,8 @@ class ApplicationCompositionTests(unittest.TestCase):
                 "database",
                 "integration_settings_repository",
                 "integration_settings_service",
+                "ap_device_profile_repository",
+                "ap_device_profile_service",
                 "oie_settings_repository",
                 "oie_settings_service",
                 "lab_repository",

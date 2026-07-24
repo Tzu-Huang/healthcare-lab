@@ -36,6 +36,7 @@ from backend.repositories.fhir_ledger import FhirLedgerRepository
 from backend.repositories.gdt_workflow import GdtWorkflowRepository
 from backend.repositories.identifiers import PatientIdentifierRepository
 from backend.repositories.integration_settings import IntegrationSettingsRepository
+from backend.repositories.ap_device_profiles import APDeviceProfileRepository
 from backend.repositories.lab import LabRepository
 from backend.repositories.maintenance import seed_lab_servers, seed_oie_settings_profile, seed_patient_mrn_sequence
 from backend.repositories.oie import OieRepository
@@ -47,6 +48,7 @@ from backend.services.dcm4chee_coordination import Dcm4cheeMwlAttemptCoordinator
 from backend.services.fhir_coordination import FhirOrderCoordinator, PatientFhirCoordinator
 from backend.services.gdt_coordination import GdtWorkflowCoordinator, build_gdt_order_request
 from backend.services.integration_settings import IntegrationSettingsService
+from backend.services.ap_device_profiles import APDeviceProfileService
 from backend.services.integration_settings import OieSettingsAdapter
 from backend.services.oie_settings import OieSettingsService
 from backend.services.protocol_compatibility import project_fhir_workflow_record
@@ -63,6 +65,8 @@ class ApplicationDependencies:
     database: SQLiteDatabase
     integration_settings_repository: IntegrationSettingsRepository
     integration_settings_service: IntegrationSettingsService
+    ap_device_profile_repository: APDeviceProfileRepository
+    ap_device_profile_service: APDeviceProfileService
     oie_settings_repository: OieSettingsRepository
     oie_settings_service: OieSettingsService
     lab_repository: LabRepository
@@ -155,6 +159,19 @@ def assemble_application_dependencies(
     integration_settings_service.bootstrap_medplum(bootstrap_configuration)
     integration_settings_service.bootstrap_gdt_bridge(bootstrap_configuration)
     integration_settings_service.bootstrap_dcm4chee(bootstrap_configuration)
+    ap_device_profile_repository = APDeviceProfileRepository(
+        database.connect,
+        database.lock,
+        timestamp_factory=now_iso,
+    )
+    ap_device_profile_service = APDeviceProfileService(
+        ap_device_profile_repository,
+        environment=str(bootstrap_configuration.get("AP_PROFILE_ENVIRONMENT", "lab")),
+    )
+    ap_device_profile_service.bootstrap(bootstrap_configuration)
+    integration_settings_service.set_ap_protocol_provider(
+        ap_device_profile_service.protocol_projection
+    )
     oie_repository = OieRepository(
         database.connect,
         database.lock,
@@ -286,6 +303,8 @@ def assemble_application_dependencies(
         database=database,
         integration_settings_repository=integration_settings_repository,
         integration_settings_service=integration_settings_service,
+        ap_device_profile_repository=ap_device_profile_repository,
+        ap_device_profile_service=ap_device_profile_service,
         oie_settings_repository=oie_settings_repository,
         oie_settings_service=oie_settings_service,
         lab_repository=lab_repository,

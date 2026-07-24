@@ -53,6 +53,7 @@ from backend.api.patients import create_patients_blueprint
 from backend.api.orders import create_orders_blueprint
 from backend.api.fhir import create_fhir_blueprint
 from backend.api.integration_settings import create_integration_settings_blueprint
+from backend.api.ap_device_profiles import create_ap_device_profiles_blueprint
 from backend.api.settings_readiness import create_settings_readiness_blueprint
 from backend.api.gdt import create_gdt_blueprint
 from backend.api.home import create_home_blueprint
@@ -335,11 +336,13 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
             **gdt_settings_api_operations(dependencies.integration_settings_service, gdt_bridge_watcher),
         )
     )
+    app.register_blueprint(create_ap_device_profiles_blueprint(dependencies.ap_device_profile_service))
     app.extensions["oie_channel_lifecycle_service"] = OieManagedChannelLifecycleService(
         None, dependencies.oie_settings_repository,
         ap_host=app.config["OIE_MANAGED_AP_HOST"],
         token_codec=PreviewTokenCodec(secrets.token_bytes(32)),
         client_provider=lambda: create_oie_management_client(dependencies.oie_settings_repository),
+        ap_endpoint_provider=lambda: dependencies.ap_device_profile_service.protocol_projection("hl7"),
     )
     app.extensions["oie_channel_bootstrap"] = OieManagedChannelBootstrap(
         app.extensions["oie_channel_lifecycle_service"],
@@ -398,12 +401,11 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         gdt_diagnostics=lambda: gdt_readiness_diagnostics(dependencies.integration_settings_service),
         gdt_check_diagnostics=lambda: gdt_run_all_diagnostics(dependencies.integration_settings_service, gdt_bridge_watcher),
         dcm4chee_diagnostics=run_dcm4chee_diagnostics,
+        ap_devices=dependencies.ap_device_profile_service,
+        ap_environment=app.config["AP_PROFILE_ENVIRONMENT"],
+        oie_desired=dependencies.oie_settings_repository.get,
     )
-    app.register_blueprint(
-        create_settings_readiness_blueprint(
-            app.extensions["settings_readiness_service"]
-        )
-    )
+    app.register_blueprint(create_settings_readiness_blueprint(app.extensions["settings_readiness_service"]))
     app.register_blueprint(
         create_oie_blueprint(
             app.extensions["oie_settings_service"],

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -51,6 +52,10 @@ def orm_to_ap_config(
     queue_enabled: bool = False,
     retry_count: int = 0,
     retry_interval_ms: int = 10_000,
+    sending_application: str = "",
+    sending_facility: str = "",
+    receiving_application: str = "",
+    receiving_facility: str = "",
 ) -> ManagedChannelConfig:
     return ManagedChannelConfig(
         logical_type=ManagedChannelType.ORM_TO_AP,
@@ -62,6 +67,10 @@ def orm_to_ap_config(
         queue=QueuePolicy(enabled=queue_enabled, retry_count=retry_count, retry_interval_ms=retry_interval_ms),
         enabled=enabled,
         initial_state=initial_state,
+        hl7_sending_application=sending_application,
+        hl7_sending_facility=sending_facility,
+        hl7_receiving_application=receiving_application,
+        hl7_receiving_facility=receiving_facility,
     )
 
 
@@ -113,6 +122,10 @@ def compile_orm_to_ap(
     queue_enabled: bool = False,
     retry_count: int = 0,
     retry_interval_ms: int = 10_000,
+    sending_application: str = "",
+    sending_facility: str = "",
+    receiving_application: str = "",
+    receiving_facility: str = "",
 ) -> str:
     return _render_channel(
         orm_to_ap_config(
@@ -128,6 +141,10 @@ def compile_orm_to_ap(
             queue_enabled=queue_enabled,
             retry_count=retry_count,
             retry_interval_ms=retry_interval_ms,
+            sending_application=sending_application,
+            sending_facility=sending_facility,
+            receiving_application=receiving_application,
+            receiving_facility=receiving_facility,
         )
     )
 
@@ -204,6 +221,8 @@ def _render_channel(config: ManagedChannelConfig) -> str:
     _set(destination, f"{validation}/validateMessageControlId", "true")
     _set(root, "properties/initialState", config.initial_state.value)
     _set(root, "exportData/metadata/enabled", _xml_bool(config.enabled))
+    if config.logical_type is ManagedChannelType.ORM_TO_AP:
+        _set(root, "preprocessingScript", _hl7_identity_script(config))
     return ET.tostring(root, encoding="unicode", short_empty_elements=True)
 
 
@@ -215,6 +234,12 @@ def normalized_state(config: ManagedChannelConfig) -> dict[str, Any]:
         "display_name": config.display_name,
         "listener": {"host": config.listener.host, "port": config.listener.port},
         "destination": {"host": config.destination.host, "port": config.destination.port},
+        "hl7_identity": {
+            "sending_application": config.hl7_sending_application,
+            "sending_facility": config.hl7_sending_facility,
+            "receiving_application": config.hl7_receiving_application,
+            "receiving_facility": config.hl7_receiving_facility,
+        },
         "protocol": {
             "source_mode": "MLLP",
             "destination_mode": "MLLP",
@@ -317,7 +342,58 @@ def normalized_state_from_payload(payload: str) -> dict[str, Any]:
         "source": _text(root, "sourceConnector/properties/charsetEncoding"),
         "destination": _text(destination, "properties/charsetEncoding"),
     }
+    if logical_type is ManagedChannelType.ORM_TO_AP:
+        state["hl7_identity"] = _parse_hl7_identity_script(
+            _text(root, "preprocessingScript")
+        )
     return state
+
+
+def _hl7_identity_script(config: ManagedChannelConfig) -> str:
+    values = (
+        config.hl7_sending_application,
+        config.hl7_sending_facility,
+        config.hl7_receiving_application,
+        config.hl7_receiving_facility,
+    )
+    marker = "|".join(values)
+    assignments = "; ".join(
+        f"msh[{index}] = {json.dumps(value)}"
+        for index, value in zip((2, 3, 4, 5), values, strict=True)
+    )
+    return (
+        f"// HLAB_AP_IDENTITY:{marker}\n"
+        "var segments = String(message).split('\\r');\n"
+        "if (segments.length && segments[0].indexOf('MSH') === 0) {\n"
+        f"  var msh = segments[0].split('|'); {assignments};\n"
+        "  segments[0] = msh.join('|'); message = segments.join('\\r');\n"
+        "}\nreturn message;"
+    )
+
+
+def _parse_hl7_identity_script(script: str) -> dict[str, str]:
+    prefix = "// HLAB_AP_IDENTITY:"
+    first_line = script.splitlines()[0] if script else ""
+    if not first_line.startswith(prefix):
+        return {
+            "sending_application": "",
+            "sending_facility": "",
+            "receiving_application": "",
+            "receiving_facility": "",
+        }
+    values = first_line[len(prefix):].split("|")
+    if len(values) != 4:
+        raise ValueError("managed HL7 identity metadata is malformed")
+    return dict(zip(
+        (
+            "sending_application",
+            "sending_facility",
+            "receiving_application",
+            "receiving_facility",
+        ),
+        values,
+        strict=True,
+    ))
 
 
 def sanitized_canonical(logical_type: ManagedChannelType) -> str:

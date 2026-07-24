@@ -55,6 +55,10 @@ class ManagedChannelConfig:
     enabled: bool = True
     initial_state: InitialState = InitialState.STARTED
     template_version: int = TEMPLATE_VERSION
+    hl7_sending_application: str = ""
+    hl7_sending_facility: str = ""
+    hl7_receiving_application: str = ""
+    hl7_receiving_facility: str = ""
 
     def __post_init__(self) -> None:
         validate_host(self.listener.host, "listener.host", allow_wildcard=True)

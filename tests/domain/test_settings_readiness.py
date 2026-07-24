@@ -22,7 +22,7 @@ class _Provider:
 class SettingsReadinessDomainTests(unittest.TestCase):
     def test_closed_values_and_projection(self):
         self.assertEqual(
-            {"ready", "needs-setup", "degraded", "disabled", "restart-required"},
+            {"ready", "needs-setup", "degraded", "disabled", "restart-required", "apply-required"},
             {state.value for state in ReadinessState},
         )
         self.assertEqual(

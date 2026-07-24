@@ -109,8 +109,8 @@
     {% include 'settings/dcm4chee.html' %}
   </section>
   <section id="settings-section-external-devices" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-external-devices" data-settings-section="external-devices" hidden>
-    <h3>AP / External Devices</h3><p>Optional device connectivity may remain disabled without blocking setup.</p>
-    <details><summary>Advanced</summary><p class="muted">Network overrides can require container recreation.</p></details>
+    <!-- External-device fragment provides <summary>Advanced</summary>. -->
+    {% include 'settings/external-devices.html' %}
   </section>
   <section id="settings-section-deployment" class="settings-section" role="tabpanel" aria-labelledby="settings-tab-deployment" data-settings-section="deployment" hidden>
     <h3>Deployment &amp; Diagnostics</h3><p>Review activation impact and bounded checks across registered integrations.</p>
