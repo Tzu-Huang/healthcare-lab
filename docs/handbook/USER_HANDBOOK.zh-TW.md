@@ -431,7 +431,7 @@ ACK code 只描述該傳輸節點的訊息接受情況：
 
 ### RC 驗證紀錄
 
-v1.0.0 RC live gate 已於 2026-07-21 使用 OIE `4.5.2` 通過。見證測試涵蓋 managed Channel create/deploy/read-back、ORM ACK `AA` 與 AP 僅收到一次、matched/unmatched ORU、managed lifecycle isolation，以及 queued ORU recovery 且只保存一筆 result。完整 correlation ledger 位於 `docs/oie-live-verification-evidence-z52-20260721-a.md`。
+v1.0.0 RC live gate 已於 2026-07-21 使用 OIE `4.5.2` 通過。見證測試涵蓋 managed Channel create/deploy/read-back、ORM ACK `AA` 與 AP 僅收到一次、matched/unmatched ORU、managed lifecycle isolation，以及 queued ORU recovery 且只保存一筆 result。完整 correlation ledger 作為私有驗證產物保存在 repository 外。
 
 2026-07-22 再由上述瀏覽器畫面確認實際 labels 與 read-only state：Order endpoint `oie:6600`、MLLP enabled、`Status: Accepted`、`Last ACK: AA`、listener `Running 0.0.0.0:6665`，以及保留於 `Unmatched Results` 的 ORU。本輪手冊精修沒有執行共用 runtime Stop/Restart，也沒有重複送出 Order。
 

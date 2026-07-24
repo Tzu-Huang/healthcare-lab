@@ -280,7 +280,7 @@ Overall gate: **BLOCKED / NOT RUN**. Gate owner: `NOT RECORDED`. Open blockers:
 
 - `Z52-20260721-A`: **PASS**. See the completed run-specific manifest and
   one-row-per-ID ledger in
-  `docs/oie-live-verification-evidence-z52-20260721-a.md`. The reusable blank
+  a private verification artifact outside the repository. The reusable blank
   manifest and ledger above intentionally remain unfilled for the next run.
 
 ## Repeatable non-destructive smoke check

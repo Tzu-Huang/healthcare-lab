@@ -20,31 +20,31 @@ Healthcare Lab server 目前架設在公司主要電腦上。
 | 情境 | Host / IP | 說明 |
 | --- | --- | --- |
 | 同一台電腦 Same machine | `127.0.0.1` 或 `localhost` | AP 與 Healthcare Lab 跑在同一台主機 |
-| 同一個內網 Same LAN | `192.168.0.145` | AP 與 Healthcare Lab 在同一個公司內網 |
-| Tailscale VPN | `100.127.171.69` | AP 透過 Tailscale 連線時使用 |
-| 外網 Public IP | `60.251.43.139` | AP 從外網連回公司主機時使用 |
+| 同一個內網 Same LAN | `<LAB_LAN_IP>` | AP 與 Healthcare Lab 在同一個公司內網 |
+| VPN | `<VPN_IP>` | AP 透過 VPN 連線時使用 |
+| 外網 Public IP | `<PUBLIC_IP>` | AP 從外網連回公司主機時使用 |
 
 注意：
 
 - 如果 AP 和 Healthcare Lab 在同一台電腦，通常用 `localhost` 最簡單。
-- 如果 AP 在公司內網另一台電腦，請優先使用 `192.168.0.145`。
-- 如果 AP 透過 Tailscale VPN 測試，請使用 `100.127.171.69`。
-- 如果 AP 從外網連線，請使用 `60.251.43.139`，但需要確認 router port forwarding、Windows firewall、Docker port mapping 都有開。
+- 如果 AP 在公司內網另一台電腦，請使用實際的 `<LAB_LAN_IP>`。
+- 如果 AP 透過 VPN 測試，請使用實際的 `<VPN_IP>`。
+- 如果 AP 從外網連線，請使用實際的 `<PUBLIC_IP>`，但需要確認 router port forwarding、Windows firewall、Docker port mapping 都有開。
 - Docker service name，例如 `medplum`、`oie`、`dcm4chee`，只適用於 Docker Compose container 內部，不適用於外部 AP。
 
 ## 3. Port / Endpoint 總表
 
 | 系統 | 用途 | 同機 | 內網 | Tailscale | 外網 |
 | --- | --- | --- | --- | --- | --- |
-| Healthcare Lab UI | Lab dashboard | `http://127.0.0.1:5000` | `http://192.168.0.145:5000` | `http://100.127.171.69:5000` | `http://60.251.43.139:5000` |
-| Medplum FHIR API | FHIR server | `http://127.0.0.1:8103/fhir/R4` | `http://192.168.0.145:8103/fhir/R4` | `http://100.127.171.69:8103/fhir/R4` | `http://60.251.43.139:8103/fhir/R4` |
-| Medplum Web UI | Medplum admin UI | `http://127.0.0.1:3000` | `http://192.168.0.145:3000` | `http://100.127.171.69:3000` | `http://60.251.43.139:3000` |
-| OIE Web UI | HL7 engine UI | `http://127.0.0.1:8080` | `http://192.168.0.145:8080` | `http://100.127.171.69:8080` | `http://60.251.43.139:8080` |
-| OIE Result Listener | AP 回傳 ORU | `127.0.0.1:6661` | `192.168.0.145:6661` | `100.127.171.69:6661` | `60.251.43.139:6661` |
-| OIE Order Listener | 測試 ORM input | `127.0.0.1:6663` | `192.168.0.145:6663` | `100.127.171.69:6663` | `60.251.43.139:6663` |
-| dcm4chee DICOM | DIMSE / MWL / C-STORE | `127.0.0.1:11112` | `192.168.0.145:11112` | `100.127.171.69:11112` | `60.251.43.139:11112` |
-| dcm4chee DICOMweb | DICOMweb API | `http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs` | `http://192.168.0.145:8082/dcm4chee-arc/aets/DCM4CHEE/rs` | `http://100.127.171.69:8082/dcm4chee-arc/aets/DCM4CHEE/rs` | `http://60.251.43.139:8082/dcm4chee-arc/aets/DCM4CHEE/rs` |
-| dcm4chee Web UI | Archive UI | `http://127.0.0.1:8082/dcm4chee-arc/ui2` | `http://192.168.0.145:8082/dcm4chee-arc/ui2` | `http://100.127.171.69:8082/dcm4chee-arc/ui2` | `http://60.251.43.139:8082/dcm4chee-arc/ui2` |
+| Healthcare Lab UI | Lab dashboard | `http://127.0.0.1:5000` | `http://<LAB_LAN_IP>:5000` | `http://<VPN_IP>:5000` | `http://<PUBLIC_IP>:5000` |
+| Medplum FHIR API | FHIR server | `http://127.0.0.1:8103/fhir/R4` | `http://<LAB_LAN_IP>:8103/fhir/R4` | `http://<VPN_IP>:8103/fhir/R4` | `http://<PUBLIC_IP>:8103/fhir/R4` |
+| Medplum Web UI | Medplum admin UI | `http://127.0.0.1:3000` | `http://<LAB_LAN_IP>:3000` | `http://<VPN_IP>:3000` | `http://<PUBLIC_IP>:3000` |
+| OIE Web UI | HL7 engine UI | `http://127.0.0.1:8080` | `http://<LAB_LAN_IP>:8080` | `http://<VPN_IP>:8080` | `http://<PUBLIC_IP>:8080` |
+| OIE Result Listener | AP 回傳 ORU | `127.0.0.1:6661` | `<LAB_LAN_IP>:6661` | `<VPN_IP>:6661` | `<PUBLIC_IP>:6661` |
+| OIE Order Listener | 測試 ORM input | `127.0.0.1:6663` | `<LAB_LAN_IP>:6663` | `<VPN_IP>:6663` | `<PUBLIC_IP>:6663` |
+| dcm4chee DICOM | DIMSE / MWL / C-STORE | `127.0.0.1:11112` | `<LAB_LAN_IP>:11112` | `<VPN_IP>:11112` | `<PUBLIC_IP>:11112` |
+| dcm4chee DICOMweb | DICOMweb API | `http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs` | `http://<LAB_LAN_IP>:8082/dcm4chee-arc/aets/DCM4CHEE/rs` | `http://<VPN_IP>:8082/dcm4chee-arc/aets/DCM4CHEE/rs` | `http://<PUBLIC_IP>:8082/dcm4chee-arc/aets/DCM4CHEE/rs` |
+| dcm4chee Web UI | Archive UI | `http://127.0.0.1:8082/dcm4chee-arc/ui2` | `http://<LAB_LAN_IP>:8082/dcm4chee-arc/ui2` | `http://<VPN_IP>:8082/dcm4chee-arc/ui2` | `http://<PUBLIC_IP>:8082/dcm4chee-arc/ui2` |
 
 ## 4. Medplum FHIR 測試
 
@@ -59,13 +59,13 @@ FHIR Base URL：
 http://127.0.0.1:8103/fhir/R4
 
 內網:
-http://192.168.0.145:8103/fhir/R4
+http://<LAB_LAN_IP>:8103/fhir/R4
 
 Tailscale:
-http://100.127.171.69:8103/fhir/R4
+http://<VPN_IP>:8103/fhir/R4
 
 外網:
-http://60.251.43.139:8103/fhir/R4
+http://<PUBLIC_IP>:8103/fhir/R4
 ```
 
 可先測試 FHIR capability statement：
@@ -77,7 +77,7 @@ GET /metadata
 完整 URL 範例：
 
 ```text
-http://192.168.0.145:8103/fhir/R4/metadata
+http://<LAB_LAN_IP>:8103/fhir/R4/metadata
 ```
 
 AP 取得 order 時，主要查詢 resource：
@@ -115,8 +115,8 @@ TOKEN_URL=http://<Medplum Host>:8103/oauth2/token
 範例：
 
 ```text
-FHIR_BASE_URL=http://192.168.0.145:8103/fhir/R4
-TOKEN_URL=http://192.168.0.145:8103/oauth2/token
+FHIR_BASE_URL=http://<LAB_LAN_IP>:8103/fhir/R4
+TOKEN_URL=http://<LAB_LAN_IP>:8103/oauth2/token
 ```
 
 注意：
@@ -237,13 +237,13 @@ OIE result listener：
 127.0.0.1:6661
 
 內網:
-192.168.0.145:6661
+<LAB_LAN_IP>:6661
 
 Tailscale:
-100.127.171.69:6661
+<VPN_IP>:6661
 
 外網:
-60.251.43.139:6661
+<PUBLIC_IP>:6661
 ```
 
 OIE Web UI：
@@ -253,13 +253,13 @@ OIE Web UI：
 http://127.0.0.1:8080
 
 內網:
-http://192.168.0.145:8080
+http://<LAB_LAN_IP>:8080
 
 Tailscale:
-http://100.127.171.69:8080
+http://<VPN_IP>:8080
 
 外網:
-http://60.251.43.139:8080
+http://<PUBLIC_IP>:8080
 ```
 
 ## 7. dcm4chee / DICOM 測試
@@ -274,15 +274,15 @@ Host: 127.0.0.1
 Port: 11112
 
 內網:
-Host: 192.168.0.145
+Host: <LAB_LAN_IP>
 Port: 11112
 
 Tailscale:
-Host: 100.127.171.69
+Host: <VPN_IP>
 Port: 11112
 
 外網:
-Host: 60.251.43.139
+Host: <PUBLIC_IP>
 Port: 11112
 ```
 
@@ -304,13 +304,13 @@ Calling AE Title: ECG_AP
 http://127.0.0.1:8082/dcm4chee-arc/aets/DCM4CHEE/rs
 
 內網:
-http://192.168.0.145:8082/dcm4chee-arc/aets/DCM4CHEE/rs
+http://<LAB_LAN_IP>:8082/dcm4chee-arc/aets/DCM4CHEE/rs
 
 Tailscale:
-http://100.127.171.69:8082/dcm4chee-arc/aets/DCM4CHEE/rs
+http://<VPN_IP>:8082/dcm4chee-arc/aets/DCM4CHEE/rs
 
 外網:
-http://60.251.43.139:8082/dcm4chee-arc/aets/DCM4CHEE/rs
+http://<PUBLIC_IP>:8082/dcm4chee-arc/aets/DCM4CHEE/rs
 ```
 
 dcm4chee Web UI：
@@ -320,13 +320,13 @@ dcm4chee Web UI：
 http://127.0.0.1:8082/dcm4chee-arc/ui2
 
 內網:
-http://192.168.0.145:8082/dcm4chee-arc/ui2
+http://<LAB_LAN_IP>:8082/dcm4chee-arc/ui2
 
 Tailscale:
-http://100.127.171.69:8082/dcm4chee-arc/ui2
+http://<VPN_IP>:8082/dcm4chee-arc/ui2
 
 外網:
-http://60.251.43.139:8082/dcm4chee-arc/ui2
+http://<PUBLIC_IP>:8082/dcm4chee-arc/ui2
 ```
 
 目前 local lab 預設沒有啟用 production-grade auth / TLS，僅供測試環境使用。
