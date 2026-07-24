@@ -14,10 +14,10 @@
 
 ## 3. Configuration Migration and Ownership
 
-- [ ] 3.1 Add clean-install and legacy-upgrade tests covering missing environment input, eligible one-time bootstrap, invalid bootstrap rollback, and secret-safe evidence.
-- [ ] 3.2 Add restart and container-recreate tests proving persisted typed profiles remain authoritative when environment values change or disappear.
-- [ ] 3.3 Reduce `.env.example` to advanced deployment and explicitly documented compatibility-bootstrap inputs while keeping the closed ownership registry synchronized.
-- [ ] 3.4 Add architecture tests preventing deployment-only settings from entering typed persistence and preventing migrated runtime consumers from regaining direct environment ownership.
+- [x] 3.1 Add clean-install and legacy-upgrade tests covering missing environment input, eligible one-time bootstrap, invalid bootstrap rollback, and secret-safe evidence.
+- [x] 3.2 Add restart and container-recreate tests proving persisted typed profiles remain authoritative when environment values change or disappear.
+- [x] 3.3 Reduce `.env.example` to advanced deployment and explicitly documented compatibility-bootstrap inputs while keeping the closed ownership registry synchronized.
+- [x] 3.4 Add architecture tests preventing deployment-only settings from entering typed persistence and preventing migrated runtime consumers from regaining direct environment ownership.
 
 ## 4. Dashboard Settings Handoff
 

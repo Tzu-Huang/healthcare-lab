@@ -18,10 +18,10 @@ line lists keys sharing the exact same owner, bootstrap, and activation policy.
 
 | Keys | Category | Owner | Bootstrap | Activation |
 |---|---|---|---|---|
-| `DCM4CHEE_DB_IMAGE`, `DCM4CHEE_DB_NAME`, `DCM4CHEE_DB_USER`, `DCM4CHEE_DICOM_PORT`, `DCM4CHEE_HTTP_PORT`, `DCM4CHEE_IMAGE`, `DCM4CHEE_LDAP_IMAGE`, `DCM4CHEE_STORAGE_DIR`, `GDT_BRIDGE_HOST_PATH`, `LAB_APP_IMAGE`, `LAB_APP_PORT`, `MEDPLUM_ALLOWED_ORIGINS`, `MEDPLUM_APP_BASE_URL`, `MEDPLUM_APP_IMAGE`, `MEDPLUM_APP_PORT`, `MEDPLUM_BASE_URL`, `MEDPLUM_IMAGE`, `MEDPLUM_PORT`, `MEDPLUM_POSTGRES_DB`, `MEDPLUM_POSTGRES_IMAGE`, `MEDPLUM_POSTGRES_USER`, `MEDPLUM_PUBLIC_BASE_URL`, `MEDPLUM_REDIS_IMAGE`, `OIE_DATABASE`, `OIE_HTTPS_PORT`, `OIE_HTTP_PORT`, `OIE_IMAGE`, `OIE_AP_RESULT_INGRESS_HOST_PORT`, `OIE_ORDER_INGRESS_HOST_PORT`, `STORAGE_DIR` | deployment-only | Docker Compose | never | container recreation |
+| `DCM4CHEE_DB_IMAGE`, `DCM4CHEE_DB_NAME`, `DCM4CHEE_DB_USER`, `DCM4CHEE_DICOM_PORT`, `DCM4CHEE_HL7_HOST_PORT`, `DCM4CHEE_HTTP_PORT`, `DCM4CHEE_IMAGE`, `DCM4CHEE_LDAP_IMAGE`, `DCM4CHEE_STORAGE_DIR`, `GDT_BRIDGE_HOST_PATH`, `LAB_APP_IMAGE`, `LAB_APP_PORT`, `MEDPLUM_ALLOWED_ORIGINS`, `MEDPLUM_APP_BASE_URL`, `MEDPLUM_APP_IMAGE`, `MEDPLUM_APP_PORT`, `MEDPLUM_BASE_URL`, `MEDPLUM_IMAGE`, `MEDPLUM_PORT`, `MEDPLUM_POSTGRES_DB`, `MEDPLUM_POSTGRES_IMAGE`, `MEDPLUM_POSTGRES_USER`, `MEDPLUM_PUBLIC_BASE_URL`, `MEDPLUM_REDIS_IMAGE`, `OIE_DATABASE`, `OIE_HTTPS_PORT`, `OIE_HTTP_PORT`, `OIE_IMAGE`, `OIE_AP_RESULT_INGRESS_HOST_PORT`, `OIE_ORDER_INGRESS_HOST_PORT`, `STORAGE_DIR` | deployment-only | Docker Compose | never | container recreation |
 | `DCM4CHEE_DB_PASSWORD`, `DCM4CHEE_LDAP_ROOTPASS`, `MEDPLUM_POSTGRES_PASSWORD`, `MEDPLUM_RECAPTCHA_SECRET_KEY` | secret | Docker Compose service | never | container recreation |
 | `MEDPLUM_CLIENT_SECRET`, `OPENEMR_DB_PASSWORD` | secret | typed integration settings | seed missing profile once | next effective read |
-| `DCM4CHEE_PRIVATE_KEY_PATH` | secret | typed dcm4chee settings | seed missing profile once | next effective read |
+| `DCM4CHEE_CLIENT_SECRET`, `DCM4CHEE_PASSWORD`, `DCM4CHEE_PRIVATE_KEY_PATH`, `DCM4CHEE_TOKEN` | secret | typed dcm4chee settings | seed missing profile once | next effective read |
 | `MEDPLUM_CLIENT_ID`, `MEDPLUM_SCOPE`, `MEDPLUM_TOKEN_URL`, `MEDPLUM_AUTH_GRACE_SECONDS`, `MEDPLUM_TIMEOUT_SECONDS`, `MEDPLUM_WEB_UI_URL` | runtime-persisted | typed Medplum settings | seed missing profile once | next effective read |
 | `OPENEMR_DB_HOST`, `OPENEMR_DB_NAME`, `OPENEMR_DB_PORT`, `OPENEMR_DB_USER`, `OPENEMR_GDT_PROCEDURE_CODES` | runtime-persisted | typed OpenEMR settings | seed missing profile once | next effective read |
 | `GDT_BRIDGE_FILENAME_PROFILE`, `GDT_BRIDGE_IMPORT_SUCCESS_MODE`, `GDT_BRIDGE_RECEIVER_ID`, `GDT_BRIDGE_SENDER_ID`, `GDT_BRIDGE_STABLE_SECONDS`, `GDT_BRIDGE_WATCH_POLL_SECONDS` | runtime-persisted | typed GDT settings | seed missing profile once | immediate serialized watcher reload or application restart |
@@ -37,6 +37,13 @@ Persisted values are authoritative after bootstrap. A process restart never
 merges changed environment values into an existing typed profile. Public APIs,
 logs, exceptions, diagnostics, and audits expose only whether a secret is
 configured; SQLite file permissions are the current at-rest protection.
+
+A repository-root `.env` is optional. Compose uses checked-in safe local
+fallbacks when it is absent and passes only an explicit compatibility allowlist
+to `lab-app` when legacy values are present. It never injects the complete
+deployment environment into the application. `.env.example` therefore
+documents Advanced deployment overrides and a small migration seam, while
+normal application setup belongs to Settings.
 
 The GDT profile also owns its enabled state and application-visible path.
 Supported Docker deployments fix that application path at `/data/gdt-bridge`;
