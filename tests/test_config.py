@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+import tempfile
 
 from backend.config import load_application_config, parse_app_port
 from backend.domain.errors import ValidationError
@@ -45,6 +46,20 @@ class ApplicationConfigTest(unittest.TestCase):
         self.assertEqual("off", config["OIE_BOOTSTRAP_MODE"])
         self.assertEqual(30.5, config["OIE_BOOTSTRAP_TIMEOUT_SECONDS"])
         self.assertEqual(0.25, config["OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS"])
+
+    def test_application_secrets_load_from_compose_secret_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            secret_directory = Path(directory)
+            (secret_directory / "MEDPLUM_CLIENT_SECRET").write_text(
+                "legacy-secret\n", encoding="utf-8"
+            )
+            config = load_application_config(
+                "instance",
+                environ={},
+                secret_directory=secret_directory,
+            )
+
+        self.assertEqual("legacy-secret", config["MEDPLUM_CLIENT_SECRET"])
 
     def test_invalid_bootstrap_configuration_is_rejected(self):
         invalid = (

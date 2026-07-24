@@ -6,7 +6,10 @@ from pathlib import Path
 
 from backend.application_composition import assemble_application_dependencies
 from backend.app_factory import create_app
+from backend.config import load_application_config
 from backend.domain.integration_settings import TypedSettingsValidationError
+from backend.repositories.database import SQLiteDatabase
+from backend.repositories.schema import APPLICATION_MIGRATIONS
 
 
 class IntegrationSettingsServiceTests(unittest.TestCase):
@@ -98,15 +101,112 @@ class IntegrationSettingsServiceTests(unittest.TestCase):
         self.assertFalse(removed["secrets"]["clientSecret"]["configured"])
 
     def test_invalid_bootstrap_does_not_create_partial_profile(self):
+        secret_canary = "invalid-bootstrap-secret-canary"
         with self.assertRaises(TypedSettingsValidationError):
             assemble_application_dependencies(
                 self.path,
-                configuration={"MEDPLUM_AUTH_GRACE_SECONDS": "invalid"},
+                configuration={
+                    "MEDPLUM_AUTH_GRACE_SECONDS": "invalid",
+                    "MEDPLUM_CLIENT_SECRET": secret_canary,
+                },
             )
+        database = SQLiteDatabase(self.path, migrations=APPLICATION_MIGRATIONS)
+        with database.connect() as connection:
+            stored = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM integration_settings_profiles
+                WHERE profile_type = 'medplum'
+                """
+            ).fetchone()["count"]
+        self.assertEqual(0, stored)
+        try:
+            assemble_application_dependencies(
+                Path(self.temporary.name) / "invalid-evidence.db",
+                configuration={
+                    "MEDPLUM_AUTH_GRACE_SECONDS": "invalid",
+                    "MEDPLUM_CLIENT_SECRET": secret_canary,
+                },
+            )
+        except TypedSettingsValidationError as error:
+            self.assertNotIn(secret_canary, str(error))
+            self.assertNotIn(secret_canary, repr(error))
         dependencies = assemble_application_dependencies(self.path)
         audits = dependencies.integration_settings_repository.list_audits("medplum")
         self.assertEqual(1, len(audits))
         self.assertEqual("bootstrap", audits[0]["operation"])
+        self.assertNotIn(secret_canary, str(audits))
+
+    def test_recreated_dependencies_preserve_profiles_when_environment_disappears(self):
+        first = assemble_application_dependencies(
+            self.path,
+            configuration={
+                "MEDPLUM_CLIENT_ID": "legacy-client",
+                "MEDPLUM_CLIENT_SECRET": "legacy-secret",
+                "GDT_BRIDGE_RECEIVER_ID": "LEGACY_RECEIVER",
+                "DCM4CHEE_DIMSE_HOST": "legacy-archive",
+                "DCM4CHEE_PASSWORD": "legacy-archive-secret",
+                "DCM4CHEE_AUTH_MODE": "basic",
+                "DCM4CHEE_USERNAME": "legacy-user",
+            },
+        )
+        medplum_fields = dict(
+            first.integration_settings_service.get_public("medplum")["fields"]
+        )
+        medplum_fields["clientId"] = "operator-client"
+        first.integration_settings_service.replace(
+            "medplum",
+            medplum_fields,
+            secret_replacements={"clientSecret": "operator-secret"},
+        )
+        gdt_fields = dict(
+            first.integration_settings_service.get_public("gdt-bridge")["fields"]
+        )
+        gdt_fields["receiverId"] = "OPERATOR_RECEIVER"
+        first.integration_settings_service.replace("gdt-bridge", gdt_fields)
+        dcm_fields = dict(
+            first.integration_settings_service.get_public("dcm4chee")["fields"]
+        )
+        dcm_fields["displayName"] = "Operator archive"
+        first.integration_settings_service.replace("dcm4chee", dcm_fields)
+
+        recreated = assemble_application_dependencies(self.path, configuration={})
+
+        medplum = recreated.integration_settings_service.get_effective("medplum")
+        gdt = recreated.integration_settings_service.get_effective("gdt-bridge")
+        dcm = recreated.integration_settings_service.get_effective("dcm4chee")
+        self.assertEqual("operator-client", medplum.client_id)
+        self.assertEqual("operator-secret", medplum.client_secret)
+        self.assertEqual("OPERATOR_RECEIVER", gdt.receiver_id)
+        self.assertEqual("Operator archive", dcm.profile["displayName"])
+        self.assertEqual("legacy-archive-secret", dcm.secrets["password"])
+
+    def test_clean_install_without_environment_uses_secret_safe_defaults(self):
+        dependencies = assemble_application_dependencies(self.path, configuration={})
+        service = dependencies.integration_settings_service
+
+        medplum = service.get_public("medplum")
+        dcm4chee = service.get_public("dcm4chee")
+        gdt = service.get_public("gdt-bridge")
+
+        self.assertFalse(medplum["secrets"]["clientSecret"]["configured"])
+        self.assertTrue(
+            all(not state["configured"] for state in dcm4chee["secrets"].values())
+        )
+        self.assertEqual({}, gdt["secrets"])
+        audits = {
+            profile_type: dependencies.integration_settings_repository.list_audits(
+                profile_type
+            )
+            for profile_type in ("medplum", "gdt-bridge", "dcm4chee")
+        }
+        serialized = repr(audits)
+        for value in (
+            medplum["fields"]["baseUrl"],
+            gdt["fields"]["applicationPath"],
+            dcm4chee["fields"]["webUiUrl"],
+        ):
+            self.assertNotIn(str(value), serialized)
 
     def test_application_composes_one_reader_for_http_and_background_workflows(self):
         captured = []
@@ -154,6 +254,46 @@ class IntegrationSettingsServiceTests(unittest.TestCase):
         persisted = restarted.integration_settings_service.get_effective("dcm4chee")
         self.assertEqual("archive-one", persisted.profile["dimse"]["host"])
         self.assertEqual("Operator archive", persisted.profile["displayName"])
+
+    def test_dcm4chee_compose_secrets_reach_bootstrap_without_public_values(self):
+        secret_directory = Path(self.temporary.name) / "compose-secrets"
+        secret_directory.mkdir()
+        expected = {
+            "DCM4CHEE_PASSWORD": "password-canary",
+            "DCM4CHEE_TOKEN": "token-canary",
+            "DCM4CHEE_CLIENT_SECRET": "client-secret-canary",
+        }
+        for name, value in expected.items():
+            (secret_directory / name).write_text(f"{value}\n", encoding="utf-8")
+
+        configuration = load_application_config(
+            str(Path(self.temporary.name) / "instance"),
+            environ={
+                "DCM4CHEE_AUTH_MODE": "basic",
+                "DCM4CHEE_USERNAME": "legacy-user",
+            },
+            secret_directory=secret_directory,
+        )
+        dependencies = assemble_application_dependencies(
+            self.path,
+            configuration=configuration,
+        )
+
+        effective = dependencies.integration_settings_service.get_effective("dcm4chee")
+        self.assertEqual(
+            {
+                "password": "password-canary",
+                "token": "token-canary",
+                "clientSecret": "client-secret-canary",
+            },
+            effective.secrets,
+        )
+        public = dependencies.integration_settings_service.get_public("dcm4chee")
+        self.assertTrue(
+            all(state == {"configured": True} for state in public["secrets"].values())
+        )
+        for value in expected.values():
+            self.assertNotIn(value, repr(public))
 
     def test_dcm4chee_identity_change_is_blocked_when_records_depend_on_it(self):
         dependencies = assemble_application_dependencies(self.path)

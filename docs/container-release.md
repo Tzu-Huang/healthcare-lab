@@ -57,23 +57,24 @@ the host-side GDT bridge folder:
 ```powershell
 New-Item -ItemType Directory -Force backup\v1.0.0
 .\deploy\lab.ps1 stop lab-app
-docker compose --env-file .env -f deploy\docker-compose.yml cp lab-app:/app/instance backup\v1.0.0\instance
+docker compose -f deploy\docker-compose.yml cp lab-app:/app/instance backup\v1.0.0\instance
 Copy-Item -Recurse instance\gdt-bridge backup\v1.0.0\gdt-bridge
 ```
 
-To upgrade, set `LAB_APP_IMAGE` in `.env` to the target immutable tag, pull it,
-and recreate only `lab-app`:
+To upgrade, optionally set `LAB_APP_IMAGE` in an Advanced `.env` to the target
+immutable tag, pull it, and recreate only `lab-app`:
 
 ```powershell
-docker compose --env-file .env -f deploy\docker-compose.yml pull lab-app
+docker compose -f deploy\docker-compose.yml pull lab-app
 .\deploy\lab.ps1 restart lab-app
 Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
 ```
 
 To roll back, stop `lab-app`, restore the backup when schema compatibility
 requires it, select the previous immutable `LAB_APP_IMAGE`, and recreate the
-container. Keep `.env` and all secrets outside backup artifacts intended for
-publication.
+container. When an Advanced `.env` exists, keep it and all deployment secrets
+outside backup artifacts intended for publication. Application Settings remain
+in the separately backed-up instance database.
 
 ## Supported boundary
 

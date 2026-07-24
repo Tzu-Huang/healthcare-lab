@@ -16,16 +16,45 @@ volumes:
   dcm4chee-ldap:
   dcm4chee-ldap-config:
 
+secrets:
+  medplum_client_secret:
+    environment: MEDPLUM_CLIENT_SECRET
+  openemr_db_password:
+    environment: OPENEMR_DB_PASSWORD
+  dcm4chee_password:
+    environment: DCM4CHEE_PASSWORD
+  dcm4chee_token:
+    environment: DCM4CHEE_TOKEN
+  dcm4chee_client_secret:
+    environment: DCM4CHEE_CLIENT_SECRET
+
 services:
   lab-app:
     image: ${LAB_APP_IMAGE:-ghcr.io/tzu-huang/healthcare-lab:1.0.1}
-    env_file:
-      - ../.env
     environment:
       LAB_APP_HOST: 0.0.0.0
       LAB_APP_PORT: "5000"
       ECG_FILE_BASE_URL: ${ECG_FILE_BASE_URL:-http://127.0.0.1:5000}
       GDT_BRIDGE_PATH: /data/gdt-bridge
+      # Compatibility bootstrap only: these values seed a missing typed
+      # profile once. Persisted Settings remain authoritative after creation.
+      MEDPLUM_CLIENT_ID: ${MEDPLUM_CLIENT_ID:-}
+      MEDPLUM_SCOPE: ${MEDPLUM_SCOPE:-}
+      MEDPLUM_TOKEN_URL: ${MEDPLUM_TOKEN_URL:-}
+      MEDPLUM_AUTH_GRACE_SECONDS: ${MEDPLUM_AUTH_GRACE_SECONDS:-300}
+      MEDPLUM_TIMEOUT_SECONDS: ${MEDPLUM_TIMEOUT_SECONDS:-10}
+      MEDPLUM_WEB_UI_URL: ${MEDPLUM_WEB_UI_URL:-http://127.0.0.1:3000}
+      GDT_BRIDGE_IMPORT_SUCCESS_MODE: ${GDT_BRIDGE_IMPORT_SUCCESS_MODE:-archive}
+      GDT_BRIDGE_FILENAME_PROFILE: ${GDT_BRIDGE_FILENAME_PROFILE:-permissive}
+      GDT_BRIDGE_RECEIVER_ID: ${GDT_BRIDGE_RECEIVER_ID:-}
+      GDT_BRIDGE_SENDER_ID: ${GDT_BRIDGE_SENDER_ID:-}
+      GDT_BRIDGE_WATCH_POLL_SECONDS: ${GDT_BRIDGE_WATCH_POLL_SECONDS:-2}
+      GDT_BRIDGE_STABLE_SECONDS: ${GDT_BRIDGE_STABLE_SECONDS:-1}
+      OPENEMR_DB_HOST: ${OPENEMR_DB_HOST:-}
+      OPENEMR_DB_PORT: ${OPENEMR_DB_PORT:-3306}
+      OPENEMR_DB_USER: ${OPENEMR_DB_USER:-openemr}
+      OPENEMR_DB_NAME: ${OPENEMR_DB_NAME:-openemr}
+      OPENEMR_GDT_PROCEDURE_CODES: ${OPENEMR_GDT_PROCEDURE_CODES:-1001}
       OIE_MLLP_ORDER_HOST: ${OIE_MLLP_ORDER_HOST:-oie}
       OIE_MLLP_ORDER_PORT: ${OIE_MLLP_ORDER_PORT:-6600}
       OIE_BOOTSTRAP_MODE: ${OIE_BOOTSTRAP_MODE:-create-missing}
@@ -46,6 +75,37 @@ services:
       DCM4CHEE_QIDO_RS_URL: ${DCM4CHEE_QIDO_RS_URL:-http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs}
       DCM4CHEE_WADO_RS_URL: ${DCM4CHEE_WADO_RS_URL:-http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs}
       DCM4CHEE_STOW_RS_URL: ${DCM4CHEE_STOW_RS_URL:-http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs}
+      DCM4CHEE_PROFILE_NAME: ${DCM4CHEE_PROFILE_NAME:-local-dcm4chee}
+      DCM4CHEE_DISPLAY_NAME: ${DCM4CHEE_DISPLAY_NAME:-dcm4chee Local Archive}
+      DCM4CHEE_ENVIRONMENT_NAME: ${DCM4CHEE_ENVIRONMENT_NAME:-local-docker}
+      DCM4CHEE_CALLED_AE_TITLE: ${DCM4CHEE_CALLED_AE_TITLE:-DCM4CHEE}
+      DCM4CHEE_CALLING_AE_TITLE: ${DCM4CHEE_CALLING_AE_TITLE:-HEALTHCARE_LAB}
+      DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE: ${DCM4CHEE_DEFAULT_SCHEDULED_STATION_AE_TITLE:-ECG_AP}
+      DCM4CHEE_HL7_SENDING_APPLICATION: ${DCM4CHEE_HL7_SENDING_APPLICATION:-HEALTHCARE_LAB}
+      DCM4CHEE_HL7_SENDING_FACILITY: ${DCM4CHEE_HL7_SENDING_FACILITY:-LAB_APP}
+      DCM4CHEE_HL7_RECEIVING_APPLICATION: ${DCM4CHEE_HL7_RECEIVING_APPLICATION:-DCM4CHEE}
+      DCM4CHEE_HL7_RECEIVING_FACILITY: ${DCM4CHEE_HL7_RECEIVING_FACILITY:-DCM4CHEE}
+      DCM4CHEE_PATIENT_ASSIGNING_AUTHORITY: ${DCM4CHEE_PATIENT_ASSIGNING_AUTHORITY:-local-dcm4chee}
+      DCM4CHEE_VIEWER_STUDY_URL_TEMPLATE: ${DCM4CHEE_VIEWER_STUDY_URL_TEMPLATE:-}
+      DCM4CHEE_UID_ROOT: ${DCM4CHEE_UID_ROOT:-1.2.826.0.1.3680043.10.543}
+      DCM4CHEE_AUTH_MODE: ${DCM4CHEE_AUTH_MODE:-none}
+      DCM4CHEE_TLS_ENABLED: ${DCM4CHEE_TLS_ENABLED:-false}
+      DCM4CHEE_TLS_VERIFY: ${DCM4CHEE_TLS_VERIFY:-true}
+      DCM4CHEE_USERNAME: ${DCM4CHEE_USERNAME:-}
+      DCM4CHEE_TOKEN_URL: ${DCM4CHEE_TOKEN_URL:-}
+      DCM4CHEE_CERTIFICATE_PATH: ${DCM4CHEE_CERTIFICATE_PATH:-}
+      DCM4CHEE_PRIVATE_KEY_PATH: ${DCM4CHEE_PRIVATE_KEY_PATH:-}
+    secrets:
+      - source: medplum_client_secret
+        target: MEDPLUM_CLIENT_SECRET
+      - source: openemr_db_password
+        target: OPENEMR_DB_PASSWORD
+      - source: dcm4chee_password
+        target: DCM4CHEE_PASSWORD
+      - source: dcm4chee_token
+        target: DCM4CHEE_TOKEN
+      - source: dcm4chee_client_secret
+        target: DCM4CHEE_CLIENT_SECRET
     ports:
       - "${LAB_APP_PORT:-5000}:5000"
     expose:
@@ -53,7 +113,9 @@ services:
       - "5000"
     volumes:
       - lab-app-instance:/app/instance
-      - ${GDT_BRIDGE_HOST_PATH:-../instance/gdt-bridge}:/data/gdt-bridge
+      - type: bind
+        source: ${GDT_BRIDGE_HOST_PATH:-../instance/gdt-bridge}
+        target: /data/gdt-bridge
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - lab
@@ -181,7 +243,7 @@ services:
     ports:
       - "${DCM4CHEE_HTTP_PORT:-8082}:8080"
       - "${DCM4CHEE_DICOM_PORT:-11112}:11112"
-      - "${DCM4CHEE_HL7_PORT:-2575}:2575"
+      - "${DCM4CHEE_HL7_HOST_PORT:-2575}:2575"
     volumes:
       - dcm4chee-archive:/storage
     depends_on:
