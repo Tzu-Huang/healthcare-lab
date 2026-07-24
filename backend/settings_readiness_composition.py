@@ -203,6 +203,77 @@ class _Dcm4cheeProvider:
         return self._latest_diagnostic
 
 
+class _APDeviceProvider:
+    def __init__(
+        self,
+        devices,
+        *,
+        environment: str,
+        oie_desired: Callable[[], dict[str, Any]],
+    ) -> None:
+        self._devices = devices
+        self._environment = environment
+        self._oie_desired = oie_desired
+        self._latest_diagnostic: DiagnosticAssessment | None = None
+
+    def assess(self) -> ReadinessAssessment:
+        profiles = self._devices.list(self._environment)
+        if not profiles or not any(item.get("enabled") for item in profiles):
+            return ReadinessAssessment(ReadinessState.DISABLED)
+        effective = self._devices.effective(self._environment)
+        if effective is None:
+            return ReadinessAssessment(ReadinessState.NEEDS_SETUP)
+        hl7 = effective.get("hl7", {})
+        if hl7.get("enabled"):
+            mappings = self._oie_desired().get("managedChannels", [])
+            orm = next(
+                (
+                    item
+                    for item in mappings
+                    if item.get("logicalType") == "hlab-orm-to-ap"
+                ),
+                {},
+            )
+            if (
+                str(orm.get("destinationHost")) != str(hl7.get("host"))
+                or int(orm.get("destinationPort") or 0) != int(hl7.get("port") or 0)
+            ):
+                return ReadinessAssessment(ReadinessState.APPLY_REQUIRED)
+        if (
+            self._latest_diagnostic is not None
+            and self._latest_diagnostic.state is DiagnosticState.DEGRADED
+        ):
+            return ReadinessAssessment(ReadinessState.DEGRADED)
+        return ReadinessAssessment(ReadinessState.READY)
+
+    def check(self) -> DiagnosticAssessment:
+        effective = self._devices.effective(self._environment)
+        if effective is None:
+            state = (
+                DiagnosticState.DISABLED
+                if self.assess().state is ReadinessState.DISABLED
+                else DiagnosticState.DEGRADED
+            )
+            self._latest_diagnostic = DiagnosticAssessment(state)
+            return self._latest_diagnostic
+        report = self._devices.diagnose(str(effective["id"]))
+        checks = tuple(
+            {
+                "role": str(item.get("id", "unknown")),
+                "state": str(item.get("state", "unavailable")),
+                "code": str(item.get("code", "unavailable")),
+            }
+            for item in report.get("checks", [])
+        )
+        self._latest_diagnostic = DiagnosticAssessment(
+            DiagnosticState.HEALTHY
+            if report.get("state") == "healthy"
+            else DiagnosticState.DEGRADED,
+            checks,
+        )
+        return self._latest_diagnostic
+
+
 def create_settings_readiness_service(
     settings: IntegrationSettingsReader,
     *,
@@ -213,6 +284,9 @@ def create_settings_readiness_service(
     gdt_diagnostics: Callable[[], dict[str, Any]] | None = None,
     gdt_check_diagnostics: Callable[[], dict[str, Any]] | None = None,
     dcm4chee_diagnostics: Callable[[], dict[str, Any]] | None = None,
+    ap_devices=None,
+    ap_environment: str = "lab",
+    oie_desired: Callable[[], dict[str, Any]] | None = None,
 ) -> SettingsReadinessService:
     registry = SettingsReadinessRegistry(
         (
@@ -258,7 +332,13 @@ def create_settings_readiness_service(
                 "external-devices",
                 "AP / External Devices",
                 False,
-                _StaticProvider(ReadinessState.DISABLED),
+                _APDeviceProvider(
+                    ap_devices,
+                    environment=ap_environment,
+                    oie_desired=oie_desired or (lambda: {"managedChannels": []}),
+                )
+                if ap_devices is not None
+                else _StaticProvider(ReadinessState.DISABLED),
             ),
             ReadinessRegistration(
                 "deployment",

@@ -44,11 +44,12 @@ class PreviewTokenCodec:
 
 
 class OieManagedChannelLifecycleService:
-    def __init__(self, client, repository, *, ap_host: str, token_codec: PreviewTokenCodec, operation_id=None, client_provider=None):
+    def __init__(self, client, repository, *, ap_host: str, token_codec: PreviewTokenCodec, operation_id=None, client_provider=None, ap_endpoint_provider=None):
         self._fixed_client, self._client_provider = client, client_provider
         self._active_client = ContextVar("oie_lifecycle_client", default=None)
         self._active_actor = ContextVar("oie_lifecycle_actor", default="local-operator")
         self.repository, self.ap_host, self.tokens = repository, ap_host, token_codec
+        self._ap_endpoint_provider = ap_endpoint_provider
         self.operation_id = operation_id or (lambda: secrets.token_hex(12))
 
     @property
@@ -323,6 +324,11 @@ class OieManagedChannelLifecycleService:
             "retry_count": int(item.get("retryCount", 0)),
             "retry_interval_ms": int(item.get("retryIntervalMs", 10_000)),
         }
+        if kind is ManagedChannelType.ORM_TO_AP and self._ap_endpoint_provider is not None:
+            endpoint = self._ap_endpoint_provider() or {}
+            if endpoint.get("enabled"):
+                common["destination_host"] = str(endpoint["host"])
+                common["destination_port"] = int(endpoint["port"])
         return orm_to_ap_config(self.ap_host, **common) if kind is ManagedChannelType.ORM_TO_AP else oru_to_hlab_config(**common)
     @staticmethod
     def _types(logical_type, operation):

@@ -16,6 +16,7 @@ from backend.services.settings_readiness import (
     SettingsReadinessService,
 )
 from backend.settings_readiness_composition import (
+    _APDeviceProvider,
     create_settings_readiness_service,
 )
 
@@ -39,6 +40,34 @@ class _CheckedProvider(_Provider):
 
 
 class SettingsReadinessServiceTests(unittest.TestCase):
+    def test_ap_readiness_reports_apply_required_without_mutating_oie(self):
+        class _Devices:
+            def list(self, environment):
+                return [{"enabled": True, "environment": environment}]
+
+            def effective(self, environment):
+                return {
+                    "id": "ap-1",
+                    "environment": environment,
+                    "hl7": {"enabled": True, "host": "new-ap", "port": 6672},
+                }
+
+        desired = {
+            "managedChannels": [
+                {
+                    "logicalType": "hlab-orm-to-ap",
+                    "destinationHost": "old-ap",
+                    "destinationPort": 6671,
+                }
+            ]
+        }
+        provider = _APDeviceProvider(
+            _Devices(), environment="lab", oie_desired=lambda: desired
+        )
+
+        self.assertEqual(provider.assess().state, ReadinessState.APPLY_REQUIRED)
+        self.assertEqual(desired["managedChannels"][0]["destinationHost"], "old-ap")
+
     def test_optional_disabled_does_not_block_completion(self):
         registry = SettingsReadinessRegistry(
             (

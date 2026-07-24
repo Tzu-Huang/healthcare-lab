@@ -13,6 +13,7 @@ class ReadinessState(str, Enum):
     DEGRADED = "degraded"
     DISABLED = "disabled"
     RESTART_REQUIRED = "restart-required"
+    APPLY_REQUIRED = "apply-required"
 
 
 class ActivationImpact(str, Enum):
@@ -34,6 +35,7 @@ _SUMMARIES = {
     ReadinessState.DEGRADED: "Configured, but a bounded check needs attention.",
     ReadinessState.DISABLED: "Optional integration is disabled.",
     ReadinessState.RESTART_REQUIRED: "Saved changes are waiting for activation.",
+    ReadinessState.APPLY_REQUIRED: "Saved device changes require guarded OIE apply.",
 }
 
 _ACTIONS = {
@@ -42,6 +44,7 @@ _ACTIONS = {
     ReadinessState.DEGRADED: "review-diagnostics",
     ReadinessState.DISABLED: None,
     ReadinessState.RESTART_REQUIRED: "review-activation",
+    ReadinessState.APPLY_REQUIRED: "review-activation",
 }
 
 
