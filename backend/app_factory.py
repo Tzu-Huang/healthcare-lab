@@ -322,7 +322,6 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
     app.extensions["gdt_bridge_watcher"] = gdt_bridge_watcher
     app.extensions["oie_settings_service"] = dependencies.oie_settings_service
     app.extensions["integration_settings_service"] = dependencies.integration_settings_service
-    app.extensions["ap_device_profile_service"] = dependencies.ap_device_profile_service
     effective_dcm4chee_profile, run_dcm4chee_diagnostics = (
         dcm4chee_settings_operations(dependencies.integration_settings_service)
     )
@@ -337,9 +336,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
             **gdt_settings_api_operations(dependencies.integration_settings_service, gdt_bridge_watcher),
         )
     )
-    app.register_blueprint(
-        create_ap_device_profiles_blueprint(dependencies.ap_device_profile_service)
-    )
+    app.register_blueprint(create_ap_device_profiles_blueprint(dependencies.ap_device_profile_service))
     app.extensions["oie_channel_lifecycle_service"] = OieManagedChannelLifecycleService(
         None, dependencies.oie_settings_repository,
         ap_host=app.config["OIE_MANAGED_AP_HOST"],
@@ -408,11 +405,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
         ap_environment=app.config["AP_PROFILE_ENVIRONMENT"],
         oie_desired=dependencies.oie_settings_repository.get,
     )
-    app.register_blueprint(
-        create_settings_readiness_blueprint(
-            app.extensions["settings_readiness_service"]
-        )
-    )
+    app.register_blueprint(create_settings_readiness_blueprint(app.extensions["settings_readiness_service"]))
     app.register_blueprint(
         create_oie_blueprint(
             app.extensions["oie_settings_service"],

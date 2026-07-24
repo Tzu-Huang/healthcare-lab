@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import socket
 from typing import Any, Callable, Mapping
 from uuid import uuid4
 
+from backend.clients.ap_device import probe_tcp
 from backend.domain.ap_device_profile import (
     APDeviceProfile,
     validate_ap_device_observation,
@@ -60,12 +60,7 @@ class APDeviceProfileService:
         self.repository = repository
         self.environment = environment
         self.timeout_seconds = max(0.1, min(float(timeout_seconds), 10.0))
-        self._tcp_probe = tcp_probe or self._probe_tcp
-
-    @staticmethod
-    def _probe_tcp(host: str, port: int, timeout: float) -> bool:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
+        self._tcp_probe = tcp_probe or probe_tcp
 
     def list(self, environment: str | None = None) -> list[dict[str, Any]]:
         return self.repository.list(environment=environment)

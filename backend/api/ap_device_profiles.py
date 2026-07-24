@@ -5,9 +5,6 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 from backend.domain.integration_settings import TypedSettingsValidationError
-from backend.repositories.ap_device_profiles import DuplicateAPProfileNameError
-
-
 def create_ap_device_profiles_blueprint(service) -> Blueprint:
     blueprint = Blueprint("ap_device_profiles", __name__)
 
@@ -37,15 +34,15 @@ def create_ap_device_profiles_blueprint(service) -> Blueprint:
                 400,
                 fields=exc.as_dict()["fields"],
             )
-        except DuplicateAPProfileNameError:
+        except ValueError as exc:
+            if getattr(exc, "code", "") != "duplicate-profile-name":
+                return error("invalid-request", "Device profile was rejected.", 400)
             return error(
                 "duplicate-profile-name",
                 "A device profile with this name already exists.",
                 409,
                 fields=[{"field": "name", "code": "duplicate-profile-name", "reason": "Profile name must be unique."}],
             )
-        except ValueError:
-            return error("invalid-request", "Device profile was rejected.", 400)
         return jsonify({"success": True, "item": item}), 201
 
     @blueprint.get("/api/settings/external-devices/<profile_id>")
@@ -72,8 +69,8 @@ def create_ap_device_profiles_blueprint(service) -> Blueprint:
                 400,
                 fields=exc.as_dict()["fields"],
             )
-        except (DuplicateAPProfileNameError, ValueError):
-            return error("profile-conflict", "Device profile update was rejected.", 409)
+        except ValueError:
+            return error("profile-conflict", "Device profile mutation was rejected.", 409)
         return jsonify({"success": True, "item": item})
 
     @blueprint.put("/api/settings/external-devices/<profile_id>/default")
