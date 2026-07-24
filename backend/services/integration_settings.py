@@ -255,6 +255,7 @@ class MedplumEffectiveSettings:
 @dataclass(frozen=True)
 class GdtBridgeEffectiveSettings:
     enabled: bool
+    bridge_profile: str
     bridge_path: str
     receiver_id: str
     sender_id: str
@@ -406,8 +407,23 @@ class IntegrationSettingsService:
                 if self._ap_protocol_provider is not None
                 else {"enabled": False}
             )
+            bridge_profile = str(private["profileName"])
+            if (
+                ap_gdt.get("enabled")
+                and str(ap_gdt.get("bridgeProfile")) != bridge_profile
+            ):
+                raise TypedSettingsValidationError(
+                    (
+                        SettingsValidationIssue(
+                            "gdt.bridgeProfile",
+                            "bridge_profile_unavailable",
+                            "The selected GDT Bridge profile is unavailable.",
+                        ),
+                    )
+                )
             return GdtBridgeEffectiveSettings(
                 enabled=bool(fields["enabled"]),
+                bridge_profile=bridge_profile,
                 bridge_path=str(fields["applicationPath"]),
                 receiver_id=str(
                     ap_gdt.get("receiverId")
@@ -433,9 +449,25 @@ class IntegrationSettingsService:
                 else {"enabled": False}
             )
             if ap_dicom.get("enabled"):
+                profile.setdefault("dimse", {})["callingAETitle"] = str(
+                    ap_dicom["mwlCallingAETitle"]
+                )
                 profile.setdefault("mwl", {})[
                     "defaultScheduledStationAETitle"
                 ] = str(ap_dicom["scheduledStationAETitle"])
+                profile["apDevice"] = {
+                    "profileId": str(ap_dicom["profileId"]),
+                    "aeTitle": str(ap_dicom["aeTitle"]),
+                    "endpoint": {
+                        "host": str(ap_dicom["host"]),
+                        "port": int(ap_dicom["port"]),
+                    },
+                    "mwlCallingAETitle": str(ap_dicom["mwlCallingAETitle"]),
+                    "scheduledStationAETitle": str(
+                        ap_dicom["scheduledStationAETitle"]
+                    ),
+                    "resultDeliveryRole": str(ap_dicom["resultDeliveryRole"]),
+                }
             return Dcm4cheeEffectiveSettings(
                 profile=profile,
                 secrets={
