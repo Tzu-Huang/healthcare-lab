@@ -11,19 +11,22 @@ and environment-template files are available. No host Python installation and
 no application source mount are required.
 
 ```powershell
-Copy-Item .env.example .env
-New-Item -ItemType Directory -Force instance\gdt-bridge\inbox
-New-Item -ItemType Directory -Force instance\gdt-bridge\outbox
-docker pull ghcr.io/tzu-huang/healthcare-lab:1.0.0
-docker compose --env-file .env -f deploy\docker-compose.yml up -d
-docker compose --env-file .env -f deploy\docker-compose.yml ps
+.\deploy\lab.ps1 start
+.\deploy\lab.ps1 status
 Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
 ```
 
-The release image is public, so `docker pull` does not require a GitHub token.
-Use `LAB_APP_IMAGE` in `.env` only for an intentional immutable-version
-selection or local build. See [the container release guide](../docs/container-release.md)
-for tags, pinned dependencies, persistence, backup, upgrade, and rollback.
+No `.env`, host-folder preparation, or YAML edit is required for the normal
+local start. The wrapper creates the bounded default GDT bridge root and Compose
+uses pinned images, local ports, and persistent storage defaults. Open the
+Dashboard; an incomplete setup notice leads to the authoritative Settings
+section for application connections and credentials.
+
+The release image is public, so pulling does not require a GitHub token. Copy
+`.env.example` to `.env` only for an Advanced deployment override such as an
+immutable image, host port, bind path, or service database hardening value. See
+[the container release guide](../docs/container-release.md) for tags,
+persistence, backup, upgrade, and rollback.
 
 > **Security boundary:** `lab-app` mounts `/var/run/docker.sock` so its
 > Dashboard can inspect and control Compose services. Access to that socket is
@@ -45,17 +48,17 @@ for tags, pinned dependencies, persistence, backup, upgrade, and rollback.
 - `dcm4chee`: DICOM archive backed by Postgres.
 
 The GDT bridge shared folder is mounted at `/data/gdt-bridge` in `lab-app`.
-By default Docker Compose binds the repo-local `instance/gdt-bridge`
-folder from the developer machine into that container path. Set
-`GDT_BRIDGE_HOST_PATH` in the repo-root `.env` file to use another computer
-folder, then restart `lab-app`.
+By default Docker Compose binds the repo-local `instance/gdt-bridge` folder.
+The wrapper creates that root before start. Set `GDT_BRIDGE_HOST_PATH` in an
+optional `.env` to use another dedicated host folder; the wrapper resolves and
+creates only that exact safe path, rejecting filesystem and repository roots.
 
 Inside Healthcare Lab's GDT page, the **Shared Folder** setting controls the
 path the Flask app reads and writes. In Docker this should normally remain
 `/data/gdt-bridge`; the actual Windows folder is controlled by the Compose
-bind mount through `GDT_BRIDGE_HOST_PATH`. The app does not create bridge
-folders: provision them yourself. Orders are written to `inbox/`, and returned
-device/AP data is read from `outbox/`.
+bind mount through `GDT_BRIDGE_HOST_PATH`. The application provisions and
+validates its supported bridge subdirectory contract. Orders are written to
+`inbox/`, and returned device/AP data is read from `outbox/`.
 
 OpenEMR and MariaDB are not part of the default runtime. An external OpenEMR
 procedure-order source can still be configured with the optional `OPENEMR_DB_*`
@@ -63,27 +66,17 @@ settings in the repo-root `.env` file.
 
 ## Medplum Auth Runtime
 
-`lab-app` reads Medplum OAuth client credentials from `.env` or the shell
-environment through `docker-compose.yml`:
+Configure Healthcare Lab's Medplum FHIR URL, browser URL, OAuth client ID,
+write-only client secret, scope, token URL, and timeouts in **Settings →
+Medplum**. Save-and-test reports metadata, OAuth, and authenticated-read stages
+separately. The persisted typed profile is authoritative after restart and
+container recreation; public APIs and diagnostics expose only whether the
+secret is configured.
 
-```text
-MEDPLUM_CLIENT_ID=
-MEDPLUM_CLIENT_SECRET=
-MEDPLUM_SCOPE=
-MEDPLUM_TOKEN_URL=
-MEDPLUM_AUTH_GRACE_SECONDS=300
-MEDPLUM_APP_BASE_URL=http://127.0.0.1:3000/
-MEDPLUM_ALLOWED_ORIGINS=http://127.0.0.1:3000,http://localhost:3000
-MEDPLUM_RECAPTCHA_SITE_KEY=6LfHdsYdAAAAAC0uLnnRrDrhcXnziiUwKd8VtLNq
-MEDPLUM_RECAPTCHA_SECRET_KEY=
-```
-
-Set `MEDPLUM_CLIENT_ID` and `MEDPLUM_CLIENT_SECRET` to a Medplum client that is
-allowed to use OAuth client credentials for the target FHIR environment. Leave
-`MEDPLUM_TOKEN_URL` blank unless the deployment uses a non-standard token
-endpoint; the app derives `/oauth2/token` from the FHIR base URL by default.
-Keep the real client secret in `.env` or the operator environment, not in the
-tracked Compose file.
+For an existing installation only, legacy `MEDPLUM_CLIENT_*`, scope, token URL,
+and timeout values in a local `.env` remain a supported one-time bootstrap
+source. Compose passes that fixed allowlist to `lab-app`; it seeds only a
+missing profile and never overwrites a profile already saved in Settings.
 
 The local Medplum Web UI sends a reCAPTCHA site key during account
 registration. `docker-compose.yml` sets matching server and app defaults so
@@ -92,29 +85,16 @@ the local registration flow is not blocked by a site-key mismatch. The
 does not verify the Google token. Set both reCAPTCHA values explicitly before
 using this runtime outside a local developer lab.
 
-The `deploy/lab.ps1` wrapper passes the repo-root `.env` file to Docker Compose
-explicitly, even though the Compose file lives under `deploy/`. Its `restart`
-action recreates containers so environment-variable changes are loaded into the
-new process.
+The wrapper passes the repo-root `.env` explicitly only when it exists. Its
+`restart` action recreates containers so Advanced deployment changes load into
+the new process.
 
 To rotate the client secret:
 
-1. Update `MEDPLUM_CLIENT_SECRET` in `.env`.
-2. Restart only the app container:
-
-   ```powershell
-   .\deploy\lab.ps1 restart lab-app
-   ```
-
-3. Run the Lab Console Medplum smoke check and confirm the `oauth_token` step
-   can acquire a token:
-
-   ```powershell
-   Invoke-RestMethod -Method Post http://127.0.0.1:5000/api/lab/servers/2/smoke
-   ```
-
-4. Confirm any remaining `ServiceRequest` failure is reported separately from
-   token acquisition.
+1. Open **Settings → Medplum**.
+2. Enter the non-blank replacement secret and save.
+3. Run Save-and-test or the Lab Console Medplum smoke check.
+4. Confirm token acquisition separately from any remaining resource failure.
 
 ## Troubleshooting Medplum Sync
 
@@ -124,23 +104,10 @@ If Patient, Order, or FHIR workflow sync fails with:
 Medplum request failed: [Errno 111] Connection refused
 ```
 
-first check the Lab Console's stored Medplum server URL. The sync path reads
-the Medplum `baseUrl` from the Lab Server inventory, not from
-`MEDPLUM_PUBLIC_BASE_URL` in `.env`. When `lab-app` runs in Docker, a stored
-URL such as `http://127.0.0.1:8103/fhir/R4` points back to the `lab-app`
-container itself, not to the Medplum container.
-
-Confirm the stored value:
-
-```powershell
-(Invoke-RestMethod -Uri "http://127.0.0.1:5000/api/lab/servers").items | Where-Object {$_.name -eq "Medplum"} | Select-Object name,host,baseUrl
-```
-
-For the Docker Compose runtime, update Medplum to use the Docker service name:
-
-```powershell
-Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:5000/api/lab/servers/2" -ContentType "application/json" -Body '{"name":"Medplum","serverType":"FHIR Server","description":"FHIR R4 API server","host":"medplum","port":8103,"baseUrl":"http://medplum:8103/fhir/R4","protocol":"FHIR","enabled":true}'
-```
+first check **Settings → Medplum**. The typed profile is the canonical owner;
+for the Compose runtime its internal FHIR URL should use
+`http://medplum:8103/fhir/R4`. A URL such as
+`http://127.0.0.1:8103/fhir/R4` points back to the `lab-app` container.
 
 The expected Medplum server values are:
 
@@ -152,13 +119,11 @@ baseUrl = http://medplum:8103/fhir/R4
 Optionally verify container-to-container reachability before retrying sync:
 
 ```powershell
-docker-compose --env-file .env -f deploy\docker-compose.yml exec lab-app python -c "import urllib.request; print(urllib.request.urlopen('http://medplum:8103/fhir/R4/metadata').status)"
+docker compose -f deploy\docker-compose.yml exec lab-app python -c "import urllib.request; print(urllib.request.urlopen('http://medplum:8103/fhir/R4/metadata').status)"
 ```
 
-The smoke check can still report Medplum as healthy while sync fails if the
-stored Lab Server `baseUrl` is wrong. Docker-backed smoke checks use the
-Compose service URL internally, while sync intentionally uses the persisted Lab
-Server configuration.
+The Lab Server inventory remains a compatibility presentation and operation
+surface; it is not a second writable owner for the application connection.
 
 ## PowerShell CLI
 
@@ -219,7 +184,7 @@ published host port by default.
 | Medplum Web UI | `medplum-app:3000` | `MEDPLUM_APP_PORT` (default `3000`) |
 | dcm4chee UI | `dcm4chee:8080` | `DCM4CHEE_HTTP_PORT` (default `8082`) |
 | dcm4chee DICOM | `dcm4chee:11112` | `DCM4CHEE_DICOM_PORT` (default `11112`) |
-| dcm4chee HL7 Patient sync | `dcm4chee:2575` | `DCM4CHEE_HL7_PORT` (default `2575`) |
+| dcm4chee HL7 Patient sync | `dcm4chee:2575` | `DCM4CHEE_HL7_HOST_PORT` (default `2575`) |
 
 ## OIE Managed Channel Startup Bootstrap
 
@@ -335,5 +300,5 @@ http://127.0.0.1:3000
 ```
 
 Use that UI to create OAuth client credentials for this local Medplum runtime.
-Those credentials are the ones that should be copied into `MEDPLUM_CLIENT_ID`
-and `MEDPLUM_CLIENT_SECRET` for `lab-app`.
+Save those credentials in **Settings → Medplum**. The client secret is
+write-only and is not copied into Compose or browser storage.
