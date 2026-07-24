@@ -1,0 +1,197 @@
+<div class="external-device-settings" data-integration-owner="external-devices">
+  <header class="external-device-heading">
+    <div>
+      <h3>AP / External Devices</h3>
+      <p>Manage reusable device identities for HL7, GDT, and DICOM workflows.</p>
+    </div>
+    <p id="external-device-readiness" class="external-device-readiness" role="status">
+      Readiness has not been checked.
+    </p>
+  </header>
+
+  <section class="lab-panel settings-panel" aria-labelledby="external-device-profiles-title">
+    <div class="external-device-toolbar">
+      <div>
+        <h4 id="external-device-profiles-title">Device profiles</h4>
+        <p class="muted">Only an enabled default profile is effective for an environment.</p>
+      </div>
+      <label for="external-device-environment-filter">Environment
+        <select id="external-device-environment-filter">
+          <option value="lab">Lab</option>
+          <option value="development">Development</option>
+          <option value="staging">Staging</option>
+          <option value="production">Production</option>
+        </select>
+      </label>
+      <button id="external-device-new" type="button">New profile</button>
+    </div>
+
+    <div class="external-device-layout">
+      <nav aria-label="AP device profiles">
+        <ul id="external-device-profile-list" class="external-device-profile-list"></ul>
+        <p id="external-device-empty" class="muted">No profiles in this environment.</p>
+      </nav>
+
+      <form id="external-device-form" novalidate aria-labelledby="external-device-editor-title">
+        <fieldset id="external-device-editor">
+          <legend id="external-device-editor-title">Profile details</legend>
+          <input id="external-device-id" type="hidden">
+          <div class="form-grid settings-form-grid">
+            <label for="external-device-name">Profile name
+              <input id="external-device-name" autocomplete="off" required>
+            </label>
+            <label for="external-device-environment">Environment
+              <select id="external-device-environment" required>
+                <option value="lab">Lab</option>
+                <option value="development">Development</option>
+                <option value="staging">Staging</option>
+                <option value="production">Production</option>
+              </select>
+            </label>
+            <label class="checkbox-row">
+              <input id="external-device-enabled" type="checkbox">
+              Enable this device profile
+            </label>
+            <label class="checkbox-row">
+              <input id="external-device-default" type="checkbox">
+              Default AP for this environment
+            </label>
+          </div>
+
+          <fieldset class="external-device-protocol" data-protocol="hl7">
+            <legend>
+              <label class="checkbox-row">
+                <input id="external-device-hl7-enabled" type="checkbox" aria-controls="external-device-hl7-fields">
+                HL7 / MLLP
+              </label>
+            </legend>
+            <div id="external-device-hl7-fields" class="external-device-protocol-fields">
+              <p class="external-device-direction">
+                <strong>Healthcare Lab / OIE → AP endpoint</strong>
+                These values identify the AP listener. Saving never applies or redeploys an OIE Channel.
+              </p>
+              <div class="form-grid settings-form-grid">
+                <label for="external-device-hl7-host">AP MLLP host
+                  <input id="external-device-hl7-host" autocomplete="off">
+                </label>
+                <label for="external-device-hl7-port">AP MLLP port
+                  <input id="external-device-hl7-port" type="number" min="1" max="65535">
+                </label>
+                <label for="external-device-hl7-application">AP receiving application
+                  <input id="external-device-hl7-application" autocomplete="off">
+                </label>
+                <label for="external-device-hl7-facility">AP receiving facility
+                  <input id="external-device-hl7-facility" autocomplete="off">
+                </label>
+                <label for="external-device-hl7-sending-application">AP sending application
+                  <input id="external-device-hl7-sending-application" autocomplete="off">
+                </label>
+                <label for="external-device-hl7-sending-facility">AP sending facility
+                  <input id="external-device-hl7-sending-facility" autocomplete="off">
+                </label>
+              </div>
+              <p class="muted"><strong>AP → Healthcare Lab:</strong> the OIE result listener is integration-owned and configured under OIE.</p>
+            </div>
+          </fieldset>
+
+          <fieldset class="external-device-protocol" data-protocol="gdt">
+            <legend>
+              <label class="checkbox-row">
+                <input id="external-device-gdt-enabled" type="checkbox" aria-controls="external-device-gdt-fields">
+                GDT
+              </label>
+            </legend>
+            <div id="external-device-gdt-fields" class="external-device-protocol-fields">
+              <p class="external-device-direction">
+                <strong>Healthcare Lab ↔ GDT Bridge ↔ AP</strong>
+                Device identities belong here; exchange folders and watcher activation remain Bridge-owned.
+              </p>
+              <div class="form-grid settings-form-grid">
+                <label for="external-device-gdt-bridge-profile">GDT Bridge profile
+                  <input id="external-device-gdt-bridge-profile" autocomplete="off">
+                </label>
+                <label for="external-device-gdt-sender-id">AP sender ID
+                  <input id="external-device-gdt-sender-id" autocomplete="off">
+                </label>
+                <label for="external-device-gdt-receiver-id">AP receiver ID
+                  <input id="external-device-gdt-receiver-id" autocomplete="off">
+                </label>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="external-device-protocol" data-protocol="dicom">
+            <legend>
+              <label class="checkbox-row">
+                <input id="external-device-dicom-enabled" type="checkbox" aria-controls="external-device-dicom-fields">
+                DICOM
+              </label>
+            </legend>
+            <div id="external-device-dicom-fields" class="external-device-protocol-fields">
+              <p class="external-device-direction">
+                <strong>AP ↔ dcm4chee archive</strong>
+                AP identity and optional AP endpoint belong here; archive endpoint and called AE remain dcm4chee-owned.
+              </p>
+              <div class="form-grid settings-form-grid">
+                <label for="external-device-dicom-ae-title">AP AE title
+                  <input id="external-device-dicom-ae-title" maxlength="16" autocomplete="off">
+                </label>
+                <label for="external-device-dicom-host">AP DICOM host
+                  <input id="external-device-dicom-host" autocomplete="off">
+                </label>
+                <label for="external-device-dicom-port">AP DICOM port
+                  <input id="external-device-dicom-port" type="number" min="1" max="65535">
+                </label>
+                <label for="external-device-dicom-mwl-calling-ae">AP MWL calling AE
+                  <input id="external-device-dicom-mwl-calling-ae" maxlength="16" autocomplete="off">
+                </label>
+                <label for="external-device-dicom-station-ae">Scheduled Station AE
+                  <input id="external-device-dicom-station-ae" maxlength="16" autocomplete="off">
+                </label>
+                <label for="external-device-dicom-result-role">AP result-delivery role
+                  <select id="external-device-dicom-result-role">
+                    <option value="none">No DICOM result delivery</option>
+                    <option value="scu">AP sends results (Storage SCU)</option>
+                    <option value="scp">AP receives results (Storage SCP)</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </fieldset>
+        </fieldset>
+
+        <div class="button-row">
+          <button id="external-device-save" class="primary" type="submit">Save profile</button>
+          <button id="external-device-set-default" type="button">Make environment default</button>
+          <button id="external-device-run-diagnostics" type="button">Run bounded diagnostics</button>
+        </div>
+        <p id="external-device-save-result" class="settings-result" role="status"></p>
+      </form>
+    </div>
+  </section>
+
+  <section aria-labelledby="external-device-diagnostics-title">
+    <h4 id="external-device-diagnostics-title">Readiness and safe diagnostics</h4>
+    <p class="muted">Checks are timeout-bounded. A <code>transport-reachable</code> result does not imply protocol success.</p>
+    <div id="external-device-activation-guidance" class="external-device-guidance" hidden>
+      <strong>OIE apply required.</strong>
+      Review the owned-field drift under OIE, then use its guarded Preview → Apply workflow.
+      Saving this profile never changes or redeploys a Channel.
+    </div>
+    <div id="external-device-diagnostics" class="settings-diagnostics-grid" aria-live="polite"></div>
+    <article class="external-device-observation" aria-labelledby="external-device-last-interaction-title">
+      <h5 id="external-device-last-interaction-title">Last observed interaction</h5>
+      <dl id="external-device-last-interaction">
+        <div><dt>Protocol</dt><dd data-observation="protocol">None</dd></div>
+        <div><dt>Direction</dt><dd data-observation="direction">None</dd></div>
+        <div><dt>Time</dt><dd data-observation="timestamp">None</dd></div>
+        <div><dt>Outcome</dt><dd data-observation="outcomeCode">None</dd></div>
+      </dl>
+      <p class="muted">Clinical identifiers and raw HL7, GDT, or DICOM payloads are never displayed.</p>
+    </article>
+  </section>
+  <details>
+    <summary>Advanced</summary>
+    <p class="muted">Environment selection and network topology remain explicit; saving a profile does not publish ports or activate OIE Channels.</p>
+  </details>
+</div>

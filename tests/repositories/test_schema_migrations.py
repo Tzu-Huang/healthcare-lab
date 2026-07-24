@@ -53,8 +53,8 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
         legacy = self._schema_inventory(legacy_path)
         migrated = self._schema_inventory(migrated_path)
         self.assertEqual(migrated, legacy)
-        self.assertEqual(len(migrated[0]), 26)
-        self.assertEqual(len(migrated[1]), 22)
+        self.assertEqual(len(migrated[0]), 29)
+        self.assertEqual(len(migrated[1]), 26)
         self.assertIn("integration_settings_profiles", migrated[0])
         self.assertIn("integration_settings_secrets", migrated[0])
         self.assertIn("integration_settings_mutation_audits", migrated[0])
@@ -89,8 +89,65 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
             preserved = connection.execute(
                 "SELECT mrn FROM local_patient_records WHERE id = ?", (patient["id"],)
             ).fetchone()
-        self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8])
+        self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
         self.assertEqual(preserved["mrn"], "MRN-UNVERSIONED-1")
+
+    def test_database_with_bootstrap_status_migration_8_upgrades_to_typed_settings(self):
+        database_path = self.root / "bootstrap-status-v8.db"
+        legacy_database = SQLiteDatabase(
+            database_path,
+            migrations=APPLICATION_MIGRATIONS[:8],
+        )
+        legacy_database.initialize()
+
+        database = SQLiteDatabase(database_path, migrations=APPLICATION_MIGRATIONS)
+        database.initialize()
+
+        with database.connect() as connection:
+            migrations = [
+                (row["version"], row["name"])
+                for row in connection.execute(
+                    "SELECT version, name FROM schema_migrations ORDER BY version"
+                )
+            ]
+        self.assertEqual(
+            migrations[-3:],
+            [
+                (8, "add-oie-bootstrap-operational-status"),
+                (9, "add-typed-integration-settings"),
+                (10, "add-ap-external-device-profiles"),
+            ],
+        )
+
+    def test_ap_device_profile_migration_adds_multi_profile_constraints(self):
+        database_path = self.root / "ap-device-v9.db"
+        SQLiteDatabase(
+            database_path, migrations=APPLICATION_MIGRATIONS[:9]
+        ).initialize()
+
+        SQLiteDatabase(database_path, migrations=APPLICATION_MIGRATIONS).initialize()
+
+        with SQLiteDatabase(database_path).connect() as connection:
+            tables = {
+                row["name"]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            indexes = {
+                row["name"]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'index'"
+                )
+            }
+        self.assertTrue(
+            {
+                "ap_device_profiles",
+                "ap_device_profile_audits",
+                "ap_device_observations",
+            }.issubset(tables)
+        )
+        self.assertIn("idx_ap_device_default_environment", indexes)
 
     def test_normalized_duplicate_migration_fails_with_actionable_rows_and_rolls_back(self):
         database_path = self.root / "duplicates.db"

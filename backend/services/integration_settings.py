@@ -255,6 +255,7 @@ class MedplumEffectiveSettings:
 @dataclass(frozen=True)
 class GdtBridgeEffectiveSettings:
     enabled: bool
+    bridge_profile: str
     bridge_path: str
     receiver_id: str
     sender_id: str
@@ -312,9 +313,14 @@ class IntegrationSettingsService:
         repository: IntegrationSettingsRepositoryPort,
         *,
         oie_adapter: OieSettingsAdapter | None = None,
+        ap_protocol_provider=None,
     ) -> None:
         self._repository = repository
         self._oie = oie_adapter
+        self._ap_protocol_provider = ap_protocol_provider
+
+    def set_ap_protocol_provider(self, provider) -> None:
+        self._ap_protocol_provider = provider
 
     def bootstrap_medplum(self, configuration: Mapping[str, Any]) -> bool:
         self._repository.migrate_medplum_profile()
@@ -396,11 +402,39 @@ class IntegrationSettingsService:
         if profile_type == GDT_BRIDGE_PROFILE_TYPE:
             private = self._repository.get_private(profile_type)
             fields = private["fields"]
+            ap_gdt = (
+                self._ap_protocol_provider("gdt")
+                if self._ap_protocol_provider is not None
+                else {"enabled": False}
+            )
+            bridge_profile = str(private["profileName"])
+            if (
+                ap_gdt.get("enabled")
+                and str(ap_gdt.get("bridgeProfile")) != bridge_profile
+            ):
+                raise TypedSettingsValidationError(
+                    (
+                        SettingsValidationIssue(
+                            "gdt.bridgeProfile",
+                            "bridge_profile_unavailable",
+                            "The selected GDT Bridge profile is unavailable.",
+                        ),
+                    )
+                )
             return GdtBridgeEffectiveSettings(
                 enabled=bool(fields["enabled"]),
+                bridge_profile=bridge_profile,
                 bridge_path=str(fields["applicationPath"]),
-                receiver_id=str(fields["receiverId"]),
-                sender_id=str(fields["senderId"]),
+                receiver_id=str(
+                    ap_gdt.get("receiverId")
+                    if ap_gdt.get("enabled")
+                    else fields["receiverId"]
+                ),
+                sender_id=str(
+                    ap_gdt.get("senderId")
+                    if ap_gdt.get("enabled")
+                    else fields["senderId"]
+                ),
                 filename_profile=str(fields["filenameProfile"]),
                 success_mode=str(fields["importSuccessMode"]),
                 poll_seconds=float(fields["pollSeconds"]),
@@ -408,8 +442,34 @@ class IntegrationSettingsService:
             )
         if profile_type == DCM4CHEE_PROFILE_TYPE:
             private = self._repository.get_private(profile_type)
+            profile = copy.deepcopy(dict(private["fields"]))
+            ap_dicom = (
+                self._ap_protocol_provider("dicom")
+                if self._ap_protocol_provider is not None
+                else {"enabled": False}
+            )
+            if ap_dicom.get("enabled"):
+                profile.setdefault("dimse", {})["callingAETitle"] = str(
+                    ap_dicom["mwlCallingAETitle"]
+                )
+                profile.setdefault("mwl", {})[
+                    "defaultScheduledStationAETitle"
+                ] = str(ap_dicom["scheduledStationAETitle"])
+                profile["apDevice"] = {
+                    "profileId": str(ap_dicom["profileId"]),
+                    "aeTitle": str(ap_dicom["aeTitle"]),
+                    "endpoint": {
+                        "host": str(ap_dicom["host"]),
+                        "port": int(ap_dicom["port"]),
+                    },
+                    "mwlCallingAETitle": str(ap_dicom["mwlCallingAETitle"]),
+                    "scheduledStationAETitle": str(
+                        ap_dicom["scheduledStationAETitle"]
+                    ),
+                    "resultDeliveryRole": str(ap_dicom["resultDeliveryRole"]),
+                }
             return Dcm4cheeEffectiveSettings(
-                profile=dict(private["fields"]),
+                profile=profile,
                 secrets={
                     field: str(private["secrets"].get(field, ""))
                     for field in DCM4CHEE_SECRET_FIELDS

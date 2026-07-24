@@ -44,11 +44,12 @@ class PreviewTokenCodec:
 
 
 class OieManagedChannelLifecycleService:
-    def __init__(self, client, repository, *, ap_host: str, token_codec: PreviewTokenCodec, operation_id=None, client_provider=None):
+    def __init__(self, client, repository, *, ap_host: str, token_codec: PreviewTokenCodec, operation_id=None, client_provider=None, ap_endpoint_provider=None):
         self._fixed_client, self._client_provider = client, client_provider
         self._active_client = ContextVar("oie_lifecycle_client", default=None)
         self._active_actor = ContextVar("oie_lifecycle_actor", default="local-operator")
         self.repository, self.ap_host, self.tokens = repository, ap_host, token_codec
+        self._ap_endpoint_provider = ap_endpoint_provider
         self.operation_id = operation_id or (lambda: secrets.token_hex(12))
 
     @property
@@ -306,6 +307,13 @@ class OieManagedChannelLifecycleService:
             "retry_count": config.queue.retry_count,
             "retry_interval_ms": config.queue.retry_interval_ms,
         }
+        if kind is ManagedChannelType.ORM_TO_AP:
+            values.update(
+                sending_application=config.hl7_sending_application,
+                sending_facility=config.hl7_sending_facility,
+                receiving_application=config.hl7_receiving_application,
+                receiving_facility=config.hl7_receiving_facility,
+            )
         return compile_orm_to_ap(self.ap_host, **values) if kind is ManagedChannelType.ORM_TO_AP else compile_oru_to_hlab(**values)
 
     def _config(self, kind, items=None):
@@ -323,6 +331,15 @@ class OieManagedChannelLifecycleService:
             "retry_count": int(item.get("retryCount", 0)),
             "retry_interval_ms": int(item.get("retryIntervalMs", 10_000)),
         }
+        if kind is ManagedChannelType.ORM_TO_AP and self._ap_endpoint_provider is not None:
+            endpoint = self._ap_endpoint_provider() or {}
+            if endpoint.get("enabled"):
+                common["destination_host"] = str(endpoint["host"])
+                common["destination_port"] = int(endpoint["port"])
+                common["sending_application"] = str(endpoint["sendingApplication"])
+                common["sending_facility"] = str(endpoint["sendingFacility"])
+                common["receiving_application"] = str(endpoint["receivingApplication"])
+                common["receiving_facility"] = str(endpoint["receivingFacility"])
         return orm_to_ap_config(self.ap_host, **common) if kind is ManagedChannelType.ORM_TO_AP else oru_to_hlab_config(**common)
     @staticmethod
     def _types(logical_type, operation):
@@ -430,7 +447,7 @@ class OieManagedChannelLifecycleService:
         steps.extend({"name": name, "status": "unattempted"} for name in plans[action] if name not in recorded)
 
 
-OWNED_PATHS = ("name", "description", "sourceConnector/properties/listenerConnectorProperties/host", "sourceConnector/properties/listenerConnectorProperties/port", "destinationConnectors/connector/properties/remoteAddress", "destinationConnectors/connector/properties/remotePort", "destinationConnectors/connector/properties/sendTimeout", "destinationConnectors/connector/properties/responseTimeout", "destinationConnectors/connector/properties/queueOnResponseTimeout", "destinationConnectors/connector/properties/destinationConnectorProperties/queueEnabled", "destinationConnectors/connector/properties/destinationConnectorProperties/retryIntervalMillis", "destinationConnectors/connector/properties/destinationConnectorProperties/retryCount", "destinationConnectors/connector/properties/destinationConnectorProperties/queueBufferSize", "properties/initialState", "exportData/metadata/enabled")
+OWNED_PATHS = ("name", "description", "sourceConnector/properties/listenerConnectorProperties/host", "sourceConnector/properties/listenerConnectorProperties/port", "destinationConnectors/connector/properties/remoteAddress", "destinationConnectors/connector/properties/remotePort", "destinationConnectors/connector/properties/sendTimeout", "destinationConnectors/connector/properties/responseTimeout", "destinationConnectors/connector/properties/queueOnResponseTimeout", "destinationConnectors/connector/properties/destinationConnectorProperties/queueEnabled", "destinationConnectors/connector/properties/destinationConnectorProperties/retryIntervalMillis", "destinationConnectors/connector/properties/destinationConnectorProperties/retryCount", "destinationConnectors/connector/properties/destinationConnectorProperties/queueBufferSize", "preprocessingScript", "properties/initialState", "exportData/metadata/enabled")
 
 def merge_owned_xml(current: str, desired: str) -> str:
     live, target = ET.fromstring(current), ET.fromstring(desired)
