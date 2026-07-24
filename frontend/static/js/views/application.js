@@ -261,7 +261,7 @@ export function initializeApplication() {
   registerViewActivation("dcm4chee-view", "dcm4chee", refreshDcm4cheeConsole);
   registerViewActivation("oie-view", "OIE", refreshOieInventory);
   registerViewActivation("gdt-view", "GDT", refreshGdtConsole);
-  registerViewActivation("settings-view", "Settings", refreshSettings);
+  registerViewActivation("settings-view", "Settings", ({ sectionId } = {}) => refreshSettings(sectionId));
   initializeNavigation();
   initializeView("lab-console-view", initializeDashboardView);
   initializeView("oie-view", initializeOieView);

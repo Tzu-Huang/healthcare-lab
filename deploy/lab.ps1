@@ -16,6 +16,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoDir = Split-Path -Parent $ScriptDir
 $ComposeFile = Join-Path $ScriptDir "docker-compose.yml"
 $EnvFile = Join-Path $RepoDir ".env"
+$DefaultGdtBridgePath = Join-Path $RepoDir "instance\gdt-bridge"
 
 $ServiceMap = @{
     "all" = @()
@@ -42,6 +43,73 @@ function Resolve-LabService {
         throw "Unsupported service '$Name'. Allowed values: $Allowed."
     }
     return $ServiceMap[$Key]
+}
+
+function Get-DotEnvValue {
+    param(
+        [string] $Path,
+        [string] $Name
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $null
+    }
+
+    foreach ($Line in Get-Content -LiteralPath $Path) {
+        if ($Line -match "^\s*(?:export\s+)?$([Regex]::Escape($Name))\s*=(.*)$") {
+            $Value = $Matches[1].Trim()
+            if (
+                $Value.Length -ge 2 -and
+                (($Value.StartsWith('"') -and $Value.EndsWith('"')) -or
+                 ($Value.StartsWith("'") -and $Value.EndsWith("'")))
+            ) {
+                $Value = $Value.Substring(1, $Value.Length - 2)
+            }
+            return $Value
+        }
+    }
+    return $null
+}
+
+function Resolve-GdtBridgeHostPath {
+    $ConfiguredPath = [Environment]::GetEnvironmentVariable("GDT_BRIDGE_HOST_PATH")
+    if ([string]::IsNullOrWhiteSpace($ConfiguredPath)) {
+        $ConfiguredPath = Get-DotEnvValue -Path $EnvFile -Name "GDT_BRIDGE_HOST_PATH"
+    }
+    if ([string]::IsNullOrWhiteSpace($ConfiguredPath)) {
+        return [IO.Path]::GetFullPath($DefaultGdtBridgePath)
+    }
+
+    if ([IO.Path]::IsPathRooted($ConfiguredPath)) {
+        $ResolvedPath = [IO.Path]::GetFullPath($ConfiguredPath)
+    } else {
+        $ResolvedPath = [IO.Path]::GetFullPath((Join-Path $RepoDir $ConfiguredPath))
+    }
+
+    $RootPath = [IO.Path]::GetPathRoot($ResolvedPath)
+    $ComparablePath = $ResolvedPath.TrimEnd('\', '/')
+    $RejectedPaths = @(
+        [IO.Path]::GetFullPath($RepoDir),
+        [IO.Path]::GetFullPath($ScriptDir),
+        [IO.Path]::GetFullPath($RootPath)
+    ) | ForEach-Object { $_.TrimEnd('\', '/') }
+    if ($RejectedPaths -contains $ComparablePath) {
+        throw "GDT_BRIDGE_HOST_PATH must identify a dedicated directory, not a broad filesystem or repository path."
+    }
+    if (Test-Path -LiteralPath $ResolvedPath -PathType Leaf) {
+        throw "GDT_BRIDGE_HOST_PATH must identify a directory."
+    }
+    return $ResolvedPath
+}
+
+function Initialize-LabDirectories {
+    $GdtBridgePath = Resolve-GdtBridgeHostPath
+    New-Item -ItemType Directory -Path $GdtBridgePath -Force | Out-Null
+    [Environment]::SetEnvironmentVariable(
+        "GDT_BRIDGE_HOST_PATH",
+        $GdtBridgePath,
+        [EnvironmentVariableTarget]::Process
+    )
 }
 
 function Invoke-DockerCompose {
@@ -83,6 +151,7 @@ switch ($Action) {
         }
     }
     "start" {
+        Initialize-LabDirectories
         Invoke-DockerCompose (@("up", "-d") + $ResolvedServices)
     }
     "stop" {
@@ -93,6 +162,9 @@ switch ($Action) {
         }
     }
     "restart" {
+        if ($ResolvedServices.Count -eq 0) {
+            Initialize-LabDirectories
+        }
         if ($ResolvedServices.Count -eq 0) {
             Invoke-DockerCompose @("up", "-d", "--force-recreate")
         } else {

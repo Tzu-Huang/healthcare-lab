@@ -269,10 +269,22 @@ def load_application_config(
     database_path: str | None = None,
     *,
     environ: Mapping[str, str] | None = None,
+    secret_directory: str | Path = "/run/secrets",
 ) -> dict[str, Any]:
     """Build Flask configuration without depending on Flask request state."""
 
     env = os.environ if environ is None else environ
+    secret_path = Path(secret_directory)
+
+    def secret_value(name: str) -> str:
+        environment_value = env.get(name)
+        if environment_value is not None:
+            return environment_value
+        try:
+            return (secret_path / name).read_text(encoding="utf-8").rstrip("\r\n")
+        except (FileNotFoundError, IsADirectoryError, OSError):
+            return ""
+
     profile_name = env.get("DCM4CHEE_PROFILE_NAME", DCM4CHEE_PROFILE_NAME).strip()
     mwl_ae_title = env.get("DCM4CHEE_MWL_AE_TITLE", "WORKLIST").strip()
     config: dict[str, Any] = {
@@ -297,13 +309,13 @@ def load_application_config(
         "OPENEMR_DB_HOST": env.get("OPENEMR_DB_HOST", ""),
         "OPENEMR_DB_PORT": int(env.get("OPENEMR_DB_PORT", "3306")),
         "OPENEMR_DB_USER": env.get("OPENEMR_DB_USER", ""),
-        "OPENEMR_DB_PASSWORD": env.get("OPENEMR_DB_PASSWORD", ""),
+        "OPENEMR_DB_PASSWORD": secret_value("OPENEMR_DB_PASSWORD"),
         "OPENEMR_DB_NAME": env.get("OPENEMR_DB_NAME", "openemr"),
         "OPENEMR_GDT_PROCEDURE_CODES": parse_openemr_allowed_procedure_codes(
             env.get("OPENEMR_GDT_PROCEDURE_CODES", ",".join(OPENEMR_DEFAULT_ALLOWED_PROCEDURE_CODES))
         ),
         "MEDPLUM_CLIENT_ID": env.get("MEDPLUM_CLIENT_ID", ""),
-        "MEDPLUM_CLIENT_SECRET": env.get("MEDPLUM_CLIENT_SECRET", ""),
+        "MEDPLUM_CLIENT_SECRET": secret_value("MEDPLUM_CLIENT_SECRET"),
         "MEDPLUM_SCOPE": env.get("MEDPLUM_SCOPE", ""),
         "MEDPLUM_TOKEN_URL": env.get("MEDPLUM_TOKEN_URL", ""),
         "MEDPLUM_AUTH_GRACE_SECONDS": int(
@@ -384,6 +396,9 @@ def load_application_config(
         "DCM4CHEE_TOKEN_URL": env.get("DCM4CHEE_TOKEN_URL", "").strip(),
         "DCM4CHEE_CERTIFICATE_PATH": env.get("DCM4CHEE_CERTIFICATE_PATH", "").strip(),
         "DCM4CHEE_PRIVATE_KEY_PATH": env.get("DCM4CHEE_PRIVATE_KEY_PATH", "").strip(),
+        "DCM4CHEE_PASSWORD": secret_value("DCM4CHEE_PASSWORD"),
+        "DCM4CHEE_TOKEN": secret_value("DCM4CHEE_TOKEN"),
+        "DCM4CHEE_CLIENT_SECRET": secret_value("DCM4CHEE_CLIENT_SECRET"),
         "LAB_DEPLOY_SCRIPT": env.get("LAB_DEPLOY_SCRIPT", str(PROJECT_ROOT / "deploy" / "lab.ps1")),
     }
     return config

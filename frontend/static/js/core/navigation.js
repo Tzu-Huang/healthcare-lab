@@ -7,7 +7,7 @@ export function registerViewActivation(viewId, title, activate) {
   activators.set(viewId, { title, activate });
 }
 
-export function activateView(viewId) {
+export function activateView(viewId, activation = {}) {
   document.querySelectorAll(".app-view").forEach((view) => {
     view.hidden = view.id !== viewId;
   });
@@ -17,7 +17,7 @@ export function activateView(viewId) {
   const registration = activators.get(viewId);
   const title = byId("view-title");
   if (title) title.textContent = registration?.title || "Healthcare Lab";
-  Promise.resolve(registration?.activate?.()).catch((error) => {
+  Promise.resolve(registration?.activate?.(activation)).catch((error) => {
     const view = byId(viewId);
     if (view) view.dataset.initializationError = error?.message || "View activation failed";
     document.dispatchEvent(new CustomEvent("healthcare-lab:view-error", {
