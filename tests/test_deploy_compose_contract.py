@@ -108,12 +108,20 @@ class ComposePortContractTests(unittest.TestCase):
     def test_compose_passes_only_explicit_legacy_bootstrap_allowlist(self):
         for setting in (
             "MEDPLUM_CLIENT_ID",
-            "MEDPLUM_CLIENT_SECRET",
             "GDT_BRIDGE_RECEIVER_ID",
             "OPENEMR_DB_HOST",
-            "DCM4CHEE_PASSWORD",
         ):
             self.assertIn(f"{setting}: ${{{setting}:-", self.compose)
+        for secret in (
+            "MEDPLUM_CLIENT_SECRET",
+            "OPENEMR_DB_PASSWORD",
+            "DCM4CHEE_PASSWORD",
+            "DCM4CHEE_TOKEN",
+            "DCM4CHEE_CLIENT_SECRET",
+        ):
+            self.assertIn(f"environment: {secret}", self.compose)
+            self.assertIn(f"target: {secret}", self.compose)
+            self.assertNotIn(f"{secret}: ${{{secret}:-", self.compose)
         self.assertNotIn("env_file:", self.compose)
 
     def test_dcm4chee_internal_and_host_hl7_ports_have_distinct_owners(self):
@@ -223,7 +231,7 @@ class ComposeRenderContractTests(unittest.TestCase):
                     "OIE_HTTP_PORT=18080",
                     f"GDT_BRIDGE_HOST_PATH={override_path}",
                     "MEDPLUM_POSTGRES_USER=lab_operator",
-                    f"MEDPLUM_POSTGRES_PASSWORD={canary}",
+                    f"MEDPLUM_CLIENT_SECRET={canary}",
                     "DCM4CHEE_LDAP_ROOTPASS=hardened-local-secret",
                 )
             )
@@ -243,9 +251,7 @@ class ComposeRenderContractTests(unittest.TestCase):
             "POSTGRES_USER: lab_operator",
         ):
             self.assertIn(contract, rendered)
-        # Compose config necessarily projects runtime credentials, so the
-        # contract verifies stderr/diagnostics remain value-free and avoids
-        # persisting the rendered output as test evidence.
+        self.assertNotIn(canary, result.stdout)
         self.assertNotIn(canary, result.stderr)
 
 
