@@ -19,8 +19,16 @@ instance/
 .agent/
 .agents/
 .codex/
-openspec/
+contexts/work_logs/
+repo/
+worktrees/
+
+# OpenSpec: publish current specs, keep change workflow history local
+openspec/changes/
 report.md
+
+# One-off verification evidence
+docs/*verification-evidence*.md
 
 # Editors and operating systems
 .idea/

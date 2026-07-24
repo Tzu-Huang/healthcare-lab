@@ -431,7 +431,7 @@ Do not run this test against a shared runtime merely for handbook coverage. Afte
 
 ### RC verification record
 
-The v1.0.0 RC live gate passed on 2026-07-21 with OIE `4.5.2`. The witnessed run verified managed Channel create/deploy/read-back, an ORM with ACK `AA` and exactly one AP receipt, matched and unmatched ORU handling, managed lifecycle isolation, and queued ORU recovery with exactly one persisted result. The detailed correlation ledger is maintained in `docs/oie-live-verification-evidence-z52-20260721-a.md`.
+The v1.0.0 RC live gate passed on 2026-07-21 with OIE `4.5.2`. The witnessed run verified managed Channel create/deploy/read-back, an ORM with ACK `AA` and exactly one AP receipt, matched and unmatched ORU handling, managed lifecycle isolation, and queued ORU recovery with exactly one persisted result. The detailed correlation ledger is retained as a private verification artifact outside the repository.
 
 On 2026-07-22, the browser view captured above reconfirmed the actual labels and read-only state: Order endpoint `oie:6600`, MLLP enabled, `Status: Accepted`, `Last ACK: AA`, listener `Running 0.0.0.0:6665`, and an ORU retained in `Unmatched Results`. No shared-runtime Stop/Restart or duplicate send was performed during this handbook pass.
 
