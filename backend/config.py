@@ -396,6 +396,9 @@ def load_application_config(
         "DCM4CHEE_TOKEN_URL": env.get("DCM4CHEE_TOKEN_URL", "").strip(),
         "DCM4CHEE_CERTIFICATE_PATH": env.get("DCM4CHEE_CERTIFICATE_PATH", "").strip(),
         "DCM4CHEE_PRIVATE_KEY_PATH": env.get("DCM4CHEE_PRIVATE_KEY_PATH", "").strip(),
+        "DCM4CHEE_PASSWORD": secret_value("DCM4CHEE_PASSWORD"),
+        "DCM4CHEE_TOKEN": secret_value("DCM4CHEE_TOKEN"),
+        "DCM4CHEE_CLIENT_SECRET": secret_value("DCM4CHEE_CLIENT_SECRET"),
         "LAB_DEPLOY_SCRIPT": env.get("LAB_DEPLOY_SCRIPT", str(PROJECT_ROOT / "deploy" / "lab.ps1")),
     }
     return config
