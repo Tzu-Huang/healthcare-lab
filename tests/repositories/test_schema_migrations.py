@@ -89,8 +89,34 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
             preserved = connection.execute(
                 "SELECT mrn FROM local_patient_records WHERE id = ?", (patient["id"],)
             ).fetchone()
-        self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8])
+        self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9])
         self.assertEqual(preserved["mrn"], "MRN-UNVERSIONED-1")
+
+    def test_database_with_bootstrap_status_migration_8_upgrades_to_typed_settings(self):
+        database_path = self.root / "bootstrap-status-v8.db"
+        legacy_database = SQLiteDatabase(
+            database_path,
+            migrations=APPLICATION_MIGRATIONS[:8],
+        )
+        legacy_database.initialize()
+
+        database = SQLiteDatabase(database_path, migrations=APPLICATION_MIGRATIONS)
+        database.initialize()
+
+        with database.connect() as connection:
+            migrations = [
+                (row["version"], row["name"])
+                for row in connection.execute(
+                    "SELECT version, name FROM schema_migrations ORDER BY version"
+                )
+            ]
+        self.assertEqual(
+            migrations[-2:],
+            [
+                (8, "add-oie-bootstrap-operational-status"),
+                (9, "add-typed-integration-settings"),
+            ],
+        )
 
     def test_normalized_duplicate_migration_fails_with_actionable_rows_and_rolls_back(self):
         database_path = self.root / "duplicates.db"
