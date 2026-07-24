@@ -9,7 +9,7 @@
 - [x] 2.1 Add automated coverage for startup with no `.env`, database, or prior volumes and for accurate initial readiness/default projections.
 - [ ] 2.2 Verify Medplum configuration and bounded authenticated stages through Settings using synthetic credentials.
 - [ ] 2.3 Verify built-in OIE and dcm4chee defaults plus explicit configure-or-disable flows for GDT and AP.
-- [ ] 2.4 Verify setup completion across application restart and compatible container recreation with retained storage.
+- [x] 2.4 Verify setup completion across application restart and compatible container recreation with retained storage.
 
 ## 3. Upgrade and Precedence Verification
 
@@ -19,7 +19,7 @@
 
 ## 4. Failure and Authority Matrix
 
-- [ ] 4.1 Verify wrong Medplum secret and unreachable FHIR URL classification, partial-stage outcomes, and recovery guidance.
+- [x] 4.1 Verify wrong Medplum secret and unreachable FHIR URL classification, partial-stage outcomes, and recovery guidance.
 - [ ] 4.2 Verify missing or unwritable GDT paths without creating, deleting, or moving an unsafe target.
 - [ ] 4.3 Verify unreachable dcm4chee, invalid AE title, AP/OIE drift, and partial service availability as independent bounded failures.
 - [ ] 4.4 Scan API, UI, wrapper, selected log, screenshot, and evidence outputs for secret, PHI, raw-message, FHIR-body, and upstream-response canaries.
@@ -36,8 +36,8 @@
 
 ## 6. Disposable Live Evidence and Closure
 
-- [ ] 6.1 Execute the fresh-install matrix in an exclusively owned disposable environment and record the exact tested commit and environment.
-- [ ] 6.2 Execute the legacy-upgrade and second-restart precedence matrix without deleting retained volumes.
+- [x] 6.1 Execute the fresh-install matrix in an exclusively owned disposable environment and record the exact tested commit and environment.
+- [x] 6.2 Execute the legacy-upgrade and second-restart precedence matrix without deleting retained volumes.
 - [ ] 6.3 Execute the failure/safety matrix and inspect all screenshots for synthetic data and absent credentials.
 - [x] 6.4 Record precise environment-dependent skips and create linked defect issues for reproducible implementation failures that block acceptance.
 - [x] 6.5 Run unit, integration, frontend, Compose contract, migration, syntax, handbook-generation, OpenSpec strict-validation, and diff-hygiene checks.
