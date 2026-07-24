@@ -85,13 +85,31 @@ class LifecycleServiceTests(unittest.TestCase):
                 "enabled": True,
                 "host": "effective-ap",
                 "port": 6688,
+                "sendingApplication": "HLAB",
+                "sendingFacility": "LAB",
+                "receivingApplication": "ECG_AP",
+                "receivingFacility": "CARDIOLOGY",
             },
         )
 
         config = service._config(ManagedChannelType.ORM_TO_AP)
 
         self.assertEqual((config.destination.host, config.destination.port), ("effective-ap", 6688))
+        self.assertEqual(
+            (
+                config.hl7_sending_application,
+                config.hl7_sending_facility,
+                config.hl7_receiving_application,
+                config.hl7_receiving_facility,
+            ),
+            ("HLAB", "LAB", "ECG_AP", "CARDIOLOGY"),
+        )
         self.assertEqual(repository.mapping["destinationHost"], "legacy-ap")
+
+        desired = ET.fromstring(service._payload(ManagedChannelType.ORM_TO_AP))
+        script = desired.findtext("preprocessingScript")
+        self.assertIn("// HLAB_AP_IDENTITY:HLAB|LAB|ECG_AP|CARDIOLOGY", script)
+        self.assertIn('msh[4] = "ECG_AP"', script)
 
     def test_bootstrap_actor_is_applied_to_preview_and_mutation_audits(self):
         client, repository = FakeClient(), FakeRepository(mapped=False)

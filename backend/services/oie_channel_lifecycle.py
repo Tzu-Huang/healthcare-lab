@@ -307,6 +307,13 @@ class OieManagedChannelLifecycleService:
             "retry_count": config.queue.retry_count,
             "retry_interval_ms": config.queue.retry_interval_ms,
         }
+        if kind is ManagedChannelType.ORM_TO_AP:
+            values.update(
+                sending_application=config.hl7_sending_application,
+                sending_facility=config.hl7_sending_facility,
+                receiving_application=config.hl7_receiving_application,
+                receiving_facility=config.hl7_receiving_facility,
+            )
         return compile_orm_to_ap(self.ap_host, **values) if kind is ManagedChannelType.ORM_TO_AP else compile_oru_to_hlab(**values)
 
     def _config(self, kind, items=None):
@@ -329,6 +336,10 @@ class OieManagedChannelLifecycleService:
             if endpoint.get("enabled"):
                 common["destination_host"] = str(endpoint["host"])
                 common["destination_port"] = int(endpoint["port"])
+                common["sending_application"] = str(endpoint["sendingApplication"])
+                common["sending_facility"] = str(endpoint["sendingFacility"])
+                common["receiving_application"] = str(endpoint["receivingApplication"])
+                common["receiving_facility"] = str(endpoint["receivingFacility"])
         return orm_to_ap_config(self.ap_host, **common) if kind is ManagedChannelType.ORM_TO_AP else oru_to_hlab_config(**common)
     @staticmethod
     def _types(logical_type, operation):
@@ -436,7 +447,7 @@ class OieManagedChannelLifecycleService:
         steps.extend({"name": name, "status": "unattempted"} for name in plans[action] if name not in recorded)
 
 
-OWNED_PATHS = ("name", "description", "sourceConnector/properties/listenerConnectorProperties/host", "sourceConnector/properties/listenerConnectorProperties/port", "destinationConnectors/connector/properties/remoteAddress", "destinationConnectors/connector/properties/remotePort", "destinationConnectors/connector/properties/sendTimeout", "destinationConnectors/connector/properties/responseTimeout", "destinationConnectors/connector/properties/queueOnResponseTimeout", "destinationConnectors/connector/properties/destinationConnectorProperties/queueEnabled", "destinationConnectors/connector/properties/destinationConnectorProperties/retryIntervalMillis", "destinationConnectors/connector/properties/destinationConnectorProperties/retryCount", "destinationConnectors/connector/properties/destinationConnectorProperties/queueBufferSize", "properties/initialState", "exportData/metadata/enabled")
+OWNED_PATHS = ("name", "description", "sourceConnector/properties/listenerConnectorProperties/host", "sourceConnector/properties/listenerConnectorProperties/port", "destinationConnectors/connector/properties/remoteAddress", "destinationConnectors/connector/properties/remotePort", "destinationConnectors/connector/properties/sendTimeout", "destinationConnectors/connector/properties/responseTimeout", "destinationConnectors/connector/properties/queueOnResponseTimeout", "destinationConnectors/connector/properties/destinationConnectorProperties/queueEnabled", "destinationConnectors/connector/properties/destinationConnectorProperties/retryIntervalMillis", "destinationConnectors/connector/properties/destinationConnectorProperties/retryCount", "destinationConnectors/connector/properties/destinationConnectorProperties/queueBufferSize", "preprocessingScript", "properties/initialState", "exportData/metadata/enabled")
 
 def merge_owned_xml(current: str, desired: str) -> str:
     live, target = ET.fromstring(current), ET.fromstring(desired)
