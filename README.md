@@ -101,14 +101,13 @@ environment targets `linux/amd64` with Docker Desktop on Windows or an
 equivalent Linux Docker host.
 
 ```powershell
-Copy-Item .env.example .env
-New-Item -ItemType Directory -Force instance\gdt-bridge\inbox
-New-Item -ItemType Directory -Force instance\gdt-bridge\outbox
-docker compose --env-file .env -f deploy\docker-compose.yml up -d
-docker compose --env-file .env -f deploy\docker-compose.yml ps
+.\deploy\lab.ps1 start
+.\deploy\lab.ps1 status
 ```
 
-Open Healthcare Lab at <http://127.0.0.1:5000>.
+No `.env` or YAML edit is required. Open Healthcare Lab at
+<http://127.0.0.1:5000>. If required application settings are incomplete, the
+Dashboard provides a guided action into the owning Settings section.
 
 The Compose stack pulls `ghcr.io/tzu-huang/healthcare-lab:1.0.0` by default, so
 the host does not need Python or a source-code mount. Useful operational
@@ -145,9 +144,9 @@ service-specific operations, troubleshooting, backup, and endpoint migration.
 | dcm4chee DIMSE | `127.0.0.1:11112` | `dcm4chee:11112` |
 | dcm4chee HL7 receiver | `127.0.0.1:2575` | `dcm4chee:2575` |
 
-Published ports can be overridden in `.env`. Docker-internal integrations must
-continue to use service names and container ports rather than host loopback
-addresses.
+Published ports can be overridden with an optional `.env` copied from
+`.env.example`. Docker-internal integrations continue to use service names and
+container ports rather than host loopback addresses.
 
 For dcm4chee, only the browser-facing `DCM4CHEE_WEB_UI_URL` uses the published
 host port. DIMSE, HL7, and DICOMweb settings used by lab-app must keep the
@@ -155,23 +154,21 @@ host port. DIMSE, HL7, and DICOMweb settings used by lab-app must keep the
 
 ## Configuration
 
-Copy `.env.example` to `.env` and review it before starting the stack. The main
-configuration groups are:
+Use the Settings UI for application connections, credentials, protocol
+identities, timeouts, and runtime behavior. Typed profiles persist in the
+`lab-app-instance` volume and remain authoritative after container recreation.
 
-- `LAB_APP_*` and `LAB_APP_IMAGE` — application host port and image selection.
-- `MEDPLUM_*` — Medplum runtime, OAuth client credentials, and public URLs.
-- `OIE_*` and `HLAB_RESULT_LISTENER_*` — OIE management, MLLP ingress, and
-  Healthcare Lab result-listener endpoints.
-- `OIE_BOOTSTRAP_*` controls bounded startup provisioning for only missing
-  managed OIE Channels; set `OIE_BOOTSTRAP_MODE=off` to disable it.
-- `DCM4CHEE_*` — DICOMweb, DIMSE, HL7, AE titles, authentication, and TLS.
-- `GDT_BRIDGE_*` — host-folder binding, import behavior, filename profile, and
-  watcher timing.
-- `OPENEMR_DB_*` — optional external OpenEMR database integration.
+`.env.example` is an optional **Advanced deployment** template for immutable
+image selection, host-published ports, the GDT host bind, service database
+credentials/security hardening, and startup policy. Existing installations may
+keep eligible legacy application values for one startup: Compose passes only a
+fixed allowlist, missing typed profiles are seeded once, and persisted Settings
+are never overwritten by later environment changes.
 
-Keep secrets in the untracked `.env` file or the operator environment. The
-defaults are deliberately local-lab settings and do not provide production TLS,
-authentication, authorization, or audit controls.
+Keep deployment secrets in the untracked `.env` or an approved secret store.
+Application secrets entered in Settings are never written back to `.env`,
+Compose, browser storage, command output, or generated diagnostics. Local
+defaults do not provide production TLS, authentication, or authorization.
 
 ## Local Development
 
@@ -181,7 +178,6 @@ Python 3.10 or newer is required for direct host development:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
 python app.py
 ```
 
@@ -189,8 +185,8 @@ The development server binds to `127.0.0.1:5000` by default. Override
 `LAB_APP_HOST`, `LAB_APP_PORT`, or `HEALTHCARE_LAB_DB` when needed. Runtime data
 is otherwise stored in `instance/healthcare-lab.db`.
 
-The checked-in `.env.example` targets Docker Compose. When running `python
-app.py` directly on the host while dcm4chee remains in Docker, set
+When running `python app.py` directly on the host while dcm4chee remains in
+Docker, set
 `DCM4CHEE_DIMSE_HOST=127.0.0.1` and `DCM4CHEE_HL7_HOST=127.0.0.1`, then replace
 `http://dcm4chee:8080` with `http://127.0.0.1:8082` in the DICOMweb URLs.
 
