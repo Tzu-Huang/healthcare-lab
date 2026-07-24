@@ -6,6 +6,7 @@ from pathlib import Path
 
 from backend.application_composition import assemble_application_dependencies
 from backend.app_factory import create_app
+from backend.config import load_application_config
 from backend.domain.integration_settings import TypedSettingsValidationError
 from backend.repositories.database import SQLiteDatabase
 from backend.repositories.schema import APPLICATION_MIGRATIONS
@@ -253,6 +254,46 @@ class IntegrationSettingsServiceTests(unittest.TestCase):
         persisted = restarted.integration_settings_service.get_effective("dcm4chee")
         self.assertEqual("archive-one", persisted.profile["dimse"]["host"])
         self.assertEqual("Operator archive", persisted.profile["displayName"])
+
+    def test_dcm4chee_compose_secrets_reach_bootstrap_without_public_values(self):
+        secret_directory = Path(self.temporary.name) / "compose-secrets"
+        secret_directory.mkdir()
+        expected = {
+            "DCM4CHEE_PASSWORD": "password-canary",
+            "DCM4CHEE_TOKEN": "token-canary",
+            "DCM4CHEE_CLIENT_SECRET": "client-secret-canary",
+        }
+        for name, value in expected.items():
+            (secret_directory / name).write_text(f"{value}\n", encoding="utf-8")
+
+        configuration = load_application_config(
+            str(Path(self.temporary.name) / "instance"),
+            environ={
+                "DCM4CHEE_AUTH_MODE": "basic",
+                "DCM4CHEE_USERNAME": "legacy-user",
+            },
+            secret_directory=secret_directory,
+        )
+        dependencies = assemble_application_dependencies(
+            self.path,
+            configuration=configuration,
+        )
+
+        effective = dependencies.integration_settings_service.get_effective("dcm4chee")
+        self.assertEqual(
+            {
+                "password": "password-canary",
+                "token": "token-canary",
+                "clientSecret": "client-secret-canary",
+            },
+            effective.secrets,
+        )
+        public = dependencies.integration_settings_service.get_public("dcm4chee")
+        self.assertTrue(
+            all(state == {"configured": True} for state in public["secrets"].values())
+        )
+        for value in expected.values():
+            self.assertNotIn(value, repr(public))
 
     def test_dcm4chee_identity_change_is_blocked_when_records_depend_on_it(self):
         dependencies = assemble_application_dependencies(self.path)
