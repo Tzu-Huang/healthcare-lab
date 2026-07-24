@@ -23,11 +23,11 @@
 
 ## 4. Modular Settings Experience
 
-- [ ] 4.1 Add an AP-owned Settings template/controller, API adapter, state, styles, and module registration.
-- [ ] 4.2 Implement accessible profile management, environment/default controls, and conditional HL7, GDT, and DICOM sections.
-- [ ] 4.3 Clearly label AP endpoints versus Healthcare Lab/integration endpoints and present validation and activation impact.
-- [ ] 4.4 Present bounded diagnostics, safe last interaction, OIE `apply-required` guidance, and Overview readiness.
-- [ ] 4.5 Add frontend tests for module ownership, accessibility, multi-profile behavior, protocol validation, direction labels, readiness, and redaction.
+- [x] 4.1 Add an AP-owned Settings template/controller, API adapter, state, styles, and module registration.
+- [x] 4.2 Implement accessible profile management, environment/default controls, and conditional HL7, GDT, and DICOM sections.
+- [x] 4.3 Clearly label AP endpoints versus Healthcare Lab/integration endpoints and present validation and activation impact.
+- [x] 4.4 Present bounded diagnostics, safe last interaction, OIE `apply-required` guidance, and Overview readiness.
+- [x] 4.5 Add frontend tests for module ownership, accessibility, multi-profile behavior, protocol validation, direction labels, readiness, and redaction.
 
 ## 5. Verification
 

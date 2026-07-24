@@ -14,6 +14,10 @@ import {
   initializeDcm4cheeSettingsSection,
   refreshDcm4cheeSettings,
 } from "./dcm4chee.js";
+import {
+  initializeExternalDeviceSettingsSection,
+  refreshExternalDeviceSettings,
+} from "./external-devices.js";
 
 const noOpInitialize = () => {};
 const noOpRefresh = async () => undefined;
@@ -76,7 +80,9 @@ export const SETTINGS_MODULES = Object.freeze([
   }),
   integrationModule({
     id: "external-devices", label: "AP / External Devices", required: false,
-    owners: { view: "settings/external-devices.js", api: "api/settings.js", state: "state/settings.js", style: "css/views/settings.css" },
+    owners: { view: "settings/external-devices.js", api: "settings/external-devices.js", state: "settings/external-devices.js", style: "css/settings/external-devices.css" },
+    initialize: initializeExternalDeviceSettingsSection,
+    refresh: refreshExternalDeviceSettings,
   }),
   defineSettingsModule({
     id: "deployment", label: "Deployment & Diagnostics", required: true, owners: workspaceOwners,
