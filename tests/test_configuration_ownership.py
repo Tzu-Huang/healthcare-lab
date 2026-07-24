@@ -22,10 +22,27 @@ def declared_deployment_keys() -> set[str]:
         text = (ROOT / relative).read_text(encoding="utf-8")
         keys.update(re.findall(r"(?m)^#?\s*([A-Z][A-Z0-9_]+)=", text))
         keys.update(re.findall(r"\$\{([A-Z][A-Z0-9_]+)", text))
+        keys.update(
+            re.findall(
+                r"(?m)^\s*environment:\s*([A-Z][A-Z0-9_]+)\s*$",
+                text,
+            )
+        )
     return keys
 
 
 class ConfigurationOwnershipContractTests(unittest.TestCase):
+    def test_compose_secret_environment_keys_are_declared(self):
+        self.assertTrue(
+            {
+                "MEDPLUM_CLIENT_SECRET",
+                "OPENEMR_DB_PASSWORD",
+                "DCM4CHEE_PASSWORD",
+                "DCM4CHEE_TOKEN",
+                "DCM4CHEE_CLIENT_SECRET",
+            }.issubset(declared_deployment_keys())
+        )
+
     def test_every_declared_environment_and_compose_key_has_exactly_one_owner(self):
         self.assertEqual(declared_deployment_keys(), set(CONFIGURATION_OWNERSHIP))
         self.assertTrue(
