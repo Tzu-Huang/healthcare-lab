@@ -1,6 +1,8 @@
 import { checkAllDashboardServices, fetchDashboardServices, runDashboardChildAction, runDashboardServiceAction } from "../api/dashboard.js";
+import { fetchSettingsReadiness } from "../api/readiness.js";
 import { setStatus } from "../components/status.js";
 import { byId, createElement, rowCell } from "../core/dom.js";
+import { activateView } from "../core/navigation.js";
 
 const DASHBOARD_RESOURCE_CONTAINERS = [
   { displayName: "oie-1", aliases: ["oie-1", "oie"] },
@@ -15,6 +17,7 @@ const state = {
   expandedServiceIds: new Set(),
 };
 let initialized = false;
+let setupDestination = null;
 
 export function initializeDashboardView() {
   if (initialized) return;
@@ -22,6 +25,49 @@ export function initializeDashboardView() {
   byId("refresh-dashboard").addEventListener("click", refreshDashboard);
   byId("run-all-lab-checks").addEventListener("click", runAllChecks);
   byId("dashboard-filter").addEventListener("input", renderServices);
+  byId("dashboard-open-settings").addEventListener("click", () => {
+    activateView("settings-view", { sectionId: setupDestination });
+  });
+}
+
+function readinessItem(payload) {
+  return payload?.item || payload || {};
+}
+
+function renderSetupNotice({ visible, unavailable = false, sectionId = null } = {}) {
+  const notice = byId("dashboard-setup-notice");
+  const title = byId("dashboard-setup-title");
+  const summary = byId("dashboard-setup-summary");
+  const action = byId("dashboard-open-settings");
+  setupDestination = sectionId;
+  notice.classList.toggle("is-unavailable", unavailable);
+  notice.hidden = !visible;
+  if (!visible) return;
+  if (unavailable) {
+    title.textContent = "Setup status unavailable";
+    summary.textContent = "Settings remain available while setup status is temporarily unavailable.";
+    action.textContent = "Open Settings";
+    return;
+  }
+  title.textContent = "Finish lab setup";
+  summary.textContent = "Required integration settings need attention before every workflow is available.";
+  action.textContent = "Continue in Settings";
+}
+
+export async function refreshDashboardSetup() {
+  try {
+    const readiness = readinessItem(await fetchSettingsReadiness());
+    if (readiness.complete === true) {
+      renderSetupNotice({ visible: false });
+      return;
+    }
+    renderSetupNotice({
+      visible: true,
+      sectionId: readiness.nextAction?.sectionId || "overview",
+    });
+  } catch (_error) {
+    renderSetupNotice({ visible: true, unavailable: true, sectionId: "overview" });
+  }
 }
 export function statusClass(status) {
   return {
@@ -254,6 +300,7 @@ function renderEvents() {
 }
 
 export async function refreshDashboard() {
+  void refreshDashboardSetup();
   setStatus("dashboard-refresh-status", "Refreshing...", "pending");
   try {
     const result = await fetchDashboardServices();

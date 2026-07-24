@@ -9,8 +9,9 @@ export {
   saveListenerSettings,
 } from "../settings/oie.js";
 
-export async function refreshSettings() {
+export async function refreshSettings(sectionId = null) {
   const root = document.getElementById("settings-view");
+  if (sectionId) root.settingsWorkspace?.activate(sectionId, true);
   const results = await Promise.all([
     ...SETTINGS_MODULES.map((module) => module.refresh(root)),
     refreshSettingsWorkspace(root),
