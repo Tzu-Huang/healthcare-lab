@@ -7,7 +7,7 @@
 ## 2. Fresh-Install Verification
 
 - [x] 2.1 Add automated coverage for startup with no `.env`, database, or prior volumes and for accurate initial readiness/default projections.
-- [ ] 2.2 Verify Medplum configuration and bounded authenticated stages through Settings using synthetic credentials.
+- [x] 2.2 Verify Medplum configuration and bounded authenticated stages through Settings using synthetic credentials.
 - [ ] 2.3 Verify built-in OIE and dcm4chee defaults plus explicit configure-or-disable flows for GDT and AP.
 - [x] 2.4 Verify setup completion across application restart and compatible container recreation with retained storage.
 
