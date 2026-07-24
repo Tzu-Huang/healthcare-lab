@@ -1,9 +1,9 @@
 ## 1. Device Domain and Persistence
 
-- [ ] 1.1 Define AP profile, environment, default-selection, protocol-section, safe metadata, and observation contracts with stable validation errors.
-- [ ] 1.2 Add idempotent multi-profile schema, transactional repository operations, uniqueness/default invariants, value-free audits, and migration coverage.
+- [x] 1.1 Define AP profile, environment, default-selection, protocol-section, safe metadata, and observation contracts with stable validation errors.
+- [x] 1.2 Add idempotent multi-profile schema, transactional repository operations, uniqueness/default invariants, value-free audits, and migration coverage.
 - [ ] 1.3 Add one-time compatibility bootstrap from eligible OIE, GDT Bridge, and dcm4chee values without overwriting existing AP profiles.
-- [ ] 1.4 Add domain and repository tests for one/multiple profiles, duplicate names, defaults, disabled profiles, rollback, and concurrent/stale selection.
+- [x] 1.4 Add domain and repository tests for one/multiple profiles, duplicate names, defaults, disabled profiles, rollback, and concurrent/stale selection.
 
 ## 2. Effective Configuration and Integrations
 

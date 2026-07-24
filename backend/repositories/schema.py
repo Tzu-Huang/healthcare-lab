@@ -234,6 +234,40 @@ CREATE TABLE IF NOT EXISTS integration_settings_mutation_audits (
     created_at TEXT NOT NULL,
     FOREIGN KEY(profile_id) REFERENCES integration_settings_profiles(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS ap_device_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_key TEXT NOT NULL UNIQUE,
+    profile_name TEXT NOT NULL,
+    normalized_name TEXT NOT NULL UNIQUE,
+    environment TEXT NOT NULL,
+    enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+    is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)),
+    schema_version INTEGER NOT NULL DEFAULT 1 CHECK(schema_version > 0),
+    payload_json TEXT NOT NULL,
+    bootstrap_source TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ap_device_profile_audits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL,
+    actor TEXT NOT NULL DEFAULT 'local-operator',
+    operation TEXT NOT NULL,
+    changed_fields_json TEXT NOT NULL DEFAULT '[]',
+    outcome TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(profile_id) REFERENCES ap_device_profiles(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS ap_device_observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL,
+    protocol TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    outcome_code TEXT NOT NULL,
+    correlation_key TEXT NOT NULL DEFAULT '',
+    observed_at TEXT NOT NULL,
+    FOREIGN KEY(profile_id) REFERENCES ap_device_profiles(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS local_gdt_order_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     local_gdt_order_number TEXT NOT NULL UNIQUE,
@@ -554,6 +588,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_oie_lifecycle_audit_operation
 ON oie_managed_channel_lifecycle_audits(profile_id, operation_id);
 CREATE INDEX IF NOT EXISTS idx_integration_settings_audit_profile_created
 ON integration_settings_mutation_audits(profile_id, created_at, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ap_device_default_environment
+ON ap_device_profiles(environment) WHERE is_default = 1;
+CREATE INDEX IF NOT EXISTS idx_ap_device_environment
+ON ap_device_profiles(environment, enabled, profile_name);
+CREATE INDEX IF NOT EXISTS idx_ap_device_audit_profile_created
+ON ap_device_profile_audits(profile_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_ap_device_observation_profile_created
+ON ap_device_observations(profile_id, observed_at, id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fhir_record_identifier
 ON local_fhir_workflow_records(resource_type, identifier_system, identifier_value);
 CREATE INDEX IF NOT EXISTS idx_fhir_record_source
@@ -743,4 +785,5 @@ APPLICATION_MIGRATIONS = (
     Migration(7, "enforce-normalized-patient-mrn-uniqueness", enforce_normalized_patient_mrn_uniqueness),
     Migration(8, "add-oie-bootstrap-operational-status", ensure_application_schema),
     Migration(9, "add-typed-integration-settings", ensure_application_schema),
+    Migration(10, "add-ap-external-device-profiles", ensure_application_schema),
 )
