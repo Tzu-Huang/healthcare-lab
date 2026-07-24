@@ -31,7 +31,7 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Run focused domain, migration, repository, service, API, integration, diagnostics, readiness, and frontend suites.
-- [ ] 5.2 Run OIE lifecycle, GDT Bridge, dcm4chee MWL/result, Settings workspace, and configuration-ownership regressions.
-- [ ] 5.3 Validate the OpenSpec change strictly and confirm saved profiles never mutate OIE automatically.
-- [ ] 5.4 Confirm APIs, audits, logs, diagnostics, and observations contain no raw clinical payloads, Patient data, Order data, or sensitive endpoint errors.
+- [x] 5.1 Run focused domain, migration, repository, service, API, integration, diagnostics, readiness, and frontend suites.
+- [x] 5.2 Run OIE lifecycle, GDT Bridge, dcm4chee MWL/result, Settings workspace, and configuration-ownership regressions.
+- [x] 5.3 Validate the OpenSpec change strictly and confirm saved profiles never mutate OIE automatically.
+- [x] 5.4 Confirm APIs, audits, logs, diagnostics, and observations contain no raw clinical payloads, Patient data, Order data, or sensitive endpoint errors.
