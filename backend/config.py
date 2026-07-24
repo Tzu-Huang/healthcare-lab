@@ -327,6 +327,7 @@ def load_application_config(
         "OIE_AP_RESULT_INGRESS_HOST_PORT": int(env.get("OIE_AP_RESULT_INGRESS_HOST_PORT", "6661")),
         "OIE_ORDER_INGRESS_HOST_PORT": int(env.get("OIE_ORDER_INGRESS_HOST_PORT", "6600")),
         "OIE_MANAGED_AP_HOST": env.get("OIE_MANAGED_AP_HOST", "hl7tester").strip() or "hl7tester",
+        "AP_PROFILE_ENVIRONMENT": env.get("AP_PROFILE_ENVIRONMENT", "lab").strip().lower() or "lab",
         "OIE_BOOTSTRAP_MODE": normalize_oie_bootstrap_mode(env.get("OIE_BOOTSTRAP_MODE")),
         "OIE_BOOTSTRAP_TIMEOUT_SECONDS": parse_positive_config_seconds(
             env.get("OIE_BOOTSTRAP_TIMEOUT_SECONDS"),

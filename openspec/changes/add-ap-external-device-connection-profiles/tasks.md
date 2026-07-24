@@ -2,24 +2,24 @@
 
 - [x] 1.1 Define AP profile, environment, default-selection, protocol-section, safe metadata, and observation contracts with stable validation errors.
 - [x] 1.2 Add idempotent multi-profile schema, transactional repository operations, uniqueness/default invariants, value-free audits, and migration coverage.
-- [ ] 1.3 Add one-time compatibility bootstrap from eligible OIE, GDT Bridge, and dcm4chee values without overwriting existing AP profiles.
+- [x] 1.3 Add one-time compatibility bootstrap from eligible OIE, GDT Bridge, and dcm4chee values without overwriting existing AP profiles.
 - [x] 1.4 Add domain and repository tests for one/multiple profiles, duplicate names, defaults, disabled profiles, rollback, and concurrent/stale selection.
 
 ## 2. Effective Configuration and Integrations
 
-- [ ] 2.1 Compose an application-scoped effective AP resolver with immutable environment-specific HL7, GDT, and DICOM projections.
-- [ ] 2.2 Feed effective AP HL7 values into approved OIE desired configuration and expose `apply-required` drift without lifecycle mutation.
-- [ ] 2.3 Associate effective AP GDT identity with the selected GDT Bridge profile while retaining Bridge-owned filesystem and activation settings.
-- [ ] 2.4 Feed effective AP AE, MWL identity, endpoint, and result-delivery role into dcm4chee workflows while retaining archive-owned values.
-- [ ] 2.5 Add cross-feature tests proving every consumer uses the same effective snapshot and disabled sections are excluded.
+- [x] 2.1 Compose an application-scoped effective AP resolver with immutable environment-specific HL7, GDT, and DICOM projections.
+- [x] 2.2 Feed effective AP HL7 values into approved OIE desired configuration and expose `apply-required` drift without lifecycle mutation.
+- [x] 2.3 Associate effective AP GDT identity with the selected GDT Bridge profile while retaining Bridge-owned filesystem and activation settings.
+- [x] 2.4 Feed effective AP AE, MWL identity, endpoint, and result-delivery role into dcm4chee workflows while retaining archive-owned values.
+- [x] 2.5 Add cross-feature tests proving every consumer uses the same effective snapshot and disabled sections are excluded.
 
 ## 3. APIs, Diagnostics, and Readiness
 
-- [ ] 3.1 Add profile list/read/create/update/default-selection APIs with atomic errors and value-safe audit projections.
-- [ ] 3.2 Implement independent timeout-bounded connectivity checks with partial results and transport-versus-protocol distinctions.
-- [ ] 3.3 Record and expose last-observed interaction metadata through a closed PHI-safe schema.
-- [ ] 3.4 Replace static AP readiness with disabled, needs-setup, apply-required, degraded, and ready assessments.
-- [ ] 3.5 Add API, diagnostics, readiness, timeout, partial-failure, and sensitive-canary tests.
+- [x] 3.1 Add profile list/read/create/update/default-selection APIs with atomic errors and value-safe audit projections.
+- [x] 3.2 Implement independent timeout-bounded connectivity checks with partial results and transport-versus-protocol distinctions.
+- [x] 3.3 Record and expose last-observed interaction metadata through a closed PHI-safe schema.
+- [x] 3.4 Replace static AP readiness with disabled, needs-setup, apply-required, degraded, and ready assessments.
+- [x] 3.5 Add API, diagnostics, readiness, timeout, partial-failure, and sensitive-canary tests.
 
 ## 4. Modular Settings Experience
 

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from xml.etree import ElementTree as ET
 
 from backend.services.oie_channel_lifecycle import LifecycleGuardError, OieManagedChannelLifecycleService, PreviewTokenCodec, merge_owned_xml
+from backend.domain.oie_channel_lifecycle import ManagedChannelType
 from backend.templates.oie_channels import compile_orm_to_ap
 
 
@@ -71,6 +72,26 @@ class LifecycleServiceTests(unittest.TestCase):
         self.assertEqual("success", result["outcome"]); self.assertEqual("c1", repository.mapping["channelId"])
         self.assertEqual("create", client.calls[0][0])
         self.assertEqual("preview-create", repository.audits[0]["operation"])
+
+    def test_effective_ap_endpoint_overrides_saved_orm_destination_without_mutation(self):
+        repository = FakeRepository()
+        repository.mapping["destinationHost"] = "legacy-ap"
+        service = OieManagedChannelLifecycleService(
+            FakeClient(),
+            repository,
+            ap_host="legacy-ap",
+            token_codec=PreviewTokenCodec(b"x" * 32),
+            ap_endpoint_provider=lambda: {
+                "enabled": True,
+                "host": "effective-ap",
+                "port": 6688,
+            },
+        )
+
+        config = service._config(ManagedChannelType.ORM_TO_AP)
+
+        self.assertEqual((config.destination.host, config.destination.port), ("effective-ap", 6688))
+        self.assertEqual(repository.mapping["destinationHost"], "legacy-ap")
 
     def test_bootstrap_actor_is_applied_to_preview_and_mutation_audits(self):
         client, repository = FakeClient(), FakeRepository(mapped=False)
