@@ -71,4 +71,3 @@ Pass all retained text and structured evidence through
 synthetic data only and must be inspected for credentials before commit. Never
 retain raw messages, FHIR bodies, Authorization values, arbitrary upstream
 responses, or real host paths.
-
