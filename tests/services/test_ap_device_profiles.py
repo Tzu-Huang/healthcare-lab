@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from backend.application_composition import assemble_application_dependencies
+from backend.domain.integration_settings import TypedSettingsValidationError
 
 
 class APDeviceProfileServiceTest(unittest.TestCase):
@@ -95,9 +96,47 @@ class APDeviceProfileServiceTest(unittest.TestCase):
         gdt = self.dependencies.integration_settings_service.get_effective("gdt-bridge")
         dcm = self.dependencies.integration_settings_service.get_effective("dcm4chee")
 
-        self.assertEqual((gdt.sender_id, gdt.receiver_id), ("ECG_AP", "HLAB"))
+        self.assertEqual(
+            (gdt.bridge_profile, gdt.sender_id, gdt.receiver_id),
+            ("local-gdt-bridge", "ECG_AP", "HLAB"),
+        )
         self.assertEqual(
             dcm.profile["mwl"]["defaultScheduledStationAETitle"], "ECG_AP"
+        )
+        self.assertEqual(dcm.profile["dimse"]["callingAETitle"], "ECG_AP")
+        self.assertEqual(
+            dcm.profile["apDevice"],
+            {
+                "profileId": "ap-protocols",
+                "aeTitle": "ECG_AP",
+                "endpoint": {"host": "ap.internal", "port": 11112},
+                "mwlCallingAETitle": "ECG_AP",
+                "scheduledStationAETitle": "ECG_AP",
+                "resultDeliveryRole": "scu",
+            },
+        )
+
+    def test_gdt_effective_projection_rejects_unavailable_bridge_association(self):
+        payload = self.profile("ap-invalid-bridge")
+        payload["hl7"] = {"enabled": False}
+        payload["gdt"] = {
+            "enabled": True,
+            "senderId": "ECG_AP",
+            "receiverId": "HLAB",
+            "bridgeProfile": "missing-bridge",
+        }
+        self.service.create(payload)
+        self.service.select_default("ap-invalid-bridge")
+
+        with self.assertRaises(TypedSettingsValidationError) as caught:
+            self.dependencies.integration_settings_service.get_effective("gdt-bridge")
+        self.assertEqual(
+            caught.exception.as_dict()["fields"],
+            [{
+                "field": "gdt.bridgeProfile",
+                "code": "bridge_profile_unavailable",
+                "reason": "The selected GDT Bridge profile is unavailable.",
+            }],
         )
 
 

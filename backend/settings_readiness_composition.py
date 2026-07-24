@@ -13,6 +13,7 @@ from backend.domain.settings_readiness import (
     ReadinessRegistration,
     ReadinessState,
 )
+from backend.domain.integration_settings import TypedSettingsValidationError
 from backend.services.settings_readiness import (
     SettingsReadinessRegistry,
     SettingsReadinessService,
@@ -21,6 +22,7 @@ from backend.services.settings_readiness import (
 
 class IntegrationSettingsReader(Protocol):
     def get_public(self, profile_type: str) -> dict[str, Any]: ...
+    def get_effective(self, profile_type: str) -> Any: ...
     def has_operator_configuration(self, profile_type: str) -> bool: ...
 
 
@@ -210,10 +212,12 @@ class _APDeviceProvider:
         *,
         environment: str,
         oie_desired: Callable[[], dict[str, Any]],
+        integrations: IntegrationSettingsReader | None = None,
     ) -> None:
         self._devices = devices
         self._environment = environment
         self._oie_desired = oie_desired
+        self._integrations = integrations
         self._latest_diagnostic: DiagnosticAssessment | None = None
 
     def assess(self) -> ReadinessAssessment:
@@ -223,6 +227,14 @@ class _APDeviceProvider:
         effective = self._devices.effective(self._environment)
         if effective is None:
             return ReadinessAssessment(ReadinessState.NEEDS_SETUP)
+        if (
+            effective.get("gdt", {}).get("enabled")
+            and self._integrations is not None
+        ):
+            try:
+                self._integrations.get_effective("gdt-bridge")
+            except TypedSettingsValidationError:
+                return ReadinessAssessment(ReadinessState.NEEDS_SETUP)
         hl7 = effective.get("hl7", {})
         if hl7.get("enabled"):
             mappings = self._oie_desired().get("managedChannels", [])
@@ -336,6 +348,7 @@ def create_settings_readiness_service(
                     ap_devices,
                     environment=ap_environment,
                     oie_desired=oie_desired or (lambda: {"managedChannels": []}),
+                    integrations=settings,
                 )
                 if ap_devices is not None
                 else _StaticProvider(ReadinessState.DISABLED),

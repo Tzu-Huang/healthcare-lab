@@ -181,13 +181,18 @@ class Dcm4cheeWorkflowCoordinator:
                 "healthcareLabCallingAETitle": dimse.get("callingAETitle", ""),
                 "mwlAETitle": mwl.get("aeTitle", ""),
                 "scheduledStationAETitle": mapping.get("scheduledStationAETitle") or mwl.get("defaultScheduledStationAETitle", ""),
+                "apAETitle": (profile.get("apDevice") or {}).get("aeTitle", ""),
             },
             "endpoints": {
                 "mwlRestUrl": f"{str(dicomweb.get('baseUrl') or '').rstrip('/')}/mwlitems" if dicomweb.get("baseUrl") else "",
                 "qidoRsUrl": dicomweb.get("qidoRsUrl", ""),
                 "wadoRsUrl": dicomweb.get("wadoRsUrl", ""),
                 "webUiUrl": profile.get("webUiUrl", ""),
+                "apDevice": (profile.get("apDevice") or {}).get("endpoint", {}),
             },
+            "resultDeliveryRole": (profile.get("apDevice") or {}).get(
+                "resultDeliveryRole", ""
+            ),
             "steps": {
                 "patientPrecondition": (patient_sync or {}).get("status") or "not_synced",
                 "mwlCreate": mapping.get("status") or "not_created",
@@ -208,6 +213,11 @@ class Dcm4cheeWorkflowCoordinator:
         artifact_url: str = "",
         artifact_path: str = "",
     ) -> dict[str, Any]:
+        ap_device = profile.get("apDevice") or {}
+        if ap_device and ap_device.get("resultDeliveryRole") != "scu":
+            raise SimulatorValidationError(
+                "The effective AP DICOM role does not permit result delivery."
+            )
         order = self._get_order(int(order_record_id))
         if order.get("protocolVersion") != DCM4CHEE_ORDER_PROTOCOL_VERSION:
             raise SimulatorValidationError("Order record is not DICOM MWL mode.")
