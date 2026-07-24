@@ -741,5 +741,6 @@ APPLICATION_MIGRATIONS = (
     Migration(5, "add-oie-managed-channel-desired-config", ensure_application_schema),
     Migration(6, "add-order-scheduled-time", ensure_application_schema),
     Migration(7, "enforce-normalized-patient-mrn-uniqueness", enforce_normalized_patient_mrn_uniqueness),
-    Migration(8, "add-typed-integration-settings", ensure_application_schema),
+    Migration(8, "add-oie-bootstrap-operational-status", ensure_application_schema),
+    Migration(9, "add-typed-integration-settings", ensure_application_schema),
 )
