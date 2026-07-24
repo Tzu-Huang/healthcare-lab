@@ -16,6 +16,7 @@ from backend.domain.ap_device_profile import (
     APDeviceProfile,
     validate_ap_device_observation,
 )
+from backend.mappers.ap_device_profiles import profile_row, profile_to_mapping
 
 ConnectionFactory = Callable[[], AbstractContextManager[Connection]]
 AUDIT_OPERATIONS = frozenset({"bootstrap", "create", "update", "delete", "select-default"})
@@ -58,38 +59,8 @@ class APDeviceProfileRepository:
         return normalized
 
     @staticmethod
-    def _mapping(profile: Mapping[str, Any] | APDeviceProfile) -> dict[str, Any]:
-        if isinstance(profile, Mapping):
-            return dict(profile)
-        return {
-            "id": profile.profile_id, "name": profile.name,
-            "environment": profile.environment, "enabled": profile.enabled,
-            "isDefault": profile.is_default, "metadata": dict(profile.metadata),
-            "hl7": {
-                "enabled": profile.hl7.enabled, "host": profile.hl7.host,
-                "port": profile.hl7.port,
-                "sendingApplication": profile.hl7.sending_application,
-                "sendingFacility": profile.hl7.sending_facility,
-                "receivingApplication": profile.hl7.receiving_application,
-                "receivingFacility": profile.hl7.receiving_facility,
-            },
-            "gdt": {
-                "enabled": profile.gdt.enabled, "senderId": profile.gdt.sender_id,
-                "receiverId": profile.gdt.receiver_id,
-                "bridgeProfile": profile.gdt.bridge_profile,
-            },
-            "dicom": {
-                "enabled": profile.dicom.enabled, "aeTitle": profile.dicom.ae_title,
-                "host": profile.dicom.host, "port": profile.dicom.port,
-                "mwlCallingAETitle": profile.dicom.mwl_calling_ae_title,
-                "scheduledStationAETitle": profile.dicom.scheduled_station_ae_title,
-                "resultDeliveryRole": profile.dicom.result_delivery_role,
-            },
-        }
-
-    @staticmethod
     def _parts(profile: Mapping[str, Any] | APDeviceProfile) -> tuple[str, str, str, bool, bool, int, dict[str, Any], str]:
-        profile = APDeviceProfileRepository._mapping(profile)
+        profile = profile_to_mapping(profile)
         name = str(profile.get("name", profile.get("profileName", ""))).strip()
         if not name:
             raise ValueError("profileName must not be empty")
@@ -114,21 +85,6 @@ class APDeviceProfileRepository:
         }
         return key, name, environment, enabled, is_default, schema_version, payload, bootstrap_source
 
-    @staticmethod
-    def _project(row: Any) -> dict[str, Any]:
-        return {
-            "id": row["profile_key"],
-            "name": row["profile_name"],
-            "environment": row["environment"],
-            "enabled": bool(row["enabled"]),
-            "isDefault": bool(row["is_default"]),
-            "schemaVersion": int(row["schema_version"]),
-            **json.loads(row["payload_json"]),
-            "bootstrapSource": row["bootstrap_source"],
-            "createdAt": row["created_at"],
-            "updatedAt": row["updated_at"],
-        }
-
     def list(self, *, environment: str | None = None) -> list[dict[str, Any]]:
         query = "SELECT * FROM ap_device_profiles"
         parameters: tuple[Any, ...] = ()
@@ -138,7 +94,7 @@ class APDeviceProfileRepository:
         query += " ORDER BY environment, normalized_name, id"
         with self._connect() as connection:
             rows = connection.execute(query, parameters).fetchall()
-        return [self._project(row) for row in rows]
+        return [profile_row(row) for row in rows]
 
     def get(self, profile_key: str) -> dict[str, Any]:
         with self._connect() as connection:
@@ -147,7 +103,7 @@ class APDeviceProfileRepository:
             ).fetchone()
         if row is None:
             raise KeyError(profile_key)
-        return self._project(row)
+        return profile_row(row)
 
     def get_effective(self, environment: str) -> dict[str, Any] | None:
         with self._connect() as connection:
@@ -156,7 +112,7 @@ class APDeviceProfileRepository:
                 WHERE environment = ? AND enabled = 1 AND is_default = 1""",
                 (self.normalize_environment(environment),),
             ).fetchone()
-        return None if row is None else self._project(row)
+        return None if row is None else profile_row(row)
 
     def create(
         self, profile: Mapping[str, Any] | APDeviceProfile, *, actor: str = "local-operator",
@@ -179,7 +135,7 @@ class APDeviceProfileRepository:
             except IntegrityError as error:
                 self._translate_integrity(error)
             self._audit(connection, int(cursor.lastrowid), actor, operation,
-                        sorted(self._mapping(profile).keys()), timestamp)
+                        sorted(profile_to_mapping(profile).keys()), timestamp)
         return self.get(key)
 
     def update(
