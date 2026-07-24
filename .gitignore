@@ -23,12 +23,27 @@ contexts/work_logs/
 repo/
 worktrees/
 
-# OpenSpec: publish current specs, keep change workflow history local
-openspec/changes/
+# Local specification workflow
+openspec/
 report.md
 
 # One-off verification evidence
 docs/*verification-evidence*.md
+
+# Internal notes and generated documentation artifacts
+docs/ap-integration-test-notes.md
+docs/cortex-medplum-sync-troubleshooting.md
+docs/demo-walkthrough.md
+docs/design/
+docs/ecg-hl7-integration-research.md
+docs/handbook/*.docx
+docs/healthcare-lab-simple-workflows.md
+docs/hl7-oru-pdf-validation.md
+docs/images/
+docs/releases/*-checklist.md
+docs/reverse-proxy-nginx.md
+docs/settings-workspace.md
+docs/test-ownership-map.md
 
 # Editors and operating systems
 .idea/
