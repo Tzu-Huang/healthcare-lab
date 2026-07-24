@@ -1,6 +1,6 @@
 ## 1. Verification Fixtures and Safety
 
-- [ ] 1.1 Define the supported disposable Compose project, port, volume, synthetic-data, and cleanup boundaries with collision-safe pre-flight checks.
+- [x] 1.1 Define the supported disposable Compose project, port, volume, synthetic-data, and cleanup boundaries with collision-safe pre-flight checks.
 - [x] 1.2 Create or identify a versioned canonical pre-unified-Settings database fixture and document its schema provenance.
 - [x] 1.3 Add secret and PHI canaries plus bounded evidence-capture helpers that reject unsafe output.
 
@@ -39,5 +39,5 @@
 - [ ] 6.1 Execute the fresh-install matrix in an exclusively owned disposable environment and record the exact tested commit and environment.
 - [ ] 6.2 Execute the legacy-upgrade and second-restart precedence matrix without deleting retained volumes.
 - [ ] 6.3 Execute the failure/safety matrix and inspect all screenshots for synthetic data and absent credentials.
-- [ ] 6.4 Record precise environment-dependent skips and create linked defect issues for reproducible implementation failures that block acceptance.
-- [ ] 6.5 Run unit, integration, frontend, Compose contract, migration, syntax, handbook-generation, OpenSpec strict-validation, and diff-hygiene checks.
+- [x] 6.4 Record precise environment-dependent skips and create linked defect issues for reproducible implementation failures that block acceptance.
+- [x] 6.5 Run unit, integration, frontend, Compose contract, migration, syntax, handbook-generation, OpenSpec strict-validation, and diff-hygiene checks.
