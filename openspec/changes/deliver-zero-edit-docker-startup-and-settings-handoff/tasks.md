@@ -21,10 +21,10 @@
 
 ## 4. Dashboard Settings Handoff
 
-- [ ] 4.1 Add Dashboard markup and styles for an accessible, non-blocking incomplete-setup notice with bounded unavailable behavior.
-- [ ] 4.2 Reuse the Settings readiness API during Dashboard activation and derive notice visibility and destination from `complete` and `nextAction`.
-- [ ] 4.3 Extend registered navigation so the notice opens Settings at the owning section while guided setup refreshes authoritative readiness.
-- [ ] 4.4 Add frontend tests for incomplete, complete, optional-disabled, unavailable, keyboard activation, no browser-storage cursor, and sensitive-value canaries.
+- [x] 4.1 Add Dashboard markup and styles for an accessible, non-blocking incomplete-setup notice with bounded unavailable behavior.
+- [x] 4.2 Reuse the Settings readiness API during Dashboard activation and derive notice visibility and destination from `complete` and `nextAction`.
+- [x] 4.3 Extend registered navigation so the notice opens Settings at the owning section while guided setup refreshes authoritative readiness.
+- [x] 4.4 Add frontend tests for incomplete, complete, optional-disabled, unavailable, keyboard activation, no browser-storage cursor, and sensitive-value canaries.
 
 ## 5. Documentation and Verification
 

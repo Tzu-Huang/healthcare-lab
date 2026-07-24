@@ -31,6 +31,43 @@ margin-top: 4px;
   font-size: 26px;
 }
 
+#lab-console-view .dashboard-setup-notice {
+display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 18px;
+  border: 1px solid #a7c4bb;
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  background: #f2f8f5;
+  color: var(--ui-text);
+}
+
+#lab-console-view .dashboard-setup-notice[hidden] {
+display: none;
+}
+
+#lab-console-view .dashboard-setup-notice h3,
+#lab-console-view .dashboard-setup-notice p {
+margin: 0;
+}
+
+#lab-console-view .dashboard-setup-notice .eyebrow {
+margin-bottom: 4px;
+  color: var(--accent-strong);
+}
+
+#lab-console-view .dashboard-setup-notice h3 {
+margin-bottom: 4px;
+  font-size: 17px;
+}
+
+#lab-console-view .dashboard-setup-notice.is-unavailable {
+border-left-color: var(--pending);
+  background: #fff9eb;
+}
+
 #lab-console-view .lab-summary-strip {
 display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -395,7 +432,8 @@ border-bottom: 0;
 
 @media (max-width: 720px) {
 #lab-console-view .lab-console-header,
-#lab-console-view .lab-console-header .button-row {
+#lab-console-view .lab-console-header .button-row,
+#lab-console-view .dashboard-setup-notice {
 height: auto;
     align-items: flex-start;
     flex-direction: column;
