@@ -30,5 +30,5 @@
 
 - [x] 5.1 Rewrite root and deployment Quick Start instructions around zero-edit Compose/wrapper startup followed by application setup in Settings.
 - [x] 5.2 Document Advanced deployment overrides, one-time legacy bootstrap, persisted precedence, activation classes, local-only security defaults, directory behavior, backup, upgrade, and rollback.
-- [ ] 5.3 Run focused Compose, wrapper, migration, settings, and frontend tests plus the complete regression suite and Python/JavaScript syntax checks.
-- [ ] 5.4 Render Compose with clean and override fixtures, run secret-canary output checks, `git diff --check`, and strict OpenSpec validation.
+- [x] 5.3 Run focused Compose, wrapper, migration, settings, and frontend tests plus the complete regression suite and Python/JavaScript syntax checks.
+- [x] 5.4 Render Compose with clean and override fixtures, run secret-canary output checks, `git diff --check`, and strict OpenSpec validation.
