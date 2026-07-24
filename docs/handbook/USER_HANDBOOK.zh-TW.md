@@ -84,8 +84,8 @@ docker info --format 'Server={{.ServerVersion}} OSType={{.OSType}} Arch={{.Archi
 
 - 可連線至 GHCR 及第三方 image registries。
 - 預設 host ports 5000、6600、6661、8080、8443、8103、3000、8082、11112、2575 未被其他程式占用。
-- 需要 FHIR sync 時，已取得 Medplum OAuth client ID 與 secret。
-- 已準備 GDT host folder；若使用外部 AP (QHAP)，已確認 Docker host IP、firewall 與必要 endpoints。
+- 需要 FHIR sync 時，可登入本機 Medplum Web UI 建立 OAuth ClientApplication；不必在啟動前先準備 credentials。
+- 若使用外部 AP (QHAP)，已確認 Docker host IP、firewall 與必要 endpoints。預設 GDT host folder 由啟動 wrapper 建立。
 - 僅使用虛擬測試資料。
 
 > 待 RC 驗證：最低 CPU、記憶體與磁碟需求、支援的瀏覽器版本，以及等效 Linux host 的乾淨安裝。
@@ -93,62 +93,43 @@ docker info --format 'Server={{.ServerVersion}} OSType={{.OSType}} Arch={{.Archi
 <a id="chapter-4"></a>
 ## 第 4 章　安裝已發布的 Docker Image
 
-正式發布模型由固定版本的 Healthcare Lab image、versioned deployment bundle 與相容的 OIE、Medplum、dcm4chee images 組成。`.env` 屬於 deployment bundle，用來保存特定環境的 image tags、ports、service addresses、credentials 與 volume paths；它不在 immutable image 內。
+正式發布模型由固定版本的 Healthcare Lab image、versioned deployment bundle 與相容的 OIE、Medplum、dcm4chee images 組成。一般本機安裝不需要 `.env`、手動建立資料夾或修改 YAML；`.env.example` 只提供 **Advanced deployment** 覆寫。
 
 ### RC 安裝程序
 
 1. 下載並解壓縮 v1.0.0 deployment bundle。
 2. 在 bundle 根目錄開啟 PowerShell。
-3. 建立本機設定與 GDT folders：
+3. 使用唯一支援的一般啟動命令：
 
    ```powershell
-   Copy-Item .env.example .env
-   New-Item -ItemType Directory -Force instance\gdt-bridge\inbox
-   New-Item -ItemType Directory -Force instance\gdt-bridge\outbox
+   .\deploy\lab.ps1 start
    ```
 
-4. 驗證 Compose 語法與實際 image matrix：
+   Wrapper 會建立有界的預設 GDT bridge root，Compose 會使用固定 images、預設本機 ports 與 persistent storage。不要為一般安裝複製 `.env.example`。
+
+4. 檢查服務與首頁：
 
    ```powershell
-   docker compose --env-file .env -f deploy\docker-compose.yml config --quiet
-   docker compose --env-file .env -f deploy\docker-compose.yml config --images
-   ```
-
-   `config --quiet` 應以 exit code 0 結束。`config --images` 應顯示固定的 Healthcare Lab `1.0.0` image 與 release 文件所列的 third-party digests。
-
-5. 檢查 `.env`，填入本環境需要的 credentials、ports 與 paths。啟動 Compose 前，必須將 `.env.example` 複製來的 dcm4chee host-facing connection values 改為 `lab-app` 可用的 Docker-network addresses：
-
-   ```dotenv
-   DCM4CHEE_DIMSE_HOST=dcm4chee
-   DCM4CHEE_HL7_HOST=dcm4chee
-   DCM4CHEE_DICOMWEB_BASE_URL=http://dcm4chee:8080/dcm4chee-arc/aets/WORKLIST/rs
-   DCM4CHEE_QIDO_RS_URL=http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs
-   DCM4CHEE_WADO_RS_URL=http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs
-   DCM4CHEE_STOW_RS_URL=http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs
-   ```
-
-   `DCM4CHEE_WEB_UI_URL` 應維持 host-facing，因為它由 browser 開啟；相對地，Compose 將 `.env` 注入 container 後，上述六個 backend values 中的 `127.0.0.1` 會指回 `lab-app` 本身。Deployment template 必須修正並重新完成 clean-install verification，才能從安裝程序移除這項 workaround。
-6. 正式 image 發布後，拉取固定版本：
-
-   ```powershell
-   docker pull ghcr.io/tzu-huang/healthcare-lab:1.0.0
-   ```
-
-7. 啟動服務並檢查狀態：
-
-   ```powershell
-   docker compose --env-file .env -f deploy\docker-compose.yml up -d
-   docker compose --env-file .env -f deploy\docker-compose.yml ps
+   .\deploy\lab.ps1 status
    Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
    ```
 
-   `dcm4chee-storage-init` 是一次性初始化 service：它會先建立 configured archive storage directory，將目錄設為 `wildfly:wildfly`、權限 `0775`，成功後才允許 `dcm4chee` 啟動。`docker compose ps -a` 顯示它為 `Exited (0)` 是正常狀態；非零 exit code 才代表 archive storage 初始化失敗。
+5. 在瀏覽器開啟 `http://127.0.0.1:5000`。若必要設定尚未完成，Dashboard 會顯示 setup notice；依其動作進入對應的 **Settings** 區段，儲存並執行該區段的測試。
+
+6. 只有必須覆寫 immutable image、host-published port、GDT host bind、service database hardening 或 startup policy 時，才複製 `.env.example` 為未追蹤的 `.env`。修改後執行：
+
+   ```powershell
+   docker compose --env-file .env -f deploy\docker-compose.yml config --quiet
+   .\deploy\lab.ps1 restart <service>
+   ```
+
+   Wrapper 的 `restart` 會 force recreate container，使 Advanced deployment 值進入新 process。Settings 值保存於 `lab-app-instance` volume，不需要也不應寫回 `.env`。
 
 預期首頁回傳 HTTP 200，必要 containers 為 running/healthy。再執行下列命令確認實際 image，不可只看 container 名稱：
 
 ```powershell
 .\deploy\lab.ps1 inspect lab-app
-docker compose --env-file .env -f deploy\docker-compose.yml config --images
+docker compose -f deploy\docker-compose.yml config --images
 ```
 
 `inspect` 的 `Image` 必須是本次安裝指定的 Healthcare Lab immutable tag。Container health 不代表協定端到端流程已成功。
@@ -164,7 +145,7 @@ docker compose --env-file .env -f deploy\docker-compose.yml config --images
 <a id="chapter-5"></a>
 ## 第 5 章　設定
 
-設定可能來自 `.env`、Compose、Dashboard 中保存的 server inventory，以及外部系統。若值衝突，實際工作流程可能使用 persisted server inventory；例如 Medplum sync 使用保存的 Medplum `baseUrl`，不應假設瀏覽器 URL 或 `.env` public URL 一定是 backend 使用的位址。
+**Settings 是 application connections、credentials、protocol identities、timeouts 與 runtime behavior 的權威來源。** Typed profiles 保存於 `lab-app-instance` volume，restart 或 container recreation 後仍保留。既有安裝的固定 allowlist legacy application environment values 只會在 profile 缺少時 seed 一次；Settings 一旦保存，後續 `.env` 變更不會覆寫它。
 
 重要位址差異：
 
@@ -174,17 +155,24 @@ docker compose --env-file .env -f deploy\docker-compose.yml config --images
 | Docker service | `http://medplum:8103/fhir/R4` | `lab-app` container 存取 Medplum |
 | External device | `<Docker-host-IP>:6661` | AP (QHAP) 將結果送入 OIE |
 
-變更 `.env` 後通常需 recreate 對應 service。可使用 `.\deploy\lab.ps1 restart <service>`；這個 wrapper 的 `restart` 會執行 `up -d --force-recreate`，不是單純的 process restart。Managed Channel destination、queue、retry 或 ACK 設定變更後，必須 Preview、Apply 並重新 deploy Channel。
+### 建立 Medplum ClientApplication
 
-在套用設定前，先執行：
+1. 開啟 `http://127.0.0.1:3000`，登入本機 Medplum；第一次使用時先完成本機帳號與 project 建立。
+2. 在目前 project 的管理介面開啟 **Client Applications**，選擇建立新的 ClientApplication。
+3. 使用可辨識但不含病患或密碼的名稱，例如 `Healthcare Lab local`，建立供 server-to-server 使用的 OAuth client credentials。
+4. 建立完成後，只在受控畫面複製 client ID 與新產生的 client secret。不要把 secret 放進文件、截圖、ticket、shell history 或 Git。
+5. 回到 Healthcare Lab 的 **Settings → Medplum**，將 Docker-internal FHIR URL 設為 `http://medplum:8103/fhir/R4`、browser URL 設為 `http://127.0.0.1:3000`，貼上 client ID 與 client secret；只有 Medplum 要求時才覆寫 scope 或 token URL。
+6. 儲存並執行 **Save-and-test**。依序確認 metadata、OAuth token acquisition 與 authenticated read；只看到 metadata 成功不代表 credentials 正確。
 
-```powershell
-docker compose --env-file .env -f deploy\docker-compose.yml config --quiet
-```
+Client secret 欄位是 write-only：API、diagnostics 與重新開啟頁面只顯示「已設定」，不回傳原值；留空保存會保留目前 secret，輸入非空值才會替換。
 
-此命令會驗證 Compose 是否可展開，但不會驗證 credentials、network connectivity 或 protocol workflow。
+### Settings、Advanced deployment 與 legacy bootstrap
 
-機密資料只放在本機 `.env` 或受控 secret store，不可寫入文件、截圖或版本控制。
+- **Settings**：OIE、Medplum、GDT、dcm4chee 等 application runtime profiles 與 application secrets。
+- **Advanced deployment `.env`**：image、host publications、bind mount、service database credentials/security hardening 與 startup policy；變更後 recreate affected service。
+- **Legacy bootstrap**：既有安裝可保留 eligible `MEDPLUM_CLIENT_*` 等 allowlisted values 一次性建立缺少的 typed profile；不會覆寫已保存的 Settings，也不會把 Settings secret 寫回 `.env`。
+
+Managed Channel destination、queue、retry 或 ACK 設定變更後，必須 Preview、Apply 並重新 deploy Channel。Compose syntax check 只驗證 deployment 展開，不會驗證 credentials、network 或 protocol workflow。
 
 <a id="chapter-6"></a>
 ## 第 6 章　啟動、停止與驗證
@@ -534,7 +522,7 @@ Healthcare Lab <-- GDT-IN  6310 -- /data/gdt-bridge/outbox <-- AP
 
 ### Bridge folder contract
 
-將 `GDT_BRIDGE_HOST_PATH` 設為與 AP 共用的 host folder。Docker 會把該 root mount 至 `/data/gdt-bridge`；Healthcare Lab 不會替 operator 建立不存在的 host bridge root。交換前應建立並設定下列 folders 的權限：
+預設啟動時，wrapper 會建立 Windows host 的 repo-local `instance\gdt-bridge`，Compose 將它 mount 為 `lab-app` 內的 `/data/gdt-bridge`。若 AP 必須使用另一個 Windows share，才在 Advanced deployment `.env` 將 `GDT_BRIDGE_HOST_PATH` 設為該專用 host folder；wrapper 只解析並建立該 exact safe path，且拒絕 filesystem root 或 repository root。Healthcare Lab **Settings → GDT** 的 Shared Folder 是 container 內 application 讀寫的路徑，在 Docker 中通常維持 `/data/gdt-bridge`，不可填入 `C:\...` Windows path。
 
 | Folder | Producer → consumer | 用途 |
 | --- | --- | --- |
@@ -549,7 +537,7 @@ Healthcare Lab <-- GDT-IN  6310 -- /data/gdt-bridge/outbox <-- AP
 
 ### 設定 GDT Console
 
-1. 進入 `GDT`。確認目前 UI 的 `GDT-IN > Folder Path` 為 `/data/gdt-bridge/inbox`，`GDT-OUT > Folder Path` 為 `/data/gdt-bridge/outbox`。儘管 field labels 如此，實際操作方向仍以以上 folder contract 為準。
+1. 進入 **Settings → GDT**，確認 Shared Folder 為 `/data/gdt-bridge`；再進入 `GDT` Console，依 UI 顯示確認 exchange folders。Windows AP 使用 host bind 的 `inbox\` 與 `outbox\`，`lab-app` 使用對應的 `/data/gdt-bridge/inbox` 與 `/data/gdt-bridge/outbox`。
 2. 設定 polling intervals。RC default values 為 2 秒；不可設定低於 0.25 秒。
 3. 按 `Save`，再按 `Refresh`，確認 `Bridge Folder` 顯示 `Ready`。
 4. Backend 支援下列 inbound filename profiles，但目前 RC Console 沒有 profile selector。啟動 watcher 前，應透過 approved deployment/API configuration 設定 profile、sender 與 receiver；不可假設 `Save` 會修改這些值：
@@ -793,28 +781,36 @@ Dashboard 的 `Stop`／`Restart` 會操作真實 runtime。執行前確認目標
 
 升級前安排 maintenance window：停止新的操作，讓 in-flight workflow 完成，並暫停 AP 對 GDT shared folder 的讀寫。停止 `lab-app` 只能讓 SQLite quiescent；它不會阻止外部 AP 在複製期間改寫 GDT files。
 
-先保存 release manifest：記錄 `inspect lab-app`、`config --images` 的輸出、目前 immutable `LAB_APP_IMAGE`、Compose bundle version 與 backup timestamp。將實際使用的 `.env` 另外保存於 access-controlled secret storage，以供 rollback 重建設定；不可把它放入 screenshots、ticket、一般 log 或可公開 backup artifact。
+先保存 release manifest：記錄 `inspect lab-app`、`config --images` 的輸出、目前 immutable `LAB_APP_IMAGE`、Compose bundle version 與 backup timestamp。若 Advanced deployment 使用 `.env`，將它另外保存於 access-controlled secret storage，以供 rollback 重建 deployment；Settings typed profiles 與 write-only application secrets則位於 `lab-app-instance`，必須隨 application state 一致備份。兩者都不可放入 screenshots、ticket、一般 log 或可公開 backup artifact。
 
 接著建立 operator-controlled backup，停止的範圍只限 `lab-app`。下列 `Copy-Item` 只適用於 default `GDT_BRIDGE_HOST_PATH=instance\gdt-bridge`：
 
 ```powershell
 New-Item -ItemType Directory -Force backup\v1.0.0
 .\deploy\lab.ps1 stop lab-app
-docker compose --env-file .env -f deploy\docker-compose.yml cp lab-app:/app/instance backup\v1.0.0\instance
+docker compose -f deploy\docker-compose.yml cp lab-app:/app/instance backup\v1.0.0\instance
 Copy-Item -Recurse instance\gdt-bridge backup\v1.0.0\gdt-bridge
 ```
 
 若 `GDT_BRIDGE_HOST_PATH` 是 custom AP share，必須先解析並確認實際絕對 host path，再將該 exact folder 複製至 backup；不可同時複製 default path 後就宣稱備份完成。確認 AP 仍維持 quiesced，backup 包含 instance database 與實際 GDT bridge evidence，而且可從受控位置讀回。不要把 `.env`、secrets 或真實 Patient data 放進可公開的 backup artifact。
 
-接著將 `.env` 的 `LAB_APP_IMAGE` 改成目標 immutable tag：
+一般 release bundle 升級時，以新版 bundle 的 pinned image 為準；只有 Advanced deployment 才修改 `.env` 的 `LAB_APP_IMAGE`。拉取並 recreate：
 
 ```powershell
-docker compose --env-file .env -f deploy\docker-compose.yml pull lab-app
+docker compose -f deploy\docker-compose.yml pull lab-app
 .\deploy\lab.ps1 restart lab-app
 Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
 ```
 
+若有 Advanced deployment `.env`，wrapper 會自動使用它；直接執行 Compose 診斷命令時才明確加上 `--env-file .env`。
+
 升級後重新執行 Dashboard checks 與必要 protocol smoke workflow，確認成功後才恢復 AP exchange。
+
+`restart` 在本手冊指 wrapper 的 `up -d --force-recreate`：它替換 container，但保留 named volumes、Settings 與 workflow state；它不是清空資料或只在同一 container 內重啟 process。升級時不可移除 `lab-app-instance` 或以空 volume 啟動後再宣稱 migration 成功。
+
+### 旋轉 application secret
+
+以 Medplum 為例：先在 Medplum 建立／取得 replacement secret，再進入 **Settings → Medplum** 輸入非空 replacement、儲存並執行 Save-and-test。確認 OAuth token acquisition 與 authenticated read 後，才撤銷舊 secret。空白欄位表示保留既有 secret，不是清除；diagnostics 只能記錄 configured/present 狀態。OIE password 等 write-only secrets 採相同的「替換、測試、撤銷舊值」原則。
 
 本 release 尚未提供經完整驗證的 named-volume restore 命令，因此本段不是可直接執行的 destructive rollback SOP。需要 rollback 時：保持 AP exchange quiesced、停止 `lab-app`、先另存失敗升級後的 instance、保留 release manifest 與 logs，再依相符版本的受控 restore runbook／release maintainer 指示還原完整 instance backup 與設定；驗證 restore target、schema compatibility 與可回復性後，才選回前一個 immutable `LAB_APP_IMAGE` 並 recreate。不得將 backup 合併進未知或非空的 instance，也不得只切回 image；image rollback 不一定能反轉 database migration。
 
@@ -828,7 +824,7 @@ Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
 
 ## 附錄 A　命令快速參考
 
-請在 deployment bundle 根目錄執行以下 PowerShell 命令；該目錄應包含 `.env` 與 `deploy\docker-compose.yml`。日常操作應優先使用 wrapper，以維持 service aliases 與 Compose arguments 一致。命令成功只證明表格所述層級；宣告系統可用前，仍須完成第 6 章的 ready-for-use 驗證，以及第 10～13 章所需的協定驗證。
+請在 deployment bundle 根目錄執行以下 PowerShell 命令；該目錄應包含 `deploy\docker-compose.yml`，一般安裝不需要 `.env`。日常操作應優先使用 wrapper，以維持 optional `.env`、service aliases 與 Compose arguments 一致。命令成功只證明表格所述層級；宣告系統可用前，仍須完成第 6 章的 ready-for-use 驗證，以及第 10～13 章所需的協定驗證。
 
 ### Host 與 Compose 檢查
 
@@ -858,14 +854,9 @@ Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
 ### 安裝與 HTTP 驗證
 
 ```powershell
-Copy-Item .env.example .env
-New-Item -ItemType Directory -Force instance\gdt-bridge\inbox
-New-Item -ItemType Directory -Force instance\gdt-bridge\outbox
-docker compose --env-file .env -f deploy\docker-compose.yml config --quiet
-docker compose --env-file .env -f deploy\docker-compose.yml config --images
-docker pull ghcr.io/tzu-huang/healthcare-lab:1.0.0
-docker compose --env-file .env -f deploy\docker-compose.yml up -d
-docker compose --env-file .env -f deploy\docker-compose.yml ps
+.\deploy\lab.ps1 start
+.\deploy\lab.ps1 status
+docker compose -f deploy\docker-compose.yml config --images
 Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
 ```
 
@@ -880,14 +871,14 @@ HTTP 200 只驗證 Healthcare Lab web endpoint；使用前仍須執行 Dashboard
 ```powershell
 New-Item -ItemType Directory -Force backup\v1.0.0
 .\deploy\lab.ps1 stop lab-app
-docker compose --env-file .env -f deploy\docker-compose.yml cp lab-app:/app/instance backup\v1.0.0\instance
+docker compose -f deploy\docker-compose.yml cp lab-app:/app/instance backup\v1.0.0\instance
 Copy-Item -Recurse instance\gdt-bridge backup\v1.0.0\gdt-bridge
 ```
 
 若 `GDT_BRIDGE_HOST_PATH` 為 custom path，必須 resolve 並驗證實際 absolute host path，改為複製該資料夾。升級前須 read back 並確認兩份 backup trees。接著將 `LAB_APP_IMAGE` 設為目標 immutable tag，並執行：
 
 ```powershell
-docker compose --env-file .env -f deploy\docker-compose.yml pull lab-app
+docker compose -f deploy\docker-compose.yml pull lab-app
 .\deploy\lab.ps1 restart lab-app
 Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
 ```
@@ -934,7 +925,7 @@ docker compose --env-file .env -f deploy\docker-compose.yml port <service> <cont
 | dcm4chee PostgreSQL | `dcm4chee-db:5432` | dcm4chee archive |
 | dcm4chee LDAP | `ldap:389` | dcm4chee archive |
 
-> **RC release blocker：**目前 `.env.example` 的 dcm4chee DIMSE、HL7、MWL／DICOMweb 與 QIDO／WADO／STOW 使用 host-facing `127.0.0.1` values。若原樣複製到 Compose deployment，`lab-app` 內的 `127.0.0.1` 代表 `lab-app` container，而非 dcm4chee。在 deployment template 修正並重做 clean-install verification 前，runtime targets 應依用途設為 `dcm4chee`、`dcm4chee:2575`、`dcm4chee:11112`、`http://dcm4chee:8080/dcm4chee-arc/aets/WORKLIST/rs` 與 `http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs`。只有 operator-facing `DCM4CHEE_WEB_UI_URL` 保留 host URL。建立 Patient 或 Order 前，須在 dcm4chee Console 確認 effective profile。
+Compose 預設已區分 container-internal 與 operator-facing endpoints：`lab-app` 使用 service name `dcm4chee`、container ports 與 `http://dcm4chee:8080/...`；只有 browser 開啟的 `DCM4CHEE_WEB_UI_URL` 使用 host URL。不要將 browser 的 `127.0.0.1:8082` 複製成 container backend target。
 
 表中的 `127.0.0.1` 是 local operator URL，不代表 published socket 只綁定 loopback。未明確指定 host IP 的 Compose publications 通常會監聽所有 host interfaces，AP result ingress 更明確綁定 `0.0.0.0`。所有 published ports 的可達性都取決於 Docker host firewall 與 network policy。本 release 不提供 application authentication、TLS termination 或 public-Internet ingress boundary；應限制在 trusted local machine 或隔離的 internal lab。
 
@@ -953,8 +944,8 @@ docker compose --env-file .env -f deploy\docker-compose.yml port <service> <cont
 | Variable(s) | 必填 | Release default／example | 用途 | 生效操作 |
 | --- | --- | --- | --- | --- |
 | `LAB_APP_IMAGE` | 是；已有 default | `ghcr.io/tzu-huang/healthcare-lab:1.0.0` | 選擇 immutable application image。 | `pull lab-app` 後 recreate `lab-app`；驗證 image 與 health。 |
-| `MEDPLUM_CLIENT_ID`、`MEDPLUM_CLIENT_SECRET` | Authenticated FHIR sync 必填 | `<empty>` | `lab-app` 使用的 OAuth client credentials；secret 為 sensitive。 | Recreate `lab-app`、測試 OAuth，再 Retry 同一 failed ledger item。 |
-| `MEDPLUM_SCOPE`、`MEDPLUM_TOKEN_URL` | OAuth server 要求 override 時 | `<empty>`；token URL 留空時由 FHIR base URL 推導 | OAuth scope 與 token endpoint。 | Recreate `lab-app`；測試 token acquisition。 |
+| `MEDPLUM_CLIENT_ID`、`MEDPLUM_CLIENT_SECRET` | 僅既有安裝 bootstrap | `<empty>` | Legacy allowlist：只 seed 缺少的 Medplum typed profile；新安裝請用 Settings，secret 為 sensitive。 | 只在 profile 缺少時於一次 startup 生效；之後由 Settings 管理。 |
+| `MEDPLUM_SCOPE`、`MEDPLUM_TOKEN_URL` | 僅既有安裝 bootstrap／特殊 OAuth | `<empty>`；token URL 留空時由 FHIR base URL 推導 | Legacy seed values；新安裝在 **Settings → Medplum** 設定。 | 保存 Settings 後測試 token acquisition；環境變更不覆寫 persisted profile。 |
 | `MEDPLUM_AUTH_GRACE_SECONDS` | 否 | `300` | Token expiry 前的 refresh window。 | Recreate `lab-app`。 |
 | `MEDPLUM_APP_PORT` | 否 | `3000` | Medplum web app host publication。 | Recreate `medplum-app`；若變更則更新 browser/public URLs。 |
 | `MEDPLUM_APP_BASE_URL` | 否 | `http://127.0.0.1:3000/` | Medplum server 設定的 web-app URL。 | Recreate `medplum`；驗證 redirects。 |
@@ -993,7 +984,7 @@ docker compose --env-file .env -f deploy\docker-compose.yml port <service> <cont
 | `DCM4CHEE_USERNAME`、`DCM4CHEE_TOKEN_URL` | Selected auth mode 需要時 | `<empty>` | Authentication identity／token endpoint。 | Recreate `lab-app`；測試 authentication 且不可記錄 token。 |
 | `DCM4CHEE_CERTIFICATE_PATH`、`DCM4CHEE_PRIVATE_KEY_PATH` | Mutual TLS/profile 需要時 | `<empty>` | Container-readable certificate/key paths；private key sensitive。 | 明確 mount files、recreate `lab-app`，並驗證 permissions 與 TLS。 |
 
-> **RC release blockers：**`.env.example` 宣稱 dcm4chee defaults 與 Compose 相符，但其中 host-facing `127.0.0.1` values 不是 `lab-app` 可用的 destination；詳見附錄 B。此外，`DCM4CHEE_HL7_PORT` 目前同時控制 `lab-app` internal target port 與 dcm4chee host publication。若因 host-port conflict override，`lab-app` 也會被導向錯誤 container port。目前 bundle 不可 override 此值；應以修正後、獨立命名的 host-publication setting 解決衝突，並重做 clean-install verification。
+Compose runtime 已提供 Docker-internal dcm4chee defaults。若在 Advanced deployment 覆寫 published host port，仍應保持 `lab-app` 的 internal target 使用 `dcm4chee` 與 container port；變更後 recreate affected service 並重跑 diagnostics。
 
 ### GDT environment
 
@@ -1012,7 +1003,7 @@ docker compose --env-file .env -f deploy\docker-compose.yml port <service> <cont
 | OIE Management connection | Base URL、username、replacement password、timeout（UI fallback `10` seconds）、TLS verification mode | `Save Connection Settings` 儲存 profile；password field 留空會保留已設定 password。 | `Test Connection` 只使用 saved settings。Certificate 或 credential failure 必須修正，不可繞過。 |
 | Healthcare Lab result listener | Host、port、MLLP framing、auto-start | `Save Listener Settings` 只儲存 intent，明確不 restart runtime。 | 依情況使用 Start／Stop／Retry。若 Compose container port/publication 改變，須先改 `.env` 並 recreate。 |
 | Managed OIE Channels | 各 managed Channel 的 Healthcare Lab-owned source／destination desired fields | `Save desired fields` 只更新 desired state。 | Refresh inventory、Preview single target、檢查 owned-field differences，再 Apply。Save／Preview 不會改變 OIE。 |
-| Medplum server inventory | `host=medplum`、`port=8103`、`baseUrl=http://medplum:8103/fhir/R4`、protocol `FHIR`、enabled | 儲存 Patient／Order workflow 使用的 sync target。 | 測試 connectivity／OAuth，再 Retry 同一 ledger item；不可改用 `MEDPLUM_PUBLIC_BASE_URL`。 |
+| Medplum typed profile | Internal FHIR URL、browser URL、client ID、write-only secret、scope、token URL、timeouts | 儲存 Patient／Order workflow 使用的權威 profile；空白 secret 保留既有值。 | 執行 Save-and-test 的 metadata、OAuth 與 authenticated-read stages，再 Retry 同一 ledger item；不可將 browser/public URL 當成 container sync URL。 |
 | GDT Console runtime profile | Bridge path/mount visibility、disposition、filename profile、party IDs、watch timing | 在 UI 允許範圍顯示或更新 application runtime intent。 | Docker 中變更 host folder 仍須修正 `.env` mount 並 recreate `lab-app`；先暫停 AP exchange。 |
 | dcm4chee Console profile | Config-derived profile、AEs、HL7／DIMSE／DICOMweb endpoints、auth/TLS diagnostics | 主要顯示 effective profile 與 workflow state。 | 修正 `.env`／external AE configuration、recreate `lab-app`、重跑 diagnostics，再 Retry 同一 Patient／Order mapping。 |
 

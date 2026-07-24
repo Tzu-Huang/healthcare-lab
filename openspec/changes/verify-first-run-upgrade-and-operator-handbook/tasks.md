@@ -27,12 +27,12 @@
 
 ## 5. Operator Handbook Reconciliation
 
-- [ ] 5.1 Rewrite English and Traditional Chinese Quick Start chapters around one wrapper start command and browser-based guided setup.
-- [ ] 5.2 Document creation of a Medplum ClientApplication and exact mapping of client ID and write-only secret fields into Settings.
-- [ ] 5.3 Separate normal Settings fields from Advanced deployment overrides and legacy compatibility bootstrap.
-- [ ] 5.4 Document Windows GDT host versus container paths and internal service URLs versus browser-facing URLs.
-- [ ] 5.5 Reconcile secret rotation, persisted-settings backup/restore, upgrade, rollback, restart, and container-recreation semantics.
-- [ ] 5.6 Compare stable commands, UI labels, tables, and safety guidance across both languages and regenerate both Word editions.
+- [x] 5.1 Rewrite English and Traditional Chinese Quick Start chapters around one wrapper start command and browser-based guided setup.
+- [x] 5.2 Document creation of a Medplum ClientApplication and exact mapping of client ID and write-only secret fields into Settings.
+- [x] 5.3 Separate normal Settings fields from Advanced deployment overrides and legacy compatibility bootstrap.
+- [x] 5.4 Document Windows GDT host versus container paths and internal service URLs versus browser-facing URLs.
+- [x] 5.5 Reconcile secret rotation, persisted-settings backup/restore, upgrade, rollback, restart, and container-recreation semantics.
+- [x] 5.6 Compare stable commands, UI labels, tables, and safety guidance across both languages and regenerate both Word editions.
 
 ## 6. Disposable Live Evidence and Closure
 
