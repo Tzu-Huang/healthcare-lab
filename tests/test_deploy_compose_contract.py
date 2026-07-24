@@ -136,12 +136,14 @@ class ComposePortContractTests(unittest.TestCase):
 
     def test_persistence_contract_survives_compatible_lab_app_replacement(self):
         self.assertIn("lab-app-instance:/app/instance", self.compose)
-        self.assertIn(
-            "${GDT_BRIDGE_HOST_PATH:-../instance/gdt-bridge}:/data/gdt-bridge",
-            self.compose,
-        )
+        self.assertIn("source: ${GDT_BRIDGE_HOST_PATH:-../instance/gdt-bridge}", self.compose)
+        self.assertIn("target: /data/gdt-bridge", self.compose)
         self.assertIn("lab-app-instance:", self.compose)
         self.assertNotIn("container_name:", self.compose)
+
+    def test_gdt_override_is_explicitly_a_bind_mount(self):
+        self.assertIn("- type: bind", self.compose)
+        self.assertIn("source: ${GDT_BRIDGE_HOST_PATH:-../instance/gdt-bridge}", self.compose)
 
     def test_release_defaults_do_not_use_unbounded_latest_images(self):
         self.assertNotIn(":latest", self.compose)
@@ -253,6 +255,22 @@ class ComposeRenderContractTests(unittest.TestCase):
             self.assertIn(contract, rendered)
         self.assertNotIn(canary, result.stdout)
         self.assertNotIn(canary, result.stderr)
+
+    def test_relative_gdt_override_renders_as_a_bind_mount(self):
+        env_file = self.root / "advanced.env"
+        env_file.write_text(
+            "GDT_BRIDGE_HOST_PATH=exchange/clinic-a\n",
+            encoding="utf-8",
+        )
+
+        result = self.render(env_file)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("type: bind", result.stdout)
+        self.assertIn(
+            f"source: {self.deploy / 'exchange' / 'clinic-a'}",
+            result.stdout,
+        )
 
 
 if __name__ == "__main__":
