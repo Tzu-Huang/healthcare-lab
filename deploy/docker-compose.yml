@@ -16,6 +16,18 @@ volumes:
   dcm4chee-ldap:
   dcm4chee-ldap-config:
 
+secrets:
+  medplum_client_secret:
+    environment: MEDPLUM_CLIENT_SECRET
+  openemr_db_password:
+    environment: OPENEMR_DB_PASSWORD
+  dcm4chee_password:
+    environment: DCM4CHEE_PASSWORD
+  dcm4chee_token:
+    environment: DCM4CHEE_TOKEN
+  dcm4chee_client_secret:
+    environment: DCM4CHEE_CLIENT_SECRET
+
 services:
   lab-app:
     image: ${LAB_APP_IMAGE:-ghcr.io/tzu-huang/healthcare-lab:1.0.1}
@@ -27,7 +39,6 @@ services:
       # Compatibility bootstrap only: these values seed a missing typed
       # profile once. Persisted Settings remain authoritative after creation.
       MEDPLUM_CLIENT_ID: ${MEDPLUM_CLIENT_ID:-}
-      MEDPLUM_CLIENT_SECRET: ${MEDPLUM_CLIENT_SECRET:-}
       MEDPLUM_SCOPE: ${MEDPLUM_SCOPE:-}
       MEDPLUM_TOKEN_URL: ${MEDPLUM_TOKEN_URL:-}
       MEDPLUM_AUTH_GRACE_SECONDS: ${MEDPLUM_AUTH_GRACE_SECONDS:-300}
@@ -42,7 +53,6 @@ services:
       OPENEMR_DB_HOST: ${OPENEMR_DB_HOST:-}
       OPENEMR_DB_PORT: ${OPENEMR_DB_PORT:-3306}
       OPENEMR_DB_USER: ${OPENEMR_DB_USER:-openemr}
-      OPENEMR_DB_PASSWORD: ${OPENEMR_DB_PASSWORD:-}
       OPENEMR_DB_NAME: ${OPENEMR_DB_NAME:-openemr}
       OPENEMR_GDT_PROCEDURE_CODES: ${OPENEMR_GDT_PROCEDURE_CODES:-1001}
       OIE_MLLP_ORDER_HOST: ${OIE_MLLP_ORDER_HOST:-oie}
@@ -85,9 +95,17 @@ services:
       DCM4CHEE_TOKEN_URL: ${DCM4CHEE_TOKEN_URL:-}
       DCM4CHEE_CERTIFICATE_PATH: ${DCM4CHEE_CERTIFICATE_PATH:-}
       DCM4CHEE_PRIVATE_KEY_PATH: ${DCM4CHEE_PRIVATE_KEY_PATH:-}
-      DCM4CHEE_PASSWORD: ${DCM4CHEE_PASSWORD:-}
-      DCM4CHEE_TOKEN: ${DCM4CHEE_TOKEN:-}
-      DCM4CHEE_CLIENT_SECRET: ${DCM4CHEE_CLIENT_SECRET:-}
+    secrets:
+      - source: medplum_client_secret
+        target: MEDPLUM_CLIENT_SECRET
+      - source: openemr_db_password
+        target: OPENEMR_DB_PASSWORD
+      - source: dcm4chee_password
+        target: DCM4CHEE_PASSWORD
+      - source: dcm4chee_token
+        target: DCM4CHEE_TOKEN
+      - source: dcm4chee_client_secret
+        target: DCM4CHEE_CLIENT_SECRET
     ports:
       - "${LAB_APP_PORT:-5000}:5000"
     expose:
