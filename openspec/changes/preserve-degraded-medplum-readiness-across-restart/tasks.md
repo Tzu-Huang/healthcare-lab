@@ -19,5 +19,5 @@
 
 ## 4. ZAC-78 Closure Evidence
 
-- [ ] 4.1 Re-run the isolated ZAC-78 Medplum failure and retained-container-recreation scenario using synthetic credentials.
-- [ ] 4.2 Record bounded evidence that the fix preserves degraded readiness and does not expose credentials, PHI, FHIR bodies, or arbitrary upstream responses.
+- [x] 4.1 Re-run the isolated ZAC-78 Medplum failure and retained-container-recreation scenario using synthetic credentials.
+- [x] 4.2 Record bounded evidence that the fix preserves degraded readiness and does not expose credentials, PHI, FHIR bodies, or arbitrary upstream responses.
