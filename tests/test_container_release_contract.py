@@ -69,7 +69,7 @@ class ContainerReleaseContractTests(unittest.TestCase):
     def test_operator_docs_define_docker_only_install_and_supported_boundary(self):
         combined = "\n".join((self.root_readme, self.deploy_readme, self.release_guide))
         for contract in (
-            "ghcr.io/tzu-huang/healthcare-lab:1.0.0",
+            "ghcr.io/tzu-huang/healthcare-lab:1.1.1",
             "linux/amd64",
             "Docker Compose",
             "/var/run/docker.sock",
@@ -78,6 +78,13 @@ class ContainerReleaseContractTests(unittest.TestCase):
             "production patient data",
         ):
             self.assertIn(contract, combined)
+
+        self.assertIn(
+            "pulls `ghcr.io/tzu-huang/healthcare-lab:1.1.1` by default",
+            self.root_readme,
+        )
+        self.assertIn("## v1.1.1 verified image matrix", self.release_guide)
+        self.assertIn("| Service | v1.1.1 default |", self.release_guide)
 
     def test_release_guide_covers_tags_backup_upgrade_and_rollback(self):
         for contract in (
