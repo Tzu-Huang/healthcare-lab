@@ -18,15 +18,15 @@ volumes:
 
 secrets:
   medplum_client_secret:
-    environment: MEDPLUM_CLIENT_SECRET
+    file: ${MEDPLUM_CLIENT_SECRET_FILE:-./secrets/empty}
   openemr_db_password:
-    environment: OPENEMR_DB_PASSWORD
+    file: ${OPENEMR_DB_PASSWORD_FILE:-./secrets/empty}
   dcm4chee_password:
-    environment: DCM4CHEE_PASSWORD
+    file: ${DCM4CHEE_PASSWORD_FILE:-./secrets/empty}
   dcm4chee_token:
-    environment: DCM4CHEE_TOKEN
+    file: ${DCM4CHEE_TOKEN_FILE:-./secrets/empty}
   dcm4chee_client_secret:
-    environment: DCM4CHEE_CLIENT_SECRET
+    file: ${DCM4CHEE_CLIENT_SECRET_FILE:-./secrets/empty}
 
 services:
   lab-app:
@@ -90,7 +90,7 @@ services:
       DCM4CHEE_UID_ROOT: ${DCM4CHEE_UID_ROOT:-1.2.826.0.1.3680043.10.543}
       DCM4CHEE_AUTH_MODE: ${DCM4CHEE_AUTH_MODE:-none}
       DCM4CHEE_TLS_ENABLED: ${DCM4CHEE_TLS_ENABLED:-false}
-      DCM4CHEE_TLS_VERIFY: ${DCM4CHEE_TLS_VERIFY:-true}
+      DCM4CHEE_TLS_VERIFY: ${DCM4CHEE_TLS_VERIFY:-false}
       DCM4CHEE_USERNAME: ${DCM4CHEE_USERNAME:-}
       DCM4CHEE_TOKEN_URL: ${DCM4CHEE_TOKEN_URL:-}
       DCM4CHEE_CERTIFICATE_PATH: ${DCM4CHEE_CERTIFICATE_PATH:-}

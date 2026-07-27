@@ -94,6 +94,22 @@ class ContainerWorkflowContractTests(unittest.TestCase):
         self.assertIn("platforms: linux/amd64", self.workflow)
         self.assertIn("docker/build-push-action@v7", self.workflow)
 
+    def test_stable_release_smokes_immutable_readiness_before_completion(self):
+        smoke = self.workflow.split(
+            "- name: Smoke test immutable release readiness", 1
+        )[1]
+        self.assertIn("if: github.event_name == 'release'", smoke)
+        self.assertIn('VERSION="${RELEASE_TAG#v}"', smoke)
+        self.assertIn('docker pull "${IMAGE_NAME}:${VERSION}"', smoke)
+        self.assertIn('docker run --detach', smoke)
+        self.assertIn("State.Health.Status", smoke)
+        self.assertIn("/api/settings/readiness", smoke)
+        self.assertIn('payload["success"] is True', smoke)
+        self.assertIn('item["complete"] is False', smoke)
+        self.assertIn('medplum["state"] == "needs-setup"', smoke)
+        self.assertIn("trap cleanup EXIT", smoke)
+        self.assertLess(smoke.index("trap cleanup EXIT"), smoke.index("docker run --detach"))
+
 
 if __name__ == "__main__":
     unittest.main()

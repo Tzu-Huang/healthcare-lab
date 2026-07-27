@@ -14,8 +14,8 @@ class ContainerReleaseContractTests(unittest.TestCase):
         cls.root_readme = (ROOT / "README.md").read_text(encoding="utf-8")
         cls.deploy_readme = (ROOT / "deploy" / "README.md").read_text(encoding="utf-8")
         cls.release_guide = (ROOT / "docs" / "container-release.md").read_text(encoding="utf-8")
-        cls.release_checklist = (
-            ROOT / "docs" / "releases" / "v1.0.0-checklist.md"
+        cls.release_notes = (
+            ROOT / "docs" / "releases" / "v1.0.0.md"
         ).read_text(encoding="utf-8")
 
     def test_image_contains_owned_runtime_files(self):
@@ -90,15 +90,15 @@ class ContainerReleaseContractTests(unittest.TestCase):
         ):
             self.assertIn(contract, self.release_guide)
 
-    def test_v1_release_checklist_defers_publication_and_verifies_artifacts(self):
+    def test_v1_release_notes_record_distribution_and_verification_contracts(self):
         for contract in (
-            "does not create the Git tag",
-            "OpenSpec verification",
+            "ghcr.io/tzu-huang/healthcare-lab",
+            "Stable tags: `1.0.0`, `1.0`, `1`, `latest`, and `sha-<commit>`",
+            "anonymously",
+            "prevents an immutable version tag from being overwritten",
             "Image inspection",
-            "unauthenticated `docker pull",
-            "Post-publication smoke",
         ):
-            self.assertIn(contract, self.release_checklist)
+            self.assertIn(contract, self.release_notes)
 
 
 if __name__ == "__main__":
