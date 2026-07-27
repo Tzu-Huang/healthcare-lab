@@ -23,6 +23,7 @@ from tests.zac78_verification import (
     SYNTHETIC_CANARIES,
     assert_bounded_evidence,
     create_canonical_legacy_database,
+    project_bounded_failure,
 )
 
 
@@ -336,6 +337,37 @@ class Zac78SettingsReleaseVerificationTests(unittest.TestCase):
             "screenshotOcr": "Synthetic configuration; no credentials displayed.",
         }
         self.assertTrue(assert_bounded_evidence(retained))
+
+    def test_required_failure_matrix_projects_bounded_recovery_actions(self):
+        failures = (
+            ("medplum", "metadata", "connection-failure"),
+            ("medplum", "oauth", "authorization-failure"),
+            ("medplum", "authenticated-read", "oauth-unavailable"),
+            ("gdt-bridge", "inbox", "missing"),
+            ("gdt-bridge", "write-delete", "write-failed"),
+            ("dcm4chee", "web-ui-http", "unreachable"),
+            ("dcm4chee", "qido-rs", "invalid-response"),
+            ("dcm4chee", "hl7-tcp", "timed-out"),
+            ("ap-device", "dicom.aeTitle", "invalid_ae_title"),
+            ("ap-device", "hl7-transport", "unreachable"),
+            ("oie", "management-api", "connection"),
+            ("oie", "port-contract", "port-conflict"),
+            ("oie", "managed-channel", "not-deployed"),
+            ("oie", "delivery-state", "destination-errors"),
+        )
+        projected = [
+            project_bounded_failure(integration, layer, category)
+            for integration, layer, category in failures
+        ]
+
+        self.assertEqual(len(failures), len(projected))
+        self.assertTrue(all(item["layer"] for item in projected))
+        self.assertTrue(all(item["category"] for item in projected))
+        self.assertTrue(all(item["recovery"] for item in projected))
+        assert_bounded_evidence(projected)
+
+        with self.assertRaisesRegex(ValueError, "Unsupported ZAC-78"):
+            project_bounded_failure("dcm4chee", "qido-rs", "arbitrary-upstream")
 
     def test_settings_web_authority_has_no_compose_writer_or_docker_executor(self):
         settings_sources = [
