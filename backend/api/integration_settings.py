@@ -30,6 +30,12 @@ class IntegrationSettingsPort(Protocol):
         actor: str = "local-operator",
     ) -> dict[str, Any]: ...
 
+    def get_medplum_configuration_revision(self) -> int: ...
+
+    def record_medplum_verification(
+        self, configuration_revision: int, report: dict[str, Any]
+    ) -> bool: ...
+
 
 def create_integration_settings_blueprint(
     settings: IntegrationSettingsPort,
@@ -199,11 +205,19 @@ def create_integration_settings_blueprint(
             return bounded_error(
                 "settings_save_rejected", "Medplum settings were not saved.", 400
             )
-        diagnostics = (
-            medplum_diagnostics()
-            if medplum_diagnostics is not None
-            else {"state": "unavailable", "stages": []}
-        )
+        if medplum_diagnostics is None:
+            diagnostics = {"state": "unavailable", "stages": []}
+        else:
+            revision = settings.get_medplum_configuration_revision()
+            diagnostics = medplum_diagnostics()
+            try:
+                settings.record_medplum_verification(revision, diagnostics)
+            except ValueError:
+                return bounded_error(
+                    "medplum_diagnostics_rejected",
+                    "Medplum diagnostics returned an unsupported result.",
+                    502,
+                )
         return jsonify(
             {
                 "success": True,
