@@ -226,6 +226,16 @@ class IntegrationSettingsRepository:
             stages.append(
                 {"stage": stage, "state": stage_state, "category": category}
             )
+        if state == "healthy" and [
+            (item["state"], item["category"]) for item in stages
+        ] != [
+            ("passed", "reachable"),
+            ("passed", "authorized"),
+            ("passed", "readable"),
+        ]:
+            raise ValueError(
+                "Healthy Medplum verification requires all bounded stages to pass."
+            )
         return state, stages
 
     def get_private(self, profile_type: str) -> dict[str, Any]:
