@@ -15,7 +15,7 @@
 - [x] 3.1 Add migration and repository tests for revision changes, stale evidence, bounded validation, and legacy configured profiles.
 - [x] 3.2 Add service and API tests for successful, failed, concurrent/stale, and subsequent successful Save-and-test outcomes.
 - [x] 3.3 Add restart/recreation coverage proving failed Medplum readiness remains incomplete with retained storage.
-- [ ] 3.4 Run focused Medplum, Settings readiness, migration, integration, frontend, security/redaction, and OpenSpec strict-validation checks.
+- [x] 3.4 Run focused Medplum, Settings readiness, migration, integration, frontend, security/redaction, and OpenSpec strict-validation checks.
 
 ## 4. ZAC-78 Closure Evidence
 
