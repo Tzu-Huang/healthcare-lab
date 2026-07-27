@@ -943,7 +943,7 @@ Compose 預設已區分 container-internal 與 operator-facing endpoints：`lab-
 
 | Variable(s) | 必填 | Release default／example | 用途 | 生效操作 |
 | --- | --- | --- | --- | --- |
-| `LAB_APP_IMAGE` | 是；已有 default | `ghcr.io/tzu-huang/healthcare-lab:1.0.0` | 選擇 immutable application image。 | `pull lab-app` 後 recreate `lab-app`；驗證 image 與 health。 |
+| `LAB_APP_IMAGE` | 是；已有 default | 由 release bundle pin；以 `config --images` 確認 | 選擇 immutable application image。 | `pull lab-app` 後 recreate `lab-app`；驗證 image 與 health。 |
 | `MEDPLUM_CLIENT_ID`、`MEDPLUM_CLIENT_SECRET` | 僅既有安裝 bootstrap | `<empty>` | Legacy allowlist：只 seed 缺少的 Medplum typed profile；新安裝請用 Settings，secret 為 sensitive。 | 只在 profile 缺少時於一次 startup 生效；之後由 Settings 管理。 |
 | `MEDPLUM_SCOPE`、`MEDPLUM_TOKEN_URL` | 僅既有安裝 bootstrap／特殊 OAuth | `<empty>`；token URL 留空時由 FHIR base URL 推導 | Legacy seed values；新安裝在 **Settings → Medplum** 設定。 | 保存 Settings 後測試 token acquisition；環境變更不覆寫 persisted profile。 |
 | `MEDPLUM_AUTH_GRACE_SECONDS` | 否 | `300` | Token expiry 前的 refresh window。 | Recreate `lab-app`。 |

@@ -135,14 +135,17 @@ No `interoperability-lab` network or volume was reused or removed.
 ## Closure rerun after ZAC-79 and ZAC-80
 
 The ZAC-78 branch was updated from `main` at merge commit `5b80bdc`, which
-includes the published `v1.1.0` release, the ZAC-79 clean-start correction, and
-the ZAC-80 persisted Medplum verification correction.
+includes the ZAC-79 clean-start correction and the ZAC-80 persisted Medplum
+verification correction. Registry inspection confirmed that semantic tag
+`1.1.0` exists but predates the ZAC-80 merge. Immutable image
+`sha-54e60d0` includes ZAC-80, but no corresponding `1.1.1` semantic tag exists.
 
 Post-fix live evidence is retained in:
 
-- `docs/settings-fresh-start-evidence-zac79-20260727.md`, covering the
-  credential-free Compose render/start, valid dcm4chee defaults, stable-image
-  readiness route, and synthetic clean-start safety scan;
+- `docs/settings-fresh-start-evidence-zac79-20260727.md`, covering a local-image
+  credential-free Compose render/start, valid dcm4chee defaults, readiness
+  route, and synthetic clean-start safety scan while explicitly leaving the
+  semantic-version release-image gate incomplete;
 - `docs/settings-medplum-recreation-evidence-zac80-20260727.md`, covering a
   synthetic failed Medplum result across retained-container recreation with
   bounded projections and clean secret-canary scans.
@@ -181,3 +184,8 @@ No screenshots exist in the retained ZAC-78, ZAC-79, or ZAC-80 evidence set, so
 there were no image artifacts requiring credential inspection. Screenshot OCR
 content remains covered by the same synthetic canary gate as other retained
 surfaces.
+
+ZAC-78 therefore remains incomplete on the immutable semantic-version
+release-image gate. Closure requires publishing a semantic version containing
+ZAC-80, selecting it in the release bundle, and rerunning the disposable
+fresh-install matrix against that exact image.
