@@ -61,6 +61,32 @@ class ApplicationConfigTest(unittest.TestCase):
 
         self.assertEqual("legacy-secret", config["MEDPLUM_CLIENT_SECRET"])
 
+    def test_empty_compose_secret_files_remain_unconfigured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            secret_directory = Path(directory)
+            for name in (
+                "MEDPLUM_CLIENT_SECRET",
+                "OPENEMR_DB_PASSWORD",
+                "DCM4CHEE_PASSWORD",
+                "DCM4CHEE_TOKEN",
+                "DCM4CHEE_CLIENT_SECRET",
+            ):
+                (secret_directory / name).write_text("\n", encoding="utf-8")
+            config = load_application_config(
+                "instance",
+                environ={},
+                secret_directory=secret_directory,
+            )
+
+        for name in (
+            "MEDPLUM_CLIENT_SECRET",
+            "OPENEMR_DB_PASSWORD",
+            "DCM4CHEE_PASSWORD",
+            "DCM4CHEE_TOKEN",
+            "DCM4CHEE_CLIENT_SECRET",
+        ):
+            self.assertEqual("", config[name])
+
     def test_invalid_bootstrap_configuration_is_rejected(self):
         invalid = (
             {"OIE_BOOTSTRAP_MODE": "force"},

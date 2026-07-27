@@ -119,10 +119,30 @@ class ComposePortContractTests(unittest.TestCase):
             "DCM4CHEE_TOKEN",
             "DCM4CHEE_CLIENT_SECRET",
         ):
-            self.assertIn(f"environment: {secret}", self.compose)
+            self.assertIn(
+                f"file: ${{{secret}_FILE:-./secrets/empty}}", self.compose
+            )
             self.assertIn(f"target: {secret}", self.compose)
             self.assertNotIn(f"{secret}: ${{{secret}:-", self.compose)
         self.assertNotIn("env_file:", self.compose)
+
+    def test_clean_start_secret_sources_are_empty_files_not_placeholder_values(self):
+        self.assertEqual(5, self.compose.count("_FILE:-./secrets/empty}"))
+        self.assertNotIn("environment: MEDPLUM_CLIENT_SECRET", self.compose)
+        self.assertNotIn("environment: OPENEMR_DB_PASSWORD", self.compose)
+        self.assertNotIn("environment: DCM4CHEE_PASSWORD", self.compose)
+        self.assertNotIn("environment: DCM4CHEE_TOKEN", self.compose)
+        self.assertNotIn("environment: DCM4CHEE_CLIENT_SECRET", self.compose)
+
+    def test_dcm4chee_local_tls_defaults_are_internally_consistent(self):
+        self.assertIn(
+            "DCM4CHEE_TLS_ENABLED: ${DCM4CHEE_TLS_ENABLED:-false}",
+            self.compose,
+        )
+        self.assertIn(
+            "DCM4CHEE_TLS_VERIFY: ${DCM4CHEE_TLS_VERIFY:-false}",
+            self.compose,
+        )
 
     def test_dcm4chee_internal_and_host_hl7_ports_have_distinct_owners(self):
         self.assertIn(
@@ -168,9 +188,14 @@ class ComposeRenderContractTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.deploy = self.root / "deploy"
         self.deploy.mkdir()
+        (self.deploy / "secrets").mkdir()
         shutil.copy2(
             ROOT / "deploy" / "docker-compose.yml",
             self.deploy / "docker-compose.yml",
+        )
+        shutil.copy2(
+            ROOT / "deploy" / "secrets" / "empty",
+            self.deploy / "secrets" / "empty",
         )
 
     def render(self, env_file: Path | None = None):
@@ -220,9 +245,23 @@ class ComposeRenderContractTests(unittest.TestCase):
         ):
             self.assertIn(contract, rendered)
         self.assertNotIn("env_file:", rendered)
+        self.assertIn("DCM4CHEE_TLS_ENABLED: \"false\"", rendered)
+        self.assertIn("DCM4CHEE_TLS_VERIFY: \"false\"", rendered)
+        empty_secret = self.deploy / "secrets" / "empty"
+        self.assertEqual(5, rendered.count(f"file: {empty_secret}"))
+        for secret in (
+            "MEDPLUM_CLIENT_SECRET",
+            "OPENEMR_DB_PASSWORD",
+            "DCM4CHEE_PASSWORD",
+            "DCM4CHEE_TOKEN",
+            "DCM4CHEE_CLIENT_SECRET",
+        ):
+            self.assertNotIn(f"environment: {secret}", rendered)
 
     def test_bounded_advanced_overrides_render_without_secret_output(self):
         canary = "compose-secret-canary-ZAC-77"
+        secret_file = self.root / "medplum-client-secret"
+        secret_file.write_text(canary + "\n", encoding="utf-8")
         override_path = self.root / "clinic-gdt"
         env_file = self.root / "advanced.env"
         env_file.write_text(
@@ -233,7 +272,7 @@ class ComposeRenderContractTests(unittest.TestCase):
                     "OIE_HTTP_PORT=18080",
                     f"GDT_BRIDGE_HOST_PATH={override_path}",
                     "MEDPLUM_POSTGRES_USER=lab_operator",
-                    f"MEDPLUM_CLIENT_SECRET={canary}",
+                    f"MEDPLUM_CLIENT_SECRET_FILE={secret_file}",
                     "DCM4CHEE_LDAP_ROOTPASS=hardened-local-secret",
                 )
             )
