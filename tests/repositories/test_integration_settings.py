@@ -46,6 +46,29 @@ class IntegrationSettingsRepositoryTests(unittest.TestCase):
             bootstrap_source="environment",
         )
 
+    @staticmethod
+    def degraded_report():
+        return {
+            "state": "degraded",
+            "stages": [
+                {
+                    "stage": "metadata",
+                    "state": "passed",
+                    "category": "reachable",
+                },
+                {
+                    "stage": "oauth",
+                    "state": "failed",
+                    "category": "authorization-failure",
+                },
+                {
+                    "stage": "authenticated-read",
+                    "state": "skipped",
+                    "category": "oauth-unavailable",
+                },
+            ],
+        }
+
     def test_create_and_public_private_round_trip(self):
         self.assertTrue(self.seed())
         self.assertFalse(self.seed("must-not-overwrite"))
@@ -225,3 +248,242 @@ class IntegrationSettingsRepositoryTests(unittest.TestCase):
             whitespace_sensitive,
             self.repository.get_private("medplum")["secrets"]["clientSecret"],
         )
+
+    def test_medplum_revision_is_opaque_and_advances_only_for_effective_changes(self):
+        self.seed()
+        initial_revision = self.repository.get_medplum_configuration_revision()
+        self.assertIsInstance(initial_revision, int)
+        self.assertEqual(1, initial_revision)
+
+        private = self.repository.get_private("medplum")
+        unchanged = validate_profile("medplum", private["fields"])
+        self.repository.replace(
+            unchanged,
+            secret_mutations={"clientSecret": preserve_secret()},
+        )
+        self.assertEqual(
+            initial_revision,
+            self.repository.get_medplum_configuration_revision(),
+        )
+        self.repository.replace(
+            unchanged,
+            secret_mutations={
+                "clientSecret": replace_secret(private["secrets"]["clientSecret"])
+            },
+        )
+        self.assertEqual(
+            initial_revision,
+            self.repository.get_medplum_configuration_revision(),
+        )
+        self.assertFalse(self.seed("must-not-overwrite"))
+        self.assertEqual(
+            initial_revision,
+            self.repository.get_medplum_configuration_revision(),
+        )
+
+        changed_fields = dict(private["fields"])
+        changed_fields["clientId"] = "changed-client"
+        self.repository.replace(
+            validate_profile("medplum", changed_fields),
+            secret_mutations={"clientSecret": preserve_secret()},
+        )
+        public_revision = self.repository.get_medplum_configuration_revision()
+        self.assertEqual(initial_revision + 1, public_revision)
+
+        self.repository.replace(
+            validate_profile("medplum", changed_fields),
+            secret_mutations={"clientSecret": replace_secret("rotated-secret")},
+        )
+        secret_revision = self.repository.get_medplum_configuration_revision()
+        self.assertEqual(public_revision + 1, secret_revision)
+
+        self.repository.replace(
+            validate_profile("medplum", changed_fields),
+            secret_mutations={"clientSecret": remove_secret()},
+        )
+        self.assertEqual(
+            secret_revision + 1,
+            self.repository.get_medplum_configuration_revision(),
+        )
+
+    def test_medplum_verification_round_trip_is_bounded_and_value_free(self):
+        self.seed("verification-secret-canary")
+        revision = self.repository.get_medplum_configuration_revision()
+
+        self.assertTrue(
+            self.repository.record_medplum_verification(
+                revision, self.degraded_report()
+            )
+        )
+
+        stored = self.repository.get_medplum_verification()
+        self.assertEqual(revision, stored["configurationRevision"])
+        self.assertEqual("degraded", stored["state"])
+        self.assertEqual(
+            [
+                {
+                    "stage": "metadata",
+                    "state": "passed",
+                    "category": "reachable",
+                },
+                {
+                    "stage": "oauth",
+                    "state": "failed",
+                    "category": "authorization-failure",
+                },
+                {
+                    "stage": "authenticated-read",
+                    "state": "skipped",
+                    "category": "oauth-unavailable",
+                },
+            ],
+            stored["stages"],
+        )
+        serialized = json.dumps(stored)
+        self.assertNotIn("summary", serialized)
+        self.assertNotIn("verification-secret-canary", serialized)
+        self.assertNotIn("token", serialized.lower())
+        self.assertNotIn("resource", serialized.lower())
+
+    def test_medplum_verification_rejects_stale_revision_without_overwriting(self):
+        self.seed()
+        revision = self.repository.get_medplum_configuration_revision()
+        self.assertTrue(
+            self.repository.record_medplum_verification(
+                revision, self.degraded_report()
+            )
+        )
+        before = self.repository.get_medplum_verification()
+
+        private = self.repository.get_private("medplum")
+        fields = dict(private["fields"])
+        fields["baseUrl"] = "http://changed-medplum:8103/fhir/R4"
+        self.repository.replace(
+            validate_profile("medplum", fields),
+            secret_mutations={"clientSecret": preserve_secret()},
+        )
+
+        self.assertFalse(
+            self.repository.record_medplum_verification(
+                revision,
+                {
+                    "state": "healthy",
+                    "stages": [
+                        {
+                            "stage": "metadata",
+                            "state": "passed",
+                            "category": "reachable",
+                        },
+                        {
+                            "stage": "oauth",
+                            "state": "passed",
+                            "category": "authorized",
+                        },
+                        {
+                            "stage": "authenticated-read",
+                            "state": "passed",
+                            "category": "readable",
+                        },
+                    ],
+                },
+            )
+        )
+        self.assertEqual(before, self.repository.get_medplum_verification())
+        self.assertNotEqual(
+            self.repository.get_medplum_configuration_revision(),
+            self.repository.get_medplum_verification()["configurationRevision"],
+        )
+
+    def test_medplum_verification_rejects_unbounded_or_unknown_content(self):
+        self.seed()
+        revision = self.repository.get_medplum_configuration_revision()
+        invalid_reports = [
+            {**self.degraded_report(), "accessToken": "secret-token"},
+            {
+                **self.degraded_report(),
+                "stages": [
+                    {
+                        **self.degraded_report()["stages"][0],
+                        "summary": "Upstream-derived display text",
+                    },
+                    *self.degraded_report()["stages"][1:],
+                ],
+            },
+            {
+                **self.degraded_report(),
+                "stages": [
+                    {
+                        **self.degraded_report()["stages"][0],
+                        "body": {"resourceType": "Bundle"},
+                    },
+                    *self.degraded_report()["stages"][1:],
+                ],
+            },
+            {**self.degraded_report(), "state": "arbitrary-state"},
+            {
+                **self.degraded_report(),
+                "stages": [
+                    {
+                        **self.degraded_report()["stages"][0],
+                        "stage": "arbitrary-stage",
+                    },
+                    *self.degraded_report()["stages"][1:],
+                ],
+            },
+            {
+                **self.degraded_report(),
+                "stages": [
+                    {
+                        **self.degraded_report()["stages"][0],
+                        "category": "x" * 1000,
+                    },
+                    *self.degraded_report()["stages"][1:],
+                ],
+            },
+        ]
+        for report in invalid_reports:
+            with self.subTest(report=report), self.assertRaises(ValueError):
+                self.repository.record_medplum_verification(revision, report)
+        self.assertIsNone(self.repository.get_medplum_verification())
+
+    def test_medplum_verification_rejects_healthy_with_nonpassing_stages(self):
+        self.seed()
+        revision = self.repository.get_medplum_configuration_revision()
+        inconsistent = {
+            **self.degraded_report(),
+            "state": "healthy",
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Healthy Medplum verification requires all bounded stages to pass",
+        ):
+            self.repository.record_medplum_verification(revision, inconsistent)
+
+        self.assertIsNone(self.repository.get_medplum_verification())
+
+    def test_configured_profile_starts_without_fabricated_verification_evidence(self):
+        self.seed()
+
+        self.assertEqual(1, self.repository.get_medplum_configuration_revision())
+        self.assertIsNone(self.repository.get_medplum_verification())
+
+    def test_medplum_verification_migration_and_repository_restart_are_idempotent(self):
+        self.seed()
+        revision = self.repository.get_medplum_configuration_revision()
+        self.assertTrue(
+            self.repository.record_medplum_verification(
+                revision, self.degraded_report()
+            )
+        )
+        before = self.repository.get_medplum_verification()
+
+        self.database.initialize()
+        restarted = IntegrationSettingsRepository(
+            self.database.connect,
+            self.database.lock,
+            timestamp_factory=lambda: "2026-07-23T01:00:00+00:00",
+        )
+
+        self.assertEqual(revision, restarted.get_medplum_configuration_revision())
+        self.assertEqual(before, restarted.get_medplum_verification())

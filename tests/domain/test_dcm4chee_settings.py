@@ -206,6 +206,14 @@ class Dcm4cheeSettingsTests(unittest.TestCase):
         self.assertEqual(11113, profile.fields["dimse"]["port"])
         self.assertEqual(2576, profile.fields["hl7"]["port"])
         self.assertFalse(profile.fields["security"]["tlsEnabled"])
+        self.assertFalse(profile.fields["security"]["tlsVerify"])
+
+    def test_bootstrap_local_security_defaults_are_valid_without_overrides(self):
+        profile = dcm4chee_bootstrap_candidate({})
+
+        self.assertFalse(profile.fields["security"]["tlsEnabled"])
+        self.assertFalse(profile.fields["security"]["tlsVerify"])
+        self.assertEqual(profile, validate_profile("dcm4chee", profile.fields))
 
 
 if __name__ == "__main__":
