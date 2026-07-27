@@ -4,10 +4,18 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from backend.application_composition import assemble_application_dependencies
+from backend.domain.integration_settings import TypedSettingsValidationError
 from backend.repositories.database import SQLiteDatabase
 from backend.repositories.schema import APPLICATION_MIGRATIONS
+from backend.services.dcm4chee_diagnostics import diagnose_dcm4chee
+from backend.services.gdt_bridge_diagnostics import (
+    diagnose_gdt_bridge_dirs,
+    probe_gdt_bridge_write_delete,
+    provision_gdt_bridge_dirs,
+)
 from backend.settings_readiness_composition import create_settings_readiness_service
 from tests.zac78_verification import (
     LEGACY_SCHEMA_PROVENANCE,
@@ -117,6 +125,42 @@ class Zac78SettingsReleaseVerificationTests(unittest.TestCase):
         self.assertIsNotNone(readiness["nextAction"])
         assert_bounded_evidence(readiness)
 
+    def test_builtin_defaults_and_optional_disable_flows_are_release_safe(self):
+        dependencies = assemble_application_dependencies(
+            self.root / "defaults.db", configuration={}
+        )
+        settings = dependencies.integration_settings_service
+        dcm4chee = settings.get_public("dcm4chee")
+        gdt = settings.get_public("gdt-bridge")
+
+        self.assertTrue(dcm4chee["fields"]["enabled"])
+        self.assertEqual("http://127.0.0.1:8082/dcm4chee-arc/ui2", dcm4chee["fields"]["webUiUrl"])
+        self.assertFalse(dcm4chee["fields"]["security"]["tlsEnabled"])
+        self.assertFalse(dcm4chee["fields"]["security"]["tlsVerify"])
+        self.assertFalse(gdt["fields"]["enabled"])
+        ap_profiles = dependencies.ap_device_profile_service.list()
+        self.assertEqual(1, len(ap_profiles))
+        self.assertFalse(ap_profiles[0]["enabled"])
+        self.assertFalse(ap_profiles[0]["isDefault"])
+        self.assertIsNone(dependencies.ap_device_profile_service.effective())
+
+        gdt_fields = dict(gdt["fields"])
+        gdt_fields["enabled"] = False
+        settings.replace("gdt-bridge", gdt_fields)
+        self.assertFalse(settings.get_effective("gdt-bridge").enabled)
+
+        readiness = create_settings_readiness_service(
+            settings,
+            listener_status=lambda: {"running": True},
+            oie_diagnostics=lambda: {"state": "healthy"},
+            dcm4chee_diagnostics=lambda: {"state": "healthy", "checks": []},
+        ).get_readiness()
+        integrations = {item["id"]: item for item in readiness["sections"]}
+        self.assertEqual("restart-required", integrations["oie"]["state"])
+        self.assertEqual("ready", integrations["dcm4chee"]["state"])
+        self.assertEqual("disabled", integrations["gdt-bridge"]["state"])
+        assert_bounded_evidence(readiness)
+
     def test_completed_operator_configuration_survives_dependency_recreation(self):
         path = self.root / "retained-storage.db"
         first = assemble_application_dependencies(path, configuration={})
@@ -139,6 +183,131 @@ class Zac78SettingsReleaseVerificationTests(unittest.TestCase):
         self.assertTrue(public["secrets"]["clientSecret"]["configured"])
         self.assertNotIn("synthetic-secret", repr(public))
 
+    def test_upgraded_database_keeps_representative_application_workflows_available(self):
+        path = self.root / "workflow-upgrade.db"
+        create_canonical_legacy_database(path)
+        dependencies = assemble_application_dependencies(
+            path,
+            configuration={
+                "MEDPLUM_CLIENT_ID": "legacy-client",
+                "MEDPLUM_CLIENT_SECRET": SYNTHETIC_CANARIES["secret"],
+            },
+        )
+
+        # Resolve each workflow-facing dependency after the complete migration
+        # chain. This catches a schema upgrade that succeeds while leaving the
+        # assembled patient/order, GDT, DICOM, or FHIR paths unusable.
+        for dependency_name in (
+            "patient_repository",
+            "order_repository",
+            "gdt_workflow",
+            "dcm4chee_workflow_coordinator",
+            "patient_fhir",
+            "order_fhir",
+        ):
+            with self.subTest(dependency=dependency_name):
+                self.assertIsNotNone(getattr(dependencies, dependency_name))
+
+        with SQLiteDatabase(path, migrations=APPLICATION_MIGRATIONS).connect() as connection:
+            applied = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT version FROM schema_migrations ORDER BY version"
+                )
+            ]
+        self.assertEqual(list(range(1, len(APPLICATION_MIGRATIONS) + 1)), applied)
+
+    def test_gdt_missing_and_unwritable_paths_are_bounded_and_non_mutating(self):
+        missing = self.root / SYNTHETIC_CANARIES["phi"] / "missing-bridge"
+        missing_report = diagnose_gdt_bridge_dirs(missing)
+        self.assertEqual("degraded", missing_report["state"])
+        self.assertFalse(missing.exists())
+        assert_bounded_evidence(missing_report)
+
+        bridge = self.root / "bridge"
+        provision_gdt_bridge_dirs(bridge)
+        with patch(
+            "backend.services.gdt_bridge_diagnostics.os.open",
+            side_effect=OSError(SYNTHETIC_CANARIES["upstream_body"]),
+        ):
+            unwritable_report = probe_gdt_bridge_write_delete(bridge)
+        self.assertEqual(
+            {"role": "write-delete", "state": "failed", "code": "write-failed"},
+            unwritable_report,
+        )
+        self.assertEqual([], list((bridge / "diagnostic").iterdir()))
+        assert_bounded_evidence(unwritable_report)
+
+    def test_dcm4chee_ap_oie_and_partial_availability_fail_independently(self):
+        dcm4chee = diagnose_dcm4chee(
+            {
+                "webUiUrl": "http://unreachable.invalid/archive",
+                "dicomweb": {"qidoRsUrl": "http://unreachable.invalid/rs"},
+                "hl7": {"host": "unreachable.invalid", "port": 2575},
+                "dimse": {"host": "unreachable.invalid", "port": 11112},
+            },
+            http_probe=lambda *_args: (_ for _ in ()).throw(
+                OSError(SYNTHETIC_CANARIES["upstream_body"])
+            ),
+            tcp_probe=lambda *_args: (_ for _ in ()).throw(
+                OSError(SYNTHETIC_CANARIES["raw_message"])
+            ),
+        )
+        self.assertEqual("degraded", dcm4chee["state"])
+        self.assertEqual(
+            ["unreachable", "unreachable", "unreachable", "unreachable"],
+            [item["code"] for item in dcm4chee["checks"]],
+        )
+        assert_bounded_evidence(dcm4chee)
+
+        dependencies = assemble_application_dependencies(
+            self.root / "partial.db", configuration={}
+        )
+        invalid_ap = {
+            "id": "invalid-ap",
+            "name": "Invalid AP",
+            "environment": "lab",
+            "enabled": True,
+            "isDefault": False,
+            "metadata": {},
+            "hl7": {"enabled": False},
+            "gdt": {"enabled": False},
+            "dicom": {
+                "enabled": True,
+                "aeTitle": "BAD\\AE",
+                "host": "ap.invalid",
+                "port": 11112,
+                "mwlCallingAETitle": "ECG_AP",
+                "scheduledStationAETitle": "ECG_AP",
+                "resultDeliveryRole": "scu",
+            },
+        }
+        with self.assertRaises(TypedSettingsValidationError) as caught:
+            dependencies.ap_device_profile_service.create(invalid_ap)
+        self.assertEqual(
+            "invalid_ae_title",
+            caught.exception.as_dict()["fields"][0]["code"],
+        )
+
+        readiness_service = create_settings_readiness_service(
+            dependencies.integration_settings_service,
+            listener_status=lambda: {"running": False},
+            oie_diagnostics=lambda: {
+                "state": "degraded",
+                "probes": [
+                    {"layer": "management-api", "state": "unavailable"},
+                    {"layer": "hlab-listener", "state": "healthy"},
+                ],
+            },
+            dcm4chee_diagnostics=lambda: dcm4chee,
+        )
+        checks = {
+            item["id"]: item for item in readiness_service.run_checks()["results"]
+        }
+        self.assertEqual("degraded", checks["oie"]["state"])
+        self.assertEqual("degraded", checks["dcm4chee"]["state"])
+        assert_bounded_evidence(checks)
+
     def test_evidence_gate_rejects_every_sensitive_category_and_accepts_bounded_output(self):
         self.assertEqual(
             '{"code": "authentication_failed", "recovery": "replace credential"}',
@@ -150,6 +319,23 @@ class Zac78SettingsReleaseVerificationTests(unittest.TestCase):
             with self.subTest(category=category):
                 with self.assertRaisesRegex(AssertionError, category):
                     assert_bounded_evidence({"selectedLog": canary})
+
+    def test_api_ui_wrapper_log_and_screenshot_evidence_share_the_canary_gate(self):
+        surfaces = ("api", "ui", "wrapper", "selectedLog", "screenshotOcr")
+        for surface in surfaces:
+            with self.subTest(surface=surface):
+                for category, canary in SYNTHETIC_CANARIES.items():
+                    with self.assertRaisesRegex(AssertionError, category):
+                        assert_bounded_evidence({surface: canary})
+
+        retained = {
+            "api": {"state": "degraded", "category": "connection-failure"},
+            "ui": {"label": "Connection failed", "recovery": "Review Settings"},
+            "wrapper": {"state": "healthy"},
+            "selectedLog": {"code": "dependency-unavailable"},
+            "screenshotOcr": "Synthetic configuration; no credentials displayed.",
+        }
+        self.assertTrue(assert_bounded_evidence(retained))
 
     def test_settings_web_authority_has_no_compose_writer_or_docker_executor(self):
         settings_sources = [

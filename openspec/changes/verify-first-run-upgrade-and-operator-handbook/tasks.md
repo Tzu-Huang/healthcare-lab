@@ -8,21 +8,21 @@
 
 - [x] 2.1 Add automated coverage for startup with no `.env`, database, or prior volumes and for accurate initial readiness/default projections.
 - [x] 2.2 Verify Medplum configuration and bounded authenticated stages through Settings using synthetic credentials.
-- [ ] 2.3 Verify built-in OIE and dcm4chee defaults plus explicit configure-or-disable flows for GDT and AP.
+- [x] 2.3 Verify built-in OIE and dcm4chee defaults plus explicit configure-or-disable flows for GDT and AP.
 - [x] 2.4 Verify setup completion across application restart and compatible container recreation with retained storage.
 
 ## 3. Upgrade and Precedence Verification
 
 - [x] 3.1 Add the canonical legacy database and representative eligible environment values to an isolated upgrade harness.
-- [ ] 3.2 Verify atomic schema/profile migration, secret configured-state preservation, effective precedence, and absence of workflow regression.
+- [x] 3.2 Verify atomic schema/profile migration, secret configured-state preservation, effective precedence, and absence of workflow regression.
 - [x] 3.3 Change migrated settings through the UI, restart with conflicting legacy environment values, and prove persisted authority and bootstrap idempotence.
 
 ## 4. Failure and Authority Matrix
 
 - [x] 4.1 Verify wrong Medplum secret and unreachable FHIR URL classification, partial-stage outcomes, and recovery guidance.
-- [ ] 4.2 Verify missing or unwritable GDT paths without creating, deleting, or moving an unsafe target.
-- [ ] 4.3 Verify unreachable dcm4chee, invalid AE title, AP/OIE drift, and partial service availability as independent bounded failures.
-- [ ] 4.4 Scan API, UI, wrapper, selected log, screenshot, and evidence outputs for secret, PHI, raw-message, FHIR-body, and upstream-response canaries.
+- [x] 4.2 Verify missing or unwritable GDT paths without creating, deleting, or moving an unsafe target.
+- [x] 4.3 Verify unreachable dcm4chee, invalid AE title, AP/OIE drift, and partial service availability as independent bounded failures.
+- [x] 4.4 Scan API, UI, wrapper, selected log, screenshot, and evidence outputs for secret, PHI, raw-message, FHIR-body, and upstream-response canaries.
 - [x] 4.5 Add or confirm contracts proving Settings cannot rewrite Compose or invoke arbitrary Docker operations.
 
 ## 5. Operator Handbook Reconciliation
