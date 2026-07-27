@@ -154,7 +154,7 @@ class APDeviceProfileService:
             "metadata": {"description": "Imported compatibility values"},
             "hl7": {
                 "enabled": False,
-                "host": str(configuration.get("OIE_MANAGED_AP_HOST", "hl7tester")),
+                "host": str(configuration.get("OIE_MANAGED_AP_HOST", "192.168.0.145")),
                 "port": 6671,
                 "sendingApplication": "",
                 "sendingFacility": "",

@@ -66,7 +66,7 @@ class OieSettingsRepositoryTest(unittest.TestCase):
             [item["logicalType"] for item in profile["managedChannels"]],
         )
         orm, oru = profile["managedChannels"]
-        self.assertEqual(("", "HLAB_ORM_TO_AP", 6600, "hl7tester", 6671), (
+        self.assertEqual(("", "HLAB_ORM_TO_AP", 6600, "192.168.0.145", 6671), (
             orm["channelId"], orm["channelName"], orm["sourcePort"],
             orm["destinationHost"], orm["destinationPort"],
         ))
