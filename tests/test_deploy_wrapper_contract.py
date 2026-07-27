@@ -25,17 +25,33 @@ class DeployWrapperContractTests(unittest.TestCase):
             ROOT / "deploy" / "docker-compose.yml",
             self.deploy / "docker-compose.yml",
         )
+        (self.deploy / "secrets").mkdir()
+        shutil.copy2(
+            ROOT / "deploy" / "secrets" / "empty",
+            self.deploy / "secrets" / "empty",
+        )
         self.bin = self.root / "fake-bin"
         self.bin.mkdir()
         self.invocations = self.root / "docker-arguments.txt"
         self.docker_environment = self.root / "docker-environment.txt"
-        (self.bin / "docker.cmd").write_text(
-            "@echo off\r\n"
-            "echo %*>>\"%FAKE_DOCKER_INVOCATIONS%\"\r\n"
-            "echo %GDT_BRIDGE_HOST_PATH%>>\"%FAKE_DOCKER_ENVIRONMENT%\"\r\n"
-            "exit /b 0\r\n",
-            encoding="utf-8",
-        )
+        if os.name == "nt":
+            (self.bin / "docker.cmd").write_text(
+                "@echo off\r\n"
+                "echo %*>>\"%FAKE_DOCKER_INVOCATIONS%\"\r\n"
+                "echo %GDT_BRIDGE_HOST_PATH%>>\"%FAKE_DOCKER_ENVIRONMENT%\"\r\n"
+                "exit /b 0\r\n",
+                encoding="utf-8",
+            )
+        else:
+            fake_docker = self.bin / "docker"
+            fake_docker.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >> \"$FAKE_DOCKER_INVOCATIONS\"\n"
+                "printf '%s\\n' \"$GDT_BRIDGE_HOST_PATH\" >> \"$FAKE_DOCKER_ENVIRONMENT\"\n"
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            fake_docker.chmod(0o755)
 
     def run_wrapper(self, *arguments: str, extra_env=None):
         env = os.environ.copy()
@@ -66,6 +82,12 @@ class DeployWrapperContractTests(unittest.TestCase):
 
     def recorded_gdt_paths(self):
         return self.docker_environment.read_text(encoding="utf-8").splitlines()
+
+    def test_release_fixture_includes_empty_secret_source(self):
+        secret_source = self.deploy / "secrets" / "empty"
+
+        self.assertTrue(secret_source.is_file())
+        self.assertEqual("", secret_source.read_text(encoding="utf-8").strip())
 
     def test_supported_actions_have_deterministic_absolute_compose_arguments(self):
         cases = {
