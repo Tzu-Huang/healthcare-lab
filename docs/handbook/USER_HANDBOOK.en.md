@@ -948,7 +948,7 @@ Configuration has three different owners:
 
 | Variable(s) | Required | Release default / example | Purpose | Apply action |
 | --- | --- | --- | --- | --- |
-| `LAB_APP_IMAGE` | Yes; default supplied | `ghcr.io/tzu-huang/healthcare-lab:1.0.0` | Selects the immutable application image. | `pull lab-app`, then recreate `lab-app`; verify image and health. |
+| `LAB_APP_IMAGE` | Yes; default supplied | Pinned by the release bundle; confirm with `config --images` | Selects the immutable application image. | `pull lab-app`, then recreate `lab-app`; verify image and health. |
 | `MEDPLUM_CLIENT_ID`, `MEDPLUM_CLIENT_SECRET` | Legacy upgrade bootstrap only | `<empty>` | Fixed-allowlist, create-only seed for a missing Settings profile; the secret is sensitive. It never overwrites saved Settings. | Prefer **Settings → Medplum**. Existing installations may recreate once to seed a missing profile, then verify and manage it in Settings. |
 | `MEDPLUM_SCOPE`, `MEDPLUM_TOKEN_URL`, `MEDPLUM_AUTH_GRACE_SECONDS` | Legacy upgrade bootstrap only | `<empty>`, `<empty>`, `300` | Create-only seed values for a missing typed Medplum profile. | Prefer Settings; after seeding, persisted values are authoritative and later environment changes are ignored. |
 | `MEDPLUM_APP_PORT` | No | `3000` | Host publication for the Medplum web app. | Recreate `medplum-app`; update browser/public URLs if changed. |
