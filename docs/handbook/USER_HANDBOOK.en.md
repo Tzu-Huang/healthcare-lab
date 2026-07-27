@@ -1,9 +1,9 @@
 # Healthcare Lab User Handbook (English)
 
-> Document status: v1.0.0 Release Candidate draft<br>
-> Documentation baseline: `fd0e38f`<br>
-> Last updated: 2026-07-22<br>
-> This edition has not passed final publication, clean-install, or full end-to-end verification for all four protocols. Content marked “Pending RC verification” is not a final operational guarantee.
+> Document status: v1.1.1 released-image operator handbook<br>
+> Released image baseline: `54e60d0e69d25c256474d9d0a5c790b1d9b7599e`<br>
+> Last updated: 2026-07-27<br>
+> The v1.1.1 image has passed public publication and an isolated clean full-stack installation. Unrelated protocol, recovery, support, and physical-device boundaries remain explicit in Appendix G.
 
 ## Part I: Understand and Start Healthcare Lab
 
@@ -14,7 +14,7 @@ This handbook helps Healthcare Lab operators install, configure, start, stop, ve
 
 It is intended for healthcare integration testers, application specialists, healthcare IT engineers, system operators, and demonstration operators. Source-code knowledge is not required.
 
-This handbook applies to the v1.0.0 RC Docker distribution model. It excludes source builds and development setup. First-time installers should read Chapters 3–6; UI operators may begin with Chapters 7–9; protocol users may go directly to Chapters 10–13; troubleshooting begins in Chapter 14.
+This handbook applies to the v1.1.1 Docker distribution model. It excludes source builds and development setup. First-time installers should read Chapters 3–6; UI operators may begin with Chapters 7–9; protocol users may go directly to Chapters 10–13; troubleshooting begins in Chapter 14.
 
 <a id="chapter-2"></a>
 ## Chapter 2 — Healthcare Lab Overview
@@ -51,7 +51,7 @@ AP (QHAP) <-> OIE / GDT shared folder / dcm4chee
 <a id="chapter-3"></a>
 ## Chapter 3 — Prerequisites
 
-The v1.0.0 RC support boundary is a trusted local machine or internal lab running `linux/amd64` containers. Windows uses Docker Desktop in Linux container mode. An equivalent Linux Docker host remains pending formal release verification.
+The v1.1.1 support boundary is a trusted local machine or internal lab running `linux/amd64` containers. Windows uses Docker Desktop in Linux container mode. An equivalent Linux Docker host remains pending formal release verification.
 
 ### Verified RC host environment
 
@@ -84,8 +84,8 @@ Also confirm that:
 
 - The host can access GHCR and third-party image registries.
 - Default host ports 5000, 6600, 6661, 8080, 8443, 8103, 3000, 8082, 11112, and 2575 are not used by another process.
-- A Medplum OAuth client ID and secret are available when FHIR sync is required.
-- A GDT host folder is prepared; the Docker host IP, firewall rules, and required external AP (QHAP) endpoints are known when applicable.
+- Medplum project access is available so an OAuth ClientApplication can be created when FHIR sync is required.
+- The Docker host IP, firewall rules, and required external AP (QHAP) endpoints are known when applicable. The wrapper prepares the default GDT host folder; only a custom AP share must be planned separately.
 - Only virtual test data will be used.
 
 > Pending RC verification: minimum CPU, memory, and storage requirements; supported browser versions; and a clean installation on an equivalent Linux host.
@@ -93,56 +93,36 @@ Also confirm that:
 <a id="chapter-4"></a>
 ## Chapter 4 — Installing the Released Docker Image
 
-The release model combines a fixed Healthcare Lab image, a versioned deployment bundle, and compatible OIE, Medplum, and dcm4chee images. `.env` belongs to the deployment bundle and contains deployment-specific image tags, ports, service addresses, credentials, and volume paths. It is not part of the immutable image.
+The release model combines a fixed Healthcare Lab image, a versioned deployment bundle, and compatible OIE, Medplum, and dcm4chee images. The normal local installation is zero-edit: it does not require an `.env`, a YAML edit, or manual GDT folder preparation. Application connections and credentials belong in the browser-based Settings page. An optional `.env` is an **Advanced deployment** control for image selection, published host ports, bind paths, service-database hardening, and startup policy; it is not part of the immutable image.
 
-### RC installation procedure
+### v1.1.1 installation procedure
 
-1. Download and extract the v1.0.0 deployment bundle.
+1. Download and extract the v1.1.1 deployment bundle.
 2. Open PowerShell in the bundle root.
-3. Create the local configuration and GDT folders:
+3. Start the supported stack with one command:
 
    ```powershell
-   Copy-Item .env.example .env
-   New-Item -ItemType Directory -Force instance\gdt-bridge\inbox
-   New-Item -ItemType Directory -Force instance\gdt-bridge\outbox
+   .\deploy\lab.ps1 start
    ```
 
-4. Validate Compose syntax and the resolved image matrix:
+   The wrapper pulls the pinned public images, creates the bounded default `instance\gdt-bridge` host root, and starts persistent services. `dcm4chee-storage-init` is a one-shot initialization service; `Exited (0)` is its expected completed state.
+
+4. Verify the application and open the guided setup:
 
    ```powershell
-   docker compose --env-file .env -f deploy\docker-compose.yml config --quiet
-   docker compose --env-file .env -f deploy\docker-compose.yml config --images
-   ```
-
-   `config --quiet` should exit with code 0. `config --images` should show the fixed Healthcare Lab `1.0.0` image and the third-party digests listed in the release documentation.
-
-5. Review `.env` and enter the credentials, ports, and paths required by the deployment. Before starting Compose, replace the host-facing dcm4chee connection values copied from `.env.example` with Docker-network addresses for `lab-app`:
-
-   ```dotenv
-   DCM4CHEE_DIMSE_HOST=dcm4chee
-   DCM4CHEE_HL7_HOST=dcm4chee
-   DCM4CHEE_DICOMWEB_BASE_URL=http://dcm4chee:8080/dcm4chee-arc/aets/WORKLIST/rs
-   DCM4CHEE_QIDO_RS_URL=http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs
-   DCM4CHEE_WADO_RS_URL=http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs
-   DCM4CHEE_STOW_RS_URL=http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs
-   ```
-
-   Keep `DCM4CHEE_WEB_UI_URL` host-facing because a browser opens it. In contrast, `127.0.0.1` in the six backend values above points back to `lab-app` when Compose injects `.env` into that container. The deployment template must be corrected and clean-install verification repeated before this workaround can be removed from the installation procedure.
-6. After the formal image is published, pull the fixed version:
-
-   ```powershell
-   docker pull ghcr.io/tzu-huang/healthcare-lab:1.0.0
-   ```
-
-7. Start the services and inspect their state:
-
-   ```powershell
-   docker compose --env-file .env -f deploy\docker-compose.yml up -d
-   docker compose --env-file .env -f deploy\docker-compose.yml ps
+   .\deploy\lab.ps1 status
    Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
    ```
 
-   `dcm4chee-storage-init` is a one-shot initialization service. It creates the configured archive storage directory, sets the directory to `wildfly:wildfly` with mode `0775`, and must succeed before `dcm4chee` starts. `Exited (0)` in `docker compose ps -a` is its expected state; a nonzero exit code means archive storage initialization failed.
+   Open <http://127.0.0.1:5000>. If setup is incomplete, use the Dashboard action to open the authoritative Settings section. Enter application endpoints, credentials, protocol identities, and runtime behavior there, save them, then use the section's connection or diagnostic check. Typed profiles persist in `lab-app-instance` and remain authoritative after restart and container recreation.
+
+5. Create an optional `.env` only for an Advanced deployment override:
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+   Review only the deployment values you intend to own, such as `LAB_APP_IMAGE`, a published host port, `GDT_BRIDGE_HOST_PATH`, service-database hardening, or startup policy. The wrapper automatically passes the repo-root `.env` when it exists.
 
 The root page should return HTTP 200 and required containers should be running/healthy. Confirm the actual image rather than relying on the container name:
 
@@ -153,18 +133,33 @@ docker compose --env-file .env -f deploy\docker-compose.yml config --images
 
 The `Image` value reported by `inspect` must be the immutable Healthcare Lab tag selected for this installation. Container health does not prove that a protocol workflow is complete.
 
-### Completed RC image verification
+### Completed v1.1.1 image verification
 
-An isolated Compose project verified `healthcare-lab:verify-fd0e38f` during this documentation round. The container became `healthy`, the root page returned HTTP 200, Gunicorn listened on container port 5000, and a marker in `/app/instance` survived force recreation. All seven container release contract tests passed.
+GitHub Release `v1.1.1` publishes
+`ghcr.io/tzu-huang/healthcare-lab:1.1.1` for `linux/amd64` from commit
+`54e60d0e69d25c256474d9d0a5c790b1d9b7599e`. Release workflow run
+`30242203066` passed product tests, image publication, anonymous GHCR
+inspection, container health, and the immutable Settings readiness smoke test.
 
-This validates RC image behavior. It does not validate the public pull of `ghcr.io/tzu-huang/healthcare-lab:1.0.0` or a clean full-stack installation.
-
-> Pending RC verification: the `v1.0.0` tag, unauthenticated public pull, image digest, clean installation, and first-time initialization.
+An exclusively owned disposable Compose project then pulled that exact image
+and completed a clean full-stack installation without `.env` or integration
+credentials. `lab-app` became healthy; OIE and dcm4chee were ready; Medplum
+correctly required guided setup; disabled optional GDT/AP integrations remained
+non-blocking; public projections contained no configured secrets; and all
+disposable containers, volumes, and network resources were removed afterward.
+The exact run is recorded in
+`docs/settings-release-image-evidence-zac78-20260727.md`.
 
 <a id="chapter-5"></a>
 ## Chapter 5 — Configuration
 
-Configuration may come from `.env`, Compose, persisted server inventory in Dashboard, and external systems. When values conflict, a workflow may use persisted server inventory. For example, Medplum sync uses the saved Medplum `baseUrl`; the browser URL or public URL in `.env` must not be assumed to be the backend address.
+Configuration has three owners:
+
+- **Settings:** application connections, write-only application secrets, protocol identities, timeouts, and runtime behavior. Persisted typed profiles are authoritative across restart and container recreation.
+- **Advanced deployment (`.env` and Compose):** immutable image choice, host-published ports, host bind paths, service-database/security hardening, and startup policy.
+- **External systems:** Medplum OAuth clients, OIE users and certificates, dcm4chee AEs, and physical AP/device configuration.
+
+For existing installations only, eligible legacy application variables may seed a missing typed profile once. This bootstrap is create-only: after a profile is saved in Settings, later environment changes do not overwrite it.
 
 Important address contexts:
 
@@ -174,7 +169,7 @@ Important address contexts:
 | Docker service | `http://medplum:8103/fhir/R4` | `lab-app` accesses Medplum |
 | External device | `<Docker-host-IP>:6661` | AP (QHAP) sends results to OIE |
 
-After changing `.env`, recreate the affected service, normally with `.\deploy\lab.ps1 restart <service>`. The wrapper's `restart` action runs `up -d --force-recreate`; it is not a process-only restart. After changing a managed Channel destination, queue, retry, or ACK setting, Preview, Apply, and redeploy the Channel.
+After changing an Advanced deployment value, recreate the affected service, normally with `.\deploy\lab.ps1 restart <service>`. The wrapper's `restart` action runs `up -d --force-recreate`; it is not a process-only restart. Saving a Settings profile does not imply the same activation action: use the specific Save-and-test, listener Retry, or managed-Channel Preview/Apply guidance shown by its section.
 
 Before applying configuration, run:
 
@@ -184,7 +179,17 @@ docker compose --env-file .env -f deploy\docker-compose.yml config --quiet
 
 This verifies that Compose can resolve the configuration. It does not validate credentials, network connectivity, or a protocol workflow.
 
-Keep credentials only in the local `.env` or an approved secret store. Do not place them in documentation, screenshots, or version control.
+Keep deployment secrets in an untracked `.env` or approved secret store. Enter application secrets in Settings; they are write-only and are not copied into `.env`, Compose, browser storage, command output, or diagnostics. Never place either class of secret in documentation, screenshots, tickets, or version control.
+
+### Create and connect a Medplum ClientApplication
+
+1. Open the local Medplum Web UI at <http://127.0.0.1:3000>, sign in to the intended local Medplum project, and create a **ClientApplication** from that project's client/application administration area.
+2. Give it an operator-recognizable name such as `Healthcare Lab local`. Create a client secret for that application and copy the displayed client ID and newly issued secret into your approved temporary secret-handling workflow. Do not use a personal user password and do not paste either value into this handbook, a screenshot, ticket, or Git.
+3. In Healthcare Lab, open **Settings → Medplum**. Keep the Compose-internal FHIR URL as `http://medplum:8103/fhir/R4`; keep the browser URL operator-facing at `http://127.0.0.1:3000`. Enter the ClientApplication ID in **OAuth client ID** and the issued secret in **Replace OAuth client secret**. Leave scope and token URL at their defaults unless the Medplum project requires explicit values.
+4. Save and run **Save-and-test**. Review metadata reachability, OAuth token acquisition, and authenticated read as separate stages. A successful metadata request alone does not prove the client credentials work.
+5. After saving, Healthcare Lab reports only that the secret is configured. The secret field clears because it is write-only. Leaving the replacement field blank on a later save preserves the stored secret.
+
+To rotate the secret, issue a replacement for the same ClientApplication in Medplum, enter the non-blank replacement under **Settings → Medplum**, save, and repeat Save-and-test before revoking the old secret. If the test fails, correct the client/project association, scope, token endpoint, or replacement value; do not expose the secret in diagnostic evidence.
 
 <a id="chapter-6"></a>
 ## Chapter 6 — Starting, Stopping, and Verifying Healthcare Lab
@@ -534,7 +539,9 @@ Healthcare Lab <-- GDT-IN  6310 -- /data/gdt-bridge/outbox <-- AP
 
 ### Bridge folder contract
 
-Set `GDT_BRIDGE_HOST_PATH` to the host folder shared with AP. Docker mounts that root at `/data/gdt-bridge`; Healthcare Lab does not create an absent host bridge root for the operator. Create and permission the required folders before exchange:
+For the default installation, `.\deploy\lab.ps1 start` creates the bounded Windows host root at `instance\gdt-bridge`, Docker mounts it at `/data/gdt-bridge`, and Healthcare Lab provisions the supported sibling folders. In the GDT settings, keep the application path set to the container path `/data/gdt-bridge`; a Windows path such as `C:\...\instance\gdt-bridge` is not readable inside `lab-app`.
+
+For an Advanced deployment with a dedicated AP share, set `GDT_BRIDGE_HOST_PATH` in `.env` to the exact Windows host folder. The wrapper resolves and creates that safe root, rejecting filesystem and repository roots, and Compose still mounts it at `/data/gdt-bridge`. Pause AP exchange and recreate `lab-app` after changing the bind source. The resulting folder contract is:
 
 | Folder | Producer → consumer | Purpose |
 | --- | --- | --- |
@@ -828,7 +835,7 @@ This release does not yet provide a fully verified named-volume restore command,
 
 ## Appendix A — Command Quick Reference
 
-Run these PowerShell commands from the deployment-bundle root, where `.env` and `deploy\docker-compose.yml` are present. Use the wrapper for routine operations so service aliases and Compose arguments remain consistent. A successful command proves only the stated layer; complete the ready-for-use or protocol verification in Chapters 6 and 10–13 before declaring the system operational.
+Run these PowerShell commands from the deployment-bundle root, where `deploy\docker-compose.yml` is present. `.env` is optional and is needed only for an Advanced deployment override. Use the wrapper for routine operations so service aliases and Compose arguments remain consistent. A successful command proves only the stated layer; complete the ready-for-use or protocol verification in Chapters 6 and 10–13 before declaring the system operational.
 
 ### Host and Compose checks
 
@@ -837,8 +844,8 @@ Run these PowerShell commands from the deployment-bundle root, where `.env` and 
 | Check Docker client and server | `docker version` | Both Client and Server sections are available. |
 | Check Compose | `docker compose version` | A Compose v2-compatible command is available. |
 | Check the Docker host | `docker info --format 'Server={{.ServerVersion}} OSType={{.OSType}} Arch={{.Architecture}} CPUs={{.NCPU}} Memory={{.MemTotal}}'` | `OSType=linux`; v1.0.0 RC was verified on `amd64`. |
-| Validate effective Compose configuration | `docker compose --env-file .env -f deploy\docker-compose.yml config --quiet` | Exit code 0 validates interpolation and Compose structure, not credentials or connectivity. |
-| List effective images | `docker compose --env-file .env -f deploy\docker-compose.yml config --images` | Compare every image with the release matrix; use an immutable application tag. |
+| Validate effective Compose configuration | `docker compose -f deploy\docker-compose.yml config --quiet` | Exit code 0 validates interpolation and Compose structure, not credentials or connectivity. Compose automatically reads `.env` when present. |
+| List effective images | `docker compose -f deploy\docker-compose.yml config --images` | Compare every image with the release matrix; use an immutable application tag. |
 
 ### Routine lifecycle and inspection
 
@@ -858,18 +865,12 @@ Use the smallest service scope that solves the problem. `restart all` recreates 
 ### Installation and HTTP verification
 
 ```powershell
-Copy-Item .env.example .env
-New-Item -ItemType Directory -Force instance\gdt-bridge\inbox
-New-Item -ItemType Directory -Force instance\gdt-bridge\outbox
-docker compose --env-file .env -f deploy\docker-compose.yml config --quiet
-docker compose --env-file .env -f deploy\docker-compose.yml config --images
-docker pull ghcr.io/tzu-huang/healthcare-lab:1.0.0
-docker compose --env-file .env -f deploy\docker-compose.yml up -d
-docker compose --env-file .env -f deploy\docker-compose.yml ps
+.\deploy\lab.ps1 start
+.\deploy\lab.ps1 status
 Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
 ```
 
-HTTP 200 verifies only the Healthcare Lab web endpoint. Run Dashboard checks and the required end-to-end protocol workflow before use.
+The wrapper creates the default GDT host root and passes `.env` only when one exists. HTTP 200 verifies only the Healthcare Lab web endpoint. Complete guided setup in Dashboard and Settings, then run the required end-to-end protocol workflow before use.
 
 ### Backup and application-image upgrade
 
@@ -899,7 +900,7 @@ Resume AP exchange only after Dashboard and the required protocol smoke workflow
 Use Docker service names and container ports for traffic between Compose services. Use the Docker-host address and published port for a browser or physical AP outside the Compose network. Values below are release defaults; `.env` may override published ports. Confirm the effective configuration instead of assuming the defaults:
 
 ```powershell
-docker compose --env-file .env -f deploy\docker-compose.yml config --quiet
+docker compose -f deploy\docker-compose.yml config --quiet
 docker compose --env-file .env -f deploy\docker-compose.yml ps
 docker compose --env-file .env -f deploy\docker-compose.yml port <service> <container-port>
 ```
@@ -934,7 +935,11 @@ These endpoints are for Compose services, not operator or AP access. They are no
 | dcm4chee PostgreSQL | `dcm4chee-db:5432` | dcm4chee archive |
 | dcm4chee LDAP | `ldap:389` | dcm4chee archive |
 
-> **RC release blocker:** the current `.env.example` contains host-facing `127.0.0.1` values for dcm4chee DIMSE, HL7, MWL/DICOMweb, and QIDO/WADO/STOW. If copied unchanged into a Compose deployment, `127.0.0.1` inside `lab-app` identifies the `lab-app` container, not dcm4chee. Until the deployment template is corrected and clean-install verification is repeated, set the runtime targets to `dcm4chee`, `dcm4chee:2575`, `dcm4chee:11112`, `http://dcm4chee:8080/dcm4chee-arc/aets/WORKLIST/rs`, and `http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs` as applicable. Keep only the operator-facing `DCM4CHEE_WEB_UI_URL` on the host URL. Confirm the effective profile in the dcm4chee Console before creating a Patient or Order.
+Compose defaults now distinguish container-internal and operator-facing
+endpoints. `lab-app` uses the `dcm4chee` service name, container ports, and
+`http://dcm4chee:8080/...`; only the browser-opened `DCM4CHEE_WEB_UI_URL` uses
+the host URL. Do not copy the browser's `127.0.0.1:8082` address into a
+container backend target.
 
 `127.0.0.1` in the table is the local operator URL, not proof that the published socket is loopback-only. Compose publications without an explicit host IP normally listen on all host interfaces, and AP result ingress explicitly binds `0.0.0.0`. Treat every published port as reachable according to the Docker host firewall and network policy. This release provides no application authentication, TLS termination, or public-Internet ingress boundary; keep it on a trusted local machine or isolated internal lab.
 
@@ -952,10 +957,9 @@ Configuration has three different owners:
 
 | Variable(s) | Required | Release default / example | Purpose | Apply action |
 | --- | --- | --- | --- | --- |
-| `LAB_APP_IMAGE` | Yes; default supplied | `ghcr.io/tzu-huang/healthcare-lab:1.0.0` | Selects the immutable application image. | `pull lab-app`, then recreate `lab-app`; verify image and health. |
-| `MEDPLUM_CLIENT_ID`, `MEDPLUM_CLIENT_SECRET` | For authenticated FHIR sync | `<empty>` | OAuth client credentials used by `lab-app`; the secret is sensitive. | Recreate `lab-app`, test OAuth, then Retry the same failed ledger item. |
-| `MEDPLUM_SCOPE`, `MEDPLUM_TOKEN_URL` | Only when the OAuth server requires overrides | `<empty>`; blank token URL is derived from FHIR base URL | OAuth scope and token endpoint. | Recreate `lab-app`; test token acquisition. |
-| `MEDPLUM_AUTH_GRACE_SECONDS` | No | `300` | Refreshes a cached token before expiry. | Recreate `lab-app`. |
+| `LAB_APP_IMAGE` | Yes; default supplied | Pinned by the release bundle; confirm with `config --images` | Selects the immutable application image. | `pull lab-app`, then recreate `lab-app`; verify image and health. |
+| `MEDPLUM_CLIENT_ID`, `MEDPLUM_CLIENT_SECRET` | Legacy upgrade bootstrap only | `<empty>` | Fixed-allowlist, create-only seed for a missing Settings profile; the secret is sensitive. It never overwrites saved Settings. | Prefer **Settings → Medplum**. Existing installations may recreate once to seed a missing profile, then verify and manage it in Settings. |
+| `MEDPLUM_SCOPE`, `MEDPLUM_TOKEN_URL`, `MEDPLUM_AUTH_GRACE_SECONDS` | Legacy upgrade bootstrap only | `<empty>`, `<empty>`, `300` | Create-only seed values for a missing typed Medplum profile. | Prefer Settings; after seeding, persisted values are authoritative and later environment changes are ignored. |
 | `MEDPLUM_APP_PORT` | No | `3000` | Host publication for the Medplum web app. | Recreate `medplum-app`; update browser/public URLs if changed. |
 | `MEDPLUM_APP_BASE_URL` | No | `http://127.0.0.1:3000/` | Medplum server's configured web-app URL. | Recreate `medplum`; verify redirects. |
 | `MEDPLUM_ALLOWED_ORIGINS` | No | `http://127.0.0.1:3000,http://localhost:3000` | Browser origins accepted by Medplum. | Recreate `medplum`; verify CORS from the intended browser origin. |
@@ -993,7 +997,10 @@ Configuration has three different owners:
 | `DCM4CHEE_USERNAME`, `DCM4CHEE_TOKEN_URL` | When the selected auth mode requires them | `<empty>` | Authentication identity/token endpoint. | Recreate `lab-app`; test authentication without logging tokens. |
 | `DCM4CHEE_CERTIFICATE_PATH`, `DCM4CHEE_PRIVATE_KEY_PATH` | When mutual TLS/profile requires them | `<empty>` | Container-readable certificate/key paths; private key is sensitive. | Mount files explicitly, recreate `lab-app`, and verify permissions and TLS. |
 
-> **RC release blockers:** `.env.example` claims its dcm4chee defaults match Compose, but its host-facing `127.0.0.1` values are not valid destinations from `lab-app`; see Appendix B. In addition, `DCM4CHEE_HL7_PORT` currently controls both the `lab-app` internal target port and the dcm4chee host publication. Overriding it for a host-port conflict would also direct `lab-app` to the wrong container port. Do not override it in the current bundle; resolve a conflict through a corrected, separately named host-publication setting and repeat clean-install verification.
+The Compose runtime supplies Docker-internal dcm4chee defaults. If an Advanced
+deployment changes a published host port, keep the `lab-app` internal target on
+the `dcm4chee` service and its container port, recreate the affected service,
+and rerun diagnostics.
 
 ### GDT environment
 
@@ -1320,15 +1327,15 @@ A release claim must list omitted or blocked cases. Automated repository tests, 
 
 ## Appendix G — Version Compatibility
 
-Compatibility is defined by the complete release matrix, not by one component version. Replacing any pinned image, changing platform/architecture, or connecting an unverified AP/device creates a deployment outside the verified v1.0.0 RC matrix until the relevant checks in Appendix F pass.
+Compatibility is defined by the complete release matrix, not by one component version. Replacing any pinned image, changing platform/architecture, or connecting an unverified AP/device creates a deployment outside the verified v1.1.1 matrix until the relevant checks in Appendix F pass.
 
 ### Current release gate
 
-The handbook is structurally complete, but the v1.0.0 operational release gate remains **BLOCKED**. A release owner must close the items below or explicitly narrow and approve the release claim; documentation must not silently turn an unverified item into supported behavior.
+The v1.1.1 image publication and isolated clean-install gate is **COMPLETE**. The overall operational support claim remains **BLOCKED** on the unrelated boundaries listed below; documentation must not silently turn an unverified item into supported behavior.
 
-| Gate area | Open release evidence / defect |
+| Gate area | Status / remaining evidence |
 | --- | --- |
-| Publication and clean installation | Create and verify the `v1.0.0` tag, public unauthenticated pull, immutable digest, first-time initialization, and clean full-stack installation on an equivalent `linux/amd64` host. |
+| Publication and clean installation | **Complete for v1.1.1 on `linux/amd64`:** public immutable tag, anonymous pull, revision label, first-time initialization, Settings readiness, and isolated clean full-stack installation are recorded in the ZAC-78 release-image evidence. |
 | Deployment configuration | Correct the host-facing dcm4chee values in `.env.example`; separate the dcm4chee host-published HL7 port from the `lab-app` internal target; repeat clean-install and ADT/MWL/DICOMweb verification. |
 | GDT operator workflow | Fix `[object Object]` measurement rendering, demonstrate durable duplicate prevention for reintroduced 6310 content, expose the documented result details, and browser-reverify the final behavior. |
 | Recovery | Provide and successfully exercise a controlled named-volume restore runbook, including `lab-app-instance`; current backup candidates do not prove recoverability. |
@@ -1346,9 +1353,9 @@ The handbook is structurally complete, but the v1.0.0 operational release gate r
 
 ### Application and container matrix
 
-| Component | v1.0.0 RC contract | Evidence / compatibility boundary |
+| Component | v1.1.1 contract | Evidence / compatibility boundary |
 | --- | --- | --- |
-| Healthcare Lab | `ghcr.io/tzu-huang/healthcare-lab:1.0.0` | Immutable release tag; public pull/digest and final clean-install publication remain part of the release gate. |
+| Healthcare Lab | `ghcr.io/tzu-huang/healthcare-lab:1.1.1` | Immutable semantic release tag; public anonymous pull, revision label, readiness smoke, and isolated clean full-stack installation passed on `linux/amd64`. |
 | Application runtime | `python:3.11-slim`; Flask `>=3.0,<4.0`; Gunicorn `>=23.0,<24.0`; python-dotenv `>=1.0,<2.0`; PyMySQL `>=1.1,<2.0` | Built into the application image. Operators must not install host Python packages into the released container. One Gunicorn worker is required by current single-process listener ownership. |
 | OIE | `nextgenhealthcare/connect:4.5.2@sha256:4afa295cfe7c5ffd596efee69594157fea87202e33d66bb4a98a52db4598f836` | RC/contract target is OIE `4.5.2`. Managed Channel APIs/templates are version-sensitive; another OIE version requires management, Channel preview/apply, queue, ACK, and E2E re-verification. |
 | Medplum server | `medplum/medplum-server@sha256:4d2c8e926fe536176a88a7e24555f97f92226e39f171bd0b5f0c7f667d0bf9f0` | Exact content is digest-pinned. The repository does not provide a reliable human-readable Medplum release version; do not invent one. |
@@ -1359,11 +1366,11 @@ The handbook is structurally complete, but the v1.0.0 operational release gate r
 | dcm4chee LDAP | `dcm4che/slapd-dcm4chee:2.6.13-35.0@sha256:ca45eaf70d92c4008612ab345a566e06c13b553b079ccf6c652ceda4c9a98b98` | Must remain aligned with the archive configuration and AE topology. |
 | dcm4chee archive | `dcm4che/dcm4chee-arc-psql:5.35.0@sha256:20a195c0c53336e1d0c7bdc30536d46611a939f0a2e25dec3318c8d99d7fba29` | dcm4chee archive `5.35.0`, exact digest. Reverify ADT, MWL REST, DIMSE C-STORE, QIDO/WADO, and reconciliation after any change. |
 
-Moving tags `1`, `1.0`, `latest`, and `edge` are not acceptable substitutes for the immutable `1.0.0` release tag in a reproducible verification or rollback record. A `sha-<commit>` image is traceable development evidence, not automatically a stable release.
+Moving tags `1`, `1.1`, `latest`, and `edge` are not acceptable substitutes for the immutable `1.1.1` release tag in a reproducible verification or rollback record. A `sha-<commit>` image is traceable development evidence, not automatically a stable release.
 
 ### Protocol compatibility matrix
 
-| Protocol / surface | v1.0.0 contract | Verified scope and limitations |
+| Protocol / surface | v1.1.1 contract | Verified scope and limitations |
 | --- | --- | --- |
 | HL7 v2 | HL7 `2.5.1`; ADT A04, ORM O01, ORU R01/W01 as implemented; MLLP | Contract/live evidence covers current payloads, ACK `AA/AE/AR`, OIE routing, result listener, and correlation. This is not a general claim for every HL7 profile, optional segment, encoding, or receiver policy. |
 | FHIR | FHIR R4 REST; Patient, ServiceRequest, DiagnosticReport, Observation, and required supporting references | Verified against the pinned Medplum images and OAuth flow. Vendor-specific R4 behavior, unsupported search parameters, other FHIR versions, subscriptions, bulk data, and arbitrary resources are outside the claim. |
