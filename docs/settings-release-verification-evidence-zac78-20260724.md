@@ -131,3 +131,45 @@ No `interoperability-lab` network or volume was reused or removed.
   networks after evidence capture.
 - The previously retained `interoperability-lab` networks and volumes were not
   changed.
+
+## Closure rerun after ZAC-79 and ZAC-80
+
+The ZAC-78 branch was updated from `main` at merge commit `5b80bdc`, which
+includes the published `v1.1.0` release, the ZAC-79 clean-start correction, and
+the ZAC-80 persisted Medplum verification correction.
+
+Post-fix live evidence is retained in:
+
+- `docs/settings-fresh-start-evidence-zac79-20260727.md`, covering the
+  credential-free Compose render/start, valid dcm4chee defaults, stable-image
+  readiness route, and synthetic clean-start safety scan;
+- `docs/settings-medplum-recreation-evidence-zac80-20260727.md`, covering a
+  synthetic failed Medplum result across retained-container recreation with
+  bounded projections and clean secret-canary scans.
+
+At commit `d882d05`, the ZAC-78 release matrix ran 70 focused tests across its
+closure harness, GDT, dcm4chee, AP, OIE, readiness, schema migration, and
+persisted settings. All passed; the single Windows directory-symlink capability
+test was skipped, while the non-mutation path-escape contract remains covered.
+The matrix explicitly confirms:
+
+- built-in OIE and dcm4chee projections plus disabled GDT/AP behavior;
+- complete atomic migration ledgers and assembled patient/order, GDT, DICOM,
+  and FHIR workflow dependencies after upgrade;
+- missing and unwritable GDT paths without unsafe target creation or retained
+  probe artifacts;
+- unreachable dcm4chee layers, invalid AP AE title rejection, OIE degradation,
+  AP partial protocol availability, and independent peer preservation;
+- rejection of secret, Authorization, PHI, raw-message, FHIR-body, and upstream
+  canaries on API, UI, wrapper, selected-log, and screenshot-OCR surfaces.
+
+The closure pre-flight found the normal `interoperability-lab` project running
+and owning its explicit network, port 5000, and retained volumes. No shared
+container, network, port, or volume was changed. A second concurrent disposable
+stack was therefore skipped under the documented collision policy rather than
+mutating the operator environment.
+
+No screenshots exist in the retained ZAC-78, ZAC-79, or ZAC-80 evidence set, so
+there were no image artifacts requiring credential inspection. Screenshot OCR
+content remains covered by the same synthetic canary gate as other retained
+surfaces.
