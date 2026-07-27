@@ -1,14 +1,14 @@
 ## 1. Clean-Start Secret Contract
 
-- [ ] 1.1 Add failing Compose and wrapper contract coverage for rendering a clean checkout with no `.env` and no optional application integration secret variables.
-- [ ] 1.2 Change the Compose secret/bootstrap inputs so omitted optional credentials do not block rendering or startup and do not create placeholder configured values.
-- [ ] 1.3 Verify a fresh database reports missing required credentials as secret-safe `configured: false` and `needs-setup`.
+- [x] 1.1 Add failing Compose and wrapper contract coverage for rendering a clean checkout with no `.env` and no optional application integration secret variables.
+- [x] 1.2 Change the Compose secret/bootstrap inputs so omitted optional credentials do not block rendering or startup and do not create placeholder configured values.
+- [x] 1.3 Verify a fresh database reports missing required credentials as secret-safe `configured: false` and `needs-setup`.
 
 ## 2. Valid dcm4chee Defaults
 
-- [ ] 2.1 Add regression coverage for the exact local dcm4chee defaults resolved by the supported Compose deployment.
-- [ ] 2.2 Align the default TLS verification value with the non-TLS local profile while retaining strict rejection of explicitly contradictory settings.
-- [ ] 2.3 Verify fresh application composition seeds the dcm4chee profile without an operator override.
+- [x] 2.1 Add regression coverage for the exact local dcm4chee defaults resolved by the supported Compose deployment.
+- [x] 2.2 Align the default TLS verification value with the non-TLS local profile while retaining strict rejection of explicitly contradictory settings.
+- [x] 2.3 Verify fresh application composition seeds the dcm4chee profile without an operator override.
 
 ## 3. Release Image Alignment
 
