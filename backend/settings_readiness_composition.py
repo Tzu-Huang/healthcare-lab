@@ -24,6 +24,8 @@ class IntegrationSettingsReader(Protocol):
     def get_public(self, profile_type: str) -> dict[str, Any]: ...
     def get_effective(self, profile_type: str) -> Any: ...
     def has_operator_configuration(self, profile_type: str) -> bool: ...
+    def get_medplum_configuration_revision(self) -> int: ...
+    def get_medplum_verification(self) -> dict[str, Any] | None: ...
 
 
 class _StaticProvider:
@@ -46,6 +48,15 @@ class _MedplumProvider:
             or not self._settings.has_operator_configuration("medplum")
         ):
             return ReadinessAssessment(ReadinessState.NEEDS_SETUP)
+        revision = self._settings.get_medplum_configuration_revision()
+        verification = self._settings.get_medplum_verification()
+        if (
+            verification is None
+            or int(verification.get("configurationRevision", 0)) != revision
+        ):
+            return ReadinessAssessment(ReadinessState.NEEDS_SETUP)
+        if verification.get("state") != "healthy":
+            return ReadinessAssessment(ReadinessState.DEGRADED)
         return ReadinessAssessment(ReadinessState.READY)
 
 
