@@ -23,6 +23,31 @@ from backend.domain.integration_settings import (
 
 ConnectionFactory = Callable[[], AbstractContextManager[Connection]]
 AUDIT_OPERATIONS = frozenset({"bootstrap", "update", "remove-secret"})
+MEDPLUM_VERIFICATION_STAGES = (
+    "metadata",
+    "oauth",
+    "authenticated-read",
+)
+MEDPLUM_VERIFICATION_STATES = frozenset(
+    {"healthy", "degraded", "disabled", "failed", "unavailable"}
+)
+MEDPLUM_STAGE_STATES = frozenset({"passed", "failed", "skipped", "disabled"})
+MEDPLUM_STAGE_CATEGORIES = frozenset(
+    {
+        "disabled",
+        "invalid-configuration",
+        "reachable",
+        "http-error",
+        "connection-failure",
+        "not-configured",
+        "authorized",
+        "authorization-failure",
+        "oauth-unavailable",
+        "readable",
+        "read-failure",
+        "unavailable",
+    }
+)
 
 
 class IntegrationSettingsRepository:
@@ -87,7 +112,9 @@ class IntegrationSettingsRepository:
                 return False
             connection.execute(
                 """UPDATE integration_settings_profiles
-                SET schema_version = ?, public_payload_json = ?, updated_at = ?
+                SET schema_version = ?, public_payload_json = ?,
+                    configuration_revision = configuration_revision + 1,
+                    updated_at = ?
                 WHERE id = ?""",
                 (
                     profile.schema_version,
@@ -97,6 +124,109 @@ class IntegrationSettingsRepository:
                 ),
             )
         return True
+
+    def get_medplum_configuration_revision(self) -> int:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT configuration_revision
+                FROM integration_settings_profiles WHERE profile_type = ?""",
+                (MEDPLUM_PROFILE_TYPE,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(MEDPLUM_PROFILE_TYPE)
+        return int(row["configuration_revision"])
+
+    def get_medplum_verification(self) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT v.configuration_revision, v.state, v.stages_json, v.checked_at
+                FROM medplum_verification_state v
+                JOIN integration_settings_profiles p ON p.id = v.profile_id
+                WHERE p.profile_type = ?
+                """,
+                (MEDPLUM_PROFILE_TYPE,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "configurationRevision": int(row["configuration_revision"]),
+            "state": str(row["state"]),
+            "stages": json.loads(row["stages_json"]),
+            "checkedAt": str(row["checked_at"]),
+        }
+
+    def record_medplum_verification(
+        self,
+        configuration_revision: int,
+        report: Mapping[str, Any],
+    ) -> bool:
+        state, stages = self._bounded_medplum_verification(report)
+        checked_at = self._timestamp()
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                """SELECT id, configuration_revision
+                FROM integration_settings_profiles WHERE profile_type = ?""",
+                (MEDPLUM_PROFILE_TYPE,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(MEDPLUM_PROFILE_TYPE)
+            if int(row["configuration_revision"]) != int(configuration_revision):
+                return False
+            connection.execute(
+                """
+                INSERT INTO medplum_verification_state (
+                    profile_id, configuration_revision, state, stages_json, checked_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(profile_id) DO UPDATE SET
+                    configuration_revision = excluded.configuration_revision,
+                    state = excluded.state,
+                    stages_json = excluded.stages_json,
+                    checked_at = excluded.checked_at
+                """,
+                (
+                    int(row["id"]),
+                    int(configuration_revision),
+                    state,
+                    json.dumps(stages, separators=(",", ":")),
+                    checked_at,
+                ),
+            )
+        return True
+
+    @staticmethod
+    def _bounded_medplum_verification(
+        report: Mapping[str, Any],
+    ) -> tuple[str, list[dict[str, str]]]:
+        if not isinstance(report, Mapping) or set(report) - {"state", "stages"}:
+            raise ValueError("Unsupported Medplum verification report.")
+        state = str(report.get("state", ""))
+        if state not in MEDPLUM_VERIFICATION_STATES:
+            raise ValueError("Unsupported Medplum verification state.")
+        submitted = report.get("stages")
+        if not isinstance(submitted, list) or len(submitted) != 3:
+            raise ValueError("Medplum verification requires three bounded stages.")
+        stages: list[dict[str, str]] = []
+        for expected, item in zip(MEDPLUM_VERIFICATION_STAGES, submitted):
+            if not isinstance(item, Mapping) or set(item) != {
+                "stage",
+                "state",
+                "category",
+            }:
+                raise ValueError("Unsupported Medplum verification stage.")
+            stage = str(item.get("stage", ""))
+            stage_state = str(item.get("state", ""))
+            category = str(item.get("category", ""))
+            if (
+                stage != expected
+                or stage_state not in MEDPLUM_STAGE_STATES
+                or category not in MEDPLUM_STAGE_CATEGORIES
+            ):
+                raise ValueError("Invalid Medplum verification stage.")
+            stages.append(
+                {"stage": stage, "state": stage_state, "category": category}
+            )
+        return state, stages
 
     def get_private(self, profile_type: str) -> dict[str, Any]:
         self._require_profile_type(profile_type)
@@ -205,7 +335,7 @@ class IntegrationSettingsRepository:
         timestamp = self._timestamp()
         with self._lock, self._connect() as connection:
             row = connection.execute(
-                """SELECT id, public_payload_json
+                """SELECT id, public_payload_json, configuration_revision
                 FROM integration_settings_profiles WHERE profile_type = ?""",
                 (profile.profile_type,),
             ).fetchone()
@@ -226,16 +356,33 @@ class IntegrationSettingsRepository:
             previous_secrets = {
                 item["field_name"]: item["secret_value"] for item in secret_rows
             }
+            for field, mutation in secret_mutations.items():
+                if mutation.action is SecretAction.PRESERVE:
+                    continue
+                if mutation.action is SecretAction.REMOVE:
+                    if field in previous_secrets:
+                        changed_fields.append(field)
+                    continue
+                if previous_secrets.get(field) != mutation.value:
+                    changed_fields.append(field)
             connection.execute(
                 """
                 UPDATE integration_settings_profiles
-                SET profile_name = ?, schema_version = ?, public_payload_json = ?, updated_at = ?
+                SET profile_name = ?, schema_version = ?, public_payload_json = ?,
+                    configuration_revision = configuration_revision + ?,
+                    updated_at = ?
                 WHERE id = ?
                 """,
                 (
                     profile.profile_name,
                     profile.schema_version,
                     json.dumps(profile.fields, sort_keys=True, separators=(",", ":")),
+                    (
+                        1
+                        if profile.profile_type == MEDPLUM_PROFILE_TYPE
+                        and bool(changed_fields)
+                        else 0
+                    ),
                     timestamp,
                     profile_id,
                 ),
@@ -244,15 +391,11 @@ class IntegrationSettingsRepository:
                 if mutation.action is SecretAction.PRESERVE:
                     continue
                 if mutation.action is SecretAction.REMOVE:
-                    if field in previous_secrets:
-                        changed_fields.append(field)
                     connection.execute(
                         "DELETE FROM integration_settings_secrets WHERE profile_id = ? AND field_name = ?",
                         (profile_id, field),
                     )
                     continue
-                if previous_secrets.get(field) != mutation.value:
-                    changed_fields.append(field)
                 connection.execute(
                     """
                     INSERT INTO integration_settings_secrets (

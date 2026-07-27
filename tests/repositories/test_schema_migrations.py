@@ -53,11 +53,12 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
         legacy = self._schema_inventory(legacy_path)
         migrated = self._schema_inventory(migrated_path)
         self.assertEqual(migrated, legacy)
-        self.assertEqual(len(migrated[0]), 29)
+        self.assertEqual(len(migrated[0]), 30)
         self.assertEqual(len(migrated[1]), 26)
         self.assertIn("integration_settings_profiles", migrated[0])
         self.assertIn("integration_settings_secrets", migrated[0])
         self.assertIn("integration_settings_mutation_audits", migrated[0])
+        self.assertIn("medplum_verification_state", migrated[0])
 
     def test_current_unversioned_database_is_recorded_without_data_loss(self):
         database_path = self.root / "current.db"
@@ -89,7 +90,7 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
             preserved = connection.execute(
                 "SELECT mrn FROM local_patient_records WHERE id = ?", (patient["id"],)
             ).fetchone()
-        self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
         self.assertEqual(preserved["mrn"], "MRN-UNVERSIONED-1")
 
     def test_database_with_bootstrap_status_migration_8_upgrades_to_typed_settings(self):
@@ -111,11 +112,12 @@ class ApplicationSchemaMigrationTests(unittest.TestCase):
                 )
             ]
         self.assertEqual(
-            migrations[-3:],
+            migrations[-4:],
             [
                 (8, "add-oie-bootstrap-operational-status"),
                 (9, "add-typed-integration-settings"),
                 (10, "add-ap-external-device-profiles"),
+                (11, "add-medplum-verification-state"),
             ],
         )
 
