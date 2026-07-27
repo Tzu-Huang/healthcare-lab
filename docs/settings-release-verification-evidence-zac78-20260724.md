@@ -163,6 +163,14 @@ The matrix explicitly confirms:
 - rejection of secret, Authorization, PHI, raw-message, FHIR-body, and upstream
   canaries on API, UI, wrapper, selected-log, and screenshot-OCR surfaces.
 
+The closure harness retains each required failure as a closed
+`integration` / `layer` / `category` / `recovery` projection. It covers
+Medplum connectivity and authorization, missing and unwritable GDT paths,
+dcm4chee HTTP/DICOMweb/TCP failures, invalid AP AE titles and unavailable AP
+transports, and OIE management, port ownership, deployment, and delivery
+failures. Unknown categories are rejected rather than retaining arbitrary
+upstream guidance.
+
 The closure pre-flight found the normal `interoperability-lab` project running
 and owning its explicit network, port 5000, and retained volumes. No shared
 container, network, port, or volume was changed. A second concurrent disposable
