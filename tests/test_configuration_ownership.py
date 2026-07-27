@@ -28,20 +28,45 @@ def declared_deployment_keys() -> set[str]:
                 text,
             )
         )
+        keys.update(
+            re.findall(
+                r"(?m)^\s*target:\s*([A-Z][A-Z0-9_]+)\s*$",
+                text,
+            )
+        )
     return keys
 
 
 class ConfigurationOwnershipContractTests(unittest.TestCase):
-    def test_compose_secret_environment_keys_are_declared(self):
+    def test_compose_secret_sources_and_targets_are_declared(self):
         self.assertTrue(
             {
                 "MEDPLUM_CLIENT_SECRET",
+                "MEDPLUM_CLIENT_SECRET_FILE",
                 "OPENEMR_DB_PASSWORD",
+                "OPENEMR_DB_PASSWORD_FILE",
                 "DCM4CHEE_PASSWORD",
+                "DCM4CHEE_PASSWORD_FILE",
                 "DCM4CHEE_TOKEN",
+                "DCM4CHEE_TOKEN_FILE",
                 "DCM4CHEE_CLIENT_SECRET",
+                "DCM4CHEE_CLIENT_SECRET_FILE",
             }.issubset(declared_deployment_keys())
         )
+
+    def test_secret_file_paths_are_deployment_only(self):
+        for key in (
+            "MEDPLUM_CLIENT_SECRET_FILE",
+            "OPENEMR_DB_PASSWORD_FILE",
+            "DCM4CHEE_PASSWORD_FILE",
+            "DCM4CHEE_TOKEN_FILE",
+            "DCM4CHEE_CLIENT_SECRET_FILE",
+        ):
+            with self.subTest(key=key):
+                ownership = ownership_for(key)
+                self.assertEqual(DEPLOYMENT_ONLY, ownership.category)
+                self.assertEqual("Docker Compose", ownership.owner)
+                self.assertEqual("never", ownership.bootstrap)
 
     def test_every_declared_environment_and_compose_key_has_exactly_one_owner(self):
         self.assertEqual(declared_deployment_keys(), set(CONFIGURATION_OWNERSHIP))
