@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -368,6 +369,54 @@ class Zac78SettingsReleaseVerificationTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Unsupported ZAC-78"):
             project_bounded_failure("dcm4chee", "qido-rs", "arbitrary-upstream")
+
+    def test_operator_handbooks_track_verified_v111_release_image_gate(self):
+        handbooks = (
+            Path("docs/handbook/USER_HANDBOOK.en.md"),
+            Path("docs/handbook/USER_HANDBOOK.zh-TW.md"),
+        )
+        for path in handbooks:
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(path=path):
+                self.assertIn(
+                    "ghcr.io/tzu-huang/healthcare-lab:1.1.1",
+                    source,
+                )
+                self.assertIn(
+                    "54e60d0e69d25c256474d9d0a5c790b1d9b7599e",
+                    source,
+                )
+                self.assertIn("30242203066", source)
+                self.assertNotIn(
+                    "ghcr.io/tzu-huang/healthcare-lab:1.0.0",
+                    source,
+                )
+                self.assertNotIn(
+                    "v1.0.0 operational release gate",
+                    source,
+                )
+
+        word_editions = (
+            Path("docs/handbook/USER_HANDBOOK.en.docx"),
+            Path("docs/handbook/USER_HANDBOOK.zh-TW.docx"),
+        )
+        for path in word_editions:
+            with zipfile.ZipFile(path) as archive:
+                document_xml = archive.read("word/document.xml").decode("utf-8")
+            with self.subTest(path=path):
+                self.assertIn(
+                    "ghcr.io/tzu-huang/healthcare-lab:1.1.1",
+                    document_xml,
+                )
+                self.assertIn("30242203066", document_xml)
+                self.assertNotIn(
+                    "ghcr.io/tzu-huang/healthcare-lab:1.0.0",
+                    document_xml,
+                )
+                self.assertNotIn(
+                    "v1.0.0 operational release gate",
+                    document_xml,
+                )
 
     def test_settings_web_authority_has_no_compose_writer_or_docker_executor(self):
         settings_sources = [
