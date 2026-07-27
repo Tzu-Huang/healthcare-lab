@@ -209,6 +209,7 @@ CREATE TABLE IF NOT EXISTS integration_settings_profiles (
     profile_type TEXT NOT NULL UNIQUE,
     profile_name TEXT NOT NULL,
     schema_version INTEGER NOT NULL CHECK(schema_version > 0),
+    configuration_revision INTEGER NOT NULL DEFAULT 1 CHECK(configuration_revision > 0),
     public_payload_json TEXT NOT NULL,
     bootstrap_source TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
@@ -232,6 +233,14 @@ CREATE TABLE IF NOT EXISTS integration_settings_mutation_audits (
     changed_fields_json TEXT NOT NULL DEFAULT '[]',
     outcome TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    FOREIGN KEY(profile_id) REFERENCES integration_settings_profiles(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS medplum_verification_state (
+    profile_id INTEGER PRIMARY KEY,
+    configuration_revision INTEGER NOT NULL CHECK(configuration_revision > 0),
+    state TEXT NOT NULL,
+    stages_json TEXT NOT NULL,
+    checked_at TEXT NOT NULL,
     FOREIGN KEY(profile_id) REFERENCES integration_settings_profiles(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS ap_device_profiles (
@@ -635,6 +644,11 @@ ON local_dcm4chee_patient_sync_attempts(patient_record_id, attempted_at);
 """
 
 ADDITIVE_COLUMNS = (
+    (
+        "integration_settings_profiles",
+        "configuration_revision",
+        "INTEGER NOT NULL DEFAULT 1 CHECK(configuration_revision > 0)",
+    ),
     ("local_order_records", "scheduled_at", "TEXT NOT NULL DEFAULT ''"),
     ("oie_managed_channel_mappings", "desired_config_json", "TEXT NOT NULL DEFAULT '{}'"),
     ("lab_servers", "control_type", "TEXT NOT NULL DEFAULT ''"),
@@ -786,4 +800,5 @@ APPLICATION_MIGRATIONS = (
     Migration(8, "add-oie-bootstrap-operational-status", ensure_application_schema),
     Migration(9, "add-typed-integration-settings", ensure_application_schema),
     Migration(10, "add-ap-external-device-profiles", ensure_application_schema),
+    Migration(11, "add-medplum-verification-state", ensure_application_schema),
 )
