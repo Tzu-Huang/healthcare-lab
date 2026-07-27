@@ -34,7 +34,7 @@ class IntegrationSettingsServiceTests(unittest.TestCase):
             },
         )
         effective = dependencies.integration_settings_service.get_effective("medplum")
-        self.assertEqual("http://127.0.0.1:8103/fhir/R4", effective.base_url)
+        self.assertEqual("http://medplum:8103/fhir/R4", effective.base_url)
         self.assertEqual("legacy-client", effective.client_id)
         self.assertEqual("legacy-secret", effective.client_secret)
         self.assertEqual("http://localhost:3000", effective.web_ui_url)

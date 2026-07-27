@@ -39,7 +39,7 @@ OIE_MANAGED_CHANNEL_DEFAULTS = (
         "templateVersion": "1",
         "sourceHost": "0.0.0.0",
         "sourcePort": 6600,
-        "destinationHost": "hl7tester",
+        "destinationHost": "192.168.0.145",
         "destinationPort": 6671,
         "timeoutSeconds": 5,
         "queueEnabled": False,
@@ -76,9 +76,9 @@ DEFAULT_LAB_SERVERS = (
         "name": "Medplum",
         "server_type": "FHIR Server",
         "description": "FHIR R4 API server",
-        "host": "127.0.0.1",
+        "host": "medplum",
         "port": 8103,
-        "base_url": "http://127.0.0.1:8103/fhir/R4",
+        "base_url": "http://medplum:8103/fhir/R4",
         "protocol": "FHIR",
     },
     {
@@ -338,7 +338,8 @@ def load_application_config(
         "OIE_MLLP_RESULT_PORT": int(env.get("HLAB_RESULT_LISTENER_PORT", env.get("OIE_MLLP_RESULT_PORT", "6665"))),
         "OIE_AP_RESULT_INGRESS_HOST_PORT": int(env.get("OIE_AP_RESULT_INGRESS_HOST_PORT", "6661")),
         "OIE_ORDER_INGRESS_HOST_PORT": int(env.get("OIE_ORDER_INGRESS_HOST_PORT", "6600")),
-        "OIE_MANAGED_AP_HOST": env.get("OIE_MANAGED_AP_HOST", "hl7tester").strip() or "hl7tester",
+        "OIE_MANAGED_AP_HOST": env.get("OIE_MANAGED_AP_HOST", "192.168.0.145").strip()
+        or "192.168.0.145",
         "AP_PROFILE_ENVIRONMENT": env.get("AP_PROFILE_ENVIRONMENT", "lab").strip().lower() or "lab",
         "OIE_BOOTSTRAP_MODE": normalize_oie_bootstrap_mode(env.get("OIE_BOOTSTRAP_MODE")),
         "OIE_BOOTSTRAP_TIMEOUT_SECONDS": parse_positive_config_seconds(
