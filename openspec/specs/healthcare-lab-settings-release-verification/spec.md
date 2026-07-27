@@ -110,4 +110,3 @@ passing verification result.
 - **WHEN** implemented behavior reproducibly violates an acceptance scenario
 - **THEN** the finding is linked to a separate defect issue with reproduction evidence
 - **AND** closure remains blocked when the defect prevents the required operator journey
-
