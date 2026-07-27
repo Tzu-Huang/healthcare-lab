@@ -243,6 +243,46 @@ class Zac80MedplumReadinessTests(unittest.TestCase):
             self.assertEqual("degraded", section["state"])
             self.assertFalse(payload["complete"])
 
+    def test_inconsistent_healthy_evidence_cannot_authorize_real_app_readiness(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = create_app(
+                str(Path(directory) / "app.db"),
+                activate_runtime=False,
+            )
+            settings = app.extensions["integration_settings_service"]
+            fields = dict(settings.get_public("medplum")["fields"])
+            fields.update(
+                {
+                    "enabled": True,
+                    "baseUrl": "https://medplum.example/fhir/R4",
+                    "clientId": "client",
+                }
+            )
+            settings.replace(
+                "medplum",
+                fields,
+                secret_replacements={"clientSecret": "synthetic-secret"},
+            )
+            revision = settings.get_medplum_configuration_revision()
+
+            with self.assertRaises(ValueError):
+                settings.record_medplum_verification(
+                    revision,
+                    {
+                        **_diagnostic("degraded"),
+                        "state": "healthy",
+                    },
+                )
+
+            payload = app.test_client().get(
+                "/api/settings/readiness"
+            ).get_json()["item"]
+            section = next(
+                item for item in payload["sections"] if item["id"] == "medplum"
+            )
+            self.assertEqual("needs-setup", section["state"])
+            self.assertFalse(payload["complete"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -446,6 +446,22 @@ class IntegrationSettingsRepositoryTests(unittest.TestCase):
                 self.repository.record_medplum_verification(revision, report)
         self.assertIsNone(self.repository.get_medplum_verification())
 
+    def test_medplum_verification_rejects_healthy_with_nonpassing_stages(self):
+        self.seed()
+        revision = self.repository.get_medplum_configuration_revision()
+        inconsistent = {
+            **self.degraded_report(),
+            "state": "healthy",
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Healthy Medplum verification requires all bounded stages to pass",
+        ):
+            self.repository.record_medplum_verification(revision, inconsistent)
+
+        self.assertIsNone(self.repository.get_medplum_verification())
+
     def test_configured_profile_starts_without_fabricated_verification_evidence(self):
         self.seed()
 
