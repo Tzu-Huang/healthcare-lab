@@ -1,9 +1,9 @@
 # Healthcare Lab User Handbook (English)
 
-> Document status: v1.0.0 Release Candidate draft<br>
-> Documentation baseline: `fd0e38f`<br>
-> Last updated: 2026-07-22<br>
-> This edition has not passed final publication, clean-install, or full end-to-end verification for all four protocols. Content marked “Pending RC verification” is not a final operational guarantee.
+> Document status: v1.1.1 released-image operator handbook<br>
+> Released image baseline: `54e60d0e69d25c256474d9d0a5c790b1d9b7599e`<br>
+> Last updated: 2026-07-27<br>
+> The v1.1.1 image has passed public publication and an isolated clean full-stack installation. Unrelated protocol, recovery, support, and physical-device boundaries remain explicit in Appendix G.
 
 ## Part I: Understand and Start Healthcare Lab
 
@@ -14,7 +14,7 @@ This handbook helps Healthcare Lab operators install, configure, start, stop, ve
 
 It is intended for healthcare integration testers, application specialists, healthcare IT engineers, system operators, and demonstration operators. Source-code knowledge is not required.
 
-This handbook applies to the v1.0.0 RC Docker distribution model. It excludes source builds and development setup. First-time installers should read Chapters 3–6; UI operators may begin with Chapters 7–9; protocol users may go directly to Chapters 10–13; troubleshooting begins in Chapter 14.
+This handbook applies to the v1.1.1 Docker distribution model. It excludes source builds and development setup. First-time installers should read Chapters 3–6; UI operators may begin with Chapters 7–9; protocol users may go directly to Chapters 10–13; troubleshooting begins in Chapter 14.
 
 <a id="chapter-2"></a>
 ## Chapter 2 — Healthcare Lab Overview
@@ -51,7 +51,7 @@ AP (QHAP) <-> OIE / GDT shared folder / dcm4chee
 <a id="chapter-3"></a>
 ## Chapter 3 — Prerequisites
 
-The v1.0.0 RC support boundary is a trusted local machine or internal lab running `linux/amd64` containers. Windows uses Docker Desktop in Linux container mode. An equivalent Linux Docker host remains pending formal release verification.
+The v1.1.1 support boundary is a trusted local machine or internal lab running `linux/amd64` containers. Windows uses Docker Desktop in Linux container mode. An equivalent Linux Docker host remains pending formal release verification.
 
 ### Verified RC host environment
 
@@ -95,9 +95,9 @@ Also confirm that:
 
 The release model combines a fixed Healthcare Lab image, a versioned deployment bundle, and compatible OIE, Medplum, and dcm4chee images. The normal local installation is zero-edit: it does not require an `.env`, a YAML edit, or manual GDT folder preparation. Application connections and credentials belong in the browser-based Settings page. An optional `.env` is an **Advanced deployment** control for image selection, published host ports, bind paths, service-database hardening, and startup policy; it is not part of the immutable image.
 
-### RC installation procedure
+### v1.1.1 installation procedure
 
-1. Download and extract the v1.0.0 deployment bundle.
+1. Download and extract the v1.1.1 deployment bundle.
 2. Open PowerShell in the bundle root.
 3. Start the supported stack with one command:
 
@@ -133,13 +133,22 @@ docker compose --env-file .env -f deploy\docker-compose.yml config --images
 
 The `Image` value reported by `inspect` must be the immutable Healthcare Lab tag selected for this installation. Container health does not prove that a protocol workflow is complete.
 
-### Completed RC image verification
+### Completed v1.1.1 image verification
 
-An isolated Compose project verified `healthcare-lab:verify-fd0e38f` during this documentation round. The container became `healthy`, the root page returned HTTP 200, Gunicorn listened on container port 5000, and a marker in `/app/instance` survived force recreation. All seven container release contract tests passed.
+GitHub Release `v1.1.1` publishes
+`ghcr.io/tzu-huang/healthcare-lab:1.1.1` for `linux/amd64` from commit
+`54e60d0e69d25c256474d9d0a5c790b1d9b7599e`. Release workflow run
+`30242203066` passed product tests, image publication, anonymous GHCR
+inspection, container health, and the immutable Settings readiness smoke test.
 
-This validates RC image behavior. It does not validate the public pull of `ghcr.io/tzu-huang/healthcare-lab:1.0.0` or a clean full-stack installation.
-
-> Pending RC verification: the `v1.0.0` tag, unauthenticated public pull, image digest, clean installation, and first-time initialization.
+An exclusively owned disposable Compose project then pulled that exact image
+and completed a clean full-stack installation without `.env` or integration
+credentials. `lab-app` became healthy; OIE and dcm4chee were ready; Medplum
+correctly required guided setup; disabled optional GDT/AP integrations remained
+non-blocking; public projections contained no configured secrets; and all
+disposable containers, volumes, and network resources were removed afterward.
+The exact run is recorded in
+`docs/settings-release-image-evidence-zac78-20260727.md`.
 
 <a id="chapter-5"></a>
 ## Chapter 5 — Configuration
@@ -1318,15 +1327,15 @@ A release claim must list omitted or blocked cases. Automated repository tests, 
 
 ## Appendix G — Version Compatibility
 
-Compatibility is defined by the complete release matrix, not by one component version. Replacing any pinned image, changing platform/architecture, or connecting an unverified AP/device creates a deployment outside the verified v1.0.0 RC matrix until the relevant checks in Appendix F pass.
+Compatibility is defined by the complete release matrix, not by one component version. Replacing any pinned image, changing platform/architecture, or connecting an unverified AP/device creates a deployment outside the verified v1.1.1 matrix until the relevant checks in Appendix F pass.
 
 ### Current release gate
 
-The handbook is structurally complete, but the v1.0.0 operational release gate remains **BLOCKED**. A release owner must close the items below or explicitly narrow and approve the release claim; documentation must not silently turn an unverified item into supported behavior.
+The v1.1.1 image publication and isolated clean-install gate is **COMPLETE**. The overall operational support claim remains **BLOCKED** on the unrelated boundaries listed below; documentation must not silently turn an unverified item into supported behavior.
 
-| Gate area | Open release evidence / defect |
+| Gate area | Status / remaining evidence |
 | --- | --- |
-| Publication and clean installation | Create and verify the `v1.0.0` tag, public unauthenticated pull, immutable digest, first-time initialization, and clean full-stack installation on an equivalent `linux/amd64` host. |
+| Publication and clean installation | **Complete for v1.1.1 on `linux/amd64`:** public immutable tag, anonymous pull, revision label, first-time initialization, Settings readiness, and isolated clean full-stack installation are recorded in the ZAC-78 release-image evidence. |
 | Deployment configuration | Correct the host-facing dcm4chee values in `.env.example`; separate the dcm4chee host-published HL7 port from the `lab-app` internal target; repeat clean-install and ADT/MWL/DICOMweb verification. |
 | GDT operator workflow | Fix `[object Object]` measurement rendering, demonstrate durable duplicate prevention for reintroduced 6310 content, expose the documented result details, and browser-reverify the final behavior. |
 | Recovery | Provide and successfully exercise a controlled named-volume restore runbook, including `lab-app-instance`; current backup candidates do not prove recoverability. |
@@ -1344,9 +1353,9 @@ The handbook is structurally complete, but the v1.0.0 operational release gate r
 
 ### Application and container matrix
 
-| Component | v1.0.0 RC contract | Evidence / compatibility boundary |
+| Component | v1.1.1 contract | Evidence / compatibility boundary |
 | --- | --- | --- |
-| Healthcare Lab | `ghcr.io/tzu-huang/healthcare-lab:1.0.0` | Immutable release tag; public pull/digest and final clean-install publication remain part of the release gate. |
+| Healthcare Lab | `ghcr.io/tzu-huang/healthcare-lab:1.1.1` | Immutable semantic release tag; public anonymous pull, revision label, readiness smoke, and isolated clean full-stack installation passed on `linux/amd64`. |
 | Application runtime | `python:3.11-slim`; Flask `>=3.0,<4.0`; Gunicorn `>=23.0,<24.0`; python-dotenv `>=1.0,<2.0`; PyMySQL `>=1.1,<2.0` | Built into the application image. Operators must not install host Python packages into the released container. One Gunicorn worker is required by current single-process listener ownership. |
 | OIE | `nextgenhealthcare/connect:4.5.2@sha256:4afa295cfe7c5ffd596efee69594157fea87202e33d66bb4a98a52db4598f836` | RC/contract target is OIE `4.5.2`. Managed Channel APIs/templates are version-sensitive; another OIE version requires management, Channel preview/apply, queue, ACK, and E2E re-verification. |
 | Medplum server | `medplum/medplum-server@sha256:4d2c8e926fe536176a88a7e24555f97f92226e39f171bd0b5f0c7f667d0bf9f0` | Exact content is digest-pinned. The repository does not provide a reliable human-readable Medplum release version; do not invent one. |
@@ -1357,11 +1366,11 @@ The handbook is structurally complete, but the v1.0.0 operational release gate r
 | dcm4chee LDAP | `dcm4che/slapd-dcm4chee:2.6.13-35.0@sha256:ca45eaf70d92c4008612ab345a566e06c13b553b079ccf6c652ceda4c9a98b98` | Must remain aligned with the archive configuration and AE topology. |
 | dcm4chee archive | `dcm4che/dcm4chee-arc-psql:5.35.0@sha256:20a195c0c53336e1d0c7bdc30536d46611a939f0a2e25dec3318c8d99d7fba29` | dcm4chee archive `5.35.0`, exact digest. Reverify ADT, MWL REST, DIMSE C-STORE, QIDO/WADO, and reconciliation after any change. |
 
-Moving tags `1`, `1.0`, `latest`, and `edge` are not acceptable substitutes for the immutable `1.0.0` release tag in a reproducible verification or rollback record. A `sha-<commit>` image is traceable development evidence, not automatically a stable release.
+Moving tags `1`, `1.1`, `latest`, and `edge` are not acceptable substitutes for the immutable `1.1.1` release tag in a reproducible verification or rollback record. A `sha-<commit>` image is traceable development evidence, not automatically a stable release.
 
 ### Protocol compatibility matrix
 
-| Protocol / surface | v1.0.0 contract | Verified scope and limitations |
+| Protocol / surface | v1.1.1 contract | Verified scope and limitations |
 | --- | --- | --- |
 | HL7 v2 | HL7 `2.5.1`; ADT A04, ORM O01, ORU R01/W01 as implemented; MLLP | Contract/live evidence covers current payloads, ACK `AA/AE/AR`, OIE routing, result listener, and correlation. This is not a general claim for every HL7 profile, optional segment, encoding, or receiver policy. |
 | FHIR | FHIR R4 REST; Patient, ServiceRequest, DiagnosticReport, Observation, and required supporting references | Verified against the pinned Medplum images and OAuth flow. Vendor-specific R4 behavior, unsupported search parameters, other FHIR versions, subscriptions, bulk data, and arbitrary resources are outside the claim. |

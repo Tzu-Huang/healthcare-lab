@@ -1,9 +1,9 @@
 # Healthcare Lab 使用手冊（繁體中文）
 
-> 文件狀態：v1.0.0 Release Candidate 初稿<br>
-> 文件基準：`fd0e38f`<br>
-> 最後更新：2026-07-22<br>
-> 本版尚未通過正式發布、乾淨環境安裝及四協定完整端到端驗證。標有「待 RC 驗證」的內容不得視為正式操作保證。
+> 文件狀態：v1.1.1 已發布映像操作手冊<br>
+> 已發布映像基線：`54e60d0e69d25c256474d9d0a5c790b1d9b7599e`<br>
+> 最後更新：2026-07-27<br>
+> v1.1.1 映像已通過公開發布與隔離的乾淨 full-stack 安裝；其他協定、復原、支援及實體設備邊界仍明確列於附錄 G。
 
 ## 第一部分：認識與啟動 Healthcare Lab
 
@@ -14,7 +14,7 @@
 
 適用讀者包括 healthcare integration tester、應用專員、醫療資訊工程師、系統操作員與展示操作人員。讀者不需要理解程式碼。
 
-本手冊適用於 v1.0.0 RC Docker 發布模型，不包含原始碼建置或開發環境。第一次安裝請依序閱讀第 3～6 章；日常 UI 操作可從第 7～9 章開始；特定協定請直接閱讀第 10～13 章；故障處理請先看第 14 章。
+本手冊適用於 v1.1.1 Docker 發布模型，不包含原始碼建置或開發環境。第一次安裝請依序閱讀第 3～6 章；日常 UI 操作可從第 7～9 章開始；特定協定請直接閱讀第 10～13 章；故障處理請先看第 14 章。
 
 <a id="chapter-2"></a>
 ## 第 2 章　Healthcare Lab 概觀
@@ -51,7 +51,7 @@ AP (QHAP) <-> OIE / GDT shared folder / dcm4chee
 <a id="chapter-3"></a>
 ## 第 3 章　安裝前準備
 
-v1.0.0 RC 的支援邊界是可信任的本機或內部實驗室，以及 `linux/amd64` containers。Windows 使用 Docker Desktop 的 Linux container mode；等效 Linux Docker host 仍待正式發布驗證。
+v1.1.1 的支援邊界是可信任的本機或內部實驗室，以及 `linux/amd64` containers。Windows 使用 Docker Desktop 的 Linux container mode；等效 Linux Docker host 仍待正式發布驗證。
 
 ### 已驗證的 RC 主機環境
 
@@ -95,9 +95,9 @@ docker info --format 'Server={{.ServerVersion}} OSType={{.OSType}} Arch={{.Archi
 
 正式發布模型由固定版本的 Healthcare Lab image、versioned deployment bundle 與相容的 OIE、Medplum、dcm4chee images 組成。一般本機安裝不需要 `.env`、手動建立資料夾或修改 YAML；`.env.example` 只提供 **Advanced deployment** 覆寫。
 
-### RC 安裝程序
+### v1.1.1 安裝程序
 
-1. 下載並解壓縮 v1.0.0 deployment bundle。
+1. 下載並解壓縮 v1.1.1 deployment bundle。
 2. 在 bundle 根目錄開啟 PowerShell。
 3. 使用唯一支援的一般啟動命令：
 
@@ -134,13 +134,21 @@ docker compose -f deploy\docker-compose.yml config --images
 
 `inspect` 的 `Image` 必須是本次安裝指定的 Healthcare Lab immutable tag。Container health 不代表協定端到端流程已成功。
 
-### 已完成的 RC image 驗證
+### 已完成的 v1.1.1 image 驗證
 
-本輪已使用隔離 Compose project 驗證 `healthcare-lab:verify-fd0e38f`：container 達到 `healthy`、首頁 HTTP 200、Gunicorn 在 container port 5000 啟動、force recreate 後 `/app/instance` marker 仍存在。Container release contract tests 共 7 項通過。
+GitHub Release `v1.1.1` 從 commit
+`54e60d0e69d25c256474d9d0a5c790b1d9b7599e` 發布
+`linux/amd64` 映像 `ghcr.io/tzu-huang/healthcare-lab:1.1.1`。Release
+workflow run `30242203066` 已通過產品測試、映像發布、匿名 GHCR
+檢查、container health 與 immutable Settings readiness smoke test。
 
-這項結果驗證 RC image 行為，但不等同正式 `ghcr.io/tzu-huang/healthcare-lab:1.0.0` 的 public pull 或完整 stack clean install。
-
-> 待 RC 驗證：`v1.0.0` tag、public unauthenticated pull、image digest、乾淨環境安裝及第一次初始化。
+其後以專屬 disposable Compose project 拉取該精確映像，在沒有 `.env`
+或 integration credentials 的情況下完成乾淨 full-stack 安裝。
+`lab-app` 達到 healthy；OIE 與 dcm4chee 為 ready；Medplum 正確要求 guided
+setup；停用的選用 GDT／AP integrations 不阻擋啟動；public projections
+沒有 configured secrets；最後移除所有 disposable containers、volumes
+及 network。完整紀錄位於
+`docs/settings-release-image-evidence-zac78-20260727.md`。
 
 <a id="chapter-5"></a>
 ## 第 5 章　設定
@@ -1311,15 +1319,15 @@ Release claim 必須列出 omitted 或 blocked cases。Automated repository test
 
 ## 附錄 G　版本相容性
 
-Compatibility 由完整 release matrix 定義，不是單一 component version。替換任何 pinned image、變更 platform/architecture，或連接 unverified AP/device，都會使 deployment 超出 verified v1.0.0 RC matrix，直到附錄 F 的 relevant checks 通過。
+Compatibility 由完整 release matrix 定義，不是單一 component version。替換任何 pinned image、變更 platform/architecture，或連接 unverified AP/device，都會使 deployment 超出 verified v1.1.1 matrix，直到附錄 F 的 relevant checks 通過。
 
 ### 目前 release gate
 
-本手冊結構已完整，但 v1.0.0 operational release gate 目前仍為 **BLOCKED**。Release owner 必須關閉下列項目，或明確縮小並核准 release claim；文件不得將未驗證項目默默改寫成 supported behavior。
+v1.1.1 image publication 與隔離 clean-install gate 已 **COMPLETE**。整體 operational support claim 仍因下列無關邊界而 **BLOCKED**；文件不得將未驗證項目默默改寫成 supported behavior。
 
-| Gate area | Open release evidence／defect |
+| Gate area | Status／remaining evidence |
 | --- | --- |
-| Publication 與 clean installation | 建立並驗證 `v1.0.0` tag、public unauthenticated pull、immutable digest、first-time initialization，以及等效 `linux/amd64` host 的 clean full-stack installation。 |
+| Publication 與 clean installation | **v1.1.1 `linux/amd64` 已完成：** public immutable tag、anonymous pull、revision label、first-time initialization、Settings readiness 與隔離 clean full-stack installation 均記錄於 ZAC-78 release-image evidence。 |
 | Deployment configuration | 修正 `.env.example` 的 host-facing dcm4chee values；分離 dcm4chee host-published HL7 port 與 `lab-app` internal target；重新驗證 clean install 與 ADT／MWL／DICOMweb。 |
 | GDT operator workflow | 修正 `[object Object]` measurement rendering、證明 reintroduced 6310 content 的 durable duplicate prevention、顯示 documented result details，並對 final behavior 完成 browser re-verification。 |
 | Recovery | 提供並成功執行受控 named-volume restore runbook（包含 `lab-app-instance`）；目前 backup candidates 不證明 recoverability。 |
@@ -1337,9 +1345,9 @@ Compatibility 由完整 release matrix 定義，不是單一 component version�
 
 ### Application 與 container matrix
 
-| Component | v1.0.0 RC contract | Evidence／compatibility boundary |
+| Component | v1.1.1 contract | Evidence／compatibility boundary |
 | --- | --- | --- |
-| Healthcare Lab | `ghcr.io/tzu-huang/healthcare-lab:1.0.0` | Immutable release tag；public pull/digest 與 final clean-install publication 仍屬 release gate。 |
+| Healthcare Lab | `ghcr.io/tzu-huang/healthcare-lab:1.1.1` | Immutable semantic release tag；public anonymous pull、revision label、readiness smoke 與隔離 clean full-stack installation 已在 `linux/amd64` 通過。 |
 | Application runtime | `python:3.11-slim`；Flask `>=3.0,<4.0`；Gunicorn `>=23.0,<24.0`；python-dotenv `>=1.0,<2.0`；PyMySQL `>=1.1,<2.0` | 內建於 application image。Operator 不可將 host Python packages 安裝進 released container。目前 single-process listener ownership 要求一個 Gunicorn worker。 |
 | OIE | `nextgenhealthcare/connect:4.5.2@sha256:4afa295cfe7c5ffd596efee69594157fea87202e33d66bb4a98a52db4598f836` | RC/contract target 為 OIE `4.5.2`。Managed Channel APIs/templates 對版本敏感；其他 OIE version 須重驗 management、Channel preview/apply、queue、ACK 與 E2E。 |
 | Medplum server | `medplum/medplum-server@sha256:4d2c8e926fe536176a88a7e24555f97f92226e39f171bd0b5f0c7f667d0bf9f0` | Exact content digest-pinned。Repository 未提供可靠 human-readable Medplum release version，不可自行推測。 |
@@ -1350,11 +1358,11 @@ Compatibility 由完整 release matrix 定義，不是單一 component version�
 | dcm4chee LDAP | `dcm4che/slapd-dcm4chee:2.6.13-35.0@sha256:ca45eaf70d92c4008612ab345a566e06c13b553b079ccf6c652ceda4c9a98b98` | 須與 archive configuration 與 AE topology 保持一致。 |
 | dcm4chee archive | `dcm4che/dcm4chee-arc-psql:5.35.0@sha256:20a195c0c53336e1d0c7bdc30536d46611a939f0a2e25dec3318c8d99d7fba29` | dcm4chee archive `5.35.0`、exact digest；任何變更後須重驗 ADT、MWL REST、DIMSE C-STORE、QIDO/WADO 與 reconciliation。 |
 
-Moving tags `1`、`1.0`、`latest`、`edge` 不可取代 reproducible verification 或 rollback record 中的 immutable `1.0.0` release tag。`sha-<commit>` image 是 traceable development evidence，不會自動成為 stable release。
+Moving tags `1`、`1.1`、`latest`、`edge` 不可取代 reproducible verification 或 rollback record 中的 immutable `1.1.1` release tag。`sha-<commit>` image 是 traceable development evidence，不會自動成為 stable release。
 
 ### Protocol compatibility matrix
 
-| Protocol／surface | v1.0.0 contract | Verified scope 與 limitations |
+| Protocol／surface | v1.1.1 contract | Verified scope 與 limitations |
 | --- | --- | --- |
 | HL7 v2 | HL7 `2.5.1`；implemented ADT A04、ORM O01、ORU R01/W01；MLLP | Contract/live evidence 涵蓋 current payloads、ACK `AA/AE/AR`、OIE routing、result listener 與 correlation；不宣稱支援所有 HL7 profile、optional segment、encoding 或 receiver policy。 |
 | FHIR | FHIR R4 REST；Patient、ServiceRequest、DiagnosticReport、Observation 與 required supporting references | 已對 pinned Medplum images 與 OAuth flow 驗證。Vendor-specific R4 behavior、unsupported search parameters、其他 FHIR versions、subscriptions、bulk data 與 arbitrary resources 不在 claim。 |
