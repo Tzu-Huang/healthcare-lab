@@ -395,6 +395,15 @@ class Zac78SettingsReleaseVerificationTests(unittest.TestCase):
                     "v1.0.0 operational release gate",
                     source,
                 )
+                self.assertNotIn(
+                    "`false`, `true` | Enables TLS behavior",
+                    source,
+                )
+                self.assertNotIn(
+                    "`false`、`true` | TLS behavior",
+                    source,
+                )
+                self.assertIn("`false`", source)
 
         word_editions = (
             Path("docs/handbook/USER_HANDBOOK.en.docx"),
@@ -417,6 +426,10 @@ class Zac78SettingsReleaseVerificationTests(unittest.TestCase):
                     "v1.0.0 operational release gate",
                     document_xml,
                 )
+                tls_start = document_xml.index("DCM4CHEE_TLS_ENABLED")
+                tls_contract = document_xml[tls_start : tls_start + 5000]
+                self.assertNotIn(">true<", tls_contract)
+                self.assertGreaterEqual(tls_contract.count(">false<"), 2)
 
     def test_settings_web_authority_has_no_compose_writer_or_docker_executor(self):
         settings_sources = [
