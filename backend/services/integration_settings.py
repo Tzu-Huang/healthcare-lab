@@ -73,6 +73,11 @@ class IntegrationSettingsRepositoryPort(Protocol):
     def list_audits(self, profile_type: str) -> list[dict[str, Any]]: ...
     def replace(self, profile, *, secret_mutations, actor="local-operator") -> dict[str, Any]: ...
     def has_dcm4chee_dependencies(self) -> bool: ...
+    def get_medplum_configuration_revision(self) -> int: ...
+    def get_medplum_verification(self) -> dict[str, Any] | None: ...
+    def record_medplum_verification(
+        self, configuration_revision: int, report: Mapping[str, Any]
+    ) -> bool: ...
 
 
 class OieSettingsAdapter:
@@ -489,6 +494,38 @@ class IntegrationSettingsService:
             auth_grace_seconds=int(fields["authGraceSeconds"]),
             timeout_seconds=int(fields["timeoutSeconds"]),
             enabled=bool(fields["enabled"]),
+        )
+
+    def get_medplum_configuration_revision(self) -> int:
+        return self._repository.get_medplum_configuration_revision()
+
+    def get_medplum_verification(self) -> dict[str, Any] | None:
+        return self._repository.get_medplum_verification()
+
+    def record_medplum_verification(
+        self,
+        configuration_revision: int,
+        report: Mapping[str, Any],
+    ) -> bool:
+        if not isinstance(report, Mapping) or set(report) != {"state", "stages"}:
+            raise ValueError("Unsupported Medplum verification report.")
+        submitted_stages = report.get("stages")
+        if not isinstance(submitted_stages, list):
+            raise ValueError("Unsupported Medplum verification stages.")
+        bounded = {
+            "state": report.get("state"),
+            "stages": [
+                {
+                    "stage": item.get("stage"),
+                    "state": item.get("state"),
+                    "category": item.get("category"),
+                }
+                for item in submitted_stages
+                if isinstance(item, Mapping)
+            ],
+        }
+        return self._repository.record_medplum_verification(
+            configuration_revision, bounded
         )
 
     def replace(
