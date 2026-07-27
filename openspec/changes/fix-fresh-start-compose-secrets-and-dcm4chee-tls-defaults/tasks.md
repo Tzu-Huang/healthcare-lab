@@ -18,7 +18,7 @@
 
 ## 4. Verification and Handoff
 
-- [ ] 4.1 Run focused typed-settings, dcm4chee, Compose, wrapper, container, and application-shell suites.
-- [ ] 4.2 Execute a collision-safe disposable no-env startup using synthetic data and record bounded evidence or a precise environment-dependent skip.
+- [x] 4.1 Run focused typed-settings, dcm4chee, Compose, wrapper, container, and application-shell suites.
+- [x] 4.2 Execute a collision-safe disposable no-env startup using synthetic data and record bounded evidence or a precise environment-dependent skip.
 - [ ] 4.3 Re-run the ZAC-78 fresh-install gate and record whether ZAC-79 no longer blocks closure.
-- [ ] 4.4 Run OpenSpec strict validation and diff-hygiene checks.
+- [x] 4.4 Run OpenSpec strict validation and diff-hygiene checks.
