@@ -38,6 +38,6 @@
 
 - [x] 6.1 Execute the fresh-install matrix in an exclusively owned disposable environment and record the exact tested commit and environment.
 - [x] 6.2 Execute the legacy-upgrade and second-restart precedence matrix without deleting retained volumes.
-- [ ] 6.3 Execute the failure/safety matrix and inspect all screenshots for synthetic data and absent credentials.
+- [x] 6.3 Execute the failure/safety matrix and inspect all screenshots for synthetic data and absent credentials.
 - [x] 6.4 Record precise environment-dependent skips and create linked defect issues for reproducible implementation failures that block acceptance.
 - [x] 6.5 Run unit, integration, frontend, Compose contract, migration, syntax, handbook-generation, OpenSpec strict-validation, and diff-hygiene checks.
