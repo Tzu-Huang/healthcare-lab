@@ -172,3 +172,52 @@ jobs:
           for TAG in "${VERSION}" "${MAJOR}.${MINOR}" "${MAJOR}" latest "sha-${SHORT_SHA}"; do
             docker buildx imagetools inspect "${IMAGE_NAME}:${TAG}" >/dev/null
           done
+
+      - name: Smoke test immutable release readiness
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          CONTAINER_NAME="healthcare-lab-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          VOLUME_NAME="${CONTAINER_NAME}-instance"
+          cleanup() {
+            docker rm --force "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+            docker volume rm "${VOLUME_NAME}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker logout ghcr.io >/dev/null 2>&1 || true
+          docker pull "${IMAGE_NAME}:${VERSION}"
+          docker volume create "${VOLUME_NAME}" >/dev/null
+          docker run --detach \
+            --name "${CONTAINER_NAME}" \
+            --mount "source=${VOLUME_NAME},target=/app/instance" \
+            "${IMAGE_NAME}:${VERSION}" >/dev/null
+          for ATTEMPT in {1..30}; do
+            HEALTH="$(docker inspect --format '{{.State.Health.Status}}' "${CONTAINER_NAME}")"
+            if [[ "${HEALTH}" == "healthy" ]]; then
+              break
+            fi
+            if [[ "${HEALTH}" == "unhealthy" || "${ATTEMPT}" == "30" ]]; then
+              docker logs "${CONTAINER_NAME}" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          docker exec "${CONTAINER_NAME}" python -c '
+          import json
+          import urllib.request
+
+          with urllib.request.urlopen(
+              "http://127.0.0.1:5000/api/settings/readiness", timeout=10
+          ) as response:
+              assert response.status == 200
+              payload = json.load(response)
+          assert payload["success"] is True
+          item = payload["item"]
+          assert item["complete"] is False
+          assert item["nextAction"]
+          assert isinstance(item["sections"], list) and item["sections"]
+          medplum = next(section for section in item["sections"] if section["id"] == "medplum")
+          assert medplum["state"] == "needs-setup"
+          '

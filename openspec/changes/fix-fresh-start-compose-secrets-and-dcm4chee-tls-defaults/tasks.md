@@ -14,7 +14,7 @@
 
 - [ ] 3.1 Identify and publish through the normal release workflow an immutable semantic-version image containing the Settings readiness API.
 - [ ] 3.2 Update Compose, `.env.example`, release documentation, and version assertions to the verified image tag without changing existing immutable tags.
-- [ ] 3.3 Add or extend pulled-image verification to assert health and the stable `GET /api/settings/readiness` envelope.
+- [x] 3.3 Add or extend pulled-image verification to assert health and the stable `GET /api/settings/readiness` envelope.
 
 ## 4. Verification and Handoff
 
