@@ -291,7 +291,13 @@ class ApplicationShellTests(ApiCaseSupport):
         )
         self.assertNotIn("openemr", response.get_data(as_text=True).lower())
         self.assertFalse(body["item"]["complete"])
-        self.assertEqual("oie", body["item"]["nextAction"]["sectionId"])
+        required = {
+            item["id"]: item["state"]
+            for item in sections
+            if item["required"]
+        }
+        self.assertEqual("needs-setup", required["medplum"])
+        self.assertEqual("medplum", body["item"]["nextAction"]["sectionId"])
         optional = {
             item["id"]: item["state"]
             for item in sections
