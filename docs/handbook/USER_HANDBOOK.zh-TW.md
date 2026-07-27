@@ -988,7 +988,7 @@ Compose 預設已區分 container-internal 與 operator-facing endpoints：`lab-
 | `DCM4CHEE_VIEWER_STUDY_URL_TEMPLATE` | 否 | `<empty>` | Optional operator viewer link template。 | Recreate `lab-app`；使用 synthetic Study UID 驗證 escaping。 |
 | `DCM4CHEE_UID_ROOT` | Generated UIDs 必填 | `1.2.826.0.1.3680043.10.543` | 產生 DICOM identifiers 的 UID root。 | Recreate `lab-app`；已有 mapping 後不可在沒有 migration plan 下變更。 |
 | `DCM4CHEE_AUTH_MODE` | Trusted local profile 可不需 | `none` | 選擇 supported authentication behavior。 | Recreate `lab-app`；驗證 diagnostics 與 access policy。 |
-| `DCM4CHEE_TLS_ENABLED`、`DCM4CHEE_TLS_VERIFY` | 依環境 | `false`、`true` | TLS behavior 與 certificate verification。 | Recreate `lab-app`；不可只為隱藏 certificate error 而停用 verification。 |
+| `DCM4CHEE_TLS_ENABLED`、`DCM4CHEE_TLS_VERIFY` | 依環境 | trusted local non-TLS profile 為 `false`、`false` | TLS behavior 與 certificate verification。 | Recreate `lab-app`；啟用 TLS 時也應啟用 verification，並修正 certificate error 而非繞過。 |
 | `DCM4CHEE_USERNAME`、`DCM4CHEE_TOKEN_URL` | Selected auth mode 需要時 | `<empty>` | Authentication identity／token endpoint。 | Recreate `lab-app`；測試 authentication 且不可記錄 token。 |
 | `DCM4CHEE_CERTIFICATE_PATH`、`DCM4CHEE_PRIVATE_KEY_PATH` | Mutual TLS/profile 需要時 | `<empty>` | Container-readable certificate/key paths；private key sensitive。 | 明確 mount files、recreate `lab-app`，並驗證 permissions 與 TLS。 |
 

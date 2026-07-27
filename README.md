@@ -109,7 +109,7 @@ No `.env` or YAML edit is required. Open Healthcare Lab at
 <http://127.0.0.1:5000>. If required application settings are incomplete, the
 Dashboard provides a guided action into the owning Settings section.
 
-The Compose stack pulls `ghcr.io/tzu-huang/healthcare-lab:1.0.0` by default, so
+The Compose stack pulls `ghcr.io/tzu-huang/healthcare-lab:1.1.1` by default, so
 the host does not need Python or a source-code mount. Useful operational
 commands are also available through the PowerShell wrapper:
 
