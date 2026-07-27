@@ -993,7 +993,7 @@ Configuration has three different owners:
 | `DCM4CHEE_VIEWER_STUDY_URL_TEMPLATE` | No | `<empty>` | Optional operator viewer link template. | Recreate `lab-app`; verify escaping and a synthetic Study UID. |
 | `DCM4CHEE_UID_ROOT` | For generated UIDs | `1.2.826.0.1.3680043.10.543` | UID root used for generated DICOM identifiers. | Recreate `lab-app`; never change for existing mappings without a migration plan. |
 | `DCM4CHEE_AUTH_MODE` | No for trusted local profile | `none` | Selects the supported authentication behavior. | Recreate `lab-app`; verify diagnostics and access policy. |
-| `DCM4CHEE_TLS_ENABLED`, `DCM4CHEE_TLS_VERIFY` | Environment-dependent | `false`, `true` | Enables TLS behavior and certificate verification. | Recreate `lab-app`; never disable verification merely to hide a certificate error. |
+| `DCM4CHEE_TLS_ENABLED`, `DCM4CHEE_TLS_VERIFY` | Environment-dependent | `false`, `false` for the trusted local non-TLS profile | Enables TLS behavior and certificate verification. | Recreate `lab-app`; when enabling TLS, enable verification and correct certificate errors rather than bypassing them. |
 | `DCM4CHEE_USERNAME`, `DCM4CHEE_TOKEN_URL` | When the selected auth mode requires them | `<empty>` | Authentication identity/token endpoint. | Recreate `lab-app`; test authentication without logging tokens. |
 | `DCM4CHEE_CERTIFICATE_PATH`, `DCM4CHEE_PRIVATE_KEY_PATH` | When mutual TLS/profile requires them | `<empty>` | Container-readable certificate/key paths; private key is sensitive. | Mount files explicitly, recreate `lab-app`, and verify permissions and TLS. |
 

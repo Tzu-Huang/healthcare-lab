@@ -14,14 +14,14 @@ The public registry name is `ghcr.io/tzu-huang/healthcare-lab`. Pull requests
 build and test without publishing. A failed `main` or release verification does
 not update tags, and later `main` pushes never repoint `1.0.0`.
 
-## v1.0.0 verified image matrix
+## v1.1.1 verified image matrix
 
 The release Compose defaults identify every third-party image by both its
 human-readable tag (when upstream provides one) and its verified repository
 digest. Operators can override an image variable deliberately, but doing so
-creates a deployment outside the verified v1.0.0 matrix.
+creates a deployment outside the verified v1.1.1 matrix.
 
-| Service | v1.0.0 default |
+| Service | v1.1.1 default |
 | --- | --- |
 | lab-app | `ghcr.io/tzu-huang/healthcare-lab:1.1.1` |
 | OIE | `nextgenhealthcare/connect:4.5.2@sha256:4afa295cfe7c5ffd596efee69594157fea87202e33d66bb4a98a52db4598f836` |
