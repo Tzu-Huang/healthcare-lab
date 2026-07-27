@@ -30,7 +30,7 @@ secrets:
 
 services:
   lab-app:
-    image: ${LAB_APP_IMAGE:-ghcr.io/tzu-huang/healthcare-lab:1.0.1}
+    image: ${LAB_APP_IMAGE:-ghcr.io/tzu-huang/healthcare-lab:1.1.1}
     environment:
       LAB_APP_HOST: 0.0.0.0
       LAB_APP_PORT: "5000"
