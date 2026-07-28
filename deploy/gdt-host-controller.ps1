@@ -200,6 +200,7 @@ function Get-DeploymentStatus {
 function Invoke-Compose {
     param([string[]] $Arguments, [string] $HostPath)
     [Environment]::SetEnvironmentVariable("GDT_BRIDGE_HOST_PATH", $HostPath, "Process")
+    [Environment]::SetEnvironmentVariable("LAB_APP_PORT", "$LabAppPort", "Process")
     $Base = @("compose")
     if (Test-Path -LiteralPath $EnvFile -PathType Leaf) {
         $Base += @("--env-file", $EnvFile)
