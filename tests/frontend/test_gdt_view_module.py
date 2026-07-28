@@ -41,6 +41,18 @@ class GdtViewModuleTests(unittest.TestCase):
             self.assertIn(endpoint, self.api)
         self.assertNotIn("requestJson(", self.source)
 
+    def test_gdt_host_folder_is_applied_through_loopback_controller(self):
+        template = (ROOT / "frontend/templates/views/gdt.html").read_text(encoding="utf-8")
+        self.assertIn('id="gdt-host-folder-path"', template)
+        self.assertIn('id="apply-gdt-host-folder"', template)
+        self.assertNotIn('id="gdt-in-folder-path"', template)
+        self.assertNotIn('id="gdt-out-folder-path"', template)
+        self.assertIn("fetchGdtHostControllerSession", self.api)
+        self.assertIn("X-Healthcare-Lab-Controller", self.api)
+        self.assertIn("waitForHostOperation", self.source)
+        self.assertIn("reconnectAfterApply", self.source)
+        self.assertIn("window.confirm", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
