@@ -133,4 +133,3 @@ Zoom, calipers, annotations, print layout, and export are explicitly deferred
 follow-up scope. Create separate Linear issues for those capabilities when they
 are prioritized; do not add them to this verification change. No follow-up
 issues are created by this guide.
-
