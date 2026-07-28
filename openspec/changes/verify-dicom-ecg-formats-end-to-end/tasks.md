@@ -19,7 +19,7 @@
 
 ## 4. Manual Acceptance and Documentation
 
-- [ ] 4.1 Execute and record a bounded synthetic dcm4chee checklist for result refresh, `View ECG Graph`, viewer loading, graph labels, summary fields, and safety notice for both SOP Classes.
+- [x] 4.1 Execute and record a bounded synthetic dcm4chee checklist for result refresh, `View ECG Graph`, viewer loading, graph labels, summary fields, and safety notice for both SOP Classes.
 - [x] 4.2 Document configuration, supported SOP Class UIDs, fixture policy, runtime dependencies, stable troubleshooting categories, recovery actions, and display limitations.
 - [x] 4.3 State that the viewer is demonstration-only and non-diagnostic, and create follow-up issues for zoom, calipers, annotations, print layout, or export instead of expanding this change.
 - [x] 4.4 Run strict OpenSpec validation and repository diff-hygiene checks, recording precise environment-dependent skips or linked blocking defects.
