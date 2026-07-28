@@ -28,7 +28,11 @@ MIN_PAPER_SPEED_MM_S: Final = 1.0
 MAX_PAPER_SPEED_MM_S: Final = 100.0
 MIN_VOLTAGE_GAIN_MM_MV: Final = 1.0
 MAX_VOLTAGE_GAIN_MM_MV: Final = 100.0
-MAX_SAMPLES_PER_LEAD: Final = 2_000_000
+# The MVP is a 10-second resting ECG display. Bound both point count and
+# duration before acquiring the Matplotlib lock so malformed or unexpectedly
+# long normalized inputs cannot monopolize every threaded request.
+MAX_SAMPLES_PER_LEAD: Final = 10_000
+MAX_RENDER_DURATION_SECONDS: Final = 10.0
 FIGURE_DPI: Final = 100.0
 
 # Matplotlib documents that it is not thread-safe. Gunicorn may invoke this
@@ -208,6 +212,12 @@ def _validate_waveform(waveform: EcgWaveform) -> None:
         if len(channel.samples_mv) > MAX_SAMPLES_PER_LEAD:
             raise EcgRenderError(
                 f"lead {channel.lead} exceeds the {MAX_SAMPLES_PER_LEAD} sample limit"
+            )
+        duration = len(channel.samples_mv) / float(frequency)
+        if duration > MAX_RENDER_DURATION_SECONDS:
+            raise EcgRenderError(
+                f"lead {channel.lead} exceeds the "
+                f"{MAX_RENDER_DURATION_SECONDS:g}-second render limit"
             )
         if any(
             isinstance(value, bool)
