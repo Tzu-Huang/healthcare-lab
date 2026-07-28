@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("status", "inspect", "start", "stop", "restart", "smoke", "logs")]
+    [ValidateSet("status", "inspect", "start", "stop", "restart", "smoke", "logs", "controller-status")]
     [string] $Action = "status",
 
     [Parameter(Position = 1)]
@@ -18,6 +18,9 @@ $ComposeFile = Join-Path $ScriptDir "docker-compose.yml"
 $EnvFile = Join-Path $RepoDir ".env"
 $DefaultGdtBridgePath = Join-Path $RepoDir "instance\gdt-bridge"
 $ControllerStateFile = Join-Path $RepoDir "instance\deployment\gdt-controller-state.json"
+$ControllerPidFile = Join-Path $RepoDir "instance\deployment\gdt-controller.pid"
+$ControllerScript = Join-Path $ScriptDir "gdt-host-controller.ps1"
+$ControllerPort = 5010
 
 . (Join-Path $ScriptDir "gdt-host-path.ps1")
 
@@ -67,6 +70,43 @@ function Initialize-LabDirectories {
     )
 }
 
+function Get-ControllerProcess {
+    if (-not (Test-Path -LiteralPath $ControllerPidFile -PathType Leaf)) {
+        return $null
+    }
+    $ControllerPid = Get-Content -Raw -LiteralPath $ControllerPidFile
+    if ($ControllerPid -notmatch '^\d+$') {
+        return $null
+    }
+    return Get-Process -Id ([int] $ControllerPid) -ErrorAction SilentlyContinue
+}
+
+function Start-GdtHostController {
+    if ($env:HEALTHCARE_LAB_DISABLE_HOST_CONTROLLER -eq "1") {
+        return
+    }
+    if (Get-ControllerProcess) {
+        return
+    }
+    $PowerShell = (Get-Process -Id $PID).Path
+    Start-Process -FilePath $PowerShell -WindowStyle Hidden -ArgumentList @(
+        "-NoProfile", "-NonInteractive", "-File", $ControllerScript,
+        "-Mode", "serve", "-RepoDir", $RepoDir,
+        "-Port", "$ControllerPort", "-LabAppPort", "$env:LAB_APP_PORT"
+    ) | Out-Null
+}
+
+function Stop-GdtHostController {
+    if ($env:HEALTHCARE_LAB_DISABLE_HOST_CONTROLLER -eq "1") {
+        return
+    }
+    $Controller = Get-ControllerProcess
+    if ($Controller) {
+        Stop-Process -Id $Controller.Id
+    }
+    Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
+}
+
 function Invoke-DockerCompose {
     param([string[]] $Arguments)
 
@@ -107,11 +147,19 @@ switch ($Action) {
     }
     "start" {
         Initialize-LabDirectories
+        if ([string]::IsNullOrWhiteSpace($env:LAB_APP_PORT)) {
+            $env:LAB_APP_PORT = Get-GdtDotEnvValue -Path $EnvFile -Name "LAB_APP_PORT"
+        }
+        if ([string]::IsNullOrWhiteSpace($env:LAB_APP_PORT)) {
+            $env:LAB_APP_PORT = "5000"
+        }
+        Start-GdtHostController
         Invoke-DockerCompose (@("up", "-d") + $ResolvedServices)
     }
     "stop" {
         if ($ResolvedServices.Count -eq 0) {
             Invoke-DockerCompose @("stop")
+            Stop-GdtHostController
         } else {
             Invoke-DockerCompose (@("stop") + $ResolvedServices)
         }
@@ -135,6 +183,14 @@ switch ($Action) {
             Invoke-DockerCompose @("logs", "--tail", "$Tail")
         } else {
             Invoke-DockerCompose (@("logs", "--tail", "$Tail") + $ResolvedServices)
+        }
+    }
+    "controller-status" {
+        $Controller = Get-ControllerProcess
+        if ($Controller) {
+            Write-Output "GDT host controller is running."
+        } else {
+            Write-Output "GDT host controller is stopped."
         }
     }
 }
