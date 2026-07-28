@@ -125,7 +125,7 @@ from backend.runtime.oie_result_listener import OieResultListener as RuntimeOieR
 from backend.runtime.lazy_wsgi import LazyWsgiApplication
 from backend.services.oie_settings import OieSettingsService, create_oie_management_client
 from backend.services.oie_diagnostics import OieRuntimeDiagnosticService
-from backend.dcm4chee_settings_composition import dcm4chee_settings_operations
+from backend.dcm4chee_settings_composition import dcm4chee_ecg_operations, dcm4chee_settings_operations
 from backend.settings_readiness_composition import create_settings_readiness_service
 from backend.services.oie_channel_lifecycle import OieManagedChannelLifecycleService, PreviewTokenCodec
 from backend.services.oie_channel_bootstrap import OieManagedChannelBootstrap
@@ -510,6 +510,7 @@ def create_app(database_path: str | None = None, *, dependency_receiver: Callabl
             profile_validator=validate_dcm4chee_profile,
         )
     )
+    app.register_blueprint(dcm4chee_ecg_operations(dependencies.dcm4chee_result_repository, effective_dcm4chee_profile))
     patient_service = PatientWorkflowService(
         dependencies.patient_repository,
         app.config,
