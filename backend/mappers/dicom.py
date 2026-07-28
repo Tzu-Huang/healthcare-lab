@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from backend.domain.ecg_waveform import SUPPORTED_SOP_CLASS_UIDS
 from backend.domain.statuses import (
     DCM4CHEE_MWL_OPERATION_CREATE,
     DCM4CHEE_MWL_VERIFICATION_NOT_VERIFIED,
@@ -20,6 +21,17 @@ def _json_value(value: str, fallback: Any) -> Any:
         return json.loads(value or "")
     except (TypeError, ValueError):
         return fallback
+
+
+def _dicom_json_first_value(dataset: Any, tag: str) -> str:
+    if not isinstance(dataset, dict):
+        return ""
+    attributes = dataset.get("attrs")
+    if isinstance(attributes, dict):
+        dataset = attributes
+    element = dataset.get(tag)
+    values = element.get("Value") if isinstance(element, dict) else None
+    return str(values[0]).strip() if isinstance(values, list) and values else ""
 
 
 def project_mwl_attempt(row: RowMapping) -> dict[str, Any]:
@@ -100,6 +112,16 @@ def project_result_record(row: RowMapping) -> dict[str, Any]:
     raw_metadata = _json_value(row["raw_metadata_json"], {})
     diagnostic = _json_value(row["diagnostic_payload_json"], {})
     artifact = raw_metadata.get("artifact") if isinstance(raw_metadata.get("artifact"), dict) else {}
+    has_instance_identity = all(
+        str(row[column] or "").strip()
+        for column in ("study_instance_uid", "series_instance_uid", "sop_instance_uid")
+    )
+    sop_class_uid = _dicom_json_first_value(raw_metadata, "00080016")
+    capabilities = {
+        "ecgGraph": bool(
+            has_instance_identity and sop_class_uid in SUPPORTED_SOP_CLASS_UIDS
+        )
+    }
     return {
         "id": row["id"],
         "resultKey": row["result_key"],
@@ -135,6 +157,7 @@ def project_result_record(row: RowMapping) -> dict[str, Any]:
         "source": raw_metadata.get("source", "") if isinstance(raw_metadata, dict) else "",
         "sourceType": raw_metadata.get("type", "") if isinstance(raw_metadata, dict) else "",
         "artifact": artifact,
+        "capabilities": capabilities,
         "refreshGeneration": row["refresh_generation"] if "refresh_generation" in row.keys() else "",
         "firstSeenAt": row["first_seen_at"],
         "lastRefreshedAt": row["last_refreshed_at"],
