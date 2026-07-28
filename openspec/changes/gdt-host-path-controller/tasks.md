@@ -19,6 +19,6 @@
 
 ## 4. Verification and Documentation
 
-- [ ] 4.1 Add backend, frontend, controller, wrapper, Compose, security-negative, and ownership contract tests.
+- [x] 4.1 Add backend, frontend, controller, wrapper, Compose, security-negative, and ownership contract tests.
 - [ ] 4.2 Verify clean start, retained restart, valid path change, watcher coordination, advanced-override conflict, controller restart, failed recreate, retry, and rollback on supported Docker Desktop for Windows.
-- [ ] 4.3 Update release and GDT operator documentation with the one-field workflow, controller trust boundary, precedence, diagnostics, fallback, and rollback procedures.
+- [x] 4.3 Update release and GDT operator documentation with the one-field workflow, controller trust boundary, precedence, diagnostics, fallback, and rollback procedures.
