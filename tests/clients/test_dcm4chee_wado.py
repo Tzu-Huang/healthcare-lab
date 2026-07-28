@@ -11,6 +11,7 @@ from backend.clients.dcm4chee_wado import (
     WadoRsUpstreamHttpError,
     retrieve_dicom_instance,
 )
+from backend.domain.integration_settings import dcm4chee_bootstrap_candidate
 
 
 class _Response:
@@ -78,12 +79,26 @@ class Dcm4cheeWadoTest(unittest.TestCase):
         )
 
     @patch("backend.clients.dcm4chee_wado.open_secured")
+    def test_rejects_missing_or_mismatched_multipart_related_type(self, open_secured):
+        body = b"--B\r\nContent-Type: application/dicom\r\n\r\nDICM\r\n--B--\r\n"
+        for content_type in (
+            "multipart/related; boundary=B",
+            'multipart/related; type="application/octet-stream"; boundary=B',
+        ):
+            with self.subTest(content_type=content_type):
+                open_secured.return_value = _Response(body, content_type)
+                with self.assertRaises(WadoRsMediaTypeError):
+                    retrieve_dicom_instance(self.profile, **self.uids)
+
+    @patch("backend.clients.dcm4chee_wado.open_secured")
     def test_rejects_multiple_multipart_parts(self, open_secured):
         body = (
             b"--B\r\nContent-Type: application/dicom\r\n\r\none\r\n"
             b"--B\r\nContent-Type: application/dicom\r\n\r\ntwo\r\n--B--\r\n"
         )
-        open_secured.return_value = _Response(body, "multipart/related; boundary=B")
+        open_secured.return_value = _Response(
+            body, 'multipart/related; type="application/dicom"; boundary=B'
+        )
 
         with self.assertRaises(WadoRsMultipartError):
             retrieve_dicom_instance(self.profile, **self.uids)
@@ -150,7 +165,9 @@ class Dcm4cheeWadoTest(unittest.TestCase):
 
     @patch("backend.clients.dcm4chee_wado.open_secured")
     def test_uses_profile_timeout_when_present(self, open_secured):
-        profile = {**self.profile, "timeoutSeconds": 7}
+        profile = dcm4chee_bootstrap_candidate(
+            {"DCM4CHEE_TIMEOUT_SECONDS": "7"}
+        ).fields
         open_secured.return_value = _Response(b"DICM", "application/dicom")
 
         retrieve_dicom_instance(profile, **self.uids)

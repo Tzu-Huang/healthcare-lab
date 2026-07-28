@@ -161,7 +161,8 @@ def _extract_dicom(content_type: str, body: bytes) -> bytes:
         return body
     if media_type != "multipart/related":
         raise WadoRsMediaTypeError("WADO-RS response was not DICOM media.")
-    if header.get_param("type", header="content-type") not in (None, "application/dicom"):
+    related_type = header.get_param("type", header="content-type")
+    if not isinstance(related_type, str) or related_type.lower() != "application/dicom":
         raise WadoRsMediaTypeError("WADO-RS multipart type was not application/dicom.")
     if not header.get_boundary():
         raise WadoRsMultipartError("WADO-RS multipart response had no boundary.")

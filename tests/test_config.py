@@ -18,6 +18,7 @@ class ApplicationConfigTest(unittest.TestCase):
         self.assertEqual("create-missing", config["OIE_BOOTSTRAP_MODE"])
         self.assertEqual(120.0, config["OIE_BOOTSTRAP_TIMEOUT_SECONDS"])
         self.assertEqual(2.0, config["OIE_BOOTSTRAP_RETRY_INTERVAL_SECONDS"])
+        self.assertEqual("30", config["DCM4CHEE_TIMEOUT_SECONDS"])
         self.assertEqual(str(Path("instance") / "gdt-bridge"), config["GDT_BRIDGE_PATH"])
 
     def test_explicit_database_and_environment_values_are_applied(self):
@@ -28,6 +29,7 @@ class ApplicationConfigTest(unittest.TestCase):
                 "PROJECT_MODE": "test",
                 "OIE_MLLP_ORDER_PORT": "7777",
                 "GDT_BRIDGE_IMPORT_SUCCESS_MODE": "delete",
+                "DCM4CHEE_TIMEOUT_SECONDS": "7",
             },
         )
 
@@ -35,6 +37,7 @@ class ApplicationConfigTest(unittest.TestCase):
         self.assertEqual("test", config["PROJECT_MODE"])
         self.assertEqual(7777, config["OIE_MLLP_ORDER_PORT"])
         self.assertEqual("delete", config["GDT_BRIDGE_IMPORT_SUCCESS_MODE"])
+        self.assertEqual("7", config["DCM4CHEE_TIMEOUT_SECONDS"])
 
     def test_explicit_bootstrap_configuration_is_applied(self):
         config = load_application_config("instance", environ={
