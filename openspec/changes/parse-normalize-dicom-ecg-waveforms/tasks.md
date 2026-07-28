@@ -21,5 +21,5 @@
 
 ## 4. Regression Verification
 
-- [ ] 4.1 Run the repository quality gate and architecture contract tests.
-- [ ] 4.2 Build or validate the application container dependency installation and record final verification evidence.
+- [x] 4.1 Run the repository quality gate and architecture contract tests.
+- [x] 4.2 Build or validate the application container dependency installation and record final verification evidence.
