@@ -212,8 +212,104 @@ function Invoke-Compose {
     }
 }
 
+function Invoke-DockerJson {
+    param([string[]] $Arguments)
+    $Output = & docker @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker inspection failed with exit code $LASTEXITCODE."
+    }
+    return (($Output | Out-String).Trim() | ConvertFrom-Json)
+}
+
+function Test-LabAppDeployment {
+    param([string] $HostPath)
+    $ComposeArguments = @("compose")
+    if (Test-Path -LiteralPath $EnvFile -PathType Leaf) {
+        $ComposeArguments += @("--env-file", $EnvFile)
+    }
+    $ComposeArguments += @("-f", $ComposeFile, "ps", "-q", "lab-app")
+    $ContainerId = (& docker @ComposeArguments 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($ContainerId)) {
+        throw "The replacement lab-app container is unavailable."
+    }
+    $Details = Invoke-DockerJson -Arguments @("inspect", $ContainerId)
+    $Container = @($Details)[0]
+    if (-not $Container.State.Running) {
+        throw "The replacement lab-app container is not running."
+    }
+    if ($Container.State.Health -and $Container.State.Health.Status -ne "healthy") {
+        throw "The replacement lab-app container is not healthy."
+    }
+    $Mount = @($Container.Mounts | Where-Object { $_.Destination -eq "/data/gdt-bridge" }) | Select-Object -First 1
+    if ($null -eq $Mount -or -not [IO.Path]::GetFullPath([string] $Mount.Source).Equals(
+        [IO.Path]::GetFullPath($HostPath), [StringComparison]::OrdinalIgnoreCase
+    )) {
+        throw "The effective /data/gdt-bridge mount does not match the requested host folder."
+    }
+
+    $Response = Invoke-RestMethod `
+        -Method Post `
+        -Uri "http://127.0.0.1:$LabAppPort/api/settings/gdt-bridge/diagnostics" `
+        -ContentType "application/json" `
+        -Body "{}" `
+        -TimeoutSec 5
+    if ([string] $Response.state -ne "healthy") {
+        throw "GDT role diagnostics did not report a healthy state."
+    }
+}
+
+function Confirm-LabAppDeployment {
+    param([string] $HostPath, [int] $Attempts = 12, [int] $DelayMilliseconds = 1000)
+    $LastError = $null
+    for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
+        try {
+            Test-LabAppDeployment -HostPath $HostPath
+            return
+        } catch {
+            $LastError = $_
+            if ($Attempt -lt $Attempts) {
+                Start-Sleep -Milliseconds $DelayMilliseconds
+            }
+        }
+    }
+    throw "Deployment verification failed after $Attempts attempts: $($LastError.Exception.Message)"
+}
+
+function Get-OperationFailure {
+    param([string] $Stage, [string] $Message)
+    switch ($Stage) {
+        "validating" {
+            return @{ errorCode = "invalid_host_path"; remediation = "Choose an existing absolute Windows folder dedicated to GDT exchange." }
+        }
+        "provisioning" {
+            return @{ errorCode = "host_path_provision_failed"; remediation = "Check the folder path and Windows write permissions, then retry." }
+        }
+        "persisting" {
+            return @{ errorCode = "host_path_conflict"; remediation = "Remove the GDT_BRIDGE_HOST_PATH process or .env override, then retry." }
+        }
+        "recreating" {
+            return @{ errorCode = "container_recreation_failed"; remediation = "Confirm Docker Desktop is running and inspect lab-app logs before retrying." }
+        }
+        "verifying" {
+            return @{ errorCode = "deployment_verification_failed"; remediation = "Inspect lab-app health, its GDT bind mount, and GDT diagnostics before retrying." }
+        }
+        default {
+            return @{ errorCode = "apply_failed"; remediation = "Review the controller message and retry the operation." }
+        }
+    }
+}
+
 function Set-Operation {
-    param([string] $Id, [string] $State, [string] $Stage, [string] $Message = "", [string] $HostPath = "")
+    param(
+        [string] $Id,
+        [string] $State,
+        [string] $Stage,
+        [string] $Message = "",
+        [string] $HostPath = "",
+        [string] $FailedStage = "",
+        [string] $ErrorCode = "",
+        [string] $Remediation = ""
+    )
     $Value = @{
         id = $Id
         state = $State
@@ -224,26 +320,33 @@ function Set-Operation {
     if ($HostPath) {
         $Value.hostPath = $HostPath
     }
+    if ($FailedStage) { $Value.failedStage = $FailedStage }
+    if ($ErrorCode) { $Value.errorCode = $ErrorCode }
+    if ($Remediation) { $Value.remediation = $Remediation }
     Write-JsonState -Path (Get-OperationPath $Id) -Value $Value
 }
 
 function Invoke-ApplyWorker {
     param([string] $Id)
     $RequestPath = Join-Path $RuntimeDir "operations\$Id.request.json"
+    $ActiveStage = "validating"
+    $HostPath = ""
     try {
         $Request = Read-JsonObject -Path $RequestPath
         if ($null -eq $Request) {
             throw "Apply request is unavailable."
         }
-        Set-Operation -Id $Id -State "running" -Stage "validating"
+        Set-Operation -Id $Id -State "running" -Stage $ActiveStage
         $HostPath = Resolve-GdtHostPath `
             -Value ([string] $Request.hostPath) `
             -RepoDir $RepoDir `
             -DeployDir $ScriptDir `
             -RequireAbsolute
-        Set-Operation -Id $Id -State "running" -Stage "provisioning" -HostPath $HostPath
+        $ActiveStage = "provisioning"
+        Set-Operation -Id $Id -State "running" -Stage $ActiveStage -HostPath $HostPath
         Initialize-GdtHostDirectories -Root $HostPath
-        Set-Operation -Id $Id -State "running" -Stage "persisting" -HostPath $HostPath
+        $ActiveStage = "persisting"
+        Set-Operation -Id $Id -State "running" -Stage $ActiveStage -HostPath $HostPath
         Write-JsonState -Path $StateFile -Value @{
             hostPath = $HostPath
             updatedAt = [DateTimeOffset]::UtcNow.ToString("o")
@@ -254,13 +357,19 @@ function Invoke-ApplyWorker {
         if ($Selection.Conflict) {
             throw "A higher-precedence process or .env override prevents the saved host path from becoming effective."
         }
-        Set-Operation -Id $Id -State "running" -Stage "recreating" -HostPath $HostPath
+        $ActiveStage = "recreating"
+        Set-Operation -Id $Id -State "running" -Stage $ActiveStage -HostPath $HostPath
         Invoke-Compose -Arguments @("up", "-d", "--force-recreate", "--no-deps", "lab-app") -HostPath $HostPath
-        Set-Operation -Id $Id -State "running" -Stage "verifying" -HostPath $HostPath
-        Invoke-Compose -Arguments @("ps", "lab-app") -HostPath $HostPath
+        $ActiveStage = "verifying"
+        Set-Operation -Id $Id -State "running" -Stage $ActiveStage -HostPath $HostPath
+        Confirm-LabAppDeployment -HostPath $HostPath
         Set-Operation -Id $Id -State "succeeded" -Stage "completed" -HostPath $HostPath
     } catch {
-        Set-Operation -Id $Id -State "failed" -Stage "failed" -Message $_.Exception.Message
+        $Failure = Get-OperationFailure -Stage $ActiveStage -Message $_.Exception.Message
+        Set-Operation `
+            -Id $Id -State "failed" -Stage "failed" -FailedStage $ActiveStage `
+            -Message $_.Exception.Message -HostPath $HostPath `
+            -ErrorCode $Failure.errorCode -Remediation $Failure.remediation
     } finally {
         Remove-Item -LiteralPath $RequestPath -Force -ErrorAction SilentlyContinue
     }
@@ -291,7 +400,12 @@ function Start-ApplyOperation {
 
 function Start-Controller {
     $Token = Get-ControllerToken
-    Write-AtomicUtf8 -Path $PidFile -Value "$PID"
+    Write-JsonState -Path $PidFile -Value @{
+        pid = $PID
+        scriptPath = [IO.Path]::GetFullPath($PSCommandPath)
+        repoDir = $RepoDir
+        startedAt = [DateTimeOffset]::UtcNow.ToString("o")
+    }
     $Listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
     try {
         $Listener.Start()

@@ -74,11 +74,42 @@ function Get-ControllerProcess {
     if (-not (Test-Path -LiteralPath $ControllerPidFile -PathType Leaf)) {
         return $null
     }
-    $ControllerPid = Get-Content -Raw -LiteralPath $ControllerPidFile
-    if ($ControllerPid -notmatch '^\d+$') {
+    try {
+        $Identity = Get-Content -Raw -LiteralPath $ControllerPidFile | ConvertFrom-Json
+    } catch {
+        Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
         return $null
     }
-    return Get-Process -Id ([int] $ControllerPid) -ErrorAction SilentlyContinue
+    if ($Identity.pid -notmatch '^\d+$' -or
+        -not ([string] $Identity.scriptPath).Equals(
+            [IO.Path]::GetFullPath($ControllerScript),
+            [StringComparison]::OrdinalIgnoreCase
+        ) -or
+        -not ([string] $Identity.repoDir).Equals(
+            [IO.Path]::GetFullPath($RepoDir),
+            [StringComparison]::OrdinalIgnoreCase
+        )) {
+        Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
+        return $null
+    }
+    $Controller = Get-Process -Id ([int] $Identity.pid) -ErrorAction SilentlyContinue
+    if (-not $Controller) {
+        Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
+        return $null
+    }
+    $CommandLine = if ($IsWindows -or $env:OS -eq "Windows_NT") {
+        (Get-CimInstance Win32_Process -Filter "ProcessId = $($Controller.Id)" -ErrorAction SilentlyContinue).CommandLine
+    } else {
+        (& ps -p $Controller.Id -o args= 2>$null | Out-String).Trim()
+    }
+    if ([string]::IsNullOrWhiteSpace($CommandLine) -or
+        $CommandLine.IndexOf([IO.Path]::GetFullPath($ControllerScript), [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+        $CommandLine.IndexOf("-Mode serve", [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+        $CommandLine.IndexOf([IO.Path]::GetFullPath($RepoDir), [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
+        return $null
+    }
+    return $Controller
 }
 
 function Start-GdtHostController {
