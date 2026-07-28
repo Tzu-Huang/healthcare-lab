@@ -137,6 +137,31 @@ class GdtHostControllerTests(unittest.TestCase):
         self.assertFalse((self.root / "safe").exists())
         self.assertFalse((self.root / "relative").exists())
 
+    def test_controller_records_installation_scoped_process_identity(self):
+        identity_path = self.root / "instance" / "deployment" / "gdt-controller.pid"
+        identity = json.loads(identity_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(self.process.pid, identity["pid"])
+        self.assertEqual(str(self.deploy / "gdt-host-controller.ps1"), identity["scriptPath"])
+        self.assertEqual(str(self.root), identity["repoDir"])
+
+    def test_worker_contract_verifies_state_mount_and_role_diagnostics(self):
+        source = (self.deploy / "gdt-host-controller.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("$Container.State.Running", source)
+        self.assertIn('$_.Destination -eq "/data/gdt-bridge"', source)
+        self.assertIn("/api/settings/gdt-bridge/diagnostics", source)
+        self.assertIn("Confirm-LabAppDeployment -HostPath $HostPath", source)
+
+    def test_failed_operation_contract_preserves_stage_and_remediation(self):
+        source = (self.deploy / "gdt-host-controller.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("failedStage = $FailedStage", source)
+        self.assertIn("errorCode = $ErrorCode", source)
+        self.assertIn("remediation = $Remediation", source)
+        for stage in ("validating", "provisioning", "persisting", "recreating", "verifying"):
+            self.assertIn(f'"{stage}"', source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -127,6 +127,20 @@ class DeployWrapperContractTests(unittest.TestCase):
         self.assertIn("controller is stopped", result.stdout)
         self.assertFalse(self.invocations.exists())
 
+    def test_stale_pid_identity_is_not_treated_as_owned_controller(self):
+        runtime = self.root / "instance" / "deployment"
+        runtime.mkdir(parents=True)
+        (runtime / "gdt-controller.pid").write_text(
+            '{"pid": 1, "scriptPath": "unrelated.ps1", "repoDir": "elsewhere"}',
+            encoding="utf-8",
+        )
+
+        result = self.run_wrapper("controller-status")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("controller is stopped", result.stdout)
+        self.assertFalse((runtime / "gdt-controller.pid").exists())
+
     def test_existing_env_file_is_passed_without_printing_its_values(self):
         canary = "wrapper-secret-canary-ZAC-77"
         (self.root / ".env").write_text(
