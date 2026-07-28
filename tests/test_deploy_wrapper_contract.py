@@ -22,6 +22,10 @@ class DeployWrapperContractTests(unittest.TestCase):
         self.deploy.mkdir()
         shutil.copy2(ROOT / "deploy" / "lab.ps1", self.deploy / "lab.ps1")
         shutil.copy2(
+            ROOT / "deploy" / "gdt-host-path.ps1",
+            self.deploy / "gdt-host-path.ps1",
+        )
+        shutil.copy2(
             ROOT / "deploy" / "docker-compose.yml",
             self.deploy / "docker-compose.yml",
         )
@@ -129,6 +133,8 @@ class DeployWrapperContractTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue((self.root / "instance" / "gdt-bridge").is_dir())
+        self.assertTrue((self.root / "instance" / "gdt-bridge" / "inbox").is_dir())
+        self.assertTrue((self.root / "instance" / "gdt-bridge" / "outbox").is_dir())
         self.assertIn("up -d lab-app", self.recorded_arguments()[0])
 
     def test_whole_stack_recreate_preserves_existing_gdt_content(self):
@@ -183,6 +189,40 @@ class DeployWrapperContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue((self.root / "exchange" / "from-process").is_dir())
         self.assertFalse((self.root / "exchange" / "from-file").exists())
+
+    def test_controller_state_precedes_default_but_not_env_file(self):
+        desired = self.root / "exchange" / "controller"
+        state = self.root / "instance" / "deployment"
+        state.mkdir(parents=True)
+        (state / "gdt-controller-state.json").write_text(
+            '{"hostPath": "' + str(desired).replace("\\", "\\\\") + '"}',
+            encoding="utf-8",
+        )
+
+        result = self.run_wrapper("start")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue((desired / "diagnostic").is_dir())
+        self.assertEqual(str(desired.resolve()), self.recorded_gdt_paths()[0])
+
+        override = self.root / "exchange" / "advanced"
+        (self.root / ".env").write_text(
+            f"GDT_BRIDGE_HOST_PATH={override}\n", encoding="utf-8"
+        )
+        result = self.run_wrapper("start")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(override.is_dir())
+
+    def test_parent_traversal_override_is_rejected(self):
+        (self.root / ".env").write_text(
+            "GDT_BRIDGE_HOST_PATH=exchange/../escape\n", encoding="utf-8"
+        )
+
+        result = self.run_wrapper("start")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("parent traversal", result.stderr)
+        self.assertFalse(self.invocations.exists())
 
     def test_broad_override_is_rejected_without_invoking_docker(self):
         canary = "unsafe-value-must-not-be-printed"
