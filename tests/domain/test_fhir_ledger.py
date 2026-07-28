@@ -18,7 +18,7 @@ class FhirLedgerDomainTests(unittest.TestCase):
         self.assertEqual(70, mappings["DiagnosticReport"]["dependencyOrder"])
         self.assertEqual("a-b-record", f"{identifier_token('A B')}-{identifier_token('')}")
         self.assertEqual(
-            "ORD-0042",
+            "ORD-000042",
             identifier_value("ServiceRequest", "local_order_records", 42),
         )
         values = normalize_record_payload({
@@ -26,7 +26,7 @@ class FhirLedgerDomainTests(unittest.TestCase):
             "resource": {"resourceType": "ServiceRequest", "status": "active"},
         })
         self.assertEqual("local_order_records", values["local_source_type"])
-        self.assertIn('"value": "ORD-0042"', values["resource_json"])
+        self.assertIn('"value": "ORD-000042"', values["resource_json"])
 
     def test_validation_rejects_unsupported_resources_and_bad_json(self):
         with self.assertRaisesRegex(SimulatorValidationError, "must be one of"):
