@@ -1,6 +1,6 @@
 ## 1. Host Controller Foundation
 
-- [ ] 1.1 Extract shared GDT host-root normalization, safety validation, directory provisioning, and precedence logic from the deployment wrapper with unit contract coverage.
+- [x] 1.1 Extract shared GDT host-root normalization, safety validation, directory provisioning, and precedence logic from the deployment wrapper with unit contract coverage.
 - [ ] 1.2 Implement the loopback-only PowerShell controller with fixed status/apply schemas, strict origin/header/token authorization, redacted logging, and single-operation coordination.
 - [ ] 1.3 Add atomic controller-owned deployment-state and authorization-file management under an ignored host-local runtime directory.
 
