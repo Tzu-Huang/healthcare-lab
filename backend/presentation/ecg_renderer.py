@@ -34,6 +34,9 @@ MAX_VOLTAGE_GAIN_MM_MV: Final = 100.0
 MAX_SAMPLES_PER_LEAD: Final = 10_000
 MAX_RENDER_DURATION_SECONDS: Final = 10.0
 FIGURE_DPI: Final = 100.0
+DISPLAY_HALF_RANGE_MV: Final = 2.0
+DISPLAY_ROW_PITCH_MV: Final = DISPLAY_HALF_RANGE_MV * 2
+AMPLITUDE_WARNING: Final = "Amplitude exceeds fixed display range (+/- 2 mV)"
 
 # Matplotlib documents that it is not thread-safe. Gunicorn may invoke this
 # module from multiple threads, so the complete Figure lifecycle is serialized
@@ -57,11 +60,13 @@ class EcgRenderConfig:
     physical millimetre dimensions in a browser or on a printer.
     """
 
-    width_px: int = 1200
-    height_px: int = 1600
+    # At the default calibration, these dimensions preserve equal nominal
+    # millimetres on both axes for two 10-second columns and six 4 mV lanes.
+    width_px: int = 1600
+    height_px: int = 800
     paper_speed_mm_s: float = 25.0
     voltage_gain_mm_mv: float = 10.0
-    center_baseline: bool = False
+    center_baseline: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,46 +99,72 @@ def render_ecg(
             facecolor="white",
         )
         canvas = FigureCanvasSVG(figure)
-        axes = figure.subplots(6, 2, squeeze=False)
+        axis = figure.subplots(1, 1)
         channels = {channel.lead: channel for channel in waveform.channels}
-
+        columns = 2
+        rows = len(CANONICAL_LEADS) // columns
+        column_gap_seconds = 0.25
+        prepared: list[tuple[str, tuple[float, ...]]] = []
         for index, lead in enumerate(CANONICAL_LEADS):
-            axis = axes[index % 6][index // 6]
             samples = channels[lead].samples_mv
             display_samples = _display_samples(samples, config.center_baseline)
-            sample_count = len(display_samples)
-            times = tuple(
-                sample_index / waveform.sampling_frequency_hz
-                for sample_index in range(sample_count)
-            )
-            duration = max(sample_count / waveform.sampling_frequency_hz, 1e-9)
+            prepared.append((lead, display_samples))
 
-            axis.plot(times, display_samples, color="#111111", linewidth=0.7)
-            axis.set_xlim(0.0, duration)
-            _set_voltage_limits(axis, display_samples, config.voltage_gain_mm_mv)
-            _configure_grid(
-                axis,
-                duration,
-                config.paper_speed_mm_s,
-                config.voltage_gain_mm_mv,
+        duration = max(
+            len(prepared[0][1]) / waveform.sampling_frequency_hz,
+            1e-9,
+        )
+        row_pitch_mv = DISPLAY_ROW_PITCH_MV
+        total_width = (duration * columns) + column_gap_seconds
+        top_offset = (rows - 1) * row_pitch_mv
+        amplitude_clipped = any(
+            abs(value) > DISPLAY_HALF_RANGE_MV
+            for _, samples in prepared
+            for value in samples
+        )
+        axis.set_autoscale_on(False)
+        axis.set_xlim(0.0, total_width)
+        axis.set_ylim(-row_pitch_mv * 0.55, top_offset + row_pitch_mv * 0.55)
+        _configure_grid(
+            axis,
+            total_width,
+            config.paper_speed_mm_s,
+            config.voltage_gain_mm_mv,
+        )
+
+        for index, (lead, display_samples) in enumerate(prepared):
+            column = index // rows
+            row = index % rows
+            x_offset = column * (duration + column_gap_seconds)
+            y_offset = top_offset - (row * row_pitch_mv)
+            times = tuple(
+                x_offset + (sample_index / waveform.sampling_frequency_hz)
+                for sample_index in range(len(display_samples))
             )
+            shifted_samples = tuple(value + y_offset for value in display_samples)
+            axis.plot(times, shifted_samples, color="#111111", linewidth=0.7)
             axis.text(
-                0.01,
-                0.94,
+                x_offset + (duration * 0.01),
+                y_offset + (row_pitch_mv * 0.38),
                 lead,
-                transform=axis.transAxes,
                 ha="left",
                 va="top",
                 fontsize=10,
                 fontweight="bold",
                 color="#111111",
             )
-            axis.tick_params(labelbottom=False, labelleft=False, length=0)
-            for spine in axis.spines.values():
-                spine.set_visible(False)
+
+        axis.axvline(
+            duration + (column_gap_seconds / 2),
+            color="#c98989",
+            linewidth=0.8,
+        )
+        axis.tick_params(labelbottom=False, labelleft=False, length=0)
+        for spine in axis.spines.values():
+            spine.set_visible(False)
 
         figure.subplots_adjust(
-            left=0.035, right=0.985, top=0.975, bottom=0.055, wspace=0.08, hspace=0.18
+            left=0.025, right=0.99, top=0.98, bottom=0.065
         )
         figure.text(
             0.5,
@@ -144,6 +175,17 @@ def render_ecg(
             fontsize=10,
             color="#7a1f1f",
         )
+        if amplitude_clipped:
+            figure.text(
+                0.99,
+                0.018,
+                AMPLITUDE_WARNING,
+                ha="right",
+                va="bottom",
+                fontsize=9,
+                color="#b42318",
+                fontweight="bold",
+            )
         canvas.print_svg(buffer, metadata={"Description": DISCLAIMER})
         rendered = RenderedEcg(buffer.getvalue())
     except EcgRenderError as exc:
@@ -257,20 +299,6 @@ def _display_samples(samples: tuple[float, ...], center: bool) -> tuple[float, .
         return samples
     baseline = median(samples)
     return tuple(value - baseline for value in samples)
-
-
-def _set_voltage_limits(axis: object, samples: tuple[float, ...], gain: float) -> None:
-    # Five nominal millimetres per major division. At the conventional default
-    # gain this is 0.5 mV per division.
-    major_mv = 5.0 / gain
-    lower = min(samples)
-    upper = max(samples)
-    padding = major_mv
-    low_limit = major_mv * (int((lower - padding) // major_mv))
-    high_limit = major_mv * ceil((upper + padding) / major_mv)
-    if low_limit == high_limit:
-        high_limit += major_mv
-    axis.set_ylim(low_limit, high_limit)
 
 
 def _configure_grid(axis: object, duration: float, speed: float, gain: float) -> None:

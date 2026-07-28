@@ -15,6 +15,8 @@ from matplotlib.backends.backend_svg import FigureCanvasSVG
 
 from backend.domain.ecg_waveform import CANONICAL_LEADS, EcgChannel, EcgWaveform
 from backend.presentation.ecg_renderer import (
+    AMPLITUDE_WARNING,
+    DISPLAY_ROW_PITCH_MV,
     EcgRenderConfig,
     EcgRenderConfigError,
     EcgRenderError,
@@ -73,11 +75,11 @@ class EcgRendererContractTest(unittest.TestCase):
     def test_defaults_are_immutable_and_documented(self):
         config = EcgRenderConfig()
 
-        self.assertEqual(config.width_px, 1200)
-        self.assertEqual(config.height_px, 1600)
+        self.assertEqual(config.width_px, 1600)
+        self.assertEqual(config.height_px, 800)
         self.assertEqual(config.paper_speed_mm_s, 25.0)
         self.assertEqual(config.voltage_gain_mm_mv, 10.0)
-        self.assertFalse(config.center_baseline)
+        self.assertTrue(config.center_baseline)
         with self.assertRaises(FrozenInstanceError):
             config.width_px = 800
 
@@ -132,6 +134,61 @@ class EcgRendererContractTest(unittest.TestCase):
         self.assertEqual(len(trace_axes), 12)
         self.assertAlmostEqual(trace_axes[0][1] - trace_axes[0][0], 1 / 250.0)
         self.assertAlmostEqual(trace_axes[0][-1], 99 / 250.0)
+
+    def test_all_twelve_leads_share_one_integrated_plot_axis(self):
+        observed_axes = []
+        original_plot = Axes.plot
+
+        def recording_plot(axis, *args, **kwargs):
+            observed_axes.append(axis)
+            return original_plot(axis, *args, **kwargs)
+
+        with patch.object(Axes, "plot", new=recording_plot):
+            render_ecg(make_waveform())
+
+        self.assertEqual(len(observed_axes), 12)
+        self.assertEqual(len({id(axis) for axis in observed_axes}), 1)
+
+    def test_vertical_display_scale_is_fixed_across_waveform_amplitudes(self):
+        observed_limits = []
+        original_set_ylim = Axes.set_ylim
+
+        def recording_set_ylim(axis, bottom=None, top=None, *args, **kwargs):
+            observed_limits.append((bottom, top))
+            return original_set_ylim(axis, bottom, top, *args, **kwargs)
+
+        with patch.object(Axes, "set_ylim", new=recording_set_ylim):
+            render_ecg(make_waveform(offset=0.0))
+            render_ecg(make_waveform(offset=50.0))
+
+        expected = (
+            -DISPLAY_ROW_PITCH_MV * 0.55,
+            (5 * DISPLAY_ROW_PITCH_MV) + (DISPLAY_ROW_PITCH_MV * 0.55),
+        )
+        self.assertEqual(observed_limits, [expected, expected])
+
+    def test_out_of_range_amplitude_is_not_auto_scaled_and_emits_warning(self):
+        waveform = make_waveform(offset=0.0)
+        oversized_samples = tuple(value * 5 for value in waveform.channels[0].samples_mv)
+        oversized = EcgWaveform(
+            channels=(
+                EcgChannel(
+                    waveform.channels[0].lead,
+                    waveform.channels[0].source_code,
+                    oversized_samples,
+                ),
+                *waveform.channels[1:],
+            ),
+            sampling_frequency_hz=waveform.sampling_frequency_hz,
+            duration_seconds=waveform.duration_seconds,
+            sop_class_uid=waveform.sop_class_uid,
+            unit=waveform.unit,
+            display_metadata=waveform.display_metadata,
+        )
+
+        text = svg_text(render_ecg(oversized))
+
+        self.assertIn(AMPLITUDE_WARNING, text)
 
     def test_renderer_source_excludes_prototype_and_process_global_apis(self):
         import backend.presentation.ecg_renderer as renderer
