@@ -20,6 +20,7 @@ def valid_payload() -> dict:
         "displayName": "Local archive",
         "environmentName": "test",
         "webUiUrl": "http://127.0.0.1:8082/dcm4chee-arc/ui2",
+        "timeoutSeconds": 30,
         "dimse": {
             "host": "dcm4chee",
             "port": 11112,
@@ -120,6 +121,25 @@ class Dcm4cheeSettingsTests(unittest.TestCase):
         )
         self.assertIn(("uidRoot", "invalid_uid_root"), result)
 
+    def test_timeout_is_required_and_bounded(self):
+        for value in (None, True, 0, 301, 1.5):
+            with self.subTest(value=value):
+                payload = valid_payload()
+                if value is None:
+                    payload.pop("timeoutSeconds")
+                else:
+                    payload["timeoutSeconds"] = value
+
+                with self.assertRaises(TypedSettingsValidationError) as caught:
+                    validate_profile("dcm4chee", payload)
+
+                self.assertTrue(
+                    any(
+                        issue.field == "timeoutSeconds"
+                        for issue in caught.exception.issues
+                    )
+                )
+
     def test_nested_unknown_fields_and_hl7_separators_are_rejected(self):
         payload = valid_payload()
         payload["security"]["password"] = "must-not-be-public"
@@ -201,18 +221,21 @@ class Dcm4cheeSettingsTests(unittest.TestCase):
                 "DCM4CHEE_HL7_PORT": "2576",
                 "DCM4CHEE_TLS_ENABLED": "false",
                 "DCM4CHEE_TLS_VERIFY": "false",
+                "DCM4CHEE_TIMEOUT_SECONDS": "7",
             }
         )
         self.assertEqual(11113, profile.fields["dimse"]["port"])
         self.assertEqual(2576, profile.fields["hl7"]["port"])
         self.assertFalse(profile.fields["security"]["tlsEnabled"])
         self.assertFalse(profile.fields["security"]["tlsVerify"])
+        self.assertEqual(7, profile.fields["timeoutSeconds"])
 
     def test_bootstrap_local_security_defaults_are_valid_without_overrides(self):
         profile = dcm4chee_bootstrap_candidate({})
 
         self.assertFalse(profile.fields["security"]["tlsEnabled"])
         self.assertFalse(profile.fields["security"]["tlsVerify"])
+        self.assertEqual(30, profile.fields["timeoutSeconds"])
         self.assertEqual(profile, validate_profile("dcm4chee", profile.fields))
 
 
