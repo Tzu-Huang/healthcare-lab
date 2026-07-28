@@ -30,7 +30,9 @@
         "repository_evidence": "binary is locally excluded by .git/info/exclude; no tracked history establishes its origin"
       },
       "deidentification": {
-        "status": "unresolved",
+        "status": "synthetic-confirmed",
+        "confirmation_source": "User confirmation in ZAC-96 development session on 2026-07-28",
+        "contains_real_patient_data": false,
         "patient_identity_removed": false,
         "method_documented": false,
         "identity_attributes_present": [
@@ -44,7 +46,7 @@
         ]
       },
       "handling": {
-        "classification": "local-only",
+        "classification": "synthetic-local-test",
         "excluded_from_source_control": true,
         "sanitized_derivative": null
       },
@@ -70,7 +72,9 @@
         "repository_evidence": "binary is locally excluded by .git/info/exclude; no tracked history establishes its origin"
       },
       "deidentification": {
-        "status": "unresolved",
+        "status": "synthetic-confirmed",
+        "confirmation_source": "User confirmation in ZAC-96 development session on 2026-07-28",
+        "contains_real_patient_data": false,
         "patient_identity_removed": false,
         "method_documented": false,
         "identity_attributes_present": [
@@ -84,7 +88,7 @@
         ]
       },
       "handling": {
-        "classification": "local-only",
+        "classification": "synthetic-local-test",
         "excluded_from_source_control": true,
         "sanitized_derivative": null
       },

@@ -26,16 +26,18 @@ release fixture contract, not every DICOM object in either SOP Class.
 
 ## Fixture safety policy
 
-Only a sanitized synthetic fixture listed in the repository's machine-readable
-fixture manifest may be used. Before use, verify its recorded hash and confirm
-that the de-identification check passes without printing attribute values.
+Only a synthetic fixture listed in the repository's machine-readable fixture
+manifest may be used. Before use, verify its recorded hash and confirm that the
+manifest records either de-identification or an explicit synthetic-data
+confirmation without printing attribute values.
 
 - Keep source or unresolved DICOM files outside the repository and outside
   shared storage.
 - Do not upload real patient data or copy raw DICOM metadata into screenshots,
   test output, tickets, or logs.
-- If provenance, identity review, or hash validation is missing, stop and mark
-  the fixture **blocked**. Do not continue with that file.
+- If synthetic-data confirmation, identity review, or hash validation is
+  missing, stop and mark the fixture **blocked**. Do not continue with that
+  file.
 - Store acceptance evidence as bounded pass/fail observations and identifiers;
   never attach the DICOM payload.
 
@@ -86,7 +88,7 @@ Run the checklist once for each supported SOP Class. Evidence status is
 | Twelve-lead ECG outcome | Pending |
 | General ECG outcome | Pending |
 
-For each sanitized synthetic fixture:
+For each confirmed synthetic fixture:
 
 1. Store the fixture in dcm4chee through the controlled lab ingestion path,
    then open Healthcare Lab and refresh dcm4chee results.

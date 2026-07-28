@@ -50,12 +50,22 @@ def validate_manifest(manifest_path: Path = DEFAULT_MANIFEST) -> list[str]:
 
         deident = entry["deidentification"]
         handling = entry["handling"]
-        if present and (
-            deident["status"] != "unresolved"
-            or handling["classification"] != "local-only"
-            or not handling["excluded_from_source_control"]
-        ):
-            errors.append(f"{name}: unsafe fixture handling classification")
+        if present:
+            synthetic_confirmed = (
+                deident["status"] == "synthetic-confirmed"
+                and deident.get("contains_real_patient_data") is False
+                and bool(deident.get("confirmation_source"))
+                and handling["classification"] == "synthetic-local-test"
+            )
+            unresolved_local_only = (
+                deident["status"] == "unresolved"
+                and handling["classification"] == "local-only"
+            )
+            if (
+                not (synthetic_confirmed or unresolved_local_only)
+                or not handling["excluded_from_source_control"]
+            ):
+                errors.append(f"{name}: unsafe fixture handling classification")
         if bool(getattr(dataset, "PatientIdentityRemoved", "")) != bool(
             deident["patient_identity_removed"]
         ):
@@ -121,7 +131,7 @@ def main() -> int:
         for error in errors:
             print(error)
         return 1
-    print("ECG fixture contract valid (2 local-only fixtures; PHI values suppressed)")
+    print("ECG fixture contract valid (2 synthetic local-test fixtures; values suppressed)")
     return 0
 
 

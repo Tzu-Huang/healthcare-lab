@@ -5,21 +5,16 @@
 - Result: pass
 - ECG and dcm4chee unit/integration/frontend/documentation suite: 96 tests
   passed.
-- Fixture manifest validator: passed for both local-only source files with PHI
-  values suppressed.
+- Fixture manifest validator: passed for both synthetic local-test source files
+  with attribute values suppressed.
 - Runtime dependency import: pydicom 3.0.2 and Matplotlib 3.11.1.
 - OpenSpec strict validation: passed.
 - Git diff hygiene: passed.
 
-## Environment-dependent manual verification
+## Fixture safety clarification
 
-- Status: blocked, not executed.
-- Reason: both supplied source DICOM files contain identifying attributes and
-  have no positive de-identification declaration or documented method.
-- Safety decision: the sources remain local-only and excluded from source
-  control and acceptance evidence. They MUST NOT be uploaded to a shared
-  dcm4chee instance.
-- Unblock condition: produce or obtain reviewed sanitized synthetic derivatives
-  for both SOP Classes, record their hashes and invariant checks in the
-  manifest, then execute the bounded checklist in
-  `docs/ecg-viewer-verification.md`.
+- The user confirmed on 2026-07-28 that both supplied files contain synthetic
+  test identities and no real patient data.
+- The source binaries remain excluded from source control, while their hashes,
+  synthetic confirmation, identifying-attribute names, and waveform invariants
+  remain recorded in the manifest.

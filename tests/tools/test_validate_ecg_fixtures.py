@@ -27,13 +27,17 @@ class EcgFixtureManifestValidationTest(unittest.TestCase):
             ["12lead_ecg_waveform.dcm: content hash drift"],
         )
 
-    def test_manifest_never_records_identity_values(self):
+    def test_manifest_records_synthetic_confirmation_without_identity_values(self):
         manifest = json.loads(DEFAULT_MANIFEST.read_text(encoding="utf-8"))
 
         for fixture in manifest["fixtures"]:
             deidentification = fixture["deidentification"]
-            self.assertEqual(deidentification["status"], "unresolved")
-            self.assertEqual(fixture["handling"]["classification"], "local-only")
+            self.assertEqual(deidentification["status"], "synthetic-confirmed")
+            self.assertFalse(deidentification["contains_real_patient_data"])
+            self.assertIn("User confirmation", deidentification["confirmation_source"])
+            self.assertEqual(
+                fixture["handling"]["classification"], "synthetic-local-test"
+            )
             self.assertTrue(fixture["handling"]["excluded_from_source_control"])
             self.assertNotIn("identity_values", deidentification)
 
