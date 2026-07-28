@@ -129,7 +129,11 @@ summary. It is not a diagnostic workstation and does not provide validated
 measurement tools, diagnostic interpretation, morphology verification, or a
 clinical report.
 
-Zoom, calipers, annotations, print layout, and export are explicitly deferred
-follow-up scope. Create separate Linear issues for those capabilities when they
-are prioritized; do not add them to this verification change. No follow-up
-issues are created by this guide.
+The following capabilities are explicitly deferred; do not add them to this
+verification change:
+
+- Zoom controls: ZAC-97
+- ECG calipers and measurements: ZAC-98
+- Viewer annotations: ZAC-99
+- ECG print layout: ZAC-100
+- Graph export: ZAC-101
