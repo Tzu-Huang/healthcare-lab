@@ -19,6 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MEDPLUM_DEFAULT_AUTH_GRACE_SECONDS = 300
 MEDPLUM_DEFAULT_TIMEOUT_SECONDS = 10
 DCM4CHEE_PROFILE_NAME = "local-dcm4chee"
+DCM4CHEE_DEFAULT_TIMEOUT_SECONDS = 30
 GDT_BRIDGE_SUCCESS_MODES = {"archive", "delete"}
 GDT_FILENAME_PROFILES = {"permissive", "gdt21", "gdt35"}
 OIE_SETTINGS_PROFILE_NAME = "local-oie"
@@ -357,6 +358,9 @@ def load_application_config(
         "DCM4CHEE_ENVIRONMENT_NAME": env.get("DCM4CHEE_ENVIRONMENT_NAME", "local-docker").strip(),
         "DCM4CHEE_WEB_UI_URL": env.get(
             "DCM4CHEE_WEB_UI_URL", "http://127.0.0.1:8082/dcm4chee-arc/ui2"
+        ).strip(),
+        "DCM4CHEE_TIMEOUT_SECONDS": env.get(
+            "DCM4CHEE_TIMEOUT_SECONDS", str(DCM4CHEE_DEFAULT_TIMEOUT_SECONDS)
         ).strip(),
         "DCM4CHEE_DIMSE_HOST": env.get("DCM4CHEE_DIMSE_HOST", "127.0.0.1").strip(),
         "DCM4CHEE_DIMSE_PORT": env.get("DCM4CHEE_DIMSE_PORT", "11112").strip(),

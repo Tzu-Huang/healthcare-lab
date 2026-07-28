@@ -42,9 +42,11 @@ GDT_BRIDGE_FIELDS = frozenset(
 )
 DCM4CHEE_PROFILE_TYPE = "dcm4chee"
 DCM4CHEE_PROFILE_NAME = "local-dcm4chee"
-DCM4CHEE_SCHEMA_VERSION = 1
+DCM4CHEE_SCHEMA_VERSION = 2
 DCM4CHEE_AUTH_MODES = frozenset({"none", "basic", "bearer", "oauth2", "mtls"})
 DCM4CHEE_DEFAULT_UID_ROOT = "1.2.826.0.1.3680043.10.543"
+DCM4CHEE_DEFAULT_TIMEOUT_SECONDS = 30
+DCM4CHEE_MAX_TIMEOUT_SECONDS = 300
 DCM4CHEE_FIELDS = frozenset(
     {
         "enabled",
@@ -58,6 +60,7 @@ DCM4CHEE_FIELDS = frozenset(
         "dicomweb",
         "viewer",
         "uidRoot",
+        "timeoutSeconds",
         "security",
     }
 )
@@ -276,6 +279,26 @@ def validate_dcm4chee_settings_profile(payload: Mapping[str, Any]) -> TypedProfi
     if web_issue:
         issues.append(web_issue)
     canonical["webUiUrl"] = str(web_ui_url or "").strip().rstrip("/")
+    raw_timeout = payload.get("timeoutSeconds")
+    if (
+        not isinstance(raw_timeout, int)
+        or isinstance(raw_timeout, bool)
+        or not 1 <= raw_timeout <= DCM4CHEE_MAX_TIMEOUT_SECONDS
+    ):
+        timeout_seconds = 0
+        issues.append(
+            _dcm4chee_issue(
+                "timeoutSeconds",
+                "invalid_bounded_integer",
+                (
+                    "timeoutSeconds must be an integer between "
+                    f"1 and {DCM4CHEE_MAX_TIMEOUT_SECONDS}."
+                ),
+            )
+        )
+    else:
+        timeout_seconds = raw_timeout
+    canonical["timeoutSeconds"] = timeout_seconds
 
     nested: dict[str, Mapping[str, Any]] = {}
     for section, allowed in _DCM4CHEE_NESTED_FIELDS.items():
@@ -566,6 +589,9 @@ def dcm4chee_bootstrap_candidate(configuration: Mapping[str, Any]) -> TypedProfi
                 "DCM4CHEE_ENVIRONMENT_NAME", "local-docker"
             ),
             "webUiUrl": web_ui_url,
+            "timeoutSeconds": legacy_int(
+                "DCM4CHEE_TIMEOUT_SECONDS", DCM4CHEE_DEFAULT_TIMEOUT_SECONDS
+            ),
             "dimse": {
                 "host": configuration.get("DCM4CHEE_DIMSE_HOST", "dcm4chee"),
                 "port": legacy_int("DCM4CHEE_DIMSE_PORT", 11112),
