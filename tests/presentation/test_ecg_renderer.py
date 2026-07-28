@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import MappingProxyType
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_svg import FigureCanvasSVG
@@ -39,9 +39,9 @@ SOURCE_CODES = (
 DISCLAIMER = "For demonstration only - not for diagnostic use"
 
 
-def make_waveform(*, sampling_frequency_hz=500.0, offset=0.0):
+def make_waveform(*, sampling_frequency_hz=500.0, offset=0.0, sample_count=100):
     samples = tuple(
-        math.sin(index / 7.0) + offset for index in range(100)
+        math.sin(index / 7.0) + offset for index in range(sample_count)
     )
     channels = tuple(
         EcgChannel(lead, code, samples)
@@ -182,6 +182,30 @@ class EcgRenderValidationTest(unittest.TestCase):
                             make_waveform(),
                             EcgRenderConfig(**{field: value}),
                         )
+
+    def test_rejects_oversized_workloads_before_lock_or_figure_allocation(self):
+        import backend.presentation.ecg_renderer as renderer
+
+        workloads = (
+            make_waveform(sampling_frequency_hz=1_000.0, sample_count=10_001),
+            make_waveform(sampling_frequency_hz=500.0, sample_count=5_001),
+        )
+        fake_lock = Mock()
+
+        with (
+            patch.object(renderer, "_RENDER_LOCK", fake_lock),
+            patch.object(renderer, "Figure") as figure,
+        ):
+            for waveform in workloads:
+                with self.subTest(
+                    samples=len(waveform.channels[0].samples_mv),
+                    frequency=waveform.sampling_frequency_hz,
+                ):
+                    with self.assertRaises(EcgRenderError):
+                        render_ecg(waveform)
+
+        fake_lock.acquire.assert_not_called()
+        figure.assert_not_called()
 
 
 class EcgRenderResourceSafetyTest(unittest.TestCase):
