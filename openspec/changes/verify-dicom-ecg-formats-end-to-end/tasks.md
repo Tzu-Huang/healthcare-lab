@@ -9,7 +9,7 @@
 - [x] 2.1 Add persisted-result-to-viewer tests for both SOP Classes through controlled bare and multipart WADO-RS responses.
 - [x] 2.2 Assert canonical leads, 10,000 samples per channel, 1,000 Hz, 10 seconds, microvolt-to-millivolt calibration, SVG labels, viewer summary, and safety classification.
 - [x] 2.3 Add disclosure-safe regression cases for non-ECG DICOM, missing Waveform Sequence, wrong units, truncated samples, malformed multipart data, upstream failures, and unknown results.
-- [ ] 2.4 Add authorization and unconfigured-profile coverage without exposing credentials, endpoints, internal paths, raw metadata, or upstream payloads.
+- [x] 2.4 Add authorization and unconfigured-profile coverage without exposing credentials, endpoints, internal paths, raw metadata, or upstream payloads.
 
 ## 3. Compatibility and Deployment Verification
 

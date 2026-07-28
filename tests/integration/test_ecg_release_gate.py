@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from io import BytesIO
 from struct import pack
+from types import SimpleNamespace
 from unittest.mock import patch
 import socket
+import urllib.error
 
 from pydicom import dcmread
 
@@ -242,6 +244,56 @@ class EcgReleaseGateTests(ApiCaseSupport):
             "127.0.0.1",
         ):
             self.assertNotIn(forbidden, response_text)
+
+    @patch("backend.clients.dcm4chee_wado.open_secured")
+    def test_unauthorized_and_unconfigured_profiles_fail_without_disclosure(
+        self, open_secured
+    ):
+        result = self._create_result()
+        open_secured.side_effect = urllib.error.HTTPError(
+            "http://archive.invalid/secret-path",
+            401,
+            "credential rejected",
+            {"Authorization": "Basic MUST-NOT-LEAK"},
+            None,
+        )
+
+        unauthorized = self.client.get(
+            f"/api/dcm4chee/results/{result['id']}/ecg"
+        )
+
+        self.assertEqual(502, unauthorized.status_code)
+        self.assertEqual(
+            "dcm4chee_ecg_upstream_failed",
+            unauthorized.get_json()["error"]["code"],
+        )
+        for forbidden in (
+            "archive.invalid",
+            "secret-path",
+            "credential rejected",
+            "MUST-NOT-LEAK",
+            "401",
+        ):
+            self.assertNotIn(forbidden, unauthorized.get_data(as_text=True))
+
+        settings = self.app.extensions["integration_settings_service"]
+        with patch.object(
+            settings,
+            "get_effective",
+            return_value=SimpleNamespace(runtime_profile=lambda: {}),
+        ):
+            unconfigured = self.client.get(
+                f"/api/dcm4chee/results/{result['id']}/ecg"
+            )
+
+        self.assertEqual(502, unconfigured.status_code)
+        self.assertEqual(
+            "dcm4chee_ecg_upstream_failed",
+            unconfigured.get_json()["error"]["code"],
+        )
+        self.assertNotIn(
+            "dicomweb.wadoRsUrl", unconfigured.get_data(as_text=True)
+        )
 
     def test_viewer_summary_contract_is_stable_but_contains_no_archive_details(self):
         response = self.client.get("/viewer/ecg/42")
