@@ -10,6 +10,8 @@ from threading import RLock
 from typing import Any
 
 from backend.domain.integration_settings import (
+    DCM4CHEE_DEFAULT_TIMEOUT_SECONDS,
+    DCM4CHEE_PROFILE_TYPE,
     MEDPLUM_DEFAULT_TIMEOUT_SECONDS,
     MEDPLUM_DEFAULT_WEB_UI_URL,
     MEDPLUM_PROFILE_TYPE,
@@ -108,6 +110,40 @@ class IntegrationSettingsRepository:
                 fields["timeoutSeconds"] = MEDPLUM_DEFAULT_TIMEOUT_SECONDS
                 changed = True
             profile = validate_profile(MEDPLUM_PROFILE_TYPE, fields)
+            if not changed and int(row["schema_version"]) == profile.schema_version:
+                return False
+            connection.execute(
+                """UPDATE integration_settings_profiles
+                SET schema_version = ?, public_payload_json = ?,
+                    configuration_revision = configuration_revision + 1,
+                    updated_at = ?
+                WHERE id = ?""",
+                (
+                    profile.schema_version,
+                    json.dumps(profile.fields, sort_keys=True, separators=(",", ":")),
+                    timestamp,
+                    row["id"],
+                ),
+            )
+        return True
+
+    def migrate_dcm4chee_profile(self) -> bool:
+        """Idempotently add typed transport defaults without replacing operator data."""
+        timestamp = self._timestamp()
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                """SELECT id, schema_version, public_payload_json
+                FROM integration_settings_profiles WHERE profile_type = ?""",
+                (DCM4CHEE_PROFILE_TYPE,),
+            ).fetchone()
+            if row is None:
+                return False
+            fields = json.loads(row["public_payload_json"])
+            changed = False
+            if "timeoutSeconds" not in fields:
+                fields["timeoutSeconds"] = DCM4CHEE_DEFAULT_TIMEOUT_SECONDS
+                changed = True
+            profile = validate_profile(DCM4CHEE_PROFILE_TYPE, fields)
             if not changed and int(row["schema_version"]) == profile.schema_version:
                 return False
             connection.execute(
