@@ -13,7 +13,7 @@
 
 ## 3. Compatibility and Deployment Verification
 
-- [ ] 3.1 Re-verify result refresh, reconciliation and grouping, generic viewer links, artifact actions, and capability-gated ECG actions with mixed result types.
+- [x] 3.1 Re-verify result refresh, reconciliation and grouping, generic viewer links, artifact actions, and capability-gated ECG actions with mixed result types.
 - [x] 3.2 Verify the supported local and container dependency installation paths parse and render both ECG formats without manual package installation.
 - [ ] 3.3 Run the relevant unit, integration, frontend, dependency, and disclosure-safety suites and record the exact tested commit.
 
