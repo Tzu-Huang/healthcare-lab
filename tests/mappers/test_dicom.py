@@ -85,7 +85,57 @@ class DicomMwlMapperTests(unittest.TestCase):
         self.assertEqual(projected["source"], "qido")
         self.assertEqual(projected["sourceType"], "instance")
         self.assertEqual(projected["artifact"], {"mime": "application/pdf"})
+        self.assertEqual(projected["capabilities"], {"ecgGraph": False})
         self.assertEqual(projected["refreshGeneration"], "generation-2")
+
+    def test_result_projection_requires_supported_sop_class_and_instance_identity_for_ecg(self):
+        columns = [
+            "id", "result_key", "patient_record_id", "order_record_id", "mapping_id", "profile_name",
+            "server_identity", "source_ae_title", "study_instance_uid", "series_instance_uid", "sop_instance_uid",
+            "accession_number", "patient_id", "issuer_of_patient_id", "requested_procedure_id",
+            "scheduled_procedure_step_id", "modality", "study_datetime", "series_datetime", "instance_datetime",
+            "viewer_url", "study_retrieve_url", "series_retrieve_url", "instance_retrieve_url",
+            "reconciliation_status", "match_method", "match_strength", "query_url", "query_payload_json",
+            "diagnostic_payload_json", "raw_metadata_json", "refresh_generation", "first_seen_at",
+            "last_refreshed_at", "created_at", "updated_at",
+        ]
+        row = {column: "" for column in columns}
+        row.update({
+            "id": 11,
+            "study_instance_uid": "1.2.3",
+            "series_instance_uid": "1.2.3.4",
+            "sop_instance_uid": "1.2.3.4.5",
+            "modality": "ECG",
+            "query_payload_json": "{}",
+            "diagnostic_payload_json": "{}",
+            "raw_metadata_json": (
+                '{"00080016":{"vr":"UI","Value":'
+                '["1.2.840.10008.5.1.4.1.1.9.1.1"]}}'
+            ),
+        })
+
+        self.assertEqual(
+            project_result_record(row)["capabilities"],
+            {"ecgGraph": True},
+        )
+
+        row["raw_metadata_json"] = (
+            '{"00080016":{"vr":"UI","Value":["1.2.840.10008.5.1.4.1.1.2"]}}'
+        )
+        self.assertEqual(
+            project_result_record(row)["capabilities"],
+            {"ecgGraph": False},
+        )
+
+        row["raw_metadata_json"] = (
+            '{"00080016":{"vr":"UI","Value":'
+            '["1.2.840.10008.5.1.4.1.1.9.1.1"]}}'
+        )
+        row["series_instance_uid"] = ""
+        self.assertEqual(
+            project_result_record(row)["capabilities"],
+            {"ecgGraph": False},
+        )
 
     def test_refresh_snapshot_projection_preserves_list_and_rejects_invalid_shapes(self):
         self.assertEqual(project_result_snapshot('[{"id":2},{"id":1}]'), [{"id": 2}, {"id": 1}])

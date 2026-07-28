@@ -80,6 +80,12 @@ export function dcm4cheeOpenButton(label, url) {
   return button;
 }
 
+export function dcm4cheeEcgViewerUrl(item, level = "study") {
+  const resultId = String(item?.id ?? "").trim();
+  if (level !== "instance" || item?.capabilities?.ecgGraph !== true || !resultId) return "";
+  return `/viewer/ecg/${encodeURIComponent(resultId)}`;
+}
+
 export function dcm4cheeActionsForResult(item, level = "study") {
   const actions = document.createElement("div");
   actions.className = "button-row compact-actions dcm4chee-result-actions";
@@ -94,6 +100,7 @@ export function dcm4cheeActionsForResult(item, level = "study") {
     dcm4cheeOpenButton("Open Artifact", artifactUrl),
     dcm4cheeCopyButton("Copy Artifact", artifactUrl || artifactPath),
     dcm4cheeOpenButton("Open Viewer", item.viewerUrl),
+    dcm4cheeOpenButton("View ECG Graph", dcm4cheeEcgViewerUrl(item, level)),
     dcm4cheeCopyButton("Copy Retrieve", retrieveUrl),
   ].filter(Boolean).forEach((button) => actions.appendChild(button));
   if (!actions.childElementCount) actions.appendChild(createElement("span", "-", "muted"));

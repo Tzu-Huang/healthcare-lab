@@ -34,4 +34,8 @@ def create_home_blueprint(configuration: Mapping[str, Any]) -> Blueprint:
             oie_result_port=configuration["OIE_MLLP_RESULT_PORT"],
         )
 
+    @blueprint.get("/viewer/ecg/<int:result_id>")
+    def ecg_viewer(result_id: int):
+        return render_template("ecg_viewer.html", result_id=result_id)
+
     return blueprint
