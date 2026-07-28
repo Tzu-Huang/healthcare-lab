@@ -26,5 +26,5 @@
 - [x] 4.2 Add tests proving non-default normalized sampling frequencies control time placement and no hard-coded prototype rate remains.
 - [x] 4.3 Add tests proving default and baseline-centered rendering do not mutate channels, calibrated mV samples, sampling frequency, or metadata.
 - [x] 4.4 Add typed-error tests for invalid dimensions, invalid paper speed, invalid voltage gain, and failures after resource allocation.
-- [ ] 4.5 Run the ECG domain and renderer suites, complete project regression suite, dependency checks, and strict OpenSpec validation.
-- [ ] 4.6 Audit the final implementation against the demo-only boundary and record that diagnostic display conformance, PNG/PDF, DICOM/JSON loading, Flask routes, frontend integration, Streamlit, and batch processing remain out of scope.
+- [x] 4.5 Run the ECG domain and renderer suites, complete project regression suite, dependency checks, and strict OpenSpec validation.
+- [x] 4.6 Audit the final implementation against the demo-only boundary and record that diagnostic display conformance, PNG/PDF, DICOM/JSON loading, Flask routes, frontend integration, Streamlit, and batch processing remain out of scope.
