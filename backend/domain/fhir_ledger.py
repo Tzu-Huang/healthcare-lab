@@ -94,7 +94,7 @@ def identifier_value(resource_type: str, local_source_type: str, local_source_id
     source_token = identifier_token(local_source_type or mapping["localSourceType"])
     source_id_token = identifier_token(local_source_id)
     if resource_type == "ServiceRequest" and source_token == "local-order-records" and source_id_token.isdigit():
-        return f"ORD-{int(source_id_token):04d}"
+        return f"ORD-{int(source_id_token):06d}"
     return (
         f"{source_token}-"
         f"{source_id_token}"
