@@ -35,6 +35,39 @@ class Dcm4cheeViewModuleTests(unittest.TestCase):
         self.assertIn('../api/dcm4chee.js', self.source)
         self.assertNotIn('/api/dcm4chee/', self.source)
 
+    def test_ecg_graph_action_requires_explicit_instance_capability_and_result_id(self):
+        url_helper = self.source.split(
+            "export function dcm4cheeEcgViewerUrl", 1
+        )[1].split("export function", 1)[0]
+        self.assertIn('level !== "instance"', url_helper)
+        self.assertIn("item?.capabilities?.ecgGraph !== true", url_helper)
+        self.assertIn('String(item?.id ?? "").trim()', url_helper)
+        self.assertIn(
+            "return `/viewer/ecg/${encodeURIComponent(resultId)}`",
+            url_helper,
+        )
+        self.assertNotIn("modality", url_helper)
+
+        actions_helper = self.source.split(
+            "export function dcm4cheeActionsForResult", 1
+        )[1].split("export function", 1)[0]
+        self.assertIn(
+            'dcm4cheeOpenButton("View ECG Graph", dcm4cheeEcgViewerUrl(item, level))',
+            actions_helper,
+        )
+        for preserved_action in (
+            '"Open Artifact"',
+            '"Copy Artifact"',
+            '"Open Viewer"',
+            '"Copy Retrieve"',
+        ):
+            self.assertIn(preserved_action, actions_helper)
+
+        open_helper = self.source.split(
+            "export function dcm4cheeOpenButton", 1
+        )[1].split("export function", 1)[0]
+        self.assertIn('window.open(url, "_blank", "noopener")', open_helper)
+
     def test_patient_order_table_uses_clinical_summary_columns(self):
         self.assertIn(
             '["Accession #", "MRN", "Status", "Created", "Action"]',

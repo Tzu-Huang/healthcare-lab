@@ -11,13 +11,13 @@
 
 ## 3. Result Action Integration
 
-- [ ] 3.1 Project or reuse an explicit display-safe ECG rendering capability and persisted result ID on dcm4chee instance result rows.
-- [ ] 3.2 Add capability-gated `View ECG Graph` to instance actions with `/viewer/ecg/<result-id>` construction and `noopener`.
-- [ ] 3.3 Preserve existing `Open Artifact`, `Open Viewer`, and retrieve/copy actions for supported and unsupported results.
+- [x] 3.1 Project or reuse an explicit display-safe ECG rendering capability and persisted result ID on dcm4chee instance result rows.
+- [x] 3.2 Add capability-gated `View ECG Graph` to instance actions with `/viewer/ecg/<result-id>` construction and `noopener`.
+- [x] 3.3 Preserve existing `Open Artifact`, `Open Viewer`, and retrieve/copy actions for supported and unsupported results.
 
 ## 4. Verification
 
-- [ ] 4.1 Add frontend tests for ECG action visibility, non-ECG suppression, result-ID URL construction, `noopener`, and generic action compatibility.
+- [x] 4.1 Add frontend tests for ECG action visibility, non-ECG suppression, result-ID URL construction, `noopener`, and generic action compatibility.
 - [ ] 4.2 Add viewer tests for direct navigation, reload-safe initialization, loading, successful graph/summary rendering, and SVG load failure.
 - [ ] 4.3 Add integration/contract tests for the viewer route and controlled not-found, unsupported/invalid-waveform, and upstream failure presentation.
 - [ ] 4.4 Run focused frontend and integration suites plus `openspec validate add-dcm4chee-ecg-viewer --strict`.
