@@ -60,7 +60,12 @@ function Get-ControllerToken {
     New-Item -ItemType Directory -Path $RuntimeDir -Force | Out-Null
     if (-not (Test-Path -LiteralPath $TokenFile -PathType Leaf)) {
         $Bytes = New-Object byte[] 32
-        [Security.Cryptography.RandomNumberGenerator]::Fill($Bytes)
+        $Generator = [Security.Cryptography.RandomNumberGenerator]::Create()
+        try {
+            $Generator.GetBytes($Bytes)
+        } finally {
+            $Generator.Dispose()
+        }
         Write-AtomicUtf8 -Path $TokenFile -Value ([Convert]::ToBase64String($Bytes))
     }
     return (Get-Content -Raw -LiteralPath $TokenFile).Trim()
@@ -80,22 +85,91 @@ function Test-AllowedOrigin {
 
 function Write-Response {
     param(
-        [Parameter(Mandatory = $true)] $Context,
+        [Parameter(Mandatory = $true)] $Client,
         [int] $StatusCode,
         [hashtable] $Body,
-        [string] $Origin = ""
+        [string] $Origin = "",
+        [hashtable] $AdditionalHeaders = @{}
     )
     $Json = $Body | ConvertTo-Json -Depth 8 -Compress
-    $Bytes = [Text.Encoding]::UTF8.GetBytes($Json)
-    $Context.Response.StatusCode = $StatusCode
-    $Context.Response.ContentType = "application/json; charset=utf-8"
-    $Context.Response.ContentLength64 = $Bytes.Length
-    if (Test-AllowedOrigin $Origin) {
-        $Context.Response.Headers["Access-Control-Allow-Origin"] = $Origin
-        $Context.Response.Headers["Vary"] = "Origin"
+    $BodyBytes = [Text.Encoding]::UTF8.GetBytes($Json)
+    $Reason = @{
+        200 = "OK"; 202 = "Accepted"; 204 = "No Content"; 400 = "Bad Request"
+        403 = "Forbidden"; 404 = "Not Found"; 409 = "Conflict"; 413 = "Payload Too Large"
+    }[$StatusCode]
+    $Headers = @{
+        "Content-Type" = "application/json; charset=utf-8"
+        "Content-Length" = "$($BodyBytes.Length)"
+        "Connection" = "close"
     }
-    $Context.Response.OutputStream.Write($Bytes, 0, $Bytes.Length)
-    $Context.Response.Close()
+    if (Test-AllowedOrigin $Origin) {
+        $Headers["Access-Control-Allow-Origin"] = $Origin
+        $Headers["Vary"] = "Origin"
+    }
+    foreach ($Entry in $AdditionalHeaders.GetEnumerator()) {
+        $Headers[$Entry.Key] = $Entry.Value
+    }
+    $HeaderText = "HTTP/1.1 $StatusCode $Reason`r`n" +
+        (($Headers.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)`r`n" }) -join "") +
+        "`r`n"
+    $Stream = $Client.GetStream()
+    $HeaderBytes = [Text.Encoding]::ASCII.GetBytes($HeaderText)
+    $Stream.Write($HeaderBytes, 0, $HeaderBytes.Length)
+    if ($StatusCode -ne 204) {
+        $Stream.Write($BodyBytes, 0, $BodyBytes.Length)
+    }
+    $Stream.Flush()
+    $Client.Close()
+}
+
+function Read-HttpRequest {
+    param([Parameter(Mandatory = $true)] $Client)
+    $Stream = $Client.GetStream()
+    $Buffer = New-Object byte[] 1024
+    $Collected = New-Object Collections.Generic.List[byte]
+    $HeaderEnd = -1
+    while ($Collected.Count -lt 8192 -and $HeaderEnd -lt 0) {
+        $Read = $Stream.Read($Buffer, 0, $Buffer.Length)
+        if ($Read -le 0) { break }
+        for ($Index = 0; $Index -lt $Read; $Index++) { $Collected.Add($Buffer[$Index]) }
+        $Text = [Text.Encoding]::ASCII.GetString($Collected.ToArray())
+        $HeaderEnd = $Text.IndexOf("`r`n`r`n")
+    }
+    if ($HeaderEnd -lt 0) { throw "Invalid HTTP request." }
+    $AllBytes = $Collected.ToArray()
+    $HeaderText = [Text.Encoding]::ASCII.GetString($AllBytes, 0, $HeaderEnd)
+    $Lines = $HeaderText -split "`r`n"
+    $RequestLine = $Lines[0] -split " "
+    if ($RequestLine.Count -lt 2) { throw "Invalid HTTP request line." }
+    $Headers = @{}
+    foreach ($Line in $Lines[1..($Lines.Count - 1)]) {
+        $Separator = $Line.IndexOf(":")
+        if ($Separator -gt 0) {
+            $Headers[$Line.Substring(0, $Separator).Trim().ToLowerInvariant()] =
+                $Line.Substring($Separator + 1).Trim()
+        }
+    }
+    $ContentLength = 0
+    if ($Headers.ContainsKey("content-length")) {
+        $ContentLength = [int] $Headers["content-length"]
+    }
+    if ($ContentLength -gt 4096) { throw "Request body is too large." }
+    $BodyOffset = $HeaderEnd + 4
+    $Body = New-Object Collections.Generic.List[byte]
+    for ($Index = $BodyOffset; $Index -lt $AllBytes.Length; $Index++) {
+        $Body.Add($AllBytes[$Index])
+    }
+    while ($Body.Count -lt $ContentLength) {
+        $Read = $Stream.Read($Buffer, 0, [Math]::Min($Buffer.Length, $ContentLength - $Body.Count))
+        if ($Read -le 0) { break }
+        for ($Index = 0; $Index -lt $Read; $Index++) { $Body.Add($Buffer[$Index]) }
+    }
+    return [pscustomobject]@{
+        Method = $RequestLine[0]
+        Path = ([Uri]("http://127.0.0.1" + $RequestLine[1])).AbsolutePath
+        Headers = $Headers
+        Body = [Text.Encoding]::UTF8.GetString($Body.ToArray(), 0, [Math]::Min($Body.Count, $ContentLength))
+    }
 }
 
 function Get-DeploymentStatus {
@@ -217,59 +291,60 @@ function Start-ApplyOperation {
 function Start-Controller {
     $Token = Get-ControllerToken
     Write-AtomicUtf8 -Path $PidFile -Value "$PID"
-    $Listener = [Net.HttpListener]::new()
-    $Listener.Prefixes.Add("http://127.0.0.1:$Port/")
+    $Listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
     try {
         $Listener.Start()
-        while ($Listener.IsListening) {
-            $Context = $Listener.GetContext()
-            $Request = $Context.Request
-            $Origin = [string] $Request.Headers["Origin"]
-            $Path = $Request.Url.AbsolutePath
+        while ($true) {
+            $Client = $Listener.AcceptTcpClient()
+            try {
+                $Request = Read-HttpRequest -Client $Client
+            } catch {
+                Write-Response -Client $Client -StatusCode 400 -Body @{ error = "invalid_request" }
+                continue
+            }
+            $Origin = [string] $Request.Headers["origin"]
+            $Path = $Request.Path
             if (-not (Test-AllowedOrigin $Origin)) {
-                Write-Response -Context $Context -StatusCode 403 -Body @{ error = "origin_not_allowed" }
+                Write-Response -Client $Client -StatusCode 403 -Body @{ error = "origin_not_allowed" }
                 continue
             }
-            if ($Request.HttpMethod -eq "OPTIONS") {
-                $Context.Response.StatusCode = 204
-                $Context.Response.Headers["Access-Control-Allow-Origin"] = $Origin
-                $Context.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-                $Context.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, X-Healthcare-Lab-Controller"
-                $Context.Response.Headers["Vary"] = "Origin"
-                $Context.Response.Close()
+            if ($Request.Method -eq "OPTIONS") {
+                Write-Response -Client $Client -StatusCode 204 -Origin $Origin -Body @{} -AdditionalHeaders @{
+                    "Access-Control-Allow-Methods" = "GET, POST, OPTIONS"
+                    "Access-Control-Allow-Headers" = "Content-Type, X-Healthcare-Lab-Controller"
+                }
                 continue
             }
-            if ($Request.HttpMethod -eq "GET" -and $Path -eq "/v1/session") {
-                Write-Response -Context $Context -StatusCode 200 -Origin $Origin -Body @{
+            if ($Request.Method -eq "GET" -and $Path -eq "/v1/session") {
+                Write-Response -Client $Client -StatusCode 200 -Origin $Origin -Body @{
                     token = $Token
                     controllerUrl = "http://127.0.0.1:$Port"
                 }
                 continue
             }
-            if ($Request.HttpMethod -eq "GET" -and $Path -eq "/v1/status") {
-                Write-Response -Context $Context -StatusCode 200 -Origin $Origin -Body (Get-DeploymentStatus)
+            if ($Request.Method -eq "GET" -and $Path -eq "/v1/status") {
+                Write-Response -Client $Client -StatusCode 200 -Origin $Origin -Body (Get-DeploymentStatus)
                 continue
             }
-            if ($Request.HttpMethod -eq "GET" -and $Path -match '^/v1/operations/([a-f0-9]{32})$') {
+            if ($Request.Method -eq "GET" -and $Path -match '^/v1/operations/([a-f0-9]{32})$') {
                 $Operation = Read-JsonObject -Path (Get-OperationPath $Matches[1])
                 if ($null -eq $Operation) {
-                    Write-Response -Context $Context -StatusCode 404 -Origin $Origin -Body @{ error = "operation_not_found" }
+                    Write-Response -Client $Client -StatusCode 404 -Origin $Origin -Body @{ error = "operation_not_found" }
                 } else {
-                    Write-Response -Context $Context -StatusCode 200 -Origin $Origin -Body @{
+                    Write-Response -Client $Client -StatusCode 200 -Origin $Origin -Body @{
                         operation = $Operation
                     }
                 }
                 continue
             }
-            if ($Request.HttpMethod -eq "POST" -and $Path -eq "/v1/apply") {
-                if ($Request.Headers["X-Healthcare-Lab-Controller"] -cne $Token) {
-                    Write-Response -Context $Context -StatusCode 403 -Origin $Origin -Body @{ error = "authorization_failed" }
+            if ($Request.Method -eq "POST" -and $Path -eq "/v1/apply") {
+                if ($Request.Headers["x-healthcare-lab-controller"] -cne $Token) {
+                    Write-Response -Client $Client -StatusCode 403 -Origin $Origin -Body @{ error = "authorization_failed" }
                     continue
                 }
-                $Reader = [IO.StreamReader]::new($Request.InputStream, $Request.ContentEncoding)
-                $Raw = $Reader.ReadToEnd()
+                $Raw = $Request.Body
                 if ($Raw.Length -gt 4096) {
-                    Write-Response -Context $Context -StatusCode 413 -Origin $Origin -Body @{ error = "request_too_large" }
+                    Write-Response -Client $Client -StatusCode 413 -Origin $Origin -Body @{ error = "request_too_large" }
                     continue
                 }
                 try {
@@ -280,17 +355,17 @@ function Start-Controller {
                     }
                     Resolve-GdtHostPath -Value ([string] $Body.hostPath) -RepoDir $RepoDir -DeployDir $ScriptDir -RequireAbsolute | Out-Null
                     $Id = Start-ApplyOperation -HostPath ([string] $Body.hostPath)
-                    Write-Response -Context $Context -StatusCode 202 -Origin $Origin -Body @{ operationId = $Id }
+                    Write-Response -Client $Client -StatusCode 202 -Origin $Origin -Body @{ operationId = $Id }
                 } catch {
                     $Status = if ($_.Exception.Message -like "*already running*") { 409 } else { 400 }
-                    Write-Response -Context $Context -StatusCode $Status -Origin $Origin -Body @{ error = "apply_rejected"; message = $_.Exception.Message }
+                    Write-Response -Client $Client -StatusCode $Status -Origin $Origin -Body @{ error = "apply_rejected"; message = $_.Exception.Message }
                 }
                 continue
             }
-            Write-Response -Context $Context -StatusCode 404 -Origin $Origin -Body @{ error = "not_found" }
+            Write-Response -Client $Client -StatusCode 404 -Origin $Origin -Body @{ error = "not_found" }
         }
     } finally {
-        $Listener.Close()
+        $Listener.Stop()
         Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
     }
 }
