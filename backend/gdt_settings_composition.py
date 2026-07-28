@@ -48,6 +48,9 @@ def gdt_settings_api_operations(
         "gdt_deployment": lambda: {
             "applicationPath": "/data/gdt-bridge",
             "hostBindMountSource": os.environ.get("GDT_BRIDGE_HOST_PATH", ""),
+            "hostControllerUrl": os.environ.get(
+                "GDT_HOST_CONTROLLER_URL", "http://127.0.0.1:5010"
+            ),
         },
     }
 

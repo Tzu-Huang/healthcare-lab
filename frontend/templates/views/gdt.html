@@ -18,26 +18,25 @@
           </div>
           <div class="form-grid gdt-bridge-config-grid">
             <div class="gdt-folder-card">
-              <h3>GDT-IN</h3>
-              <label>Folder Path
-                <input id="gdt-in-folder-path" placeholder="/data/gdt-bridge/inbox">
+              <h3>Windows Shared Folder</h3>
+              <label>Host folder
+                <input id="gdt-host-folder-path" placeholder="C:\HealthcareLab\gdt-bridge" autocomplete="off">
               </label>
-              <label>Inbox Polling Interval (seconds)
-                <input id="gdt-in-poll-seconds" type="number" min="0.25" step="0.25" value="2">
-              </label>
+              <p id="gdt-host-folder-source" class="muted">Deployment source unavailable.</p>
             </div>
             <div class="gdt-folder-card">
-              <h3>GDT-OUT</h3>
-              <label>Folder Path
-                <input id="gdt-out-folder-path" placeholder="/data/gdt-bridge/outbox">
-              </label>
-              <label>Polling Interval (seconds)
-                <input id="gdt-out-poll-seconds" type="number" min="0.25" step="0.25" value="2">
-              </label>
+              <h3>Derived folders</h3>
+              <dl class="gdt-derived-paths">
+                <div><dt>GDT-IN</dt><dd><code id="gdt-derived-inbox">/data/gdt-bridge/inbox</code></dd></div>
+                <div><dt>GDT-OUT</dt><dd><code id="gdt-derived-outbox">/data/gdt-bridge/outbox</code></dd></div>
+                <div><dt>Archive</dt><dd><code id="gdt-derived-archive">/data/gdt-bridge/archive</code></dd></div>
+                <div><dt>Error</dt><dd><code id="gdt-derived-error">/data/gdt-bridge/error</code></dd></div>
+              </dl>
             </div>
           </div>
+          <p id="gdt-host-controller-guidance" class="muted">The local deployment controller applies this folder and recreates only lab-app.</p>
           <div class="button-row gdt-bridge-actions">
-            <button id="save-gdt-bridge-config" class="primary" type="button">Save</button>
+            <button id="apply-gdt-host-folder" class="primary" type="button">Apply and restart lab-app</button>
             <button id="refresh-gdt-bridge-config" type="button">Refresh</button>
             <button id="start-gdt-watcher" type="button">Start</button>
             <button id="stop-gdt-watcher" type="button">Stop</button>
