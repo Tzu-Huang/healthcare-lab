@@ -54,11 +54,37 @@ optional `.env` to use another dedicated host folder; the wrapper resolves and
 creates only that exact safe path, rejecting filesystem and repository roots.
 
 Inside Healthcare Lab's GDT page, the **Shared Folder** setting controls the
-path the Flask app reads and writes. In Docker this should normally remain
-`/data/gdt-bridge`; the actual Windows folder is controlled by the Compose
-bind mount through `GDT_BRIDGE_HOST_PATH`. The application provisions and
-validates its supported bridge subdirectory contract. Orders are written to
-`inbox/`, and returned device/AP data is read from `outbox/`.
+Windows folder used by the Compose bind mount. Enter one dedicated absolute
+path, such as `C:\HealthcareLab\gdt-bridge`, then choose **Apply and restart
+lab-app**. The local host controller validates the target, creates only the
+documented subdirectories, persists the deployment choice, recreates only
+`lab-app`, and verifies the replacement. The container-visible path remains the
+fixed implementation detail `/data/gdt-bridge`; orders are written to `inbox/`
+and returned device/AP data is read from `outbox/`.
+
+The controller listens only on `127.0.0.1:5010`, accepts the configured local
+Healthcare Lab browser origins, and exposes only the GDT path operation. It is
+not a general Docker, Compose, environment, or filesystem API. Mutation
+requires an installation-scoped token and a custom request header. The wrapper
+starts one controller with the stack and stops it with `stop all`.
+
+Path precedence is process `GDT_BRIDGE_HOST_PATH`, repository `.env`, the
+controller-owned state, then the repository-local default. An advanced process
+or `.env` override is never overwritten by the page; the UI reports the
+conflict and the override must be removed or changed explicitly.
+
+If the controller is unavailable, run:
+
+```powershell
+.\deploy\lab.ps1 start
+.\deploy\lab.ps1 controller-status
+```
+
+Rollback does not delete bridge data. Stop the stack, remove only the
+controller-owned `instance\deployment\gdt-controller-state.json` if you intend
+to discard that selection, set an advanced `.env` override if needed, and
+restart. Never remove the selected GDT directory as part of configuration
+rollback.
 
 OpenEMR and MariaDB are not part of the default runtime. An external OpenEMR
 procedure-order source can still be configured with the optional `OPENEMR_DB_*`

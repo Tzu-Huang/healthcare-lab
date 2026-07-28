@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("status", "inspect", "start", "stop", "restart", "smoke", "logs")]
+    [ValidateSet("status", "inspect", "start", "stop", "restart", "smoke", "logs", "controller-status")]
     [string] $Action = "status",
 
     [Parameter(Position = 1)]
@@ -17,6 +17,12 @@ $RepoDir = Split-Path -Parent $ScriptDir
 $ComposeFile = Join-Path $ScriptDir "docker-compose.yml"
 $EnvFile = Join-Path $RepoDir ".env"
 $DefaultGdtBridgePath = Join-Path $RepoDir "instance\gdt-bridge"
+$ControllerStateFile = Join-Path $RepoDir "instance\deployment\gdt-controller-state.json"
+$ControllerPidFile = Join-Path $RepoDir "instance\deployment\gdt-controller.pid"
+$ControllerScript = Join-Path $ScriptDir "gdt-host-controller.ps1"
+$ControllerPort = 5010
+
+. (Join-Path $ScriptDir "gdt-host-path.ps1")
 
 $ServiceMap = @{
     "all" = @()
@@ -45,71 +51,97 @@ function Resolve-LabService {
     return $ServiceMap[$Key]
 }
 
-function Get-DotEnvValue {
-    param(
-        [string] $Path,
-        [string] $Name
-    )
-
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        return $null
-    }
-
-    foreach ($Line in Get-Content -LiteralPath $Path) {
-        if ($Line -match "^\s*(?:export\s+)?$([Regex]::Escape($Name))\s*=(.*)$") {
-            $Value = $Matches[1].Trim()
-            if (
-                $Value.Length -ge 2 -and
-                (($Value.StartsWith('"') -and $Value.EndsWith('"')) -or
-                 ($Value.StartsWith("'") -and $Value.EndsWith("'")))
-            ) {
-                $Value = $Value.Substring(1, $Value.Length - 2)
-            }
-            return $Value
-        }
-    }
-    return $null
-}
-
 function Resolve-GdtBridgeHostPath {
-    $ConfiguredPath = [Environment]::GetEnvironmentVariable("GDT_BRIDGE_HOST_PATH")
-    if ([string]::IsNullOrWhiteSpace($ConfiguredPath)) {
-        $ConfiguredPath = Get-DotEnvValue -Path $EnvFile -Name "GDT_BRIDGE_HOST_PATH"
-    }
-    if ([string]::IsNullOrWhiteSpace($ConfiguredPath)) {
-        return [IO.Path]::GetFullPath($DefaultGdtBridgePath)
-    }
-
-    if ([IO.Path]::IsPathRooted($ConfiguredPath)) {
-        $ResolvedPath = [IO.Path]::GetFullPath($ConfiguredPath)
-    } else {
-        $ResolvedPath = [IO.Path]::GetFullPath((Join-Path $RepoDir $ConfiguredPath))
-    }
-
-    $RootPath = [IO.Path]::GetPathRoot($ResolvedPath)
-    $ComparablePath = $ResolvedPath.TrimEnd('\', '/')
-    $RejectedPaths = @(
-        [IO.Path]::GetFullPath($RepoDir),
-        [IO.Path]::GetFullPath($ScriptDir),
-        [IO.Path]::GetFullPath($RootPath)
-    ) | ForEach-Object { $_.TrimEnd('\', '/') }
-    if ($RejectedPaths -contains $ComparablePath) {
-        throw "GDT_BRIDGE_HOST_PATH must identify a dedicated directory, not a broad filesystem or repository path."
-    }
-    if (Test-Path -LiteralPath $ResolvedPath -PathType Leaf) {
-        throw "GDT_BRIDGE_HOST_PATH must identify a directory."
-    }
-    return $ResolvedPath
+    return (Get-GdtHostPathSelection `
+        -RepoDir $RepoDir `
+        -DeployDir $ScriptDir `
+        -EnvFile $EnvFile `
+        -StateFile $ControllerStateFile `
+        -DefaultPath $DefaultGdtBridgePath).Path
 }
 
 function Initialize-LabDirectories {
     $GdtBridgePath = Resolve-GdtBridgeHostPath
-    New-Item -ItemType Directory -Path $GdtBridgePath -Force | Out-Null
+    Initialize-GdtHostDirectories -Root $GdtBridgePath
     [Environment]::SetEnvironmentVariable(
         "GDT_BRIDGE_HOST_PATH",
         $GdtBridgePath,
         [EnvironmentVariableTarget]::Process
     )
+}
+
+function Get-ControllerProcess {
+    if (-not (Test-Path -LiteralPath $ControllerPidFile -PathType Leaf)) {
+        return $null
+    }
+    try {
+        $Identity = Get-Content -Raw -LiteralPath $ControllerPidFile | ConvertFrom-Json
+    } catch {
+        Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
+        return $null
+    }
+    if ($Identity.pid -notmatch '^\d+$' -or
+        -not ([string] $Identity.scriptPath).Equals(
+            [IO.Path]::GetFullPath($ControllerScript),
+            [StringComparison]::OrdinalIgnoreCase
+        ) -or
+        -not ([string] $Identity.repoDir).Equals(
+            [IO.Path]::GetFullPath($RepoDir),
+            [StringComparison]::OrdinalIgnoreCase
+        )) {
+        Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
+        return $null
+    }
+    $Controller = Get-Process -Id ([int] $Identity.pid) -ErrorAction SilentlyContinue
+    if (-not $Controller) {
+        Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
+        return $null
+    }
+    $CommandLine = if ($IsWindows -or $env:OS -eq "Windows_NT") {
+        (Get-CimInstance Win32_Process -Filter "ProcessId = $($Controller.Id)" -ErrorAction SilentlyContinue).CommandLine
+    } else {
+        (& ps -p $Controller.Id -o args= 2>$null | Out-String).Trim()
+    }
+    if ([string]::IsNullOrWhiteSpace($CommandLine) -or
+        $CommandLine.IndexOf([IO.Path]::GetFullPath($ControllerScript), [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+        $CommandLine.IndexOf("-Mode serve", [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+        $CommandLine.IndexOf([IO.Path]::GetFullPath($RepoDir), [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
+        return $null
+    }
+    return $Controller
+}
+
+function Start-GdtHostController {
+    if ($env:HEALTHCARE_LAB_DISABLE_HOST_CONTROLLER -eq "1") {
+        return
+    }
+    if (Get-ControllerProcess) {
+        return
+    }
+    $PowerShell = (Get-Process -Id $PID).Path
+    $InheritedGdtPath = $env:GDT_BRIDGE_HOST_PATH
+    try {
+        Remove-Item Env:GDT_BRIDGE_HOST_PATH -ErrorAction SilentlyContinue
+        Start-Process -FilePath $PowerShell -WindowStyle Hidden -ArgumentList @(
+            "-NoProfile", "-NonInteractive", "-File", $ControllerScript,
+            "-Mode", "serve", "-RepoDir", $RepoDir,
+            "-Port", "$ControllerPort", "-LabAppPort", "$env:LAB_APP_PORT"
+        ) | Out-Null
+    } finally {
+        $env:GDT_BRIDGE_HOST_PATH = $InheritedGdtPath
+    }
+}
+
+function Stop-GdtHostController {
+    if ($env:HEALTHCARE_LAB_DISABLE_HOST_CONTROLLER -eq "1") {
+        return
+    }
+    $Controller = Get-ControllerProcess
+    if ($Controller) {
+        Stop-Process -Id $Controller.Id
+    }
+    Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
 }
 
 function Invoke-DockerCompose {
@@ -152,11 +184,19 @@ switch ($Action) {
     }
     "start" {
         Initialize-LabDirectories
+        if ([string]::IsNullOrWhiteSpace($env:LAB_APP_PORT)) {
+            $env:LAB_APP_PORT = Get-GdtDotEnvValue -Path $EnvFile -Name "LAB_APP_PORT"
+        }
+        if ([string]::IsNullOrWhiteSpace($env:LAB_APP_PORT)) {
+            $env:LAB_APP_PORT = "5000"
+        }
+        Start-GdtHostController
         Invoke-DockerCompose (@("up", "-d") + $ResolvedServices)
     }
     "stop" {
         if ($ResolvedServices.Count -eq 0) {
             Invoke-DockerCompose @("stop")
+            Stop-GdtHostController
         } else {
             Invoke-DockerCompose (@("stop") + $ResolvedServices)
         }
@@ -180,6 +220,14 @@ switch ($Action) {
             Invoke-DockerCompose @("logs", "--tail", "$Tail")
         } else {
             Invoke-DockerCompose (@("logs", "--tail", "$Tail") + $ResolvedServices)
+        }
+    }
+    "controller-status" {
+        $Controller = Get-ControllerProcess
+        if ($Controller) {
+            Write-Output "GDT host controller is running."
+        } else {
+            Write-Output "GDT host controller is stopped."
         }
     }
 }

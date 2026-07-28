@@ -239,6 +239,9 @@ class GdtBridgeService:
         return {
             "bridgePath": str(directories["root"]),
             "hostPath": os.environ.get("GDT_BRIDGE_HOST_PATH", ""),
+            "hostControllerUrl": os.environ.get(
+                "GDT_HOST_CONTROLLER_URL", "http://127.0.0.1:5010"
+            ),
             "inboxPath": str(directories["inbox"]),
             "outboxPath": str(directories["outbox"]),
             "archivePath": str(directories["archive"]),

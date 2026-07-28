@@ -1,4 +1,4 @@
-import { fetchGdtBridgeConfig, fetchGdtWorkbench, importGdtBridgeFile, saveGdtBridgeConfiguration, startGdtBridgeWatcher, stopGdtBridgeWatcher, writeGdtOrderFile } from "../api/gdt.js";
+import { applyGdtHostFolder, fetchGdtBridgeConfig, fetchGdtHostControllerSession, fetchGdtHostControllerStatus, fetchGdtHostOperation, fetchGdtWorkbench, importGdtBridgeFile, startGdtBridgeWatcher, stopGdtBridgeWatcher, writeGdtOrderFile } from "../api/gdt.js";
 import { setStatus } from "../components/status.js";
 import { copyTextFromElement } from "../core/clipboard.js";
 import { byId, createElement, rowCell } from "../core/dom.js";
@@ -7,6 +7,7 @@ import { gdtTaipeiTimestamp, taipeiTimestamp } from "../core/formatting.js";
 const state = {
   workbench: { patients: [], bridgeInbox: [] },
   bridgeConfig: null,
+  hostController: null,
   selectedPatientId: null,
   expandedPatientIds: new Set(),
   selectedPayload: "",
@@ -21,7 +22,7 @@ export function initializeGdtView(options = {}) {
   buildPatientPreviewPayload = options.buildPatientPreviewPayload;
   byId("refresh-gdt-console").addEventListener("click", refreshGdtConsole);
   byId("refresh-gdt-bridge-config").addEventListener("click", refreshGdtBridgeConfig);
-  byId("save-gdt-bridge-config").addEventListener("click", saveGdtBridgeConfig);
+  byId("apply-gdt-host-folder").addEventListener("click", applyGdtHostPath);
   byId("start-gdt-watcher").addEventListener("click", startGdtWatcher);
   byId("stop-gdt-watcher").addEventListener("click", stopGdtWatcher);
   byId("copy-gdt-payload").addEventListener("click", () => copyTextFromElement("gdt-payload-preview"));
@@ -32,11 +33,17 @@ export function selectedGdtPatient() {
 
 function renderGdtBridgeConfig() {
   const item = state.bridgeConfig || {};
-  const pollSeconds = item.watcher?.pollSeconds || 2;
-  byId("gdt-in-folder-path").value = item.inboxPath || "";
-  byId("gdt-out-folder-path").value = item.outboxPath || "";
-  byId("gdt-in-poll-seconds").value = item.inboxPollSeconds || pollSeconds;
-  byId("gdt-out-poll-seconds").value = pollSeconds;
+  const deployment = state.hostController || {};
+  const hostPath = deployment.desiredHostPath || deployment.effectiveHostPath || item.hostPath || "";
+  byId("gdt-host-folder-path").value = hostPath;
+  byId("gdt-host-folder-source").textContent = deployment.source
+    ? `Effective source: ${deployment.source}${deployment.conflict ? " (advanced override conflicts with the saved value)" : ""}`
+    : "Deployment controller unavailable; use deploy/lab.ps1 as a fallback.";
+  const derived = deployment.derived || {};
+  byId("gdt-derived-inbox").textContent = derived.inbox || item.inboxPath || "/data/gdt-bridge/inbox";
+  byId("gdt-derived-outbox").textContent = derived.outbox || item.outboxPath || "/data/gdt-bridge/outbox";
+  byId("gdt-derived-archive").textContent = derived.archive || item.archivePath || "/data/gdt-bridge/archive";
+  byId("gdt-derived-error").textContent = derived.error || item.errorPath || "/data/gdt-bridge/error";
   renderGdtWatcherStatus(item.watcher || {});
 }
 
@@ -50,6 +57,17 @@ async function refreshGdtBridgeConfig() {
   try {
     const result = await fetchGdtBridgeConfig();
     state.bridgeConfig = result.item || {};
+    try {
+      state.hostController = await fetchGdtHostControllerStatus(controllerUrl());
+      byId("apply-gdt-host-folder").disabled = false;
+      byId("gdt-host-controller-guidance").textContent =
+        "Applying provisions the documented folders and recreates only lab-app.";
+    } catch {
+      state.hostController = null;
+      byId("apply-gdt-host-folder").disabled = true;
+      byId("gdt-host-controller-guidance").textContent =
+        "Host controller unavailable. Run deploy/lab.ps1 start, then refresh.";
+    }
     renderGdtBridgeConfig();
     setStatus("gdt-bridge-config-status", "Ready", "success");
   } catch (error) {
@@ -57,21 +75,59 @@ async function refreshGdtBridgeConfig() {
   }
 }
 
-async function saveGdtBridgeConfig() {
-  setStatus("gdt-bridge-config-status", "Saving...", "pending");
+function controllerUrl() {
+  return state.bridgeConfig?.hostControllerUrl || "http://127.0.0.1:5010";
+}
+
+const delay = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
+async function waitForHostOperation(operationId) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const result = await fetchGdtHostOperation(controllerUrl(), operationId);
+    const operation = result.operation || {};
+    setStatus("gdt-bridge-config-status", operation.stage || operation.state || "Applying...", "pending");
+    if (operation.state === "succeeded") return operation;
+    if (operation.state === "failed") throw new Error(operation.message || "Host folder apply failed.");
+    await delay(1000);
+  }
+  throw new Error("Host folder apply timed out. Refresh to inspect its current state.");
+}
+
+async function reconnectAfterApply() {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    try {
+      const result = await fetchGdtBridgeConfig();
+      state.bridgeConfig = result.item || {};
+      return;
+    } catch {
+      await delay(1000);
+    }
+  }
+  throw new Error("lab-app did not become reachable after recreation.");
+}
+
+async function applyGdtHostPath() {
+  const hostPath = byId("gdt-host-folder-path").value.trim();
+  if (!hostPath) {
+    setStatus("gdt-bridge-config-status", "Enter an absolute Windows folder.", "error");
+    return;
+  }
+  if (!window.confirm(`Apply ${hostPath} as the GDT shared folder and restart lab-app?`)) return;
+  setStatus("gdt-bridge-config-status", "Authorizing...", "pending");
+  byId("apply-gdt-host-folder").disabled = true;
   try {
-    const result = await saveGdtBridgeConfiguration({
-      gdtInPath: byId("gdt-in-folder-path").value.trim(),
-      gdtOutPath: byId("gdt-out-folder-path").value.trim(),
-      inboxPollSeconds: Number(byId("gdt-in-poll-seconds").value),
-      pollSeconds: Number(byId("gdt-out-poll-seconds").value),
-    });
-    state.bridgeConfig = result.item || {};
+    const session = await fetchGdtHostControllerSession(controllerUrl());
+    const accepted = await applyGdtHostFolder(controllerUrl(), session.token, hostPath);
+    await waitForHostOperation(accepted.operationId);
+    await reconnectAfterApply();
+    state.hostController = await fetchGdtHostControllerStatus(controllerUrl());
     renderGdtBridgeConfig();
     await refreshGdtConsole();
-    setStatus("gdt-bridge-config-status", "Saved", "success");
+    setStatus("gdt-bridge-config-status", "Applied and verified", "success");
   } catch (error) {
     setStatus("gdt-bridge-config-status", error.message, "error");
+  } finally {
+    byId("apply-gdt-host-folder").disabled = false;
   }
 }
 
