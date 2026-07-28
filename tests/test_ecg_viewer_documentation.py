@@ -35,7 +35,8 @@ class EcgViewerDocumentationTest(unittest.TestCase):
     def test_marks_manual_evidence_pending_and_protects_fixture_data(self):
         self.assertIn("pending / environment-dependent", self.guide)
         for phrase in (
-            "sanitized synthetic fixture",
+            "confirmed synthetic fixture",
+            "explicit synthetic-data",
             "outside the repository",
             "Do not upload real patient data",
             "never attach the DICOM payload",
