@@ -89,11 +89,17 @@ function Start-GdtHostController {
         return
     }
     $PowerShell = (Get-Process -Id $PID).Path
-    Start-Process -FilePath $PowerShell -WindowStyle Hidden -ArgumentList @(
-        "-NoProfile", "-NonInteractive", "-File", $ControllerScript,
-        "-Mode", "serve", "-RepoDir", $RepoDir,
-        "-Port", "$ControllerPort", "-LabAppPort", "$env:LAB_APP_PORT"
-    ) | Out-Null
+    $InheritedGdtPath = $env:GDT_BRIDGE_HOST_PATH
+    try {
+        Remove-Item Env:GDT_BRIDGE_HOST_PATH -ErrorAction SilentlyContinue
+        Start-Process -FilePath $PowerShell -WindowStyle Hidden -ArgumentList @(
+            "-NoProfile", "-NonInteractive", "-File", $ControllerScript,
+            "-Mode", "serve", "-RepoDir", $RepoDir,
+            "-Port", "$ControllerPort", "-LabAppPort", "$env:LAB_APP_PORT"
+        ) | Out-Null
+    } finally {
+        $env:GDT_BRIDGE_HOST_PATH = $InheritedGdtPath
+    }
 }
 
 function Stop-GdtHostController {
