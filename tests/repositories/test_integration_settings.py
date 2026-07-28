@@ -6,9 +6,12 @@ import unittest
 from pathlib import Path
 
 from backend.domain.integration_settings import (
+    DCM4CHEE_DEFAULT_TIMEOUT_SECONDS,
+    DCM4CHEE_SCHEMA_VERSION,
     MEDPLUM_DEFAULT_TIMEOUT_SECONDS,
     MEDPLUM_DEFAULT_WEB_UI_URL,
     TypedSettingsValidationError,
+    dcm4chee_bootstrap_candidate,
     medplum_bootstrap_candidate,
     preserve_secret,
     remove_secret,
@@ -141,6 +144,49 @@ class IntegrationSettingsRepositoryTests(unittest.TestCase):
             MEDPLUM_DEFAULT_TIMEOUT_SECONDS, private["fields"]["timeoutSeconds"]
         )
         self.assertEqual("migration-secret", private["secrets"]["clientSecret"])
+
+    def test_dcm4chee_v1_migration_preserves_operator_data_and_runtime_access(self):
+        profile = dcm4chee_bootstrap_candidate(
+            {
+                "DCM4CHEE_DISPLAY_NAME": "Operator archive",
+                "DCM4CHEE_TIMEOUT_SECONDS": "45",
+            }
+        )
+        self.repository.create_if_missing(
+            profile,
+            secrets={"password": "migration-secret"},
+            bootstrap_source="legacy-environment",
+        )
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT id, public_payload_json
+                FROM integration_settings_profiles WHERE profile_type = 'dcm4chee'"""
+            ).fetchone()
+            fields = json.loads(row["public_payload_json"])
+            fields.pop("timeoutSeconds")
+            connection.execute(
+                """UPDATE integration_settings_profiles
+                SET schema_version = 1, public_payload_json = ? WHERE id = ?""",
+                (json.dumps(fields), row["id"]),
+            )
+
+        self.assertFalse(
+            self.service.bootstrap_dcm4chee({"DCM4CHEE_TIMEOUT_SECONDS": "99"})
+        )
+        self.assertFalse(self.repository.migrate_dcm4chee_profile())
+        private = self.repository.get_private("dcm4chee")
+        effective = self.service.get_effective("dcm4chee")
+
+        self.assertEqual(DCM4CHEE_SCHEMA_VERSION, private["schemaVersion"])
+        self.assertEqual(
+            DCM4CHEE_DEFAULT_TIMEOUT_SECONDS, private["fields"]["timeoutSeconds"]
+        )
+        self.assertEqual("Operator archive", private["fields"]["displayName"])
+        self.assertEqual("migration-secret", private["secrets"]["password"])
+        self.assertEqual(
+            DCM4CHEE_DEFAULT_TIMEOUT_SECONDS,
+            effective.runtime_profile()["timeoutSeconds"],
+        )
 
     def test_replace_preserve_and_remove_are_atomic(self):
         self.seed()
