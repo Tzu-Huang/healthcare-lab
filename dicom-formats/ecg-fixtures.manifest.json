@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "committed_fixture_content_allowed": false,
+    "identity_checklist": [
+      "PatientName",
+      "PatientID",
+      "PatientBirthDate",
+      "PatientSex",
+      "PatientAddress",
+      "OtherPatientIDs",
+      "OtherPatientNames",
+      "InstitutionName",
+      "InstitutionAddress",
+      "ReferringPhysicianName",
+      "PerformingPhysicianName",
+      "OperatorsName",
+      "AccessionNumber",
+      "StudyID"
+    ],
+    "validation_output": "attribute names and invariant categories only; never values"
+  },
+  "fixtures": [
+    {
+      "path": "12lead_ecg_waveform.dcm",
+      "sha256": "1a348d1ed9bc51fe71da0a95da5ffcaadc13fb6bcbebce51aa0e55d16ff1b4c6",
+      "provenance": {
+        "origin": "supplied local fixture",
+        "upstream_reference": null,
+        "repository_evidence": "binary is locally excluded by .git/info/exclude; no tracked history establishes its origin"
+      },
+      "deidentification": {
+        "status": "unresolved",
+        "patient_identity_removed": false,
+        "method_documented": false,
+        "identity_attributes_present": [
+          "PatientName",
+          "PatientID",
+          "PatientBirthDate",
+          "PatientSex",
+          "InstitutionName",
+          "AccessionNumber",
+          "StudyID"
+        ]
+      },
+      "handling": {
+        "classification": "local-only",
+        "excluded_from_source_control": true,
+        "sanitized_derivative": null
+      },
+      "invariants": {
+        "sop_class_uid": "1.2.840.10008.5.1.4.1.1.9.1.1",
+        "channels": 12,
+        "samples_per_channel": 10000,
+        "sampling_frequency_hz": 1000.0,
+        "duration_seconds": 10.0,
+        "waveform_bits_allocated": 16,
+        "waveform_sample_interpretation": "SS",
+        "waveform_data_bytes": 240000,
+        "normalized_unit": "mV",
+        "canonical_leads": ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+      }
+    },
+    {
+      "path": "general_ecg_waveform.dcm",
+      "sha256": "ca62a52c8e78c7debe8babfc0b8b917f0c029575e1d8cff234901a9ac27e98e7",
+      "provenance": {
+        "origin": "supplied local fixture",
+        "upstream_reference": null,
+        "repository_evidence": "binary is locally excluded by .git/info/exclude; no tracked history establishes its origin"
+      },
+      "deidentification": {
+        "status": "unresolved",
+        "patient_identity_removed": false,
+        "method_documented": false,
+        "identity_attributes_present": [
+          "PatientName",
+          "PatientID",
+          "PatientBirthDate",
+          "PatientSex",
+          "InstitutionName",
+          "AccessionNumber",
+          "StudyID"
+        ]
+      },
+      "handling": {
+        "classification": "local-only",
+        "excluded_from_source_control": true,
+        "sanitized_derivative": null
+      },
+      "invariants": {
+        "sop_class_uid": "1.2.840.10008.5.1.4.1.1.9.1.2",
+        "channels": 12,
+        "samples_per_channel": 10000,
+        "sampling_frequency_hz": 1000.0,
+        "duration_seconds": 10.0,
+        "waveform_bits_allocated": 16,
+        "waveform_sample_interpretation": "SS",
+        "waveform_data_bytes": 240000,
+        "normalized_unit": "mV",
+        "canonical_leads": ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+      }
+    }
+  ]
+}
