@@ -1,8 +1,8 @@
 ## 1. Fixture Safety and Contract
 
-- [ ] 1.1 Inventory both supplied ECG files, record hashes and provenance, and review all identifying attributes against an explicit de-identification checklist.
-- [ ] 1.2 Exclude any unresolved source fixture or generate a documented sanitized derivative that preserves SOP Class, channel, sample, timing, and calibration invariants.
-- [ ] 1.3 Add a machine-readable fixture manifest and validation helper that fails on identity or invariant drift without printing PHI.
+- [x] 1.1 Inventory both supplied ECG files, record hashes and provenance, and review all identifying attributes against an explicit de-identification checklist.
+- [x] 1.2 Exclude any unresolved source fixture or generate a documented sanitized derivative that preserves SOP Class, channel, sample, timing, and calibration invariants.
+- [x] 1.3 Add a machine-readable fixture manifest and validation helper that fails on identity or invariant drift without printing PHI.
 
 ## 2. Automated End-to-End Release Gate
 
