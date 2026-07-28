@@ -1,6 +1,6 @@
 ## 1. Dependency and Domain Contract
 
-- [ ] 1.1 Declare the supported `pydicom` runtime dependency and verify the container installation path includes it.
+- [x] 1.1 Declare the supported `pydicom` runtime dependency and verify the container installation path includes it.
 - [ ] 1.2 Add immutable normalized waveform/channel models and the typed ECG waveform error hierarchy under a focused domain module.
 - [ ] 1.3 Define supported SOP Class, SCPECG lead, voltage-unit, and display-safe metadata allowlists.
 
