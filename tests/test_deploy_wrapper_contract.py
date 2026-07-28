@@ -26,6 +26,10 @@ class DeployWrapperContractTests(unittest.TestCase):
             self.deploy / "gdt-host-path.ps1",
         )
         shutil.copy2(
+            ROOT / "deploy" / "gdt-host-controller.ps1",
+            self.deploy / "gdt-host-controller.ps1",
+        )
+        shutil.copy2(
             ROOT / "deploy" / "docker-compose.yml",
             self.deploy / "docker-compose.yml",
         )
@@ -62,6 +66,7 @@ class DeployWrapperContractTests(unittest.TestCase):
         env["PATH"] = f"{self.bin}{os.pathsep}{env['PATH']}"
         env["FAKE_DOCKER_INVOCATIONS"] = str(self.invocations)
         env["FAKE_DOCKER_ENVIRONMENT"] = str(self.docker_environment)
+        env["HEALTHCARE_LAB_DISABLE_HOST_CONTROLLER"] = "1"
         env.pop("GDT_BRIDGE_HOST_PATH", None)
         if extra_env:
             env.update(extra_env)
@@ -114,6 +119,13 @@ class DeployWrapperContractTests(unittest.TestCase):
                 self.assertTrue(calls[0].startswith(prefix), calls[0])
                 self.assertIn(str(self.deploy / "docker-compose.yml"), calls[0])
                 self.assertNotIn("--env-file", calls[0])
+
+    def test_controller_status_is_bounded_and_does_not_invoke_docker(self):
+        result = self.run_wrapper("controller-status")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("controller is stopped", result.stdout)
+        self.assertFalse(self.invocations.exists())
 
     def test_existing_env_file_is_passed_without_printing_its_values(self):
         canary = "wrapper-secret-canary-ZAC-77"
