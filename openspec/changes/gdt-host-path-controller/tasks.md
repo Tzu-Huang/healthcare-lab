@@ -12,10 +12,10 @@
 
 ## 3. Application and UI Integration
 
-- [ ] 3.1 Add secret-safe same-origin controller discovery/bootstrap metadata without treating deployment state as typed GDT profile data.
-- [ ] 3.2 Replace separate editable GDT inbox/outbox paths with one host-root control and derived read-only bridge paths.
-- [ ] 3.3 Implement explicit confirmation, apply progress polling, reconnect behavior across `lab-app` recreation, conflict guidance, and fallback wrapper instructions.
-- [ ] 3.4 Keep `/data/gdt-bridge` fixed in typed GDT settings and remove obsolete application-path editing behavior.
+- [x] 3.1 Add secret-safe same-origin controller discovery/bootstrap metadata without treating deployment state as typed GDT profile data.
+- [x] 3.2 Replace separate editable GDT inbox/outbox paths with one host-root control and derived read-only bridge paths.
+- [x] 3.3 Implement explicit confirmation, apply progress polling, reconnect behavior across `lab-app` recreation, conflict guidance, and fallback wrapper instructions.
+- [x] 3.4 Keep `/data/gdt-bridge` fixed in typed GDT settings and remove obsolete application-path editing behavior.
 
 ## 4. Verification and Documentation
 
