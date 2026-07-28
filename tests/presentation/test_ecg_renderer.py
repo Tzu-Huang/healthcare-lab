@@ -5,6 +5,7 @@ import re
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError
+from io import BytesIO
 from pathlib import Path
 from types import MappingProxyType
 from unittest.mock import Mock, patch
@@ -244,6 +245,28 @@ class EcgRenderResourceSafetyTest(unittest.TestCase):
         self.assertIsInstance(caught.exception.__cause__, OSError)
         self.assertEqual(retained_figure_ids(), before)
         self.assertEqual(Path.cwd(), Path(os.getcwd()))
+
+    def test_figure_cleanup_failure_still_closes_buffer_and_releases_lock(self):
+        import backend.presentation.ecg_renderer as renderer
+
+        buffer = BytesIO()
+        fake_lock = Mock()
+        with (
+            patch.object(renderer, "BytesIO", return_value=buffer),
+            patch.object(renderer, "_RENDER_LOCK", fake_lock),
+            patch.object(
+                renderer.Figure,
+                "clear",
+                side_effect=OSError("simulated figure cleanup failure"),
+            ),
+        ):
+            with self.assertRaises(EcgRenderError) as caught:
+                render_ecg(make_waveform())
+
+        self.assertIsInstance(caught.exception.__cause__, OSError)
+        self.assertTrue(buffer.closed)
+        fake_lock.acquire.assert_called_once_with()
+        fake_lock.release.assert_called_once_with()
 
 
 if __name__ == "__main__":

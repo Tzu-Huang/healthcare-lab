@@ -82,6 +82,10 @@ def render_ecg(
 
     figure: Figure | None = None
     buffer = BytesIO()
+    rendered: RenderedEcg | None = None
+    render_error: EcgRenderError | None = None
+    render_cause: Exception | None = None
+    cleanup_error: Exception | None = None
     _RENDER_LOCK.acquire()
     try:
         figure = Figure(
@@ -141,16 +145,36 @@ def render_ecg(
             color="#7a1f1f",
         )
         canvas.print_svg(buffer, metadata={"Description": DISCLAIMER})
-        return RenderedEcg(buffer.getvalue())
-    except EcgRenderConfigError:
-        raise
+        rendered = RenderedEcg(buffer.getvalue())
+    except EcgRenderError as exc:
+        render_error = exc
     except Exception as exc:
-        raise EcgRenderError("Unable to render ECG waveform") from exc
+        render_error = EcgRenderError("Unable to render ECG waveform")
+        render_cause = exc
     finally:
-        if figure is not None:
-            figure.clear()
-        buffer.close()
-        _RENDER_LOCK.release()
+        try:
+            if figure is not None:
+                figure.clear()
+        except Exception as exc:
+            cleanup_error = exc
+        finally:
+            try:
+                buffer.close()
+            except Exception as exc:
+                if cleanup_error is None:
+                    cleanup_error = exc
+            finally:
+                _RENDER_LOCK.release()
+
+    if render_error is not None:
+        if render_cause is not None:
+            raise render_error from render_cause
+        raise render_error
+    if cleanup_error is not None:
+        raise EcgRenderError("Unable to clean up ECG rendering resources") from cleanup_error
+    if rendered is None:  # pragma: no cover - defensive invariant
+        raise EcgRenderError("ECG rendering completed without output")
+    return rendered
 
 
 def _validate_config(config: EcgRenderConfig) -> None:
