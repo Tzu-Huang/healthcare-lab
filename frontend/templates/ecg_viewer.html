@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ECG Graph | Healthcare Lab</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v={{ asset_version('styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/views/ecg-viewer.css') }}?v={{ asset_version('css/views/ecg-viewer.css') }}">
+</head>
+<body>
+  <main class="ecg-viewer" aria-labelledby="ecg-viewer-title">
+    <header class="ecg-viewer-header">
+      <div>
+        <p class="eyebrow">dcm4chee result</p>
+        <h1 id="ecg-viewer-title">12-lead ECG graph</h1>
+        <p class="subtitle">Application-rendered waveform</p>
+      </div>
+      <a class="button secondary" href="/">Back to Healthcare Lab</a>
+    </header>
+
+    <p id="ecg-viewer-status" class="status pending ecg-viewer-status" role="status" aria-live="polite">
+      Loading ECG metadata...
+    </p>
+
+    <section id="ecg-viewer-loading" class="card ecg-viewer-state" aria-label="Loading ECG">
+      <div class="ecg-viewer-spinner" aria-hidden="true"></div>
+      <p>Loading the ECG graph and display summary...</p>
+    </section>
+
+    <section id="ecg-viewer-error" class="card ecg-viewer-state ecg-viewer-error" aria-labelledby="ecg-viewer-error-title" hidden>
+      <h2 id="ecg-viewer-error-title">ECG graph unavailable</h2>
+      <p id="ecg-viewer-error-message"></p>
+      <button id="ecg-viewer-retry" type="button">Retry</button>
+    </section>
+
+    <section id="ecg-viewer-content" class="ecg-viewer-content" aria-label="ECG result" hidden>
+      <div class="card ecg-viewer-graph-card">
+        <h2>Waveform</h2>
+        <div class="ecg-viewer-graph-frame">
+          <img id="ecg-viewer-graph" class="ecg-viewer-graph" alt="Application-rendered 12-lead ECG waveform">
+        </div>
+        <div id="ecg-viewer-graph-error" class="ecg-viewer-inline-error" role="alert" hidden>
+          <strong>Graph unavailable</strong>
+          <p>The ECG summary loaded, but the graph could not be displayed. Retry the viewer.</p>
+        </div>
+      </div>
+
+      <section class="card" aria-labelledby="ecg-viewer-summary-title">
+        <h2 id="ecg-viewer-summary-title">Display summary</h2>
+        <dl class="ecg-viewer-summary">
+          <div><dt>Leads</dt><dd id="ecg-viewer-leads">-</dd></div>
+          <div><dt>Sample rate</dt><dd id="ecg-viewer-sample-rate">-</dd></div>
+          <div><dt>Unit</dt><dd id="ecg-viewer-unit">-</dd></div>
+          <div><dt>Duration</dt><dd id="ecg-viewer-duration">-</dd></div>
+        </dl>
+      </section>
+    </section>
+  </main>
+  <script type="module" src="{{ url_for('static', filename='js/views/ecg-viewer.js') }}?v={{ asset_version('js/views/ecg-viewer.js') }}"></script>
+</body>
+</html>
