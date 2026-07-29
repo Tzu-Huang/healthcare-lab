@@ -185,6 +185,7 @@ REPOSITORY_OWNER_INVENTORY = {
     "repositories/test_patient_order_store.py": (
         "test_patient_mrn_sequence_allocates_persists_and_does_not_reuse_deleted_values",
         "test_patient_mrn_sequence_skips_explicit_collision",
+        "test_high_explicit_mrn_does_not_advance_sequence_after_restart",
         "test_duplicate_explicit_mrn_is_rejected_without_patient_side_effects",
         "test_noncanonical_explicit_mrn_is_rejected_without_side_effects",
         "test_database_enforces_normalized_mrn_uniqueness",
@@ -240,8 +241,8 @@ class Zac64OwnershipContractTests(unittest.TestCase):
             actual = _test_method_names(tests_root / relative)
             self.assertEqual(actual, expected, relative)
             repository_names.extend(actual)
-        self.assertEqual(len(repository_names), 28)
-        self.assertEqual(len(set(repository_names)), 28)
+        self.assertEqual(len(repository_names), 29)
+        self.assertEqual(len(set(repository_names)), 29)
 
 
 if __name__ == "__main__":

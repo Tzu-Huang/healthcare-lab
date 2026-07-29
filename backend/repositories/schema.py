@@ -781,6 +781,24 @@ def enforce_normalized_patient_mrn_uniqueness(connection: sqlite3.Connection) ->
                 "UPDATE local_patient_records SET mrn = ? WHERE id = ?",
                 (normalized_mrn, row["id"]),
             )
+    highest_existing = max(
+        (
+            int(str(row["mrn"]).strip().upper()[4:])
+            for row in rows
+            if CANONICAL_MRN_PATTERN.fullmatch(
+                str(row["mrn"] or "").strip().upper()
+            )
+        ),
+        default=0,
+    )
+    connection.execute(
+        """
+        UPDATE local_identifier_sequences
+        SET next_value = MAX(next_value, ?)
+        WHERE name = 'patient_mrn'
+        """,
+        (highest_existing + 1,),
+    )
     connection.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_patient_mrn_normalized
