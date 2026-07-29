@@ -29,6 +29,18 @@ class PatientOrderStoreTests(StoreCaseSupport):
         self.assertEqual(manual["summary"]["mrn"], "MRN-000001")
         self.assertEqual(generated["summary"]["mrn"], "MRN-000002")
 
+    def test_high_explicit_mrn_does_not_advance_sequence_after_restart(self):
+        self.dependencies.patient_repository.create_patient_record(
+            self.patient_payload(mrn="MRN-202600", firstName="Manual")
+        )
+
+        reopened = assemble_application_dependencies(self.dependencies.database.path)
+        generated = reopened.patient_repository.create_patient_record(
+            self.patient_payload(firstName="Generated")
+        )
+
+        self.assertEqual(generated["summary"]["mrn"], "MRN-000001")
+
     def test_duplicate_explicit_mrn_is_rejected_without_patient_side_effects(self):
         created = self.dependencies.patient_repository.create_patient_record(self.patient_payload(mrn="mrn-000101"))
 

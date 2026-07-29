@@ -100,6 +100,7 @@ class OrderApiTests(ApiCaseSupport):
         self.assertEqual(len(created_payloads), 1)
         service_request = next(payload for payload in created_payloads if payload["resourceType"] == "ServiceRequest")
         self.assertEqual(service_request["subject"]["reference"], "Patient/patient-order")
+        self.assertEqual(service_request["subject"]["display"], patient["summary"]["name"])
         self.assertRegex(service_request["occurrenceDateTime"], r"^2026-07-08T10:30:00[+-]\d{2}:\d{2}$")
         self.assertRegex(service_request["authoredOn"], r"^2026-07-08T09:00:00[+-]\d{2}:\d{2}$")
 

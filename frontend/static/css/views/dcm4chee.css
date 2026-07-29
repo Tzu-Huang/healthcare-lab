@@ -23,8 +23,13 @@ display: grid;
 
 #dcm4chee-view .dcm4chee-patient-panel,
 #dcm4chee-view .dcm4chee-workflow-panel,
+#dcm4chee-view .dcm4chee-results-panel,
 #dcm4chee-view .dcm4chee-profile-panel {
 min-width: 0;
+}
+
+#dcm4chee-view .dcm4chee-results-panel {
+grid-column: 1 / -1;
 }
 
 #dcm4chee-view .dcm4chee-patient-table-wrap {
@@ -253,7 +258,7 @@ grid-column: 1 / -1;
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
 }
 
 #dcm4chee-view .dcm4chee-result-browser {
@@ -263,7 +268,7 @@ display: grid;
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
 }
 
 #dcm4chee-view .dcm4chee-result-group {
@@ -272,7 +277,7 @@ display: grid;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #ffffff;
-  overflow: hidden;
+  overflow: visible;
   width: 100%;
   min-width: 0;
   max-width: 100%;
@@ -302,12 +307,26 @@ margin: 0 12px 12px;
   min-width: 0;
   max-width: calc(100% - 24px);
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
 }
 
 #dcm4chee-view .dcm4chee-browser-row > summary {
 grid-template-columns: 58px minmax(0, 1fr) auto;
   padding: 10px 12px;
+}
+
+#dcm4chee-view .dcm4chee-instance-results {
+display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+#dcm4chee-view .dcm4chee-instance-row > summary {
+grid-template-columns: 68px minmax(0, 1fr) auto auto;
+}
+
+#dcm4chee-view .dcm4chee-ecg-primary-action {
+white-space: nowrap;
 }
 
 #dcm4chee-view .dcm4chee-series-row > summary {
@@ -393,12 +412,16 @@ min-width: 1420px;
 min-width: 900px;
 }
 
+#dcm4chee-view .dcm4chee-instance-table-wrap table {
+min-width: 760px;
+}
+
 #dcm4chee-view .dcm4chee-empty-result {
 margin: 0 12px 12px;
 }
 
 #dcm4chee-view .dcm4chee-result-actions {
-justify-content: flex-end;
+justify-content: flex-start;
 }
 
 #dcm4chee-view .dcm4chee-diagnostic-checks {

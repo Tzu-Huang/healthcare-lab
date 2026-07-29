@@ -58,13 +58,14 @@ def gdt_coordinator(
 
 
 def build_service_request_resource(
-    values, *, record_id, local_order_number, patient_reference,
+    values, *, record_id, local_order_number, patient_reference, patient_display="",
 ):
     return build_service_request(
         values,
         record_id=record_id,
         local_order_number=local_order_number,
         patient_reference=patient_reference,
+        patient_display=patient_display,
     )
 
 

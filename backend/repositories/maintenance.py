@@ -11,6 +11,12 @@ from backend.domain.patient import CANONICAL_MRN_PATTERN
 
 
 def seed_patient_mrn_sequence(connection: sqlite3.Connection) -> None:
+    existing_sequence = connection.execute(
+        "SELECT 1 FROM local_identifier_sequences WHERE name = 'patient_mrn'"
+    ).fetchone()
+    if existing_sequence:
+        return
+
     highest_existing = 0
     for row in connection.execute("SELECT mrn FROM local_patient_records"):
         normalized_mrn = str(row["mrn"] or "").strip().upper()
@@ -20,11 +26,11 @@ def seed_patient_mrn_sequence(connection: sqlite3.Connection) -> None:
         """
         INSERT INTO local_identifier_sequences (name, next_value)
         VALUES ('patient_mrn', ?)
-        ON CONFLICT(name) DO UPDATE SET
-            next_value = MAX(local_identifier_sequences.next_value, excluded.next_value)
         """,
         (highest_existing + 1,),
-            )
+    )
+
+
 def seed_oie_settings_profile(
     connection: sqlite3.Connection,
     *,

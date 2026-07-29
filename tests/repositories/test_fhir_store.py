@@ -174,6 +174,7 @@ class FhirStoreTests(StoreCaseSupport):
         resource = json.loads(order["payload"])
         self.assertEqual(resource["resourceType"], "ServiceRequest")
         self.assertEqual(resource["subject"]["reference"], "Patient/patient-1")
+        self.assertEqual(resource["subject"]["display"], "Avery Morgan")
         self.assertEqual(resource["status"], "active")
         self.assertEqual(resource["intent"], "order")
         self.assertEqual(resource["priority"], "stat")

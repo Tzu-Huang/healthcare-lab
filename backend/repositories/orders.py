@@ -127,11 +127,17 @@ class OrderRepository:
             local_order_number = order_domain.record_number(record_id)
             visit_id = patient["visit_number"] or order_domain.visit_id(record_id)
             account_number = patient["account_number"] or order_domain.account_number(record_id)
+            patient_display = " ".join(
+                part for part in (
+                    patient["first_name"], patient["middle_name"], patient["last_name"]
+                ) if part
+            )
             resource = resource_builder(
                 values,
                 record_id=record_id,
                 local_order_number=local_order_number,
                 patient_reference=patient_reference,
+                patient_display=patient_display,
             )
             connection.execute(
                 """UPDATE local_order_records

@@ -15,12 +15,15 @@ DEFAULT_CATEGORY = "Procedure"
 
 def build_service_request(
     values: dict[str, Any], *, record_id: int,
-    local_order_number: str, patient_reference: str,
+    local_order_number: str, patient_reference: str, patient_display: str = "",
 ) -> dict[str, Any]:
     fhir = values.get("fhir") or {}
+    subject = {"reference": patient_reference}
+    if display := clean_text(patient_display):
+        subject["display"] = display
     resource: dict[str, Any] = {
         "resourceType": "ServiceRequest", "status": values["status"],
-        "intent": values["intent"], "subject": {"reference": patient_reference},
+        "intent": values["intent"], "subject": subject,
     }
     explicit_id = clean_text(fhir.get("id") or fhir.get("serviceRequestId"))
     if explicit_id:

@@ -21,10 +21,14 @@ class FhirTemplateTests(unittest.TestCase):
                 identifier=["urn:extra|abc"], basedOn="ServiceRequest/prior",
                 quantityValue="2.5", quantityUnit="mL", note="Internal note",
             ),
-            record_id=9, local_order_number="ORD-000009", patient_reference="Patient/patient-1",
+            record_id=9, local_order_number="ORD-000009",
+            patient_reference="Patient/patient-1", patient_display="Avery Lee Morgan",
         )
         self.assertEqual("ServiceRequest", resource["resourceType"])
-        self.assertEqual("Patient/patient-1", resource["subject"]["reference"])
+        self.assertEqual(
+            {"reference": "Patient/patient-1", "display": "Avery Lee Morgan"},
+            resource["subject"],
+        )
         self.assertEqual("ORD-000009", resource["identifier"][0]["value"])
         self.assertEqual({"system": "urn:extra", "value": "abc"}, resource["identifier"][1])
         self.assertEqual([{"reference": "ServiceRequest/prior"}], resource["basedOn"])

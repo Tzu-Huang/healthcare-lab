@@ -12,6 +12,8 @@ class Dcm4cheeViewModuleTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.source = (ROOT / "frontend/static/js/views/dcm4chee.js").read_text(encoding="utf-8")
         cls.bootstrap = (ROOT / "frontend/static/app.js").read_text(encoding="utf-8")
+        cls.template = (ROOT / "frontend/templates/views/dcm4chee.html").read_text(encoding="utf-8")
+        cls.styles = (ROOT / "frontend/static/css/views/dcm4chee.css").read_text(encoding="utf-8")
 
     def test_view_owns_result_grouping_and_nested_rendering(self):
         for owner in (
@@ -67,6 +69,28 @@ class Dcm4cheeViewModuleTests(unittest.TestCase):
             "export function dcm4cheeOpenButton", 1
         )[1].split("export function", 1)[0]
         self.assertIn('window.open(url, "_blank", "noopener")', open_helper)
+
+    def test_ecg_graph_primary_action_is_visible_in_instance_summary(self):
+        instance_renderer = self.source.split(
+            "export function renderDcm4cheeInstanceTable", 1
+        )[1].split("export function", 1)[0]
+        self.assertIn('details.className = "dcm4chee-browser-row dcm4chee-instance-row"', instance_renderer)
+        self.assertIn('dcm4cheeOpenButton("View ECG Graph", viewerUrl)', instance_renderer)
+        self.assertIn('"dcm4chee-ecg-primary-action"', instance_renderer)
+        self.assertIn(".dcm4chee-instance-row > summary", self.styles)
+
+    def test_pacs_results_render_in_full_width_console_panel(self):
+        self.assertIn('class="lab-panel dcm4chee-results-panel"', self.template)
+        self.assertIn('id="dcm4chee-selected-order-results"', self.template)
+        selected_order = self.source.split(
+            "export function renderDcm4cheeSelectedOrder", 1
+        )[1].split("export function", 1)[0]
+        self.assertIn('byId("dcm4chee-selected-order-results")', selected_order)
+        self.assertIn("renderDcm4cheeResultsBrowser(resultsContainer", selected_order)
+        self.assertIn(
+            "#dcm4chee-view .dcm4chee-results-panel {\ngrid-column: 1 / -1;\n}",
+            self.styles,
+        )
 
     def test_patient_order_table_uses_clinical_summary_columns(self):
         self.assertIn(

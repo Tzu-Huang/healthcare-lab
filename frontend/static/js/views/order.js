@@ -292,11 +292,14 @@ function fhirConcept(text, code = "", system = "", display = "") {
 
 export function buildFhirOrderPreviewPayload(payload) {
   const fhir = payload.fhir || {};
+  const patient = selectedOrderPatient();
+  const subject = { reference: selectedOrderPatientReference() || "Patient/<synced-id>" };
+  if (patient?.summary?.name) subject.display = patient.summary.name;
   const resource = {
     resourceType: "ServiceRequest",
     status: fhir.status || "active",
     intent: fhir.intent || "order",
-    subject: { reference: selectedOrderPatientReference() || "Patient/<synced-id>" },
+    subject,
     identifier: [
       {
         system: fhir.identifierSystem || "https://healthcare-lab.local/fhir/identifier/service-request",

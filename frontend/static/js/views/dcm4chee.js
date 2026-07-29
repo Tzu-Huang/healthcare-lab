@@ -205,17 +205,37 @@ export function renderDcm4cheeResultTable(headers, rows, className = "") {
 
 export function renderDcm4cheeInstanceTable(records) {
   if (!records.length) return createElement("p", "No instance-level DICOM metadata for this series.", "muted dcm4chee-empty-result");
-  return renderDcm4cheeResultTable(
-    ["SOP Instance UID", "Modality", "Instance Date/Time", "Status", "Actions"],
-    records.map((item) => [
-      item.sopInstanceUid,
-      item.modality,
-      taipeiTimestamp(item.instanceDateTime || item.lastRefreshedAt),
+  const section = createElement("div", "", "dcm4chee-instance-results");
+  records.forEach((item) => {
+    const details = document.createElement("details");
+    details.className = "dcm4chee-browser-row dcm4chee-instance-row";
+    const summary = document.createElement("summary");
+    const viewerUrl = dcm4cheeEcgViewerUrl(item, "instance");
+    summary.append(
+      createElement("span", "Instance", "dcm4chee-row-kind"),
+      createElement("code", item.sopInstanceUid || "No SOP Instance UID"),
       createElement("span", dcm4cheeDisplayStatus(item.reconciliationStatus), `status ${dcm4cheeResultStatusClass(item.reconciliationStatus)}`),
-      dcm4cheeActionsForResult(item, "instance"),
-    ]),
-    "dcm4chee-instance-table-wrap",
-  );
+    );
+    if (viewerUrl) {
+      const graphButton = dcm4cheeOpenButton("View ECG Graph", viewerUrl);
+      graphButton.classList.add("primary", "dcm4chee-ecg-primary-action");
+      summary.appendChild(graphButton);
+    }
+    details.appendChild(summary);
+    details.appendChild(renderDcm4cheeResultTable(
+      ["SOP Instance UID", "Modality", "Instance Date/Time", "Status", "Actions"],
+      [[
+        item.sopInstanceUid,
+        item.modality,
+        taipeiTimestamp(item.instanceDateTime || item.lastRefreshedAt),
+        createElement("span", dcm4cheeDisplayStatus(item.reconciliationStatus), `status ${dcm4cheeResultStatusClass(item.reconciliationStatus)}`),
+        dcm4cheeActionsForResult(item, "instance"),
+      ]],
+      "dcm4chee-instance-table-wrap",
+    ));
+    section.appendChild(details);
+  });
+  return section;
 }
 
 export function renderDcm4cheeSeriesDetails(series) {
@@ -689,13 +709,16 @@ export function renderDcm4cheeSelectedOrder() {
   const order = selectedDcm4cheeOrder();
   const title = byId("dcm4chee-selected-order-title");
   const container = byId("dcm4chee-selected-order-summary");
+  const resultsContainer = byId("dcm4chee-selected-order-results");
   const sendButton = byId("send-dcm4chee-order");
-  if (!title || !container || !sendButton) return;
+  if (!title || !container || !resultsContainer || !sendButton) return;
   title.textContent = order ? dcm4cheeOrderLabel(order) : "No order selected";
   sendButton.disabled = !order;
   container.replaceChildren();
+  resultsContainer.replaceChildren();
   if (!order) {
     container.appendChild(createElement("p", "Select a DICOM MWL order.", "muted"));
+    resultsContainer.appendChild(createElement("p", "Choose an order to inspect its PACS results.", "muted"));
     return;
   }
   const patient = dcm4cheeOrderPatient(order) || selectedDcm4cheePatient();
@@ -723,7 +746,7 @@ export function renderDcm4cheeSelectedOrder() {
     ["Patient ID", mapping.patientId],
     ["Issuer of Patient ID", mapping.issuerOfPatientId],
   ]));
-  renderDcm4cheeResultsBrowser(container, orderResults, "No refreshed PACS result rows matched this order.");
+  renderDcm4cheeResultsBrowser(resultsContainer, orderResults, "No refreshed PACS result rows matched this order.");
 }
 
 export function renderDcm4cheeProfileSummary() {
