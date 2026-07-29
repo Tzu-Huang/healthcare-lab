@@ -1,23 +1,57 @@
 # Healthcare Lab
 
-Healthcare Lab is a local healthcare interoperability workbench for exercising
-patient, order, and result workflows across HL7 v2, FHIR R4, GDT 2.1, and
-DICOM. It provides one browser-based control plane for the lab services and
-keeps a local SQLite workflow ledger for traceability, retry, and reconciliation.
+> Run end-to-end HL7 v2, FHIR R4, GDT, and DICOM workflows locally with Docker.
 
-The supported v1.0.0 runtime combines:
+[![Tests](https://github.com/Tzu-Huang/healthcare-lab/actions/workflows/container-image.yml/badge.svg)](https://github.com/Tzu-Huang/healthcare-lab/actions/workflows/container-image.yml)
+[![Release](https://img.shields.io/github/v/release/Tzu-Huang/healthcare-lab)](https://github.com/Tzu-Huang/healthcare-lab/releases/latest)
+[![Docker image](https://img.shields.io/badge/GHCR-healthcare--lab-2496ED?logo=docker&logoColor=white)](https://github.com/Tzu-Huang/healthcare-lab/pkgs/container/healthcare-lab)
+[![Platform](https://img.shields.io/badge/platform-linux%2Famd64-0B7285)](deploy/README.md)
 
-- **Healthcare Lab** — Flask application, workflow coordination, local ledger,
-  and service operations dashboard.
-- **Open Integration Engine (OIE)** — HL7 v2 MLLP order and result routing.
-- **Medplum** — FHIR R4 server and web application.
-- **dcm4chee** — DICOM archive, patient synchronization, modality worklist, and
-  result discovery.
-- **GDT Bridge** — shared-folder exchange for GDT orders and returned results.
+[Quick Start](#quick-start-with-docker) ·
+[Demo](docs/demo-walkthrough.md) ·
+[Architecture](docs/architecture.md) ·
+[English Handbook](docs/handbook/USER_HANDBOOK.en.md) ·
+[中文手冊](docs/handbook/USER_HANDBOOK.zh-TW.md)
 
-Healthcare Lab is intended for virtual data on a trusted local machine or
-internal lab. It is not a regulated clinical system and must not be exposed
-directly to the public Internet.
+![Healthcare Lab dashboard showing managed services and configuration checks](docs/handbook/images/dashboard-checked.png)
+
+Healthcare Lab is a browser-based interoperability workbench that connects
+**Open Integration Engine (OIE)**, **Medplum**, **dcm4chee**, and a **GDT
+Bridge** behind one local control plane. Use synthetic data to exercise the
+same patient, order, and result boundaries that are normally scattered across
+separate hospital systems.
+
+| Start with a virtual patient | Follow the order | Reconcile the result |
+| --- | --- | --- |
+| Create protocol-specific patient records and inspect their identifiers. | Send HL7 `ORM^O01`, create a FHIR `ServiceRequest`, export GDT `6302`, or create a DICOM MWL item. | Inspect ACKs, import GDT `6310`, discover FHIR or DICOM results, and match them to the original context. |
+
+### What you can demonstrate
+
+- Create a virtual Patient without connecting to a real hospital system.
+- Route HL7 v2 orders and results through OIE over MLLP.
+- Synchronize FHIR R4 `Patient` and `ServiceRequest` resources to Medplum.
+- Create DICOM patient and modality worklist records in dcm4chee.
+- Exchange GDT 2.1 order/result files and reconcile ECG results across protocols.
+
+> [!IMPORTANT]
+> Use virtual data only. Healthcare Lab is a trusted local/internal test
+> environment, not a regulated clinical system, and must not be exposed
+> directly to the public Internet.
+
+## Workflow at a Glance
+
+![Healthcare Lab protocol workflow connecting OIE, Medplum, GDT, dcm4chee, and the local ledger](docs/images/healthcare-lab-simple-workflows.png)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/handbook/images/oie-order-workflow.png" alt="OIE console showing an ECG order, ACK, and result listener"></td>
+    <td width="50%"><img src="docs/handbook/images/medplum-workflow.png" alt="Medplum console showing synchronized Patient and ServiceRequest resources"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>HL7 v2 through OIE</strong></td>
+    <td align="center"><strong>FHIR R4 in Medplum</strong></td>
+  </tr>
+</table>
 
 ## What It Supports
 
@@ -96,9 +130,15 @@ domain models and explicit client/repository ports. See
 
 ## Quick Start with Docker
 
-Docker Compose is the supported end-user installation path. The verified v1.0.0
-environment targets `linux/amd64` with Docker Desktop on Windows or an
-equivalent Linux Docker host.
+Docker Compose is the supported end-user installation path. The release is
+verified with `linux/amd64` containers on Docker Desktop for Windows in Linux
+container mode. An equivalent Linux Docker host is expected to work but is
+still pending formal release verification.
+
+For the verified path, install and start Docker Desktop, use Windows PowerShell
+5.1 or newer, and download the GitHub Release source archive. The first start
+pulls the OIE, Medplum, dcm4chee, and Healthcare Lab images, so completion time
+depends on the network and Docker resources.
 
 ```powershell
 .\deploy\lab.ps1 start
@@ -107,9 +147,11 @@ equivalent Linux Docker host.
 
 No `.env` or YAML edit is required. Open Healthcare Lab at
 <http://127.0.0.1:5000>. If required application settings are incomplete, the
-Dashboard provides a guided action into the owning Settings section.
+Dashboard provides a guided action into the owning Settings section. Starting
+the containers proves the runtime is available; complete the relevant Settings
+checks before expecting an end-to-end protocol workflow to pass.
 
-The Compose stack pulls `ghcr.io/tzu-huang/healthcare-lab:1.1.2` by default, so
+The Compose stack pulls `ghcr.io/tzu-huang/healthcare-lab:1.2.0` by default, so
 the host does not need Python or a source-code mount. Useful operational
 commands are also available through the PowerShell wrapper:
 
@@ -207,7 +249,7 @@ python -m unittest discover -s tests -v
 - [dcm4chee end-to-end verification](docs/dcm4chee-production-e2e-verification.md)
 - [GDT bridge MVP](docs/gdt-bridge-mvp.md)
 - [Mirth Connect / OIE setup](docs/mirth-connect-setup.md)
-- [Release notes: v1.0.0](docs/releases/v1.0.0.md)
+- [Release notes: v1.1.2](docs/releases/v1.1.2.md)
 
 ## Scope and Limitations
 
@@ -218,4 +260,4 @@ python -m unittest discover -s tests -v
 - OIE, FHIR, GDT, and DICOM workflows implement scoped interoperability lab
   profiles, not complete protocol or clinical-system conformance.
 - Public-Internet hardening, built-in TLS, user authentication, authorization,
-  and regulated audit controls are outside v1.0.0 scope.
+  and regulated audit controls are outside the project scope.

@@ -35,11 +35,17 @@ docs/ap-integration-test-notes.md
 docs/cortex-medplum-sync-troubleshooting.md
 docs/demo-walkthrough.md
 docs/design/
+!docs/design/
+docs/design/*
+!docs/design/social-preview-philosophy.md
 docs/ecg-hl7-integration-research.md
 docs/handbook/*.docx
 docs/healthcare-lab-simple-workflows.md
 docs/hl7-oru-pdf-validation.md
 docs/images/
+!docs/images/
+docs/images/*
+!docs/images/github-social-preview.png
 docs/releases/*-checklist.md
 docs/reverse-proxy-nginx.md
 docs/settings-workspace.md
