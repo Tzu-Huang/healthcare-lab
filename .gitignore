@@ -25,6 +25,7 @@ worktrees/
 tmp/
 dicom-formats/
 tools/
+openemr_modules/oe-module-gdt-ecg-poc/
 
 # Local specification workflow
 openspec/
