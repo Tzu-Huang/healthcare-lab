@@ -23,9 +23,25 @@ export function initializeGdtView(options = {}) {
   byId("refresh-gdt-console").addEventListener("click", refreshGdtConsole);
   byId("refresh-gdt-bridge-config").addEventListener("click", refreshGdtBridgeConfig);
   byId("apply-gdt-host-folder").addEventListener("click", applyGdtHostPath);
+  byId("gdt-host-folder-path").addEventListener("input", renderGdtDerivedHostFolders);
   byId("start-gdt-watcher").addEventListener("click", startGdtWatcher);
   byId("stop-gdt-watcher").addEventListener("click", stopGdtWatcher);
   byId("copy-gdt-payload").addEventListener("click", () => copyTextFromElement("gdt-payload-preview"));
+}
+
+function hostFolderPath(root, role) {
+  const trimmed = String(root || "").trim().replace(/[\\/]+$/, "");
+  if (!trimmed || trimmed === "/data/gdt-bridge") return "";
+  const separator = trimmed.includes("\\") ? "\\" : "/";
+  return `${trimmed}${separator}${role}`;
+}
+
+function renderGdtDerivedHostFolders() {
+  const hostPath = byId("gdt-host-folder-path").value;
+  byId("gdt-derived-inbox").textContent = hostFolderPath(hostPath, "inbox") || "Host folder unavailable";
+  byId("gdt-derived-outbox").textContent = hostFolderPath(hostPath, "outbox") || "Host folder unavailable";
+  byId("gdt-derived-archive").textContent = hostFolderPath(hostPath, "archive") || "Host folder unavailable";
+  byId("gdt-derived-error").textContent = hostFolderPath(hostPath, "error") || "Host folder unavailable";
 }
 export function selectedGdtPatient() {
   return (state.workbench.patients || []).find((item) => Number(item.id) === Number(state.selectedPatientId)) || null;
@@ -39,11 +55,7 @@ function renderGdtBridgeConfig() {
   byId("gdt-host-folder-source").textContent = deployment.source
     ? `Effective source: ${deployment.source}${deployment.conflict ? " (advanced override conflicts with the saved value)" : ""}`
     : "Deployment controller unavailable; use deploy/lab.ps1 as a fallback.";
-  const derived = deployment.derived || {};
-  byId("gdt-derived-inbox").textContent = derived.inbox || item.inboxPath || "/data/gdt-bridge/inbox";
-  byId("gdt-derived-outbox").textContent = derived.outbox || item.outboxPath || "/data/gdt-bridge/outbox";
-  byId("gdt-derived-archive").textContent = derived.archive || item.archivePath || "/data/gdt-bridge/archive";
-  byId("gdt-derived-error").textContent = derived.error || item.errorPath || "/data/gdt-bridge/error";
+  renderGdtDerivedHostFolders();
   renderGdtWatcherStatus(item.watcher || {});
 }
 
@@ -226,8 +238,8 @@ function renderGdtPatients() {
       const content = document.createElement("div");
       content.className = "gdt-patient-rollup-content";
       content.append(
-        gdtPatientSection("GDT-OUT", "Orders", renderGdtPatientOrders(item)),
-        gdtPatientSection("GDT-IN", "Results", renderGdtPatientResults(item)),
+        gdtPatientSection("GDT-IN", "Orders", renderGdtPatientOrders(item)),
+        gdtPatientSection("GDT-OUT", "Results", renderGdtPatientResults(item)),
       );
       detailCell.appendChild(content);
       detailRow.appendChild(detailCell);
@@ -366,11 +378,11 @@ function renderGdtPatientOrders(patient) {
     const actions = document.createElement("div");
     actions.className = "button-row compact-actions";
     actions.append(
-      gdtActionButton("Preview GDT-OUT", (event) => {
+      gdtActionButton("Preview GDT-IN", (event) => {
         event.stopPropagation();
         selectGdtOrder(item);
       }),
-      gdtActionButton("Write GDT-OUT", (event) => {
+      gdtActionButton("Write GDT-IN", (event) => {
         event.stopPropagation();
         writeGdtOrder(item.id);
       }),

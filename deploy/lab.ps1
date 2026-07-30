@@ -102,8 +102,19 @@ function Get-ControllerProcess {
     } else {
         (& ps -p $Controller.Id -o args= 2>$null | Out-String).Trim()
     }
-    if ([string]::IsNullOrWhiteSpace($CommandLine) -or
-        $CommandLine.IndexOf([IO.Path]::GetFullPath($ControllerScript), [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+    # Some locked-down Windows environments allow Get-Process but deny WMI/CIM
+    # command-line reads. The installation-scoped identity plus the expected
+    # PowerShell executable still identifies the owned controller; do not
+    # destroy its identity merely because the optional stronger check is
+    # unavailable.
+    if ([string]::IsNullOrWhiteSpace($CommandLine)) {
+        if ($Controller.ProcessName -in @("powershell", "pwsh")) {
+            return $Controller
+        }
+        Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
+        return $null
+    }
+    if ($CommandLine.IndexOf([IO.Path]::GetFullPath($ControllerScript), [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
         $CommandLine.IndexOf("-Mode serve", [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
         $CommandLine.IndexOf([IO.Path]::GetFullPath($RepoDir), [StringComparison]::OrdinalIgnoreCase) -lt 0) {
         Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
@@ -202,6 +213,13 @@ switch ($Action) {
         }
     }
     "restart" {
+        if ([string]::IsNullOrWhiteSpace($env:LAB_APP_PORT)) {
+            $env:LAB_APP_PORT = Get-GdtDotEnvValue -Path $EnvFile -Name "LAB_APP_PORT"
+        }
+        if ([string]::IsNullOrWhiteSpace($env:LAB_APP_PORT)) {
+            $env:LAB_APP_PORT = "5000"
+        }
+        Start-GdtHostController
         if ($ResolvedServices.Count -eq 0) {
             Initialize-LabDirectories
         }

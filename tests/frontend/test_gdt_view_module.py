@@ -52,6 +52,9 @@ class GdtViewModuleTests(unittest.TestCase):
         self.assertIn("waitForHostOperation", self.source)
         self.assertIn("reconnectAfterApply", self.source)
         self.assertIn("window.confirm", self.source)
+        self.assertIn("function renderGdtDerivedHostFolders()", self.source)
+        self.assertIn('hostFolderPath(hostPath, "inbox")', self.source)
+        self.assertNotIn('derived.inbox || item.inboxPath || "/data/gdt-bridge/inbox"', self.source)
 
 
 if __name__ == "__main__":

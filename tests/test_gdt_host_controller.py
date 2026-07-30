@@ -145,6 +145,12 @@ class GdtHostControllerTests(unittest.TestCase):
         self.assertEqual(str(self.deploy / "gdt-host-controller.ps1"), identity["scriptPath"])
         self.assertEqual(str(self.root), identity["repoDir"])
 
+    def test_controller_normalizes_docker_desktop_mount_sources(self):
+        source = (self.deploy / "gdt-host-controller.ps1").read_text(encoding="utf-8")
+        self.assertIn('"/run/desktop/mnt/host/"', source)
+        self.assertIn('"/host_mnt/"', source)
+        self.assertIn("Convert-DockerMountSourceToHostPath", source)
+
     def test_worker_contract_verifies_state_mount_and_role_diagnostics(self):
         source = (self.deploy / "gdt-host-controller.ps1").read_text(encoding="utf-8")
 

@@ -221,6 +221,24 @@ function Invoke-DockerJson {
     return (($Output | Out-String).Trim() | ConvertFrom-Json)
 }
 
+function Convert-DockerMountSourceToHostPath {
+    param([string] $Source)
+    $Normalized = ([string] $Source).Replace("\", "/")
+    foreach ($Prefix in @("/run/desktop/mnt/host/", "/host_mnt/")) {
+        if ($Normalized.StartsWith($Prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            $Relative = $Normalized.Substring($Prefix.Length)
+            if ($Relative -match '^([a-zA-Z])(?:/(.*))?$') {
+                $Tail = ([string] $Matches[2]).Replace("/", "\")
+                if ($Tail) {
+                    return "$($Matches[1]):\$Tail"
+                }
+                return "$($Matches[1]):\"
+            }
+        }
+    }
+    return $Source
+}
+
 function Test-LabAppDeployment {
     param([string] $HostPath)
     $ComposeArguments = @("compose")
@@ -241,7 +259,12 @@ function Test-LabAppDeployment {
         throw "The replacement lab-app container is not healthy."
     }
     $Mount = @($Container.Mounts | Where-Object { $_.Destination -eq "/data/gdt-bridge" }) | Select-Object -First 1
-    if ($null -eq $Mount -or -not [IO.Path]::GetFullPath([string] $Mount.Source).Equals(
+    $MountSource = if ($null -ne $Mount) {
+        Convert-DockerMountSourceToHostPath -Source ([string] $Mount.Source)
+    } else {
+        ""
+    }
+    if ($null -eq $Mount -or -not [IO.Path]::GetFullPath($MountSource).Equals(
         [IO.Path]::GetFullPath($HostPath), [StringComparison]::OrdinalIgnoreCase
     )) {
         throw "The effective /data/gdt-bridge mount does not match the requested host folder."
@@ -400,15 +423,18 @@ function Start-ApplyOperation {
 
 function Start-Controller {
     $Token = Get-ControllerToken
-    Write-JsonState -Path $PidFile -Value @{
-        pid = $PID
-        scriptPath = [IO.Path]::GetFullPath($PSCommandPath)
-        repoDir = $RepoDir
-        startedAt = [DateTimeOffset]::UtcNow.ToString("o")
-    }
     $Listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
     try {
         $Listener.Start()
+        # Publish ownership only after this process successfully owns the
+        # listener. A second launch must not overwrite and then delete the
+        # identity of an already-running controller.
+        Write-JsonState -Path $PidFile -Value @{
+            pid = $PID
+            scriptPath = [IO.Path]::GetFullPath($PSCommandPath)
+            repoDir = $RepoDir
+            startedAt = [DateTimeOffset]::UtcNow.ToString("o")
+        }
         while ($true) {
             $Client = $Listener.AcceptTcpClient()
             try {
