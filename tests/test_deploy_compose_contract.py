@@ -82,10 +82,10 @@ class ComposePortContractTests(unittest.TestCase):
 
     def test_lab_app_uses_published_image_without_source_mount_or_startup_install(self):
         self.assertIn(
-            "${LAB_APP_IMAGE:-ghcr.io/tzu-huang/healthcare-lab:1.2.2}",
+            "${LAB_APP_IMAGE:-ghcr.io/tzu-huang/healthcare-lab:1.2.3}",
             self.compose,
         )
-        self.assertIn("LAB_APP_IMAGE=ghcr.io/tzu-huang/healthcare-lab:1.2.2", self.example)
+        self.assertIn("LAB_APP_IMAGE=ghcr.io/tzu-huang/healthcare-lab:1.2.3", self.example)
         self.assertNotIn("- ..:/workspace", self.compose)
         self.assertNotIn("pip install", self.compose)
         self.assertNotIn("python app.py", self.compose)
@@ -234,7 +234,7 @@ class ComposeRenderContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         rendered = result.stdout
         for contract in (
-            "ghcr.io/tzu-huang/healthcare-lab:1.2.2",
+            "ghcr.io/tzu-huang/healthcare-lab:1.2.3",
             "nextgenhealthcare/connect:4.5.2@sha256:",
             "published: \"5000\"",
             "published: \"6600\"",
