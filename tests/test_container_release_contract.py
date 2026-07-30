@@ -80,7 +80,7 @@ class ContainerReleaseContractTests(unittest.TestCase):
             self.assertIn(contract, combined)
 
         self.assertIn(
-            "pulls `ghcr.io/tzu-huang/healthcare-lab:1.2.0` by default",
+            "pulls `ghcr.io/tzu-huang/healthcare-lab:1.2.1` by default",
             self.root_readme,
         )
         self.assertIn("## v1.1.1 verified image matrix", self.release_guide)

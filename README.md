@@ -151,7 +151,7 @@ Dashboard provides a guided action into the owning Settings section. Starting
 the containers proves the runtime is available; complete the relevant Settings
 checks before expecting an end-to-end protocol workflow to pass.
 
-The Compose stack pulls `ghcr.io/tzu-huang/healthcare-lab:1.2.0` by default, so
+The Compose stack pulls `ghcr.io/tzu-huang/healthcare-lab:1.2.1` by default, so
 the host does not need Python or a source-code mount. Useful operational
 commands are also available through the PowerShell wrapper:
 
