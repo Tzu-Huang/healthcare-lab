@@ -144,6 +144,8 @@ class GdtHostControllerTests(unittest.TestCase):
         self.assertEqual(self.process.pid, identity["pid"])
         self.assertEqual(str(self.deploy / "gdt-host-controller.ps1"), identity["scriptPath"])
         self.assertEqual(str(self.root), identity["repoDir"])
+        self.assertIsInstance(identity["processStartedAtTicks"], int)
+        self.assertGreater(identity["processStartedAtTicks"], 0)
 
     def test_second_controller_cannot_delete_running_controller_identity(self):
         identity_path = self.root / "instance" / "deployment" / "gdt-controller.pid"
@@ -169,14 +171,6 @@ class GdtHostControllerTests(unittest.TestCase):
         self.assertEqual(original_identity, current_identity)
         status, _ = self.request("/v1/status", origin=self.origin)
         self.assertEqual(200, status)
-
-    def test_locked_down_process_fallback_requires_matching_start_identity(self):
-        source = (ROOT / "deploy" / "lab.ps1").read_text(encoding="utf-8")
-
-        self.assertIn("$Identity.startedAt", source)
-        self.assertIn("$Controller.StartTime.ToUniversalTime()", source)
-        self.assertIn("$StartIdentityMatches", source)
-        self.assertIn("-and $StartIdentityMatches", source)
 
     def test_controller_normalizes_docker_desktop_mount_sources(self):
         source = (self.deploy / "gdt-host-controller.ps1").read_text(encoding="utf-8")

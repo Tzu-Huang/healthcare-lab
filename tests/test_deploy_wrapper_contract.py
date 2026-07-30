@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import shutil
@@ -139,6 +140,63 @@ class DeployWrapperContractTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("controller is stopped", result.stdout)
+        self.assertFalse((runtime / "gdt-controller.pid").exists())
+
+    def test_locked_down_fallback_does_not_stop_mismatched_process_lifetime(self):
+        lab_script = self.deploy / "lab.ps1"
+        source = lab_script.read_text(encoding="utf-8")
+        source = source.replace(
+            '(Get-CimInstance Win32_Process -Filter "ProcessId = $($Controller.Id)" '
+            "-ErrorAction SilentlyContinue).CommandLine",
+            "$null",
+        )
+        source = source.replace(
+            "(& ps -p $Controller.Id -o args= 2>$null | Out-String).Trim()",
+            "$null",
+        )
+        self.assertNotEqual(
+            source,
+            (ROOT / "deploy" / "lab.ps1").read_text(encoding="utf-8"),
+        )
+        lab_script.write_text(source, encoding="utf-8")
+
+        unrelated = subprocess.Popen(
+            [
+                POWERSHELL,
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Start-Sleep -Seconds 30",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.addCleanup(
+            lambda: unrelated.poll() is None
+            and (unrelated.terminate(), unrelated.wait(timeout=5))
+        )
+        runtime = self.root / "instance" / "deployment"
+        runtime.mkdir(parents=True)
+        (runtime / "gdt-controller.pid").write_text(
+            json.dumps(
+                {
+                    "pid": unrelated.pid,
+                    "scriptPath": str(self.deploy / "gdt-host-controller.ps1"),
+                    "repoDir": str(self.root),
+                    "processStartedAtTicks": 1,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_wrapper(
+            "stop",
+            "all",
+            extra_env={"HEALTHCARE_LAB_DISABLE_HOST_CONTROLLER": ""},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIsNone(unrelated.poll(), "unrelated PowerShell process was stopped")
         self.assertFalse((runtime / "gdt-controller.pid").exists())
 
     def test_existing_env_file_is_passed_without_printing_its_values(self):

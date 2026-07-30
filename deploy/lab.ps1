@@ -108,14 +108,13 @@ function Get-ControllerProcess {
     # destroy its identity merely because the optional stronger check is
     # unavailable.
     if ([string]::IsNullOrWhiteSpace($CommandLine)) {
-        $RecordedStart = [DateTimeOffset]::MinValue
         $StartIdentityMatches = $false
         try {
-            if ([DateTimeOffset]::TryParse([string] $Identity.startedAt, [ref] $RecordedStart)) {
-                $ProcessStart = [DateTimeOffset] $Controller.StartTime.ToUniversalTime()
-                $StartIdentityMatches = [Math]::Abs(
-                    ($ProcessStart - $RecordedStart.ToUniversalTime()).TotalSeconds
-                ) -le 10
+            if ($Identity.processStartedAtTicks -match '^\d+$') {
+                $StartIdentityMatches = (
+                    $Controller.StartTime.ToUniversalTime().Ticks -eq
+                    [long] $Identity.processStartedAtTicks
+                )
             }
         } catch {
             $StartIdentityMatches = $false
@@ -162,7 +161,7 @@ function Stop-GdtHostController {
     }
     $Controller = Get-ControllerProcess
     if ($Controller) {
-        Stop-Process -Id $Controller.Id
+        Stop-Process -InputObject $Controller
     }
     Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue
 }

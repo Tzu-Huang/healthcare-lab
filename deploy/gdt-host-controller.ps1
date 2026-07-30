@@ -434,6 +434,7 @@ function Start-Controller {
             pid = $PID
             scriptPath = [IO.Path]::GetFullPath($PSCommandPath)
             repoDir = $RepoDir
+            processStartedAtTicks = (Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
             startedAt = [DateTimeOffset]::UtcNow.ToString("o")
         }
         $PublishedIdentity = $true
