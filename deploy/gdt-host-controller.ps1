@@ -22,6 +22,7 @@ $ComposeFile = Join-Path $ScriptDir "docker-compose.yml"
 $EnvFile = Join-Path $RepoDir ".env"
 
 . (Join-Path $ScriptDir "gdt-host-path.ps1")
+. (Join-Path $ScriptDir "docker-compose-command.ps1")
 
 function Write-AtomicUtf8 {
     param(
@@ -201,12 +202,15 @@ function Invoke-Compose {
     param([string[]] $Arguments, [string] $HostPath)
     [Environment]::SetEnvironmentVariable("GDT_BRIDGE_HOST_PATH", $HostPath, "Process")
     [Environment]::SetEnvironmentVariable("LAB_APP_PORT", "$LabAppPort", "Process")
-    $Base = @("compose")
+    $Base = @()
     if (Test-Path -LiteralPath $EnvFile -PathType Leaf) {
         $Base += @("--env-file", $EnvFile)
     }
     $Base += @("-f", $ComposeFile) + $Arguments
-    & docker @Base
+    $Invocation = Get-DockerComposeInvocation -Arguments $Base
+    $Executable = $Invocation.FilePath
+    $ComposeArguments = $Invocation.Arguments
+    & $Executable @ComposeArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Docker Compose action failed with exit code $LASTEXITCODE."
     }
@@ -241,12 +245,15 @@ function Convert-DockerMountSourceToHostPath {
 
 function Test-LabAppDeployment {
     param([string] $HostPath)
-    $ComposeArguments = @("compose")
+    $ComposeArguments = @()
     if (Test-Path -LiteralPath $EnvFile -PathType Leaf) {
         $ComposeArguments += @("--env-file", $EnvFile)
     }
     $ComposeArguments += @("-f", $ComposeFile, "ps", "-q", "lab-app")
-    $ContainerId = (& docker @ComposeArguments 2>&1 | Out-String).Trim()
+    $Invocation = Get-DockerComposeInvocation -Arguments $ComposeArguments
+    $Executable = $Invocation.FilePath
+    $ComposeArguments = $Invocation.Arguments
+    $ContainerId = (& $Executable @ComposeArguments 2>&1 | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($ContainerId)) {
         throw "The replacement lab-app container is unavailable."
     }

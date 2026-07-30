@@ -31,6 +31,10 @@ class DeployWrapperContractTests(unittest.TestCase):
             self.deploy / "gdt-host-controller.ps1",
         )
         shutil.copy2(
+            ROOT / "deploy" / "docker-compose-command.ps1",
+            self.deploy / "docker-compose-command.ps1",
+        )
+        shutil.copy2(
             ROOT / "deploy" / "docker-compose.yml",
             self.deploy / "docker-compose.yml",
         )
@@ -46,7 +50,15 @@ class DeployWrapperContractTests(unittest.TestCase):
         if os.name == "nt":
             (self.bin / "docker.cmd").write_text(
                 "@echo off\r\n"
+                'if "%FAKE_DOCKER_COMPOSE_V2%"=="0" if "%1 %2"=="compose version" exit /b 1\r\n'
                 "echo %*>>\"%FAKE_DOCKER_INVOCATIONS%\"\r\n"
+                "echo %GDT_BRIDGE_HOST_PATH%>>\"%FAKE_DOCKER_ENVIRONMENT%\"\r\n"
+                "exit /b 0\r\n",
+                encoding="utf-8",
+            )
+            (self.bin / "docker-compose.cmd").write_text(
+                "@echo off\r\n"
+                "echo legacy %*>>\"%FAKE_DOCKER_INVOCATIONS%\"\r\n"
                 "echo %GDT_BRIDGE_HOST_PATH%>>\"%FAKE_DOCKER_ENVIRONMENT%\"\r\n"
                 "exit /b 0\r\n",
                 encoding="utf-8",
@@ -55,12 +67,22 @@ class DeployWrapperContractTests(unittest.TestCase):
             fake_docker = self.bin / "docker"
             fake_docker.write_text(
                 "#!/bin/sh\n"
+                '[ "$FAKE_DOCKER_COMPOSE_V2" = "0" ] && [ "$1 $2" = "compose version" ] && exit 1\n'
                 "printf '%s\\n' \"$*\" >> \"$FAKE_DOCKER_INVOCATIONS\"\n"
                 "printf '%s\\n' \"$GDT_BRIDGE_HOST_PATH\" >> \"$FAKE_DOCKER_ENVIRONMENT\"\n"
                 "exit 0\n",
                 encoding="utf-8",
             )
             fake_docker.chmod(0o755)
+            fake_legacy = self.bin / "docker-compose"
+            fake_legacy.write_text(
+                "#!/bin/sh\n"
+                "printf 'legacy %s\\n' \"$*\" >> \"$FAKE_DOCKER_INVOCATIONS\"\n"
+                "printf '%s\\n' \"$GDT_BRIDGE_HOST_PATH\" >> \"$FAKE_DOCKER_ENVIRONMENT\"\n"
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            fake_legacy.chmod(0o755)
 
     def run_wrapper(self, *arguments: str, extra_env=None):
         env = os.environ.copy()
@@ -88,7 +110,11 @@ class DeployWrapperContractTests(unittest.TestCase):
         )
 
     def recorded_arguments(self):
-        return self.invocations.read_text(encoding="utf-8").splitlines()
+        return [
+            line
+            for line in self.invocations.read_text(encoding="utf-8").splitlines()
+            if line.strip() != "compose version"
+        ]
 
     def recorded_gdt_paths(self):
         return self.docker_environment.read_text(encoding="utf-8").splitlines()
@@ -127,6 +153,19 @@ class DeployWrapperContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("controller is stopped", result.stdout)
         self.assertFalse(self.invocations.exists())
+
+    def test_legacy_docker_compose_is_used_when_v2_is_unavailable(self):
+        result = self.run_wrapper(
+            "start",
+            "lab-app",
+            extra_env={"FAKE_DOCKER_COMPOSE_V2": "0"},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = self.recorded_arguments()
+        self.assertEqual(1, len(calls))
+        self.assertTrue(calls[0].startswith("legacy -f"), calls[0])
+        self.assertIn("up -d lab-app", calls[0])
 
     def test_stale_pid_identity_is_not_treated_as_owned_controller(self):
         runtime = self.root / "instance" / "deployment"
