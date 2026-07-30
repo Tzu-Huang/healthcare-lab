@@ -145,6 +145,39 @@ class GdtHostControllerTests(unittest.TestCase):
         self.assertEqual(str(self.deploy / "gdt-host-controller.ps1"), identity["scriptPath"])
         self.assertEqual(str(self.root), identity["repoDir"])
 
+    def test_second_controller_cannot_delete_running_controller_identity(self):
+        identity_path = self.root / "instance" / "deployment" / "gdt-controller.pid"
+        original_identity = json.loads(identity_path.read_text(encoding="utf-8"))
+        duplicate = subprocess.run(
+            [
+                POWERSHELL, "-NoProfile", "-NonInteractive", "-File",
+                str(self.deploy / "gdt-host-controller.ps1"),
+                "-Mode", "serve", "-RepoDir", str(self.root),
+                "-Port", str(self.controller_port),
+                "-LabAppPort", str(self.app_port),
+            ],
+            cwd=self.root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        )
+
+        self.assertNotEqual(0, duplicate.returncode)
+        self.assertTrue(identity_path.is_file())
+        current_identity = json.loads(identity_path.read_text(encoding="utf-8"))
+        self.assertEqual(original_identity, current_identity)
+        status, _ = self.request("/v1/status", origin=self.origin)
+        self.assertEqual(200, status)
+
+    def test_locked_down_process_fallback_requires_matching_start_identity(self):
+        source = (ROOT / "deploy" / "lab.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("$Identity.startedAt", source)
+        self.assertIn("$Controller.StartTime.ToUniversalTime()", source)
+        self.assertIn("$StartIdentityMatches", source)
+        self.assertIn("-and $StartIdentityMatches", source)
+
     def test_controller_normalizes_docker_desktop_mount_sources(self):
         source = (self.deploy / "gdt-host-controller.ps1").read_text(encoding="utf-8")
         self.assertIn('"/run/desktop/mnt/host/"', source)

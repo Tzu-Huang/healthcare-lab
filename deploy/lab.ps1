@@ -108,7 +108,19 @@ function Get-ControllerProcess {
     # destroy its identity merely because the optional stronger check is
     # unavailable.
     if ([string]::IsNullOrWhiteSpace($CommandLine)) {
-        if ($Controller.ProcessName -in @("powershell", "pwsh")) {
+        $RecordedStart = [DateTimeOffset]::MinValue
+        $StartIdentityMatches = $false
+        try {
+            if ([DateTimeOffset]::TryParse([string] $Identity.startedAt, [ref] $RecordedStart)) {
+                $ProcessStart = [DateTimeOffset] $Controller.StartTime.ToUniversalTime()
+                $StartIdentityMatches = [Math]::Abs(
+                    ($ProcessStart - $RecordedStart.ToUniversalTime()).TotalSeconds
+                ) -le 10
+            }
+        } catch {
+            $StartIdentityMatches = $false
+        }
+        if ($Controller.ProcessName -in @("powershell", "pwsh") -and $StartIdentityMatches) {
             return $Controller
         }
         Remove-Item -LiteralPath $ControllerPidFile -Force -ErrorAction SilentlyContinue

@@ -424,6 +424,7 @@ function Start-ApplyOperation {
 function Start-Controller {
     $Token = Get-ControllerToken
     $Listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
+    $PublishedIdentity = $false
     try {
         $Listener.Start()
         # Publish ownership only after this process successfully owns the
@@ -435,6 +436,7 @@ function Start-Controller {
             repoDir = $RepoDir
             startedAt = [DateTimeOffset]::UtcNow.ToString("o")
         }
+        $PublishedIdentity = $true
         while ($true) {
             $Client = $Listener.AcceptTcpClient()
             try {
@@ -507,7 +509,12 @@ function Start-Controller {
         }
     } finally {
         $Listener.Stop()
-        Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
+        if ($PublishedIdentity) {
+            $Identity = Read-JsonObject -Path $PidFile
+            if ($null -ne $Identity -and [int] $Identity.pid -eq $PID) {
+                Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 }
 
