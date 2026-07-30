@@ -75,6 +75,8 @@ v1.1.1 的支援邊界是可信任的本機或內部實驗室，以及 `linux/am
 ```powershell
 docker version
 docker compose version
+# 若上方指令不可用：
+docker-compose version
 docker info --format 'Server={{.ServerVersion}} OSType={{.OSType}} Arch={{.Architecture}} CPUs={{.NCPU}} Memory={{.MemTotal}}'
 ```
 
@@ -200,8 +202,8 @@ Managed Channel destination、queue、retry 或 ACK 設定變更後，必須 Pre
 | Action | 實際用途 |
 | --- | --- |
 | `inspect` | 以 JSON 顯示 container、image、state、ports 與 Compose metadata |
-| `status` | 執行 `docker compose ps`，列出目前執行中的 services |
-| `start` | 執行 `docker compose up -d`；可指定 service |
+| `status` | 執行 Compose `ps`，列出目前執行中的 services |
+| `start` | 執行 Compose `up -d`；可指定 service，並啟動 Windows GDT Host Controller |
 | `smoke` | 目前只列出 Compose `ps` 狀態；不執行 HTTP 或協定測試 |
 | `logs` | 顯示指定 service 的最後 N 行 logs |
 | `restart` | force recreate service；指定 service 時使用 `--no-deps` |
@@ -530,7 +532,9 @@ Healthcare Lab <-- GDT-IN  6310 -- /data/gdt-bridge/outbox <-- AP
 
 ### Bridge folder contract
 
-預設啟動時，wrapper 會建立 Windows host 的 repo-local `instance\gdt-bridge`，Compose 將它 mount 為 `lab-app` 內的 `/data/gdt-bridge`。若 AP 必須使用另一個 Windows share，才在 Advanced deployment `.env` 將 `GDT_BRIDGE_HOST_PATH` 設為該專用 host folder；wrapper 只解析並建立該 exact safe path，且拒絕 filesystem root 或 repository root。Healthcare Lab **Settings → GDT** 的 Shared Folder 是 container 內 application 讀寫的路徑，在 Docker 中通常維持 `/data/gdt-bridge`，不可填入 `C:\...` Windows path。
+預設啟動時，wrapper 會建立 Windows host 的 repo-local `instance\gdt-bridge`，Compose 將它 mount 為 `lab-app` 內的 `/data/gdt-bridge`。若要在不使用 `.env` 的情況下指定專用 Windows 資料夾，先以 `.\deploy\lab.ps1 start` 啟動，進入 **GDT** 頁面，在 **Windows Shared Folder** 輸入絕對路徑後按 **Apply**。本機 GDT Host Controller 會驗證路徑、建立支援的子資料夾、將選擇保存於 `instance\deployment`，並且只 recreate `lab-app`。Filesystem root、repository root、過於寬廣的 user-profile path、relative path、parent traversal 與 UNC path 都會被拒絕。Container 內 application path 固定維持 `/data/gdt-bridge`。
+
+Advanced deployment 仍可在 `.env` 設定 `GDT_BRIDGE_HOST_PATH`，但它的優先權高於頁面保存值；存在此 override 時，頁面 Apply 不會覆寫它。一般 GDT 資料夾選擇不需要 `.env`。
 
 | Folder | Producer → consumer | 用途 |
 | --- | --- | --- |
@@ -839,7 +843,7 @@ Invoke-WebRequest http://127.0.0.1:5000/ -UseBasicParsing
 | 目的 | 命令 | 預期證據／邊界 |
 | --- | --- | --- |
 | 檢查 Docker client 與 server | `docker version` | Client 與 Server 區段皆可取得。 |
-| 檢查 Compose | `docker compose version` | 可使用 Compose v2-compatible command。 |
+| 檢查 Compose | `docker compose version`；若不可用則執行 `docker-compose version` | 至少一種受支援的 Compose command 可用；wrapper 優先使用 v2，否則 fallback 至 v1。 |
 | 檢查 Docker host | `docker info --format 'Server={{.ServerVersion}} OSType={{.OSType}} Arch={{.Architecture}} CPUs={{.NCPU}} Memory={{.MemTotal}}'` | `OSType=linux`；v1.0.0 RC 已在 `amd64` 驗證。 |
 | 驗證 effective Compose configuration | `docker compose --env-file .env -f deploy\docker-compose.yml config --quiet` | Exit code 0 只驗證 interpolation 與 Compose structure，不驗證 credentials 或 connectivity。 |
 | 列出 effective images | `docker compose --env-file .env -f deploy\docker-compose.yml config --images` | 對照 release matrix 檢查每個 image；application 應使用 immutable tag。 |
@@ -998,7 +1002,7 @@ Compose runtime 已提供 Docker-internal dcm4chee defaults。若在 Advanced de
 
 | Variable(s) | 必填 | Release default／example | 用途 | 生效操作 |
 | --- | --- | --- | --- | --- |
-| `GDT_BRIDGE_HOST_PATH` | 不使用 default folder 時 | `<empty>` → `instance\gdt-bridge` | 掛載至 `/data/gdt-bridge` 的 host folder。 | 暫停 AP exchange、驗證 absolute host path 與 folder contract，再 recreate `lab-app`。 |
+| `GDT_BRIDGE_HOST_PATH` | 僅 Advanced override | `<empty>` → 頁面保存值 → `instance\gdt-bridge` | 掛載至 `/data/gdt-bridge` 的 host folder。 | 一般使用由 `lab.ps1` 啟動後在 GDT 頁面選擇並 Apply；`.env` 值具有較高優先權，須由 operator 管理 recreate。 |
 | `GDT_BRIDGE_IMPORT_SUCCESS_MODE` | 否 | `archive` | Successful-file disposition。 | Recreate `lab-app`；以 synthetic `6310` 驗證。 |
 | `GDT_BRIDGE_FILENAME_PROFILE` | 否 | `permissive` | Filename validation policy。 | Recreate `lab-app`；收緊前驗證 accepted 與 rejected filenames。 |
 | `GDT_BRIDGE_RECEIVER_ID`、`GDT_BRIDGE_SENDER_ID` | 依 profile | `<empty>` | Optional GDT party-ID validation／generation values。 | Recreate `lab-app`；與 AP 對齊 exact IDs。 |
@@ -1012,7 +1016,7 @@ Compose runtime 已提供 Docker-internal dcm4chee defaults。若在 Advanced de
 | Healthcare Lab result listener | Host、port、MLLP framing、auto-start | `Save Listener Settings` 只儲存 intent，明確不 restart runtime。 | 依情況使用 Start／Stop／Retry。若 Compose container port/publication 改變，須先改 `.env` 並 recreate。 |
 | Managed OIE Channels | 各 managed Channel 的 Healthcare Lab-owned source／destination desired fields | `Save desired fields` 只更新 desired state。 | Refresh inventory、Preview single target、檢查 owned-field differences，再 Apply。Save／Preview 不會改變 OIE。 |
 | Medplum typed profile | Internal FHIR URL、browser URL、client ID、write-only secret、scope、token URL、timeouts | 儲存 Patient／Order workflow 使用的權威 profile；空白 secret 保留既有值。 | 執行 Save-and-test 的 metadata、OAuth 與 authenticated-read stages，再 Retry 同一 ledger item；不可將 browser/public URL 當成 container sync URL。 |
-| GDT Console runtime profile | Bridge path/mount visibility、disposition、filename profile、party IDs、watch timing | 在 UI 允許範圍顯示或更新 application runtime intent。 | Docker 中變更 host folder 仍須修正 `.env` mount 並 recreate `lab-app`；先暫停 AP exchange。 |
+| GDT Console runtime profile | Windows host folder、bridge path/mount visibility、disposition、filename profile、party IDs、watch timing | Apply 透過本機 controller 驗證並保存 host folder。 | 以 `lab.ps1` 啟動；暫停 AP exchange、輸入專用的本機絕對路徑後按 Apply。Controller 只 recreate `lab-app`，不需要 `.env`。 |
 | dcm4chee Console profile | Config-derived profile、AEs、HL7／DIMSE／DICOMweb endpoints、auth/TLS diagnostics | 主要顯示 effective profile 與 workflow state。 | 修正 `.env`／external AE configuration、recreate `lab-app`、重跑 diagnostics，再 Retry 同一 Patient／Order mapping。 |
 
 任何設定變更後，都應記錄不含 secrets 的 previous value、owner、reason、affected services、apply action、verification result 與 rollback boundary。Syntax check 綠燈不代表 connectivity 或 workflow 已通過。

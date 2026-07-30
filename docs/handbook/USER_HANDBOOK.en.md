@@ -75,10 +75,12 @@ Run:
 ```powershell
 docker version
 docker compose version
+# If the command above is unavailable:
+docker-compose version
 docker info --format 'Server={{.ServerVersion}} OSType={{.OSType}} Arch={{.Architecture}} CPUs={{.NCPU}} Memory={{.MemTotal}}'
 ```
 
-Confirm that Docker Server information is present, `OSType=linux`, and the architecture is `x86_64`/`amd64`. If only Docker Client information appears, start Docker Desktop or correct the current Docker context and daemon permissions.
+Confirm that Docker Server information is present, `OSType=linux`, and the architecture is `x86_64`/`amd64`. Either Compose command is supported: the wrapper prefers `docker compose` and automatically falls back to `docker-compose`. If only Docker Client information appears, start Docker Desktop or correct the current Docker context and daemon permissions.
 
 Also confirm that:
 
@@ -209,8 +211,8 @@ Run these commands from the deployment bundle root:
 | Action | Actual purpose |
 | --- | --- |
 | `inspect` | Emits JSON containing container, image, state, port, and Compose metadata |
-| `status` | Runs `docker compose ps` to list running services |
-| `start` | Runs `docker compose up -d`, optionally for one service |
+| `status` | Runs Compose `ps` to list running services |
+| `start` | Runs Compose `up -d`, optionally for one service, and starts the Windows GDT Host Controller |
 | `smoke` | Currently lists Compose `ps` state; it does not run HTTP or protocol tests |
 | `logs` | Displays the last N log lines for the selected service |
 | `restart` | Force recreates a service; a selected service uses `--no-deps` |
@@ -541,7 +543,19 @@ Healthcare Lab <-- GDT-IN  6310 -- /data/gdt-bridge/outbox <-- AP
 
 For the default installation, `.\deploy\lab.ps1 start` creates the bounded Windows host root at `instance\gdt-bridge`, Docker mounts it at `/data/gdt-bridge`, and Healthcare Lab provisions the supported sibling folders. In the GDT settings, keep the application path set to the container path `/data/gdt-bridge`; a Windows path such as `C:\...\instance\gdt-bridge` is not readable inside `lab-app`.
 
-For an Advanced deployment with a dedicated AP share, set `GDT_BRIDGE_HOST_PATH` in `.env` to the exact Windows host folder. The wrapper resolves and creates that safe root, rejecting filesystem and repository roots, and Compose still mounts it at `/data/gdt-bridge`. Pause AP exchange and recreate `lab-app` after changing the bind source. The resulting folder contract is:
+To select a dedicated Windows folder without `.env`, start the stack with
+`.\\deploy\\lab.ps1 start`, open **GDT**, enter the absolute host folder in
+**Windows Shared Folder**, and select **Apply**. The local GDT Host Controller
+validates the target, creates the supported subfolders, persists the selection
+under `instance\\deployment`, and recreates only `lab-app`. Compose still mounts
+the selected folder at `/data/gdt-bridge`. Pause AP exchange before applying.
+Filesystem roots, the repository root, broad user-profile paths, relative
+paths, parent traversal, and UNC paths are rejected.
+
+`GDT_BRIDGE_HOST_PATH` in `.env` remains an Advanced deployment override. It
+takes precedence over the page-managed selection and therefore prevents Apply
+from becoming effective until the override is removed. The resulting folder
+contract is:
 
 | Folder | Producer → consumer | Purpose |
 | --- | --- | --- |
@@ -842,7 +856,7 @@ Run these PowerShell commands from the deployment-bundle root, where `deploy\doc
 | Purpose | Command | Expected evidence / boundary |
 | --- | --- | --- |
 | Check Docker client and server | `docker version` | Both Client and Server sections are available. |
-| Check Compose | `docker compose version` | A Compose v2-compatible command is available. |
+| Check Compose | `docker compose version`; if unavailable, `docker-compose version` | At least one supported Compose command is available; the wrapper prefers v2 and falls back to v1. |
 | Check the Docker host | `docker info --format 'Server={{.ServerVersion}} OSType={{.OSType}} Arch={{.Architecture}} CPUs={{.NCPU}} Memory={{.MemTotal}}'` | `OSType=linux`; v1.0.0 RC was verified on `amd64`. |
 | Validate effective Compose configuration | `docker compose -f deploy\docker-compose.yml config --quiet` | Exit code 0 validates interpolation and Compose structure, not credentials or connectivity. Compose automatically reads `.env` when present. |
 | List effective images | `docker compose -f deploy\docker-compose.yml config --images` | Compare every image with the release matrix; use an immutable application tag. |
@@ -1006,7 +1020,7 @@ and rerun diagnostics.
 
 | Variable(s) | Required | Release default / example | Purpose | Apply action |
 | --- | --- | --- | --- | --- |
-| `GDT_BRIDGE_HOST_PATH` | Only when not using the default folder | `<empty>` → `instance\gdt-bridge` | Host folder mounted to `/data/gdt-bridge`. | Pause AP exchange, verify the absolute host path and folder contract, then recreate `lab-app`. |
+| `GDT_BRIDGE_HOST_PATH` | Advanced override only | `<empty>` → page-managed selection → `instance\gdt-bridge` | Host folder mounted to `/data/gdt-bridge`. | For normal use, start with `lab.ps1`, select the folder on the GDT page, and Apply. An `.env` value takes precedence and requires operator-managed recreation. |
 | `GDT_BRIDGE_IMPORT_SUCCESS_MODE` | No | `archive` | Successful-file disposition. | Recreate `lab-app`; verify with a synthetic `6310`. |
 | `GDT_BRIDGE_FILENAME_PROFILE` | No | `permissive` | Filename validation policy. | Recreate `lab-app`; verify accepted and rejected filenames before tightening. |
 | `GDT_BRIDGE_RECEIVER_ID`, `GDT_BRIDGE_SENDER_ID` | Profile-dependent | `<empty>` | Optional GDT party-ID validation/generation values. | Recreate `lab-app`; coordinate exact IDs with AP. |
@@ -1020,7 +1034,7 @@ and rerun diagnostics.
 | Healthcare Lab result listener | Host, port, MLLP framing, auto-start | `Save Listener Settings` saves intent only and explicitly does not restart runtime. | Use Start/Stop/Retry as appropriate. If the Compose container port/publication changed, update `.env` and recreate first. |
 | Managed OIE Channels | Desired Healthcare Lab-owned source/destination fields for each managed Channel | `Save desired fields` updates desired state only. | Refresh inventory, Preview the single target, review owned-field differences, then Apply. Save/Preview alone does not change OIE. |
 | Medplum server inventory | `host=medplum`, `port=8103`, `baseUrl=http://medplum:8103/fhir/R4`, protocol `FHIR`, enabled | Persists the sync target used by Patient/Order workflows. | Test connectivity/OAuth, then Retry the same ledger item. Do not replace it with `MEDPLUM_PUBLIC_BASE_URL`. |
-| GDT Console runtime profile | Bridge path/mount visibility, disposition, filename profile, party IDs, watch timing | Displays or updates application runtime intent where the UI permits. | In Docker, changing the host folder still requires `.env` mount correction and `lab-app` recreation; pause AP exchange first. |
+| GDT Console runtime profile | Windows host folder, bridge path/mount visibility, disposition, filename profile, party IDs, watch timing | Apply validates and persists the host folder through the local controller. | Start with `lab.ps1`; pause AP exchange, enter a dedicated absolute local path, then Apply. The controller recreates only `lab-app`; no `.env` is required. |
 | dcm4chee Console profile | Config-derived profile, AEs, HL7/DIMSE/DICOMweb endpoints, auth/TLS diagnostics | Primarily reports the effective profile and workflow state. | Correct `.env`/external AE configuration, recreate `lab-app`, rerun diagnostics, then Retry the same Patient/Order mapping. |
 
 After any change, record the previous value without secrets, the owner, reason, affected services, apply action, verification result, and rollback boundary. A green syntax check is not a connectivity or workflow test.
