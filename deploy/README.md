@@ -175,7 +175,8 @@ Medplum API server and Web UI companion.
 ## Runtime Assumptions
 
 - Docker Desktop is installed and running in Linux container mode.
-- `docker compose` is available on `PATH`.
+- Docker Compose is available on `PATH`. The wrapper prefers `docker compose`
+  and automatically falls back to the legacy `docker-compose` command.
 - The supported application platform is `linux/amd64`.
 - Docker Compose is the supported end-user startup path; host Python startup is
   for development only.

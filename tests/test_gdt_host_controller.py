@@ -34,6 +34,7 @@ class GdtHostControllerTests(unittest.TestCase):
         for name in (
             "gdt-host-controller.ps1",
             "gdt-host-path.ps1",
+            "docker-compose-command.ps1",
             "docker-compose.yml",
         ):
             shutil.copy2(ROOT / "deploy" / name, self.deploy / name)

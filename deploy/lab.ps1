@@ -23,6 +23,7 @@ $ControllerScript = Join-Path $ScriptDir "gdt-host-controller.ps1"
 $ControllerPort = 5010
 
 . (Join-Path $ScriptDir "gdt-host-path.ps1")
+. (Join-Path $ScriptDir "docker-compose-command.ps1")
 
 $ServiceMap = @{
     "all" = @()
@@ -169,14 +170,17 @@ function Stop-GdtHostController {
 function Invoke-DockerCompose {
     param([string[]] $Arguments)
 
-    $BaseArgs = @("compose")
+    $BaseArgs = @()
     if (Test-Path $EnvFile) {
         $BaseArgs += @("--env-file", $EnvFile)
     }
     $BaseArgs += @("-f", $ComposeFile) + $Arguments
-    & docker @BaseArgs
+    $Invocation = Get-DockerComposeInvocation -Arguments $BaseArgs
+    $Executable = $Invocation.FilePath
+    $ComposeArguments = $Invocation.Arguments
+    & $Executable @ComposeArguments
     if ($LASTEXITCODE -ne 0) {
-        throw "docker $($BaseArgs -join ' ') failed with exit code $LASTEXITCODE."
+        throw "$($Invocation.DisplayName) $($BaseArgs -join ' ') failed with exit code $LASTEXITCODE."
     }
 }
 
