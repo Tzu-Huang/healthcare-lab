@@ -23,6 +23,7 @@ contexts/
 repo/
 worktrees/
 tmp/
+.tmp/
 dicom-formats/
 tools/
 openemr_modules/oe-module-gdt-ecg-poc/
